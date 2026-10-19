@@ -1,0 +1,14 @@
+# dependencies (npm install)
+node_modules/
+
+# build output (npm run build)
+dist/
+
+# local settings and secrets
+.claude/settings.local.json
+.env
+.env.*
+
+# logs and editor/OS clutter
+*.log
+.DS_Store
