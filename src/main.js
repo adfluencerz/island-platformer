@@ -1,4 +1,21 @@
 import * as THREE from 'three';
+import { ITEMS } from './items.js';
+import { createInventory } from './inventory.js';
+import { createFarmer, damp } from './character.js';
+import { Remotes } from './remotes.js';
+import { Connection } from './net/connection.js';
+import { showCodeInAddress } from './net/lobby.js';
+import { Splash } from './ui/splash.js';
+import { Hud } from './ui/hud.js';
+import './ui/ui.css';
+import { TICK_DT, PLAYER_COLORS } from '../shared/constants.js';
+import { C, S, STATEF } from '../shared/protocol.js';
+import { SPOT_KINDS, RARE, GROUND_STAND_Y } from '../shared/level.js';
+import { CROPS, createCropView } from './crops.js';
+import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
+import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor } from './world.js';
+import { HOME, wildMap } from './maps.js';
+import { islandFor } from '../shared/worldgen.js';
 
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
@@ -47,127 +64,55 @@ sun.shadow.camera.top = 30;
 sun.shadow.camera.bottom = -30;
 scene.add(sun);
 
-// ---------- World: ground + platforms ----------
-// Each platform is an AABB the player can stand on / bump into.
-const platforms = [];
+// Day/night cycle (see daynight.js) drives the sun, hemisphere light, sky and
+// fog over time. Start hour can be overridden for testing with ?hour=21.
+const startHour = Number(new URLSearchParams(location.search).get('hour') ?? 6);
+const dayNight = createDayNight({ scene, sun, hemi, startHour: Number.isFinite(startHour) ? startHour : 6 });
 
-function addBox({ x, y, z, w, h, d, color = 0x6b8e23 }) {
-  const geo = new THREE.BoxGeometry(w, h, d);
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
+// ---------- Worlds ----------
+// Two places to be (maps.js, built by world.js): your farm's island, and the
+// wild island of the lobby you are in, grown from its seed
+// (shared/worldgen.js). The farm is built once; a wild island when you first
+// go to a lobby on it (the last one is kept, for going back). The one you are
+// on is in the scene; `world` is the one under your feet.
+const worlds = { home: buildWorld(HOME) };
+let world = worlds.home;
+scene.add(world.root);
 
-  const box = {
-    mesh,
-    min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2),
-    max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2),
-  };
-  platforms.push(box);
-  return box;
+// name: 'home' or 'wild' (seed: which wild island)
+function enterWorld(name, seed) {
+  let stale = null; // the wild island we will not be back on
+  if (name === 'wild' && worlds.wild?.name !== `wild:${islandFor(seed).seed}`) {
+    stale = worlds.wild;
+    worlds.wild = buildWorld(wildMap(islandFor(seed)));
+  }
+  if (worlds[name] !== world) {
+    scene.remove(world.root);
+    world = worlds[name];
+    scene.add(world.root);
+  }
+  stale?.dispose(); // (out of the scene by now)
 }
 
-// Ground
-addBox({ x: 0, y: -0.5, z: 0, w: 60, h: 1, d: 60, color: 0x4a6b2a });
-
-// A simple staggered set of platforms to jump between
-addBox({ x: -6, y: 1, z: -4, w: 4, h: 1, d: 4, color: 0x8b5a2b });
-addBox({ x: 0, y: 2.5, z: -8, w: 4, h: 1, d: 4, color: 0x8b5a2b });
-addBox({ x: 6, y: 4, z: -12, w: 4, h: 1, d: 4, color: 0x8b5a2b });
-addBox({ x: 12, y: 5.5, z: -16, w: 4, h: 1, d: 4, color: 0x8b5a2b });
-addBox({ x: -10, y: 3, z: -14, w: 3, h: 1, d: 3, color: 0xa0522d });
-
-// ---------- Collectible items ----------
-// Each item type has a display name, color, and a simple icosahedron mesh.
-const ITEM_TYPES = {
-  coin: { label: 'Coins', color: 0xffd700 },
-  gem: { label: 'Gems', color: 0x33ccff },
-  key: { label: 'Keys', color: 0xff44aa },
-};
-
-const items = []; // { mesh, type, position, radius }
-
-function spawnItem(type, x, y, z) {
-  const def = ITEM_TYPES[type];
-  const geo = new THREE.IcosahedronGeometry(0.35, 0);
-  const mat = new THREE.MeshStandardMaterial({
-    color: def.color,
-    emissive: def.color,
-    emissiveIntensity: 0.4,
-    roughness: 0.3,
-    metalness: 0.4,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  scene.add(mesh);
-
-  items.push({ mesh, type, radius: 0.6, baseY: y });
-}
-
-// Scatter a few items around/above the platforms so the player has to
-// explore and jump to collect them.
-spawnItem('coin', -6, 2.2, -4);
-spawnItem('coin', 0, 3.7, -8);
-spawnItem('coin', 6, 5.2, -12);
-spawnItem('coin', 2, 0.5, 2);
-spawnItem('gem', 12, 6.7, -16);
-spawnItem('gem', -10, 4.2, -14);
-spawnItem('key', -6, 2.7, -6);
+// The sea around every island; it fades into the fog toward the horizon
+const WATER_Y = -0.6;
+const water = new THREE.Mesh(
+  new THREE.PlaneGeometry(400, 400),
+  new THREE.MeshStandardMaterial({ color: 0x2f8fbf, roughness: 0.25, metalness: 0.1 })
+);
+water.rotation.x = -Math.PI / 2;
+water.position.y = WATER_Y;
+water.receiveShadow = true;
+scene.add(water);
 
 // ---------- Inventory ----------
-const inventory = {}; // { coin: 3, gem: 1, ... }
-
-const itemCounterEl = document.getElementById('item-counter');
-const inventoryPanelEl = document.getElementById('inventory-panel');
-const inventoryListEl = document.getElementById('inventory-list');
-
-function renderHUD() {
-  // Top-right running counter, one entry per item type ever collected
-  itemCounterEl.innerHTML = Object.entries(ITEM_TYPES)
-    .map(([type, def]) => {
-      const count = inventory[type] || 0;
-      const hex = '#' + def.color.toString(16).padStart(6, '0');
-      return `<span class="stat"><span class="swatch" style="background:${hex}"></span>${count}</span>`;
-    })
-    .join('');
-
-  // Bottom-right detailed panel (only when open)
-  inventoryListEl.innerHTML = Object.entries(ITEM_TYPES)
-    .map(([type, def]) => {
-      const count = inventory[type] || 0;
-      return `<li><span>${def.label}</span><span>${count}</span></li>`;
-    })
-    .join('');
-}
-
-function collectItem(item) {
-  inventory[item.type] = (inventory[item.type] || 0) + 1;
-  scene.remove(item.mesh);
-  item.mesh.geometry.dispose();
-  item.mesh.material.dispose();
-  const idx = items.indexOf(item);
-  if (idx !== -1) items.splice(idx, 1);
-  renderHUD();
-}
-
-let inventoryOpen = false;
-function toggleInventory() {
-  inventoryOpen = !inventoryOpen;
-  inventoryPanelEl.classList.toggle('open', inventoryOpen);
-}
-
-renderHUD();
+// Toolbar + backpack UI (see inventory.js). Opening the backpack pauses
+// player input, so drop any keys that were held at that moment. The backpack
+// goes everywhere with you, and is saved with the farm (see Saving).
+const inventory = createInventory({ onOpenChange: (open) => open && keys.clear() });
 
 // ---------- Farming: hoe tool + tillable soil ----------
 const farmTiles = new Map(); // "gridX,gridZ" -> tilled tile mesh
-const TILE_SIZE = 1;
-
-function tileKeyFor(x, z) {
-  return `${Math.round(x / TILE_SIZE)},${Math.round(z / TILE_SIZE)}`;
-}
 
 function tillTileAt(x, z) {
   const key = tileKeyFor(x, z);
@@ -181,7 +126,221 @@ function tillTileAt(x, z) {
   mesh.receiveShadow = true;
   scene.add(mesh);
   farmTiles.set(key, mesh);
+  worlds.home.clearFoliageOnTile(key);
   return true;
+}
+
+// Crops grow on tilled tiles in real time; see crops.js for the models.
+const crops = new Map(); // "gridX,gridZ" -> { cropId, age, view, ripe, pop }
+
+// age: seconds it has been growing already (a crop someone planted before we came)
+function plantAt(x, z, cropId, age = 0) {
+  const key = tileKeyFor(x, z);
+  if (!farmTiles.has(key) || crops.has(key)) return false;
+
+  const view = createCropView(cropId);
+  view.group.position.copy(farmTiles.get(key).position).setY(0.06); // on top of the soil
+  view.group.rotation.y = Math.random() * Math.PI * 2;
+  if (cropId === 'sunflower') view.group.rotation.y = 0; // keep the bloom facing the camera
+  scene.add(view.group);
+  crops.set(key, { cropId, age, view, ripe: false, pop: 0 });
+  return true;
+}
+
+function removeCrop(key) {
+  const crop = crops.get(key);
+  if (!crop) return;
+  scene.remove(crop.view.group);
+  crops.delete(key);
+}
+
+// Returns true if there was a ripe crop here (even if the bag was too full to take it)
+function harvestAt(x, z) {
+  const key = tileKeyFor(x, z);
+  const crop = crops.get(key);
+  if (!crop?.ripe) return false;
+  if (inventory.add(CROPS[crop.cropId].produce)) removeCrop(key);
+  return true;
+}
+
+// Bare ground: untilled, nothing growing (going out to a lobby, or before the
+// saved farm is put back)
+function resetFarm() {
+  for (const key of [...crops.keys()]) removeCrop(key);
+  for (const mesh of farmTiles.values()) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  farmTiles.clear();
+  worlds.home.restoreFoliage();
+}
+
+// `growDt` is game-clock seconds (growth); `dt` is real seconds (animation)
+function updateCrops(dt, growDt, t) {
+  for (const crop of crops.values()) {
+    if (!crop.ripe) {
+      crop.age += growDt;
+      const progress = Math.min(crop.age / CROPS[crop.cropId].growTime, 1);
+      crop.view.setProgress(progress);
+      if (progress >= 1) {
+        crop.ripe = true;
+        crop.pop = 1; // little bounce when it ripens
+      }
+    }
+    // Ripe crops pop once, then sway gently so they're easy to spot
+    crop.pop += (0 - crop.pop) * damp(6, dt);
+    const s = 1 + Math.sin(crop.pop * Math.PI) * 0.25;
+    crop.view.group.scale.set(s, s, s);
+    crop.view.group.rotation.z = crop.ripe ? Math.sin(t * 2 + crop.view.group.position.x) * 0.04 : 0;
+  }
+}
+
+// ---------- Lobby resource spots ----------
+// In an online lobby the island has spots (shared/level.js) where things grow
+// back: berry bushes and mushrooms to gather with E, and treasures out in the
+// meadow and up on the ledges to walk into. The lobby rolls what is on each
+// spot and decides who got there first; the page draws them and asks.
+const spots = []; // { id, kind, use, x, y, z, item, count, view, pending, retryAt }
+const TOUCH_RADIUS = 0.6;
+const GATHER_REACH = 1.6;
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms' };
+
+const treasureGeo = new THREE.IcosahedronGeometry(0.35, 0);
+const itemMats = new Map(); // item -> material, shared by every treasure showing it
+function itemMat(item) {
+  if (!itemMats.has(item)) {
+    const { color } = ITEMS[item];
+    itemMats.set(item, new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.4,
+      roughness: 0.3,
+      metalness: 0.4,
+    }));
+  }
+  return itemMats.get(item);
+}
+const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
+const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
+const stalkGeo = new THREE.CylinderGeometry(0.07, 0.09, 0.28, 7).translate(0, 0.14, 0);
+const capGeo = new THREE.SphereGeometry(0.25, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.25, 0);
+const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf2e8d0, roughness: 0.8 });
+const capMat = new THREE.MeshStandardMaterial({ color: 0xd8452f, roughness: 0.6 });
+// A golden glint over a spot with something rare on it
+const glintGeo = new THREE.OctahedronGeometry(0.13, 0);
+const glintMat = new THREE.MeshStandardMaterial({ color: 0xffe14d, emissive: 0xffc400, emissiveIntensity: 1 });
+
+function makeSpotView(spot) {
+  const group = new THREE.Group();
+  group.position.set(spot.x, spot.y, spot.z);
+  let content; // what comes and goes: the berries, the mushrooms, the treasure
+  if (spot.kind === 'bush') {
+    // The bush always stands; only its berries come and go
+    const leaf = leafMats[spot.id % leafMats.length];
+    addDecor(blobGeo, leaf, 0, 0.42, 0, 0.55, 0.45, 0.55, group);
+    addDecor(blobGeo, leaf, 0.38, 0.3, 0.12, 0.36, 0.3, 0.36, group);
+    content = new THREE.Group();
+    for (let i = 0; i < 8; i++) {
+      const a = i * 2.4;
+      const berry = new THREE.Mesh(berryGeo, berryMat);
+      berry.position.set(Math.cos(a) * 0.5, 0.3 + (i % 3) * 0.17, Math.sin(a) * 0.45 + 0.05);
+      content.add(berry);
+    }
+  } else if (spot.kind === 'mushroom') {
+    content = new THREE.Group();
+    for (const [x, z, k] of [[0, 0, 1], [0.28, 0.12, 0.65], [-0.2, 0.2, 0.5]]) {
+      const shroom = new THREE.Group();
+      shroom.add(new THREE.Mesh(stalkGeo, stalkMat), new THREE.Mesh(capGeo, capMat));
+      shroom.position.set(x, 0, z);
+      shroom.scale.setScalar(k);
+      content.add(shroom);
+    }
+  } else {
+    content = new THREE.Mesh(treasureGeo, itemMat('coin'));
+  }
+  group.add(content);
+  const glint = new THREE.Mesh(glintGeo, glintMat);
+  glint.position.y = spot.use === 'touch' ? 0.75 : 1.05;
+  group.add(glint);
+  group.traverse((obj) => obj.isMesh && (obj.castShadow = true));
+  scene.add(group);
+  return { group, content, glint, glintY: glint.position.y };
+}
+
+function showSpot(spot) {
+  const { content, glint } = spot.view;
+  const has = !!spot.item && !spot.pending;
+  content.visible = has;
+  glint.visible = has && !!RARE[spot.item];
+  if (spot.use === 'touch' && spot.item) {
+    content.material = itemMat(spot.item);
+    content.scale.setScalar(RARE[spot.item] ? 1.3 : 1);
+  }
+}
+
+// the lobby's spots: [[id, kind, x, y, z, item, count], ...]
+function setSpots(list) {
+  clearSpots();
+  for (const [id, kind, x, y, z, item, count] of list) {
+    const spot = { id, kind, use: SPOT_KINDS[kind].use, x, y, z, item, count, pending: false, retryAt: 0 };
+    spot.view = makeSpotView(spot);
+    showSpot(spot);
+    spots.push(spot);
+  }
+}
+
+function clearSpots() {
+  for (const spot of spots) scene.remove(spot.view.group);
+  spots.length = 0;
+}
+
+// Ask the lobby for what is on a spot. It vanishes at once so it feels
+// instant; TAKEN (into the backpack) or DENY (it comes back) settles it.
+function takeSpot(spot) {
+  if (!spot.item || spot.pending || performance.now() < spot.retryAt) return;
+  if (!inventory.canAdd(spot.item, spot.count)) {
+    inventory.add(spot.item, spot.count); // (says "Inventory full")
+    spot.retryAt = performance.now() + 1000;
+    return;
+  }
+  spot.pending = true;
+  showSpot(spot);
+  net?.send({ t: C.TAKE, id: spot.id });
+}
+
+// the bush or mushrooms within reach with something on them, nearest first
+function gatherSpotInReach() {
+  let best = null;
+  let bestD = GATHER_REACH;
+  for (const spot of spots) {
+    if (spot.use !== 'gather' || !spot.item || spot.pending) continue;
+    const d = Math.hypot(spot.x - player.position.x, spot.z - player.position.z);
+    if (d < bestD && Math.abs(player.position.y - GROUND_STAND_Y - spot.y) < 1.2) {
+      best = spot;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+const _treasurePos = new THREE.Vector3();
+function updateSpots(dt, t) {
+  for (const spot of spots) {
+    const { content, glint, glintY } = spot.view;
+    if (glint.visible) {
+      glint.rotation.y += dt * 3;
+      glint.position.y = glintY + Math.sin(t * 3 + spot.id) * 0.08;
+    }
+    if (spot.use !== 'touch') continue;
+    // Treasures bob and spin, and are picked up by walking into them
+    content.position.y = Math.sin(t * 2 + spot.x) * 0.15;
+    content.rotation.y += dt * 1.5;
+    _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
+    if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
+  }
+  const near = gatherSpotInReach();
+  hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
 }
 
 // ---------- Player ----------
@@ -194,200 +353,30 @@ const player = {
 };
 
 // Ground level (top of the base ground box) is y = 0, so the player's
-// resting height when standing on bare ground is half their collision height.
-const GROUND_STAND_Y = player.height / 2;
+// resting height when standing on bare ground (GROUND_STAND_Y, shared/level.js)
+// is half their collision height.
 
 // ---------- Character model ----------
-// A little farmer built from primitives. Collision still uses the simple box
-// in `player`; this is purely visual. The model faces +Z (matching the
-// atan2(x, z) facing in update) and `rig` has its origin at the feet, so
-// squash & stretch scales from the ground up.
-const SKIN = 0xffcc99;
-const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...opts });
-const skinMat = mat(SKIN);
-const shirtMat = mat(0xff5533);
-const denimMat = mat(0x3b5b92, { roughness: 0.85 });
-const bootMat = mat(0x4a2f1b, { roughness: 0.9 });
-const strawMat = mat(0xe8c66a, { roughness: 0.95 });
-const darkMat = mat(0x1a1a1a, { roughness: 0.3 });
-
-function part(geo, material, x = 0, y = 0, z = 0) {
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(x, y, z);
-  return mesh;
-}
-
-const playerMesh = new THREE.Group(); // positioned at player.position (collision center)
+// The farmer (character.js). Collision still uses the simple box in `player`;
+// the model is purely visual. Everyone else in the game wears the same model
+// in their own shirt color (remotes.js).
+const farmer = createFarmer({ height: player.height });
+const playerMesh = farmer.root; // positioned at player.position (collision center)
+const hoeGroup = farmer.hoe;
+const anim = farmer.anim;
 scene.add(playerMesh);
 
-const rig = new THREE.Group(); // origin at the feet
-rig.position.y = -player.height / 2;
-playerMesh.add(rig);
-
-// Body: denim overalls over a shirt, with a bib and straps on the front
-const torso = new THREE.Group();
-torso.position.y = 0.55; // hips
-rig.add(torso);
-torso.add(part(new THREE.CapsuleGeometry(0.27, 0.22, 4, 12), shirtMat, 0, 0.32, 0));
-torso.add(part(new THREE.CylinderGeometry(0.285, 0.29, 0.3, 12), denimMat, 0, 0.12, 0));
-torso.add(part(new THREE.BoxGeometry(0.3, 0.2, 0.06), denimMat, 0, 0.33, 0.24));
-for (const sx of [-1, 1]) {
-  torso.add(part(new THREE.BoxGeometry(0.05, 0.26, 0.04), denimMat, sx * 0.12, 0.5, 0.235));
-  torso.add(part(new THREE.SphereGeometry(0.025, 6, 6), strawMat, sx * 0.12, 0.42, 0.27));
-}
-
-// Head with face and a straw hat
-const head = new THREE.Group();
-head.position.y = 0.78; // relative to hips
-torso.add(head);
-head.add(part(new THREE.SphereGeometry(0.25, 16, 12), skinMat));
-head.add(part(new THREE.SphereGeometry(0.05, 8, 6), mat(0xffb380), 0, -0.02, 0.25)); // nose
-for (const sx of [-1, 1]) {
-  head.add(part(new THREE.SphereGeometry(0.042, 8, 6), darkMat, sx * 0.09, 0.03, 0.22)); // eye
-  head.add(part(new THREE.SphereGeometry(0.045, 8, 6), mat(0xff9f8a), sx * 0.15, -0.06, 0.18)); // cheek
-}
-const hat = new THREE.Group();
-hat.position.set(0, 0.17, -0.05);
-hat.rotation.x = -0.4; // tipped well back so the face shows from the overhead camera
-head.add(hat);
-hat.add(part(new THREE.CylinderGeometry(0.38, 0.4, 0.035, 20), strawMat));
-hat.add(part(new THREE.CylinderGeometry(0.19, 0.23, 0.18, 16), strawMat, 0, 0.1, 0));
-hat.add(part(new THREE.CylinderGeometry(0.232, 0.232, 0.05, 16), mat(0xc0392b), 0, 0.04, 0));
-
-// Limbs pivot at the shoulder/hip so they can swing; the mesh hangs below.
-function makeLimb(parent, x, y, length, radius, material, endGeo, endMat, endZ = 0) {
-  const pivot = new THREE.Group();
-  pivot.position.set(x, y, 0);
-  parent.add(pivot);
-  pivot.add(part(new THREE.CapsuleGeometry(radius, length - radius * 2, 4, 8), material, 0, -length / 2, 0));
-  const end = part(endGeo, endMat, 0, -length, endZ);
-  pivot.add(end);
-  return { pivot, end };
-}
-
-const legs = [-1, 1].map((sx) =>
-  makeLimb(rig, sx * 0.13, 0.55, 0.5, 0.1, denimMat,
-    new THREE.BoxGeometry(0.18, 0.12, 0.28), bootMat, 0.04)
-);
-// Lift boots so their soles sit on the ground plane
-for (const leg of legs) leg.end.position.y += 0.06;
-
-const arms = [-1, 1].map((sx) =>
-  makeLimb(torso, sx * 0.34, 0.47, 0.42, 0.075, shirtMat,
-    new THREE.SphereGeometry(0.08, 10, 8), skinMat)
-);
-for (const [i, arm] of arms.entries()) arm.pivot.rotation.z = (i === 0 ? -1 : 1) * 0.12; // slightly out from the body
-const rightArm = arms[1];
-
-// Hoe, gripped in the right hand near the bottom of its handle
-const HOE_REST_ANGLE = 0.9; // handle tilted forward/up from the arm
-const hoeGroup = new THREE.Group();
-hoeGroup.position.copy(rightArm.end.position);
-hoeGroup.rotation.x = HOE_REST_ANGLE;
-rightArm.pivot.add(hoeGroup);
-hoeGroup.add(part(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 6), mat(0x8b5a2b), 0, 0.3, 0));
-hoeGroup.add(part(
-  new THREE.BoxGeometry(0.24, 0.05, 0.2),
-  mat(0x9a9a9a, { metalness: 0.6, roughness: 0.4 }),
-  0, 0.76, 0.08
-));
-
-playerMesh.traverse((obj) => {
-  if (obj.isMesh) obj.castShadow = true;
-});
-
-// Animation state for the model
-const anim = {
-  facing: 0, // current yaw, eased toward the movement direction
-  walkPhase: 0,
-  walkAmount: 0, // 0 = idle pose, 1 = full walk cycle
-  squash: 0, // >0 squashes (landing), <0 stretches (jumping)
-  swing: -1, // hoe swing progress 0..1, or -1 when not swinging
-};
-const HOE_SWING_TIME = 0.4; // seconds
-
-// Hoe swing keyframes: [time 0..1, arm angle, hoe angle relative to arm]
-const SWING_KEYS = [
-  [0, 0, HOE_REST_ANGLE],
-  [0.35, -2.6, HOE_REST_ANGLE], // wind up over the head
-  [0.6, -0.9, 3.0], // chop down in front
-  [1, 0, HOE_REST_ANGLE],
-];
-
-function sampleSwing(t) {
-  for (let i = 1; i < SWING_KEYS.length; i++) {
-    const [t1, arm1, hoe1] = SWING_KEYS[i];
-    if (t <= t1) {
-      const [t0, arm0, hoe0] = SWING_KEYS[i - 1];
-      const k = THREE.MathUtils.smoothstep(t, t0, t1);
-      return [THREE.MathUtils.lerp(arm0, arm1, k), THREE.MathUtils.lerp(hoe0, hoe1, k)];
-    }
-  }
-  return [0, HOE_REST_ANGLE];
-}
-
-// Exponential smoothing factor for frame-rate independent easing
-const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
-
 function animateCharacter(dt, moving) {
-  // Turn smoothly toward the movement direction, taking the short way around
-  if (moving) {
-    const targetYaw = Math.atan2(player.velocity.x, player.velocity.z);
-    let diff = targetYaw - anim.facing;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    anim.facing += diff * damp(14, dt);
-  }
-  playerMesh.rotation.y = anim.facing;
-
-  const walking = moving && player.onGround;
-  anim.walkAmount += ((walking ? 1 : 0) - anim.walkAmount) * damp(10, dt);
-  if (walking) anim.walkPhase += dt * 11;
-
-  const swingL = Math.sin(anim.walkPhase) * anim.walkAmount;
-  const t = clock.elapsedTime;
-
-  if (player.onGround) {
-    legs[0].pivot.rotation.x = swingL * 0.7;
-    legs[1].pivot.rotation.x = -swingL * 0.7;
-    arms[0].pivot.rotation.x = -swingL * 0.6;
-    arms[1].pivot.rotation.x = swingL * 0.25; // the hoe arm swings less
-  } else {
-    // Airborne pose: one knee up, arms lifted
-    const k = damp(12, dt);
-    legs[0].pivot.rotation.x += (-0.6 - legs[0].pivot.rotation.x) * k;
-    legs[1].pivot.rotation.x += (0.35 - legs[1].pivot.rotation.x) * k;
-    arms[0].pivot.rotation.x += (-0.9 - arms[0].pivot.rotation.x) * k;
-    arms[1].pivot.rotation.x += (-0.4 - arms[1].pivot.rotation.x) * k;
-  }
-
-  // Hoe swing overrides the right arm
-  hoeGroup.rotation.x = HOE_REST_ANGLE;
-  if (anim.swing >= 0) {
-    anim.swing += dt / HOE_SWING_TIME;
-    if (anim.swing >= 1) {
-      anim.swing = -1;
-    } else {
-      const [armAngle, hoeAngle] = sampleSwing(anim.swing);
-      rightArm.pivot.rotation.x = armAngle;
-      hoeGroup.rotation.x = hoeAngle;
-    }
-  }
-
-  // Walk bob + idle breathing, and a slight forward lean while walking
-  const bob = Math.abs(Math.sin(anim.walkPhase)) * 0.06 * anim.walkAmount;
-  torso.position.y = 0.55 + bob;
-  torso.rotation.x = 0.1 * anim.walkAmount;
-  const breathe = Math.sin(t * 2.2) * 0.015 * (1 - anim.walkAmount);
-
-  // Squash & stretch, volume-preserving-ish, easing back to neutral
-  anim.squash += (0 - anim.squash) * damp(10, dt);
-  const sy = 1 - anim.squash + breathe;
-  const sxz = 1 + anim.squash * 0.5;
-  rig.scale.set(sxz, sy, sxz);
+  farmer.animate(dt, {
+    moving,
+    onGround: player.onGround,
+    targetYaw: Math.atan2(player.velocity.x, player.velocity.z),
+    time: clock.elapsedTime,
+  });
 }
 
 function startHoeSwing() {
-  if (anim.swing < 0) anim.swing = 0;
+  farmer.swing();
 }
 
 camTarget.set(player.position.x, player.position.y - player.height / 2, player.position.z);
@@ -409,19 +398,67 @@ function updateCamera(dt) {
 }
 updateCamera(0);
 
+// Jump the camera to the player at once (a teleport) instead of panning over
+function snapCamera() {
+  camGroundY = player.position.y - player.height / 2;
+  camTarget.set(player.position.x, camGroundY, player.position.z);
+  updateCamera(0);
+}
+
+// While the title screen is up the camera circles the island slowly
+const MENU_CAM = { radius: 24, height: 13, speed: 0.06, look: new THREE.Vector3(0, 1.5, -5) };
+function updateMenuCamera(t) {
+  const a = t * MENU_CAM.speed;
+  camera.position.set(
+    MENU_CAM.look.x + Math.sin(a) * MENU_CAM.radius,
+    MENU_CAM.height,
+    MENU_CAM.look.z + Math.cos(a) * MENU_CAM.radius
+  );
+  camera.lookAt(MENU_CAM.look);
+}
+
 // ---------- Input ----------
+// The keys drive the farmer only while nothing else has the keyboard: the
+// title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
+const inputBlocked = () => !splash.hidden || inventory.isOpen() || hud.isTyping() || hud.isPaused();
 window.addEventListener('keydown', (e) => {
+  if (inputBlocked()) return;
   keys.add(e.code);
-  if (e.code === 'KeyI') toggleInventory();
-  if (e.code === 'KeyE') {
-    // Till only works while standing on bare ground (not on a raised platform)
-    if (player.onGround && Math.abs(player.position.y - GROUND_STAND_Y) < 0.05) {
-      tillTileAt(player.position.x, player.position.z);
-      startHoeSwing();
+  if (e.code === 'KeyE' && !e.repeat) useAction();
+});
+
+// E: in a lobby, gather what is in reach. At home: harvest a ripe crop
+// underfoot, otherwise use the selected toolbar item. Farming only works
+// while standing on bare ground (not on a raised platform).
+function useAction() {
+  if (place === 'lobby') {
+    const spot = gatherSpotInReach();
+    if (spot) {
+      takeSpot(spot);
+      anim.squash = 0.15; // little crouch to pick
+    } else if (inventory.selectedId() === 'hoe' || ITEMS[inventory.selectedId()]?.plants) {
+      inventory.notify('This is not your land: farm at home');
+    }
+    return;
+  }
+  if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return;
+  const { x, z } = player.position;
+  if (harvestAt(x, z)) return;
+
+  const held = inventory.selectedId();
+  if (held === 'hoe') {
+    tillTileAt(x, z);
+    startHoeSwing();
+  } else if (ITEMS[held]?.plants) {
+    if (plantAt(x, z, ITEMS[held].plants)) {
+      inventory.consumeSelected();
+      anim.squash = 0.15; // little crouch to plant
+    } else if (!farmTiles.has(tileKeyFor(x, z))) {
+      inventory.notify('Seeds go on tilled soil');
     }
   }
-});
+}
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
 window.addEventListener('resize', () => {
@@ -437,7 +474,10 @@ const JUMP_SPEED = 10;
 
 // ---------- Collision helpers ----------
 // Very simple AABB-vs-capsule (treated as a box) resolution, axis by axis.
-function resolveCollisions(prevY) {
+// Walking into a ledge no higher than STEP_HEIGHT steps up onto it (out of the
+// wild island's pond, say); anything taller takes a jump.
+const STEP_HEIGHT = 0.5;
+function resolveCollisions(prevY, wasOnGround) {
   player.onGround = false;
   const p = player.position;
   const r = player.radius;
@@ -446,7 +486,7 @@ function resolveCollisions(prevY) {
   const pMin = new THREE.Vector3(p.x - r, p.y - halfH, p.z - r);
   const pMax = new THREE.Vector3(p.x + r, p.y + halfH, p.z + r);
 
-  for (const box of platforms) {
+  for (const box of world.platforms) {
     const overlapX = pMin.x < box.max.x && pMax.x > box.min.x;
     const overlapY = pMin.y < box.max.y && pMax.y > box.min.y;
     const overlapZ = pMin.z < box.max.z && pMax.z > box.min.z;
@@ -454,7 +494,8 @@ function resolveCollisions(prevY) {
     if (overlapX && overlapY && overlapZ) {
       // Was the player above the box last frame? -> landing on top
       const prevBottom = prevY - halfH;
-      if (prevBottom >= box.max.y - 0.05 && player.velocity.y <= 0) {
+      const stepUp = wasOnGround && box.max.y - prevBottom <= STEP_HEIGHT;
+      if ((prevBottom >= box.max.y - 0.05 || stepUp) && player.velocity.y <= 0) {
         p.y = box.max.y + halfH;
         player.velocity.y = 0;
         player.onGround = true;
@@ -466,18 +507,229 @@ function resolveCollisions(prevY) {
       const overlapZAmt = Math.min(pMax.z - box.min.z, box.max.z - pMin.z);
 
       if (overlapXAmt < overlapZAmt) {
-        p.x += p.x < box.mesh.position.x ? -overlapXAmt : overlapXAmt;
+        p.x += p.x < box.center.x ? -overlapXAmt : overlapXAmt;
       } else {
-        p.z += p.z < box.mesh.position.z ? -overlapZAmt : overlapZAmt;
+        p.z += p.z < box.center.z ? -overlapZAmt : overlapZAmt;
       }
     }
   }
 }
 
+// ---------- Places: the title screen, home, an online lobby ----------
+// Home is your own farm, all in this page. A lobby is an online place
+// (shared/room.js on the game server) where farmers drop in to gather what
+// grows there; nothing of the farm comes along but the backpack.
+let place = 'title'; // 'title' | 'home' | 'lobby'
+let net = null; // the Connection while in (or on the way to) a lobby
+let session = null; // { code, room } once a lobby has welcomed us
+let myId = 0;
+let sendTimer = 0;
+let farmOnScreen = false; // the home farm's soil and crops are in the scene
+const LOBBY_DAWN = 9; // a lobby's day starts mid-morning, in good light
+
+const remotes = new Remotes(scene);
+const hud = new Hud({
+  onTravel: () => splash.show({ from: 'home' }),
+  onHome: () => goHome(),
+  onChat: (text) => net?.send({ t: C.CHAT, text }),
+  isBlocked: () => inventory.isOpen() || !splash.hidden,
+});
+const splash = new Splash({ onPlay: joinLobby, onHome: () => goHome() });
+
+function putDown({ x, y, z }) {
+  player.position.set(x, y, z);
+  player.velocity.set(0, 0, 0);
+  snapCamera();
+}
+const arrival = () => ({ x: world.spawn.x, y: GROUND_STAND_Y, z: world.spawn.z });
+
+function goHome() {
+  if (net) {
+    net.leave();
+    net = null;
+  }
+  const from = place;
+  if (from === 'lobby') leaveLobbyWorld();
+  place = 'home';
+  enterWorld('home');
+  farmer.setShirt(PLAYER_COLORS[0]);
+  if (!farmOnScreen) {
+    showFarm(homeFarm);
+    farmOnScreen = true;
+  }
+  splash.hide();
+  hud.showHome();
+  if (from !== 'home') putDown(arrival());
+}
+
+function leaveLobbyWorld() {
+  session = null;
+  myId = 0;
+  clearSpots();
+  remotes.clear();
+  keys.clear();
+  showCodeInAddress('');
+}
+
+function joinLobby({ name, code }) {
+  net?.leave();
+  splash.setStatus('Walking over…');
+  const conn = (net = new Connection({ name, code }));
+  // (a handler for a connection we have since left does nothing)
+  const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
+
+  on(S.WELCOME, (m) => {
+    if (place !== 'lobby') {
+      // Off we go: the farm stays at home (saved, and growing while we are out)
+      saveGame();
+      resetFarm();
+      farmOnScreen = false;
+    } else {
+      // (a lobby we were already in, after a reconnect: start its picture over)
+      clearSpots();
+      remotes.clear();
+    }
+    place = 'lobby';
+    enterWorld('wild', m.seed);
+    session = { code: m.code, seed: m.seed, room: m.room };
+    myId = m.id;
+    farmer.setShirt(m.color);
+    putDown(m.pos);
+    setSpots(m.spots);
+    remotes.setRoster(m.roster, myId);
+    // one time of day for everyone in the lobby, counted from when it opened
+    dayNight.setTime(LOBBY_DAWN + (m.clock / DAY_LENGTH_SECONDS) * 24);
+    showCodeInAddress(m.code);
+    splash.hide();
+    hud.showLobby(session, myId);
+    hud.setRoster(m.roster);
+    if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
+  });
+  on(S.ROSTER, (m) => {
+    hud.setRoster(m.list);
+    remotes.setRoster(m.list, myId);
+  });
+  on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
+  on(S.SPOT, (m) => {
+    const spot = spots[m.id];
+    if (!spot) return;
+    Object.assign(spot, { item: m.item, count: m.count, pending: false });
+    showSpot(spot);
+  });
+  on(S.TAKEN, (m) => {
+    const spot = spots[m.id];
+    if (spot) {
+      Object.assign(spot, { item: null, count: 0, pending: false });
+      showSpot(spot);
+    }
+    if (m.by === myId) {
+      inventory.add(m.item, m.count);
+      if (RARE[m.item]) hud.flash(`${RARE[m.item]}!`);
+    }
+  });
+  on(S.DENY, (m) => {
+    const spot = spots[m.id];
+    if (!spot) return;
+    spot.pending = false;
+    spot.retryAt = performance.now() + 500; // (not again every frame while we stand in it)
+    showSpot(spot);
+  });
+  on(S.CHAT, (m) => hud.chat(m));
+  on('ping', (ms) => hud.setPing(ms));
+  on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
+  on('closed', ({ reason }) => {
+    net = null;
+    if (place === 'lobby') {
+      // Turned out of the lobby: home, and say why
+      goHome();
+      splash.show({ from: 'home', message: reason });
+    } else {
+      splash.setStatus(reason, true);
+    }
+  });
+}
+
+// Where we are, for the lobby: spots are checked against it, and everyone
+// else draws us there
+function sendState(dt) {
+  sendTimer += dt;
+  if (sendTimer < TICK_DT) return;
+  sendTimer %= TICK_DT;
+  const p = player.position;
+  const r = (v) => Math.round(v * 100) / 100;
+  net.send({
+    t: C.STATE,
+    x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
+    f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0),
+  });
+}
+
+// ---------- Saving ----------
+// The home farm is yours alone and lives in this browser: the backpack, the
+// tilled soil, the crops and the time of day. While you are away (in a lobby,
+// or with the page closed) the crops keep growing and the clock keeps turning.
+const SAVE_STORE = 'tp.save';
+let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
+
+const keyXZ = (key) => key.split(',').map((n) => Number(n) * TILE_SIZE);
+
+function captureFarm() {
+  return {
+    savedAt: Date.now(),
+    hours: (dayNight.day() - 1) * 24 + dayNight.hour(),
+    tilled: [...farmTiles.keys()],
+    crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
+  };
+}
+
+function showFarm(farm) {
+  resetFarm();
+  if (!farm) return;
+  const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
+  dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
+  for (const key of farm.tilled) tillTileAt(...keyXZ(key));
+  for (const [key, cropId, age] of farm.crops) {
+    if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);
+  }
+}
+
+function saveGame() {
+  if (farmOnScreen) homeFarm = captureFarm();
+  try {
+    localStorage.setItem(SAVE_STORE, JSON.stringify({ v: 1, farm: homeFarm, backpack: inventory.serialize() }));
+  } catch {}
+}
+
+function loadGame() {
+  let save = null;
+  try {
+    save = JSON.parse(localStorage.getItem(SAVE_STORE));
+  } catch {}
+  if (save?.v === 1) {
+    inventory.restore(save.backpack);
+    homeFarm = save.farm;
+  } else {
+    // A new farmer's starting kit
+    inventory.add('hoe', 1, { quiet: true });
+    inventory.add('turnip_seeds', 10, { quiet: true });
+  }
+  showFarm(homeFarm);
+  farmOnScreen = true;
+  if (new URLSearchParams(location.search).has('hour')) dayNight.setTime(startHour); // (testing: ?hour=21)
+}
+
+setInterval(saveGame, 5000);
+addEventListener('pagehide', saveGame);
+document.addEventListener('visibilitychange', () => document.hidden && saveGame());
+
 // ---------- Game loop ----------
 const clock = new THREE.Clock();
+const _chest = new THREE.Vector3(); // trees between the camera and here fade out
+playerMesh.add(dayNight.glow); // night-time glow follows the player
 
 function update(dt) {
+  if (inputBlocked()) keys.clear();
+
   // Horizontal input -> world-space movement (camera-relative, simplified to world axes)
   let moveX = 0;
   let moveZ = 0;
@@ -509,32 +761,49 @@ function update(dt) {
   player.position.z += player.velocity.z * dt;
   player.position.y += player.velocity.y * dt;
 
-  resolveCollisions(prevY);
+  resolveCollisions(prevY, wasOnGround);
   if (player.onGround && !wasOnGround) {
     anim.squash = Math.min(fallSpeed / 20, 1) * 0.3; // squash on landing
   }
 
-  // Fell off the world -> respawn
+  // Fell off the world -> respawn on the plaza
   if (player.position.y < -20) {
-    player.position.set(0, 2, 4);
+    player.position.set(world.spawn.x, GROUND_STAND_Y + 1, world.spawn.z);
     player.velocity.set(0, 0, 0);
   }
 
   playerMesh.position.copy(player.position);
+  hoeGroup.visible = inventory.selectedId() === 'hoe'; // only hold the hoe while it's selected
   animateCharacter(dt, moving);
 
-  // Animate items (gentle bob + spin) and check for pickup
   const t = clock.elapsedTime;
-  for (const item of [...items]) {
-    item.mesh.position.y = item.baseY + Math.sin(t * 2 + item.mesh.position.x) * 0.15;
-    item.mesh.rotation.y += dt * 1.5;
-
-    if (player.position.distanceTo(item.mesh.position) < item.radius) {
-      collectItem(item);
-    }
+  if (place === 'lobby') {
+    updateSpots(dt, t);
+    sendState(dt);
+    remotes.update(dt, t);
   }
 
-  updateCamera(dt);
+  windTime.value = t;
+  _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
+  world.updateTreeFade(dt, _chest, camera);
+  world.update(t);
+  water.position.y = WATER_Y + Math.sin(t * 0.8) * 0.03;
+
+  // At home, time stops while the backpack or the menu is open and holding T
+  // fast-forwards it. In a lobby the time of day is everyone's, so it just runs.
+  const atHome = place !== 'lobby';
+  const hoursBefore = dayNight.day() * 24 + dayNight.hour();
+  dayNight.update(dt, {
+    paused: atHome && (inventory.isOpen() || hud.isPaused()),
+    fastForward: atHome && keys.has('KeyT'),
+    focus: player.position,
+  });
+  // Crops grow on game time, so they pause and fast-forward with the clock
+  const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
+  updateCrops(dt, gameDt, t);
+
+  if (place === 'title') updateMenuCamera(t);
+  else updateCamera(dt);
 }
 
 function animate() {
@@ -544,4 +813,11 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
+// Dev builds only: a handle for poking at the game from the browser console
+if (import.meta.env.DEV) {
+  window.__game = { player, spots, remotes, inventory, saveGame, get place() { return place; }, get net() { return net; } };
+}
+
+loadGame();
+splash.show({ from: 'title' });
 animate();

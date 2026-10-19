@@ -1,0 +1,215 @@
+import * as THREE from 'three';
+
+// ---------- Character model ----------
+// A little farmer built from primitives, used for the local player and for
+// everyone else in the game. Collision uses the simple box in main.js; this is
+// purely visual. The model faces +Z (matching the atan2(x, z) facing) and
+// `rig` has its origin at the feet, so squash & stretch scales from the ground
+// up. `root` goes at the collision center, `height` above the feet.
+
+const SKIN = 0xffcc99;
+const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...opts });
+// Shared by every farmer; only the shirt is per player
+const skinMat = mat(SKIN);
+const denimMat = mat(0x3b5b92, { roughness: 0.85 });
+const bootMat = mat(0x4a2f1b, { roughness: 0.9 });
+const strawMat = mat(0xe8c66a, { roughness: 0.95 });
+const darkMat = mat(0x1a1a1a, { roughness: 0.3 });
+const noseMat = mat(0xffb380);
+const cheekMat = mat(0xff9f8a);
+const bandMat = mat(0xc0392b);
+const handleMat = mat(0x8b5a2b);
+const bladeMat = mat(0x9a9a9a, { metalness: 0.6, roughness: 0.4 });
+
+const HOE_REST_ANGLE = 0.9; // handle tilted forward/up from the arm
+const HOE_SWING_TIME = 0.4; // seconds
+
+// Hoe swing keyframes: [time 0..1, arm angle, hoe angle relative to arm]
+const SWING_KEYS = [
+  [0, 0, HOE_REST_ANGLE],
+  [0.35, -2.6, HOE_REST_ANGLE], // wind up over the head
+  [0.6, -0.9, 3.0], // chop down in front
+  [1, 0, HOE_REST_ANGLE],
+];
+
+function sampleSwing(t) {
+  for (let i = 1; i < SWING_KEYS.length; i++) {
+    const [t1, arm1, hoe1] = SWING_KEYS[i];
+    if (t <= t1) {
+      const [t0, arm0, hoe0] = SWING_KEYS[i - 1];
+      const k = THREE.MathUtils.smoothstep(t, t0, t1);
+      return [THREE.MathUtils.lerp(arm0, arm1, k), THREE.MathUtils.lerp(hoe0, hoe1, k)];
+    }
+  }
+  return [0, HOE_REST_ANGLE];
+}
+
+// Exponential smoothing factor for frame-rate independent easing
+export const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
+
+function part(geo, material, x = 0, y = 0, z = 0) {
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.set(x, y, z);
+  return mesh;
+}
+
+export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
+  const shirtMat = mat(shirt);
+
+  const root = new THREE.Group(); // positioned at the collision center
+
+  const rig = new THREE.Group(); // origin at the feet
+  rig.position.y = -height / 2;
+  root.add(rig);
+
+  // Body: denim overalls over a shirt, with a bib and straps on the front
+  const torso = new THREE.Group();
+  torso.position.y = 0.55; // hips
+  rig.add(torso);
+  torso.add(part(new THREE.CapsuleGeometry(0.27, 0.22, 4, 12), shirtMat, 0, 0.32, 0));
+  torso.add(part(new THREE.CylinderGeometry(0.285, 0.29, 0.3, 12), denimMat, 0, 0.12, 0));
+  torso.add(part(new THREE.BoxGeometry(0.3, 0.2, 0.06), denimMat, 0, 0.33, 0.24));
+  for (const sx of [-1, 1]) {
+    torso.add(part(new THREE.BoxGeometry(0.05, 0.26, 0.04), denimMat, sx * 0.12, 0.5, 0.235));
+    torso.add(part(new THREE.SphereGeometry(0.025, 6, 6), strawMat, sx * 0.12, 0.42, 0.27));
+  }
+
+  // Head with face and a straw hat
+  const head = new THREE.Group();
+  head.position.y = 0.78; // relative to hips
+  torso.add(head);
+  head.add(part(new THREE.SphereGeometry(0.25, 16, 12), skinMat));
+  head.add(part(new THREE.SphereGeometry(0.05, 8, 6), noseMat, 0, -0.02, 0.25));
+  for (const sx of [-1, 1]) {
+    head.add(part(new THREE.SphereGeometry(0.042, 8, 6), darkMat, sx * 0.09, 0.03, 0.22)); // eye
+    head.add(part(new THREE.SphereGeometry(0.045, 8, 6), cheekMat, sx * 0.15, -0.06, 0.18)); // cheek
+  }
+  const hat = new THREE.Group();
+  hat.position.set(0, 0.17, -0.05);
+  hat.rotation.x = -0.4; // tipped well back so the face shows from the overhead camera
+  head.add(hat);
+  hat.add(part(new THREE.CylinderGeometry(0.38, 0.4, 0.035, 20), strawMat));
+  hat.add(part(new THREE.CylinderGeometry(0.19, 0.23, 0.18, 16), strawMat, 0, 0.1, 0));
+  hat.add(part(new THREE.CylinderGeometry(0.232, 0.232, 0.05, 16), bandMat, 0, 0.04, 0));
+
+  // Limbs pivot at the shoulder/hip so they can swing; the mesh hangs below.
+  function makeLimb(parent, x, y, length, radius, material, endGeo, endMat, endZ = 0) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, 0);
+    parent.add(pivot);
+    pivot.add(part(new THREE.CapsuleGeometry(radius, length - radius * 2, 4, 8), material, 0, -length / 2, 0));
+    const end = part(endGeo, endMat, 0, -length, endZ);
+    pivot.add(end);
+    return { pivot, end };
+  }
+
+  const legs = [-1, 1].map((sx) =>
+    makeLimb(rig, sx * 0.13, 0.55, 0.5, 0.1, denimMat,
+      new THREE.BoxGeometry(0.18, 0.12, 0.28), bootMat, 0.04)
+  );
+  // Lift boots so their soles sit on the ground plane
+  for (const leg of legs) leg.end.position.y += 0.06;
+
+  const arms = [-1, 1].map((sx) =>
+    makeLimb(torso, sx * 0.34, 0.47, 0.42, 0.075, shirtMat,
+      new THREE.SphereGeometry(0.08, 10, 8), skinMat)
+  );
+  for (const [i, arm] of arms.entries()) arm.pivot.rotation.z = (i === 0 ? -1 : 1) * 0.12; // slightly out from the body
+  const rightArm = arms[1];
+
+  // Hoe, gripped in the right hand near the bottom of its handle
+  const hoe = new THREE.Group();
+  hoe.position.copy(rightArm.end.position);
+  hoe.rotation.x = HOE_REST_ANGLE;
+  rightArm.pivot.add(hoe);
+  hoe.add(part(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 6), handleMat, 0, 0.3, 0));
+  hoe.add(part(new THREE.BoxGeometry(0.24, 0.05, 0.2), bladeMat, 0, 0.76, 0.08));
+
+  root.traverse((obj) => {
+    if (obj.isMesh) obj.castShadow = true;
+  });
+
+  // Animation state for the model
+  const anim = {
+    facing: 0, // current yaw, eased toward the movement direction
+    walkPhase: 0,
+    walkAmount: 0, // 0 = idle pose, 1 = full walk cycle
+    squash: 0, // >0 squashes (landing), <0 stretches (jumping)
+    swing: -1, // hoe swing progress 0..1, or -1 when not swinging
+  };
+
+  // moving: walking (or steering in the air) this frame. targetYaw: where it
+  // should face while moving. time: seconds, for idle breathing.
+  function animate(dt, { moving, onGround, targetYaw, time }) {
+    // Turn smoothly toward the movement direction, taking the short way around
+    if (moving) {
+      let diff = targetYaw - anim.facing;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      anim.facing += diff * damp(14, dt);
+    }
+    root.rotation.y = anim.facing;
+
+    const walking = moving && onGround;
+    anim.walkAmount += ((walking ? 1 : 0) - anim.walkAmount) * damp(10, dt);
+    if (walking) anim.walkPhase += dt * 11;
+
+    const swingL = Math.sin(anim.walkPhase) * anim.walkAmount;
+
+    if (onGround) {
+      legs[0].pivot.rotation.x = swingL * 0.7;
+      legs[1].pivot.rotation.x = -swingL * 0.7;
+      arms[0].pivot.rotation.x = -swingL * 0.6;
+      arms[1].pivot.rotation.x = swingL * 0.25; // the hoe arm swings less
+    } else {
+      // Airborne pose: one knee up, arms lifted
+      const k = damp(12, dt);
+      legs[0].pivot.rotation.x += (-0.6 - legs[0].pivot.rotation.x) * k;
+      legs[1].pivot.rotation.x += (0.35 - legs[1].pivot.rotation.x) * k;
+      arms[0].pivot.rotation.x += (-0.9 - arms[0].pivot.rotation.x) * k;
+      arms[1].pivot.rotation.x += (-0.4 - arms[1].pivot.rotation.x) * k;
+    }
+
+    // Hoe swing overrides the right arm
+    hoe.rotation.x = HOE_REST_ANGLE;
+    if (anim.swing >= 0) {
+      anim.swing += dt / HOE_SWING_TIME;
+      if (anim.swing >= 1) {
+        anim.swing = -1;
+      } else {
+        const [armAngle, hoeAngle] = sampleSwing(anim.swing);
+        rightArm.pivot.rotation.x = armAngle;
+        hoe.rotation.x = hoeAngle;
+      }
+    }
+
+    // Walk bob + idle breathing, and a slight forward lean while walking
+    const bob = Math.abs(Math.sin(anim.walkPhase)) * 0.06 * anim.walkAmount;
+    torso.position.y = 0.55 + bob;
+    torso.rotation.x = 0.1 * anim.walkAmount;
+    const breathe = Math.sin(time * 2.2) * 0.015 * (1 - anim.walkAmount);
+
+    // Squash & stretch, volume-preserving-ish, easing back to neutral
+    anim.squash += (0 - anim.squash) * damp(10, dt);
+    const sy = 1 - anim.squash + breathe;
+    const sxz = 1 + anim.squash * 0.5;
+    rig.scale.set(sxz, sy, sxz);
+  }
+
+  return {
+    root,
+    hoe,
+    anim,
+    animate,
+    swing() {
+      if (anim.swing < 0) anim.swing = 0;
+    },
+    setShirt(color) {
+      shirtMat.color.setHex(color);
+    },
+    // drop the per-farmer GPU resources (the shared materials stay)
+    dispose() {
+      root.traverse((obj) => obj.isMesh && obj.geometry.dispose());
+      shirtMat.dispose();
+    },
+  };
+}

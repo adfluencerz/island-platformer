@@ -1,0 +1,249 @@
+/* Menus and HUD for games and rounds. Uses the inventory's palette and frame
+   (inventory.css: --inv-* and .inv-frame) so it all reads as one game. */
+
+.ui-splash, .ui-hud {
+  font-family: var(--inv-font);
+  color: var(--inv-ink);
+}
+.ui-splash[hidden], .ui-hud[hidden], .ui-hud [hidden], .ui-splash [hidden] { display: none !important; }
+
+/* While the title screen is up, the in-game overlays step aside */
+body.in-menu .inv-hotbar, body.in-menu .inv-funds, body.in-menu .inv-toasts,
+body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: none !important; }
+
+/* ---------- Shared bits ---------- */
+.ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 24px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.ui-card h2 { margin: 4px 0 0; font-size: 24px; }
+.ui-row { display: flex; gap: 8px; }
+.ui-row > * { flex: 1; }
+.ui-muted { opacity: 0.7; font-size: 14px; }
+.ui-small { font-size: 12px; }
+
+.ui-btn {
+  padding: 8px 14px;
+  border: 3px solid var(--inv-outline);
+  border-radius: 4px;
+  background: var(--inv-wood);
+  color: #fff;
+  font: 700 16px var(--inv-font);
+  text-shadow: 0 2px 0 var(--inv-outline);
+  box-shadow: inset 0 3px 0 var(--inv-wood-light), inset 0 -3px 0 #a3530c;
+  cursor: pointer;
+}
+.ui-btn:hover:not(:disabled) { background: #e98a2a; }
+.ui-btn:active:not(:disabled) { box-shadow: inset 0 3px 0 #a3530c; }
+.ui-btn:disabled { filter: grayscale(0.8); opacity: 0.6; cursor: default; }
+.ui-btn-big { font-size: 22px; padding: 12px 16px; }
+.ui-btn-small { font-size: 14px; padding: 4px 10px; border-width: 2px; }
+.ui-btn-ghost {
+  background: var(--inv-paper-dark);
+  color: var(--inv-ink);
+  text-shadow: none;
+  box-shadow: inset 0 3px 0 var(--inv-slot-light), inset 0 -3px 0 var(--inv-slot-shade);
+}
+.ui-btn-ghost:hover:not(:disabled) { background: #f7c47e; }
+.ui-btn.on { background: #4f9e3c; box-shadow: inset 0 3px 0 #7ed957, inset 0 -3px 0 #2f6b25; }
+
+.ui-input {
+  padding: 8px 10px;
+  border: 3px solid var(--inv-outline);
+  border-radius: 4px;
+  background: #fff4dc;
+  color: var(--inv-ink);
+  font: 600 16px var(--inv-font);
+  min-width: 0;
+}
+.ui-input:focus { outline: 3px solid var(--inv-wood-light); }
+.ui-field { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.ui-check { display: flex; gap: 8px; align-items: center; font-size: 15px; cursor: pointer; }
+.ui-check input { width: 18px; height: 18px; accent-color: var(--inv-wood); }
+.ui-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--inv-outline); flex: none; }
+
+/* ---------- Title screen ---------- */
+.ui-splash {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 30%, rgba(10, 20, 40, 0.45));
+  z-index: 30;
+}
+.ui-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.ui-logo {
+  margin: 0;
+  font-size: 40px;
+  line-height: 1;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 3px 0 var(--inv-outline), 3px 0 0 var(--inv-outline), -3px 0 0 var(--inv-outline), 0 -3px 0 var(--inv-outline), 0 6px 0 rgba(0, 0, 0, 0.3);
+}
+.ui-dev-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 3px;
+  background: #d73d26;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 0 var(--inv-outline);
+}
+.ui-tagline { text-align: center; font-size: 15px; margin-bottom: 4px; }
+.ui-section { margin: 6px 0 0; font-size: 18px; }
+.ui-menu, .ui-browse, .ui-create, .ui-invite { display: flex; flex-direction: column; gap: 8px; }
+.ui-code-row .ui-input { flex: 2; text-transform: uppercase; letter-spacing: 0.1em; }
+.ui-invite { padding: 10px; border-radius: 4px; background: var(--inv-slot-bg); }
+.ui-invite-title { font-size: 19px; font-weight: 700; }
+.ui-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.ui-game {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--inv-slot-bg);
+  border-radius: 3px;
+  box-shadow: inset 2px 2px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
+}
+.ui-game-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.ui-game-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-status { min-height: 1.2em; font-size: 15px; font-weight: 600; }
+.ui-status.error { color: var(--inv-red); }
+.ui-help { font-size: 13px; opacity: 0.65; text-align: center; }
+
+/* ---------- Player list (top left, under the controls hint) ---------- */
+.ui-players {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 230px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+}
+.ui-players-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ui-players-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-ping { flex: none; font-size: 12px; }
+.ui-code { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 14px; letter-spacing: 0.05em; }
+.ui-player-list { display: flex; flex-direction: column; gap: 3px; }
+.ui-player { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.ui-player.me .ui-player-name { font-weight: 700; }
+.ui-player.away { opacity: 0.5; }
+.ui-player-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-found { font-size: 13px; opacity: 0.75; }
+
+/* ---------- Prompt over the toolbar, the word for a rare find ---------- */
+.ui-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--inv-slot) + 44px);
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: rgba(30, 14, 2, 0.6);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.ui-big {
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(36px, 7vw, 64px);
+  font-weight: 700;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow: 0 4px 0 var(--inv-outline), 3px 0 0 var(--inv-outline), -3px 0 0 var(--inv-outline), 0 -3px 0 var(--inv-outline);
+  pointer-events: none;
+  z-index: 20;
+}
+.ui-big.pop { animation: ui-pop 1.8s ease-out forwards; }
+@keyframes ui-pop {
+  0% { transform: translate(-50%, -40%); opacity: 0; }
+  20%, 75% { transform: translate(-50%, -50%); opacity: 1; }
+  100% { transform: translate(-50%, -60%); opacity: 0; }
+}
+
+.ui-conn {
+  position: fixed;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 4px;
+  background: var(--inv-red);
+  color: #fff;
+  font-weight: 700;
+  z-index: 25;
+}
+
+/* ---------- Pause ---------- */
+.ui-pause {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+}
+.ui-pause { background: rgba(0, 0, 0, 0.35); z-index: 25; }
+
+/* ---------- Chat (bottom right) ---------- */
+.ui-chat {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--inv-slot) + 40px); /* above the toolbar */
+  width: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 15;
+  pointer-events: none;
+}
+.ui-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.ui-chat-line {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(30, 14, 2, 0.55);
+  color: #fff;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  transition: opacity 0.6s;
+}
+.ui-chat-line b { text-shadow: 0 1px 0 #000; }
+.ui-chat-line.system { color: #ffe6b8; font-style: italic; }
+.ui-chat-line.old { opacity: 0; }
+.ui-chat.open { pointer-events: auto; }
+.ui-chat.open .ui-chat-line.old { opacity: 1; }
+.ui-chat-form { display: flex; }
+.ui-chat-form .ui-input { flex: 1; }
+
+@media (max-width: 760px) {
+  .ui-players { width: 190px; }
+}
