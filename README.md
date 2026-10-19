@@ -6,7 +6,8 @@ A minimal 3D platformer scaffold built with [Three.js](https://threejs.org/) and
 - A player capsule with gravity, jumping, and WASD/arrow-key movement
 - Simple AABB collision so you can land on and jump between platforms
 - A staggered set of starter platforms to test jumping
-- A camera that follows behind/above the player
+- A camera that smoothly follows the player from an angled overhead view
+- A stylized farmer character with walk, jump, landing and hoe-swing animations
 - Shadows and basic lighting (hemisphere + directional "sun")
 
 ## Setup
