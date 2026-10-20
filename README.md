@@ -7,8 +7,8 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, wind-swayed grass and flowers, and grass-topped platforms to jump between; trees fade out when they block the view of the player
 - Farming: till, plant and harvest turnips, carrots, flax and sunflowers, in a backpack-and-toolbar inventory
 - A day/night cycle with a sun and moon, fireflies and a clock
-- A merchant at a market stall on the farm who sells seeds and hens and buys what you grow and find
-- Hens in a fenced yard by their coop: they wander, peck, can be petted, roost at night and lay an egg a day
+- A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
+- Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -30,7 +30,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 ## Controls
 - `W`/`A`/`S`/`D` or arrow keys — move
 - `Space` — jump (only works while grounded)
-- `E` — at home: till / plant / harvest, trade at the merchant's stall, pet a hen, or let out the hen in hand in the hen yard; in a lobby: gather (berries, mushrooms), or chop a tree with the axe in hand (hold to keep swinging)
+- `E` — at home: till / plant / harvest, trade at the merchant's stall, pet an animal (or milk the cow, shear the sheep), or let out the animal in hand in her pen; in a lobby: gather (berries, mushrooms), or chop a tree with the axe in hand (hold to keep swinging)
 - `I` — backpack
 - `L` — visit a lobby (from home)
 - `Enter` — chat (in a lobby)
@@ -56,7 +56,14 @@ Without the game server (`npm run dev:client`) the farm stays in the browser unt
 
 **The merchant** keeps a stall just east of the plaza on your farm. Walk up to the counter and press `E` to trade: buy turnip, carrot, flax and sunflower seeds (click: one, `Shift`+click: five), and sell your crops, forage, gems and spare seeds from your backpack (click: the whole stack, right click: one). Tools and the old key aren't for sale. Prices are `price` (buy) and `sell` on each item in `src/items.js`; the item tooltips show what the merchant pays.
 
-**The hens** live in a fenced yard west of the plaza, with a coop, a nest, and a trough. A new farm comes with two (so does a farm saved before there were hens), and the merchant sells more (150g, up to 8): a hen sits in the backpack until you stand in the yard with her in hand and press `E`. By day they wander the yard, peck at the grass and scurry off if you run at them; walk up to one and press `E` (or tap her) to pet her. A little before dark they go up the ramp to roost, and come back out after sunrise. Each hen lays an egg a day, between mid-morning and the afternoon on the farm's clock, so eggs keep coming while you're away: she lays it where she stands, or in the nest beside the coop if it fell due while she slept or you were off the farm (up to 3 lying about per hen). Walk over an egg to pick it up; the merchant pays 25g. Hens and eggs are saved with the farm (`src/animals.js`).
+**The animals** live in two pens on the farm: the hens in a fenced yard west of the plaza, with a coop, a nest and a trough; the cows and sheep in a pasture south of it, off the path to the shore, with hay bales and a water trough. A new farm comes with two hens, a cow and a sheep (so does a farm saved before there were any), and the merchant sells more: a hen 150g (up to 8), a sheep 350g (up to 6), a cow 500g (up to 4). One sits in the backpack until you stand in her pen with her in hand and press `E`. By day they wander and graze (the hens peck); the hens and sheep scurry off if you run at them, and a cow nudges you aside. Walk up to one and press `E` (or tap her) to pet her, or, when a little picture floats over her, to milk the cow or shear the sheep. A little before dark the hens go up the ramp to roost and the cows and sheep lie down in the grass; they're up again after sunrise.
+
+What they give comes on the farm's clock, so it keeps coming while you're away:
+- **Eggs** (25g): each hen lays one a day, between mid-morning and the afternoon, where she stands, or in the nest beside the coop if it fell due while she slept or you were off the farm (up to 3 lying about per hen). Walk over an egg to pick it up.
+- **Milk** (60g): a cow has milk once a day, from the morning after you last milked her.
+- **Wool** (120g): a sheep's fleece grows back two days after shearing, and you can see it fill out.
+
+The animals and eggs are saved with the farm (`src/animals.js`).
 
 **Online lobbies** are drop-in places to gather with other farmers, each out on a wild island of its own: bigger and wilder than a farm, with a ragged coast, a mossy forest with giant toadstools to hop across, a shallow pond to wade into (there may be something on the bottom), a flower meadow, rocky terraces climbing to the north, and a ring of standing stones where you arrive. Press `L` at home (or pick one on the title screen): **Quick join** (the fullest public lobby with room, or a new one), **Browse lobbies**, **Open a lobby** (name, size, island seed, public or invite-only), or **Join with a code**.
 
@@ -108,8 +115,8 @@ island-platformer/
 │   ├── crops.js         # what each seed grows into, and the growing plants
 │   ├── daynight.js      # the clock, sun, moon, sky and fireflies
 │   ├── merchant.js      # the merchant's stall on the farm, and the merchant behind it
-│   ├── shop.js          # the merchant's shop window: buy seeds and hens, sell from the backpack
-│   ├── animals.js       # the hen yard and coop, the hens and their eggs
+│   ├── shop.js          # the merchant's shop window: buy seeds and animals, sell from the backpack
+│   ├── animals.js       # the hen yard and the pasture, the hens, cows and sheep, eggs
 │   ├── remotes.js       # other players: interpolation, name tags
 │   ├── net/
 │   │   ├── connection.js  # WebSocket to a lobby

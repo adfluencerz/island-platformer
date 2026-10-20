@@ -3,7 +3,7 @@ import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from './world.js';
 import { STALL, buildStall } from './merchant.js';
-import { YARD, buildHenYard } from './animals.js';
+import { YARD, PASTURE, buildPens } from './animals.js';
 
 // ---------- Maps ----------
 // What the worlds look like (built by world.js): your farm, and the wild
@@ -15,14 +15,15 @@ import { YARD, buildHenYard } from './animals.js';
 
 // ---------- Home: your farm's island ----------
 // A square island: a sand rim, a stone plaza at spawn, dirt paths toward a
-// staggered set of platforms, the merchant's stall and the hen yard's gate,
-// and grass everywhere else.
+// staggered set of platforms, the merchant's stall and the gates of the hen
+// yard and the pasture, and grass everywhere else.
 const HOME_PATHS = [
   [[1, 27], [1, 15], [0, 6]], // from the south shore up to spawn
   [[0, 6], [-3, 1], [-6, -1]], // spawn -> first platform
   [[0, 6], [4, 2], [8, -6], [11, -12]], // spawn -> under the high platforms
   [[1, 7], [STALL.x, STALL.z + 2]], // spawn -> the merchant's stall
   [[-2, 5.5], [YARD.x + YARD.w / 2 - 0.5, YARD.z]], // spawn -> the hen yard's gate
+  [[1, PASTURE.z], [PASTURE.x + PASTURE.w / 2 - 0.5, PASTURE.z]], // the south path -> the pasture's gate
 ];
 const HOME_PLAZA = { x: 0, z: 5, r: 2.6 };
 const HOME_HALF = 29;
@@ -60,10 +61,11 @@ export const HOME = {
     platform(12, 5.5, -16, 4, 1, 4),
     platform(-10, 3, -14, 3, 1, 3, 0xa0522d),
   ],
-  keepClear: [[SPAWN.x, SPAWN.z, 1.5], [STALL.x, STALL.z + 1.5, 4], [YARD.x, YARD.z, Math.hypot(YARD.w, YARD.d) / 2 + 0.6]],
+  keepClear: [[SPAWN.x, SPAWN.z, 1.5], [STALL.x, STALL.z + 1.5, 4], [YARD.x, YARD.z, Math.hypot(YARD.w, YARD.d) / 2 + 0.6],
+    [PASTURE.x, PASTURE.z, Math.hypot(PASTURE.w, PASTURE.d) / 2 + 0.6]],
   build(ctx) {
     buildStall(ctx);
-    buildHenYard(ctx);
+    buildPens(ctx);
   },
   decorate({ scatter, addTree, addBush, addRock, isOpenGround, tileAt }) {
     scatter(70, 2.6, (x, z) => !inPlayArea(x, z) && isOpenGround(x, z, 1), (x, z) => addTree(x, z));

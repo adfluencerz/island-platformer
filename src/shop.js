@@ -4,8 +4,8 @@ import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
 import { el, button } from './ui/dom.js';
 
 // ---------- The merchant's shop ----------
-// Opened with E at the stall on the home farm (merchant.js). Seeds (and hens) to buy
-// up top; below, your backpack (toolbar row first), to sell from. Prices are the
+// Opened with E at the stall on the home farm (merchant.js). Seeds and animals to
+// buy up top; below, your backpack (toolbar row first), to sell from. Prices are the
 // items' own `price` and `sell` (items.js).
 //
 //   click something to buy  buy one (shift: five)
@@ -28,7 +28,7 @@ const LINES = {
     'Got anything good from the fields today?',
   ],
   bought: ['Plant them somewhere sunny!', 'Good choice. They grow like anything.', 'Happy growing!'],
-  boughtAnimal: ['She\'s a good layer, that one.', 'Mind she doesn\'t peck your boots!', 'Off to the hen yard with her!'],
+  boughtAnimal: ['Look after her, now!', 'She\'ll be happy on your farm.', 'Off to her new home!'],
   sold: ['Lovely! Pleasure doing business.', 'Oh, these are beauties.', 'The townsfolk will love these.'],
   soldRare: ['My word, I haven\'t seen one of those in years!', 'Well I never! That\'s a rare find.'],
   poor: ['Ah, you\'re a little short for that one.', 'Come back when the harvest\'s in!'],
