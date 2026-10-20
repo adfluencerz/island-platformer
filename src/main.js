@@ -17,7 +17,7 @@ import { C, S, STATEF } from '../shared/protocol.js';
 import { SPOT_KINDS, RARE, TREE, mostWood, GROUND_STAND_Y } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
-import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor } from './world.js';
+import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
 
@@ -27,6 +27,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -74,12 +75,29 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.2);
 sun.position.set(10, 20, 10);
 sun.castShadow = true;
+// The shadows cover the view, not the whole island: the light (and its
+// shadow box) follows the camera's look-at point (see followSun), which keeps
+// them sharp. The box reaches further north, up the screen, than south.
+const SUN_REACH = 26;
+const SUN_AHEAD = 8;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -30;
-sun.shadow.camera.right = 30;
-sun.shadow.camera.top = 30;
-sun.shadow.camera.bottom = -30;
-scene.add(sun);
+sun.shadow.camera.left = -SUN_REACH;
+sun.shadow.camera.right = SUN_REACH;
+sun.shadow.camera.top = SUN_REACH;
+sun.shadow.camera.bottom = -SUN_REACH;
+sun.shadow.camera.far = 100;
+sun.shadow.normalBias = 0.02;
+scene.add(sun, sun.target);
+
+// Moved in steps of a few shadow-map texels, so the shadows' edges don't crawl as it pans
+const SUN_STEP = ((SUN_REACH * 2) / 2048) * 4;
+const _sunOffset = new THREE.Vector3();
+function followSun(focus, ahead = SUN_AHEAD) {
+  const snap = (n) => Math.round(n / SUN_STEP) * SUN_STEP;
+  _sunOffset.subVectors(sun.position, sun.target.position); // (the day/night cycle sets its direction)
+  sun.target.position.set(snap(focus.x), 0, snap(focus.z - ahead));
+  sun.position.copy(sun.target.position).add(_sunOffset);
+}
 
 // Day/night cycle (see daynight.js) drives the sun, hemisphere light, sky and
 // fog over time. Start hour can be overridden for testing with ?hour=21.
@@ -112,10 +130,10 @@ function enterWorld(name, seed) {
 }
 
 // The sea around every island; it fades into the fog toward the horizon
-const WATER_Y = -0.6;
+const WATER_Y = SEA_LEVEL;
 const water = new THREE.Mesh(
   new THREE.PlaneGeometry(400, 400),
-  new THREE.MeshStandardMaterial({ color: 0x2f8fbf, roughness: 0.25, metalness: 0.1 })
+  addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8fbf, roughness: 0.2, metalness: 0.1 }))
 );
 water.rotation.x = -Math.PI / 2;
 water.position.y = WATER_Y;
@@ -138,16 +156,28 @@ worlds.home.root.add(merchant.root);
 // ---------- Farming: hoe tool + tillable soil ----------
 const farmTiles = new Map(); // "gridX,gridZ" -> tilled tile mesh
 
+// Tilled soil: a dark bed with three furrows ridged across it
+const soilBedGeo = new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.06, TILE_SIZE * 0.92);
+const soilRidgeGeo = new THREE.CylinderGeometry(0.075, 0.075, TILE_SIZE * 0.84, 6, 1)
+  .rotateZ(Math.PI / 2)
+  .scale(1, 0.45, 1);
+const soilMat = new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 });
+const soilRidgeMat = new THREE.MeshStandardMaterial({ color: 0x6e4826, roughness: 1, flatShading: true });
+
 function tillTileAt(x, z) {
   const key = tileKeyFor(x, z);
   if (farmTiles.has(key)) return false; // already tilled
 
   const [gx, gz] = key.split(',').map(Number);
-  const geo = new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.06, TILE_SIZE * 0.92);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 });
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(soilBedGeo, soilMat);
   mesh.position.set(gx * TILE_SIZE, 0.03, gz * TILE_SIZE);
   mesh.receiveShadow = true;
+  for (const rz of [-0.27, 0, 0.27]) {
+    const ridge = new THREE.Mesh(soilRidgeGeo, soilRidgeMat);
+    ridge.position.set(0, 0.03, rz * TILE_SIZE);
+    ridge.receiveShadow = true;
+    mesh.add(ridge);
+  }
   scene.add(mesh);
   farmTiles.set(key, mesh);
   worlds.home.clearFoliageOnTile(key);
@@ -191,11 +221,7 @@ function harvestAt(x, z) {
 // saved farm is put back)
 function resetFarm() {
   for (const key of [...crops.keys()]) removeCrop(key);
-  for (const mesh of farmTiles.values()) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
-  }
+  for (const mesh of farmTiles.values()) scene.remove(mesh);
   farmTiles.clear();
   worlds.home.restoreFoliage();
 }
@@ -497,6 +523,7 @@ function updateCamera(dt) {
 
   camera.position.copy(camTarget).add(camOffset);
   camera.lookAt(camTarget);
+  followSun(camTarget);
 }
 updateCamera(0);
 
@@ -517,6 +544,7 @@ function updateMenuCamera(t) {
     MENU_CAM.look.z + Math.cos(a) * MENU_CAM.radius
   );
   camera.lookAt(MENU_CAM.look);
+  followSun(MENU_CAM.look, 0);
 }
 
 // ---------- Input ----------
@@ -663,6 +691,24 @@ const marker = new THREE.Mesh(
 );
 marker.visible = false;
 scene.add(marker);
+
+// The tile cursor: at home with the hoe or seeds in hand, a faint square on
+// the tile underfoot, the one farming works on (see updateTileCursor)
+const tileCursor = new THREE.Mesh(
+  new THREE.RingGeometry(0.64, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xfff3d6, transparent: true, opacity: 0.5, depthWrite: false })
+);
+tileCursor.visible = false;
+scene.add(tileCursor);
+
+function updateTileCursor() {
+  const held = inventory.selectedId();
+  tileCursor.visible = place === 'home' && player.onGround &&
+    Math.abs(player.position.y - GROUND_STAND_Y) < 0.05 && (held === 'hoe' || !!ITEMS[held]?.plants);
+  if (!tileCursor.visible) return;
+  const [gx, gz] = tileKeyFor(player.position.x, player.position.z).split(',').map(Number);
+  tileCursor.position.set(gx * TILE_SIZE, 0.1, gz * TILE_SIZE);
+}
 
 const presses = new Map(); // pointerId -> where and when it went down
 canvas.addEventListener('pointerdown', (e) => {
@@ -1185,6 +1231,7 @@ function update(dt) {
   hoeGroup.visible = inventory.selectedId() === 'hoe'; // only hold a tool while it's selected
   farmer.axe.visible = inventory.selectedId() === 'axe';
   animateCharacter(dt, moving);
+  updateTileCursor();
 
   const t = clock.elapsedTime;
   world.updateTrees(dt);

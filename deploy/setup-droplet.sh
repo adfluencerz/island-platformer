@@ -27,14 +27,16 @@ if [ -z "$DOMAIN" ]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get -y upgrade
-apt-get install -y curl ca-certificates gnupg rsync ufw
+# A new droplet updates itself for its first few minutes: wait for that, don't fail
+apt_get() { apt-get -o DPkg::Lock::Timeout=900 "$@"; }
+apt_get update
+apt_get -y upgrade
+apt_get install -y curl ca-certificates gnupg rsync ufw
 
 # Node.js 24 (LTS)
 if ! node --version 2>/dev/null | grep -q '^v24\.'; then
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-  apt-get install -y nodejs
+  apt_get install -y nodejs
 fi
 
 # Caddy, from its own repository (Ubuntu's is old)
@@ -43,8 +45,8 @@ if ! command -v caddy >/dev/null; then
     | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
     > /etc/apt/sources.list.d/caddy-stable.list
-  apt-get update
-  apt-get install -y caddy
+  apt_get update
+  apt_get install -y caddy
 fi
 
 # Users: `island` runs the game, `deploy` brings new versions of it
@@ -90,6 +92,15 @@ $DOMAIN {
 	reverse_proxy 127.0.0.1:3001
 }
 EOF
+# A domain of your own: www.<domain> goes to it too (its DNS needs an A record for www)
+if [[ $DOMAIN != *.sslip.io ]]; then
+  cat >> /etc/caddy/Caddyfile <<EOF
+
+www.$DOMAIN {
+	redir https://$DOMAIN{uri} permanent
+}
+EOF
+fi
 systemctl reload-or-restart caddy
 
 ufw allow OpenSSH

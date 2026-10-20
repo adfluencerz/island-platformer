@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE } from '../shared/worldgen.js';
-import { distToPaths, addDecor, rockGeo, rockMats, foliageMat } from './world.js';
+import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from './world.js';
 import { STALL, buildStall } from './merchant.js';
 
 // ---------- Maps ----------
@@ -37,7 +37,7 @@ export const HOME = {
   half: HOME_HALF,
   spawn: SPAWN,
   tileType(gx, gz) {
-    if (Math.max(Math.abs(gx), Math.abs(gz)) >= HOME_HALF - 1) return 'sand';
+    if (Math.max(Math.abs(gx), Math.abs(gz)) > HOME_HALF - 1.5) return 'sand'; // (world.js asks between tiles too)
     if (Math.hypot(gx - HOME_PLAZA.x, gz - HOME_PLAZA.z) < HOME_PLAZA.r) return 'stone';
     if (distToPaths(gx, gz, HOME_PATHS) < 0.85) return 'path';
     return 'grass';
@@ -161,7 +161,7 @@ const toadCapMat = new THREE.MeshStandardMaterial({ color: 0xd8452f, roughness: 
 const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9 });
 const dotMat = new THREE.MeshStandardMaterial({ color: 0xfff8ec, roughness: 0.6 });
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
-const pondWaterMat = new THREE.MeshStandardMaterial({ color: 0x3aa0a8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 });
+const pondWaterMat = addRipples(new THREE.MeshStandardMaterial({ color: 0x3aa0a8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 }));
 const padMat = new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 });
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
 const reedMat = foliageMat(0x6b8a3a);

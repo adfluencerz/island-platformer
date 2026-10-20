@@ -182,7 +182,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     const isDay = hour >= SUNRISE && hour < SUNSET;
     const sign = isDay ? 1 : -1;
     sunDir.set(Math.cos(angle) * sign, 0.4 + 0.6 * Math.abs(Math.sin(angle)), 0.45).normalize();
-    sun.position.copy(sunDir).multiplyScalar(40);
+    sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
     glow.intensity = night * 10;

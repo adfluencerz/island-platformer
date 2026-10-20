@@ -45,6 +45,66 @@ function addWind(material, strength) {
   };
 }
 
+// A repeatable 0..1 value for a point: the same point always gets the same
+// value, so vertices that two meshes share agree on it
+export const hash2 = (x, z) => {
+  const h = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+};
+
+// Ripples for still or open water, in the fragment shader: the surface normal
+// rocks to and fro (so the sun glints off it) and the color drifts a little.
+export function addRipples(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uWindTime = windTime;
+    shader.vertexShader = 'varying vec2 vRipplePos;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      vRipplePos = (modelMatrix * vec4(transformed, 1.0)).xz;`
+    );
+    shader.fragmentShader = 'uniform float uWindTime;\nvarying vec2 vRipplePos;\n' + shader.fragmentShader
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        float rippleA = vRipplePos.x * 1.3 + uWindTime * 1.1;
+        float rippleB = vRipplePos.y * 1.7 - uWindTime * 0.9;
+        float rippleC = (vRipplePos.x - vRipplePos.y) * 2.6 + uWindTime * 1.7;
+        diffuseColor.rgb *= 0.95 + 0.07 * sin(rippleA * 0.4 + rippleB * 0.3);`
+      )
+      .replace(
+        '#include <normal_fragment_begin>',
+        `#include <normal_fragment_begin>
+        vec3 rippleNormal = normalize(vec3(cos(rippleA) * 0.07 + cos(rippleC) * 0.04, 1.0, cos(rippleB) * 0.07 - cos(rippleC) * 0.04));
+        normal = normalize((viewMatrix * vec4(rippleNormal, 0.0)).xyz);`
+      );
+  };
+  return material;
+}
+
+// The sea around every island (main.js puts it there) and the foam where it
+// meets the shore
+export const SEA_LEVEL = -0.6;
+const FOAM_WIDTH = 0.5;
+const foamMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+foamMat.onBeforeCompile = (shader) => {
+  shader.uniforms.uWindTime = windTime;
+  shader.vertexShader = 'varying vec2 vFoamPos;\n' + shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    `#include <begin_vertex>
+    vFoamPos = (modelMatrix * vec4(transformed, 1.0)).xz;`
+  );
+  // vertex alpha: 1 at the shore, 0 at the foam's outer edge. A solid line
+  // hugs the shore and bands of foam wash in and out beyond it.
+  shader.fragmentShader = 'uniform float uWindTime;\nvarying vec2 vFoamPos;\n' + shader.fragmentShader.replace(
+    '#include <color_fragment>',
+    `#include <color_fragment>
+    float shore = vColor.a;
+    float drift = sin(vFoamPos.x * 0.8 + vFoamPos.y * 0.6) * 1.5;
+    float wave = sin(shore * 9.0 + uWindTime * 1.6 + drift);
+    diffuseColor.a = max(smoothstep(0.7, 1.0, shore) * 0.85, smoothstep(0.55, 0.95, wave) * shore * 0.6);`
+  );
+};
+
 // ---------- The decor kit: a few shared geometries/materials, many meshes ----------
 export const foliageMat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
 const trunkMat = foliageMat(0x6b4423);
@@ -69,11 +129,52 @@ export function addDecor(geo, material, x, y, z, sx, sy = sx, sz = sx, parent) {
 
 // Turf on top of a platform. It overhangs a little and its top sits just
 // above the collider top so it doesn't z-fight.
-const CAP_MATS = {
-  grass: new THREE.MeshStandardMaterial({ color: 0x5d9b3a, roughness: 1 }),
-  moss: new THREE.MeshStandardMaterial({ color: 0x4f8a3a, roughness: 1 }),
-};
-const earthMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 });
+const CAP_COLORS = { grass: 0x5d9b3a, moss: 0x4f8a3a };
+const roughMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+const turfMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+
+// A box with rough sides, for rock and earth: subdivided, the vertices on its
+// sides pushed in or out a little (by their position alone, so faces that
+// share an edge move it together and the box stays closed), and colored
+// darker toward the bottom, in layers, with a mottle.
+// push: how far the sides wander; dark: how much darker the bottom is.
+function roughBox(x, y, z, w, h, d, color, { push = 0.07, dark = 0.3, layers = 0.05 } = {}) {
+  const geo = new THREE.BoxGeometry(w, h, d, Math.ceil(w * 2), Math.max(1, Math.round(h * 2.5)), Math.ceil(d * 2));
+  const p = geo.attributes.position;
+  const base = new THREE.Color(color);
+  const tint = new THREE.Color();
+  const colors = [];
+  for (let i = 0; i < p.count; i++) {
+    const lx = p.getX(i), ly = p.getY(i), lz = p.getZ(i);
+    const n = hash2(x + lx * 1.7 + ly * 0.9, z + lz * 1.3 - ly * 1.1) - 0.5;
+    const onX = Math.abs(Math.abs(lx) - w / 2) < 1e-4;
+    const onZ = Math.abs(Math.abs(lz) - d / 2) < 1e-4;
+    if (onX) p.setX(i, lx + Math.sign(lx) * n * push * 2);
+    if (onZ) p.setZ(i, lz + Math.sign(lz) * n * push * 2);
+    const up = (ly + h / 2) / h; // 0 at the bottom, 1 at the top
+    const k = 1 - dark * (1 - up) + Math.sin((y + ly) * 7) * layers + n * 0.12;
+    tint.copy(base).multiplyScalar(k);
+    colors.push(tint.r, tint.g, tint.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// The earth under the island's tiles: lighter just under the turf, darker down by the sea
+const earthMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9, vertexColors: true });
+const earthGeo = new THREE.BoxGeometry(1, 1, 1);
+earthGeo.setAttribute('color', new THREE.Float32BufferAttribute(
+  Array.from({ length: earthGeo.attributes.position.count }, (_, i) => {
+    const k = 0.6 + 0.4 * (earthGeo.attributes.position.getY(i) + 0.5);
+    return [k, k, k];
+  }).flat(), 3));
+
+// The ground's surface sits this far above its floor (tilled soil is above it)
+const GROUND_LIFT = 0.012;
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+const slabGeo = new THREE.BoxGeometry(0.86, 0.06, 0.86);
+const slabMat = new THREE.MeshStandardMaterial({ roughness: 0.9 });
 
 // A felled tree topples away from whoever chopped it, then shrinks away and
 // leaves a stump (low enough to step onto) until it grows back.
@@ -85,7 +186,6 @@ const stumpGeo = new THREE.CylinderGeometry(0.16, 0.2, STUMP_H, 7).translate(0, 
 const stumpMats = [trunkMat, foliageMat(0xd9b48a), trunkMat]; // side, cut top, bottom
 const _q = new THREE.Quaternion();
 const easeOutBack = (p) => 1 + 2.7 * (p - 1) ** 3 + 1.7 * (p - 1) ** 2;
-const unitBox = new THREE.BoxGeometry(1, 1, 1);
 
 // Fade trees whose canopy sits on the line of sight from the camera to the
 // player. Canopies are treated as boxes around the trunk: CANOPY_RADIUS wide
@@ -173,13 +273,16 @@ export function buildWorld(map) {
   }
 
   function addBox({ x, y, z, w, h, d, color = 0x6b8e23, cap = null }) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
+    const mesh = new THREE.Mesh(roughBox(x, y, z, w, h, d, color), roughMat);
     mesh.position.set(x, y, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     root.add(mesh);
     if (cap) {
-      const top = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.2, d + 0.12), CAP_MATS[cap]);
+      const top = new THREE.Mesh(
+        roughBox(x, y, z, w + 0.12, 0.2, d + 0.12, CAP_COLORS[cap], { push: 0.03, dark: 0.3, layers: 0 }),
+        turfMat
+      );
       top.position.set(x, y + h / 2 - 0.095, z);
       top.castShadow = true;
       top.receiveShadow = true;
@@ -218,7 +321,7 @@ export function buildWorld(map) {
       }
     }
   }
-  const earth = new THREE.InstancedMesh(unitBox, earthMat, runs.length);
+  const earth = new THREE.InstancedMesh(earthGeo, earthMat, runs.length);
   earth.receiveShadow = true;
   runs.forEach(([a, b, gz, floor], i) => {
     const w = (b - a + 1) * TILE_SIZE;
@@ -229,24 +332,14 @@ export function buildWorld(map) {
   });
   root.add(earth);
 
-  {
-    const tileGeo = new THREE.BoxGeometry(TILE_SIZE * 0.985, 0.2, TILE_SIZE * 0.985);
-    const tiles = new THREE.InstancedMesh(tileGeo, new THREE.MeshStandardMaterial({ roughness: 1 }), tileGrid.size);
-    tiles.receiveShadow = true;
-    let i = 0;
-    for (const [key, type] of tileGrid) {
-      const [gx, gz] = key.split(',').map(Number);
-      const style = map.tileStyles[type];
-      const top = rand(...style.top); // tiny height variation reads as hand-laid tiles
-      m.makeTranslation(gx * TILE_SIZE, floorOf(type) + top - 0.1, gz * TILE_SIZE);
-      tiles.setMatrixAt(i, m);
-      c.setHex(style.color);
-      if (style.lush) c.offsetHSL(meadowNoise(gx, gz) * 0.03, 0, meadowNoise(gx, gz) * -0.05);
-      c.offsetHSL(0, 0, rand(-style.jitter, style.jitter));
-      tiles.setColorAt(i, c);
-      i++;
-    }
-    root.add(tiles);
+  // Each tile's own color, a little varied, and how high it sits: what a
+  // stone slab on it looks like (see The ground's surface)
+  const tileLook = new Map(); // "gx,gz" -> { color, top }
+  for (const [key, type] of tileGrid) {
+    const style = map.tileStyles[type];
+    const top = rand(...style.top);
+    const color = new THREE.Color(style.color).offsetHSL(0, 0, rand(-style.jitter, style.jitter));
+    tileLook.set(key, { color, top });
   }
 
   for (const p of map.platforms ?? []) addBox(p);
@@ -446,6 +539,148 @@ export function buildWorld(map) {
 
   Object.assign(ctx, { addTree, addBush, addRock });
   map.decorate(ctx);
+
+  // ---------- The ground's surface ----------
+  // One mesh for every tile, colored by what the map says the ground is at
+  // each vertex rather than per tile, so a path winds along its own curve
+  // instead of in grid steps, and grass meets it and the sand without hard
+  // tile lines. Each tile is a 5x5 patch of vertices; one that the map puts
+  // on another floor (or in the sea) takes its tile's own kind. The ground is
+  // shaded a little darker right around whatever stands on it, which is why
+  // it is laid after the decorations.
+  // Stone tiles get a slab each on top: a plaza should look paved.
+  {
+    const groundColor = (type, x, z, out) => {
+      const style = map.tileStyles[type];
+      out.setHex(style.color);
+      if (type === 'stone') out.offsetHSL(0, -0.05, -0.16); // the gaps between the slabs
+      if (style.lush) out.offsetHSL(meadowNoise(x, z) * 0.03, 0, meadowNoise(x, z) * -0.05);
+      return out.offsetHSL(0, 0, (hash2(x, z) - 0.5) * style.jitter * 2.5);
+    };
+
+    const standing = platforms.filter((box) => !box.ground);
+    // how much the things standing at (x, z) shade the ground there, 0..1
+    const contactShade = (x, y, z) => {
+      let shade = 0;
+      for (const box of standing) {
+        if (box.min.y > y + 0.2 || box.max.y < y) continue;
+        const r = 0.35 + 0.25 * Math.min(box.max.x - box.min.x, box.max.z - box.min.z, 1.6);
+        const dx = Math.max(box.min.x - x, 0, x - box.max.x);
+        if (dx >= r) continue;
+        const dz = Math.max(box.min.z - z, 0, z - box.max.z);
+        if (dz >= r) continue;
+        const near = 1 - Math.min(Math.hypot(dx, dz) / r, 1);
+        shade = Math.max(shade, near * near);
+      }
+      return shade;
+    };
+
+    const pos = [];
+    const col = [];
+    const index = [];
+    const tint = new THREE.Color();
+    const slabs = [];
+    for (const [key, type] of tileGrid) {
+      const [gx, gz] = key.split(',').map(Number);
+      const floor = floorOf(type);
+      const first = pos.length / 3;
+      for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 5; j++) {
+          const ox = (j - 2) / 4;
+          const oz = (i - 2) / 4;
+          const x = (gx + ox) * TILE_SIZE;
+          const z = (gz + oz) * TILE_SIZE;
+          let here = map.tileType(gx + ox, gz + oz);
+          if (!here || floorOf(here) !== floor) here = type;
+          groundColor(here, gx + ox, gz + oz, tint).multiplyScalar(1 - 0.4 * contactShade(x, floor, z));
+          pos.push(x, floor + GROUND_LIFT, z);
+          col.push(tint.r, tint.g, tint.b);
+        }
+      }
+      for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+          const a = first + i * 5 + j;
+          index.push(a, a + 5, a + 1, a + 1, a + 5, a + 6);
+        }
+      }
+      if (type === 'stone') slabs.push([gx, gz, floor]);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(index);
+    const ground = new THREE.Mesh(geo, groundMat);
+    ground.receiveShadow = true;
+    root.add(ground);
+
+    const stones = new THREE.InstancedMesh(slabGeo, slabMat, slabs.length);
+    stones.receiveShadow = true;
+    slabs.forEach(([gx, gz, floor], i) => {
+      const { color, top } = tileLook.get(`${gx},${gz}`);
+      const nx = hash2(gx, gz) - 0.5;
+      const nz = hash2(gz, gx) - 0.5;
+      q.setFromAxisAngle(up, nx * 0.16);
+      m.compose(v.set((gx + nx * 0.05) * TILE_SIZE, floor + top - 0.03, (gz + nz * 0.05) * TILE_SIZE), q, s.set(1, 1, 1));
+      stones.setMatrixAt(i, m);
+      stones.setColorAt(i, color);
+    });
+    root.add(stones);
+  }
+
+  // ---------- Foam along the shore ----------
+  // A strip on the sea along every tile edge that faces open water, and a
+  // corner piece round each outside corner of the coast. Vertex alpha: 1 at
+  // the shore, 0 out at sea (the shader makes foam of it).
+  {
+    const pos = [];
+    const col = [];
+    const W = FOAM_WIDTH;
+    const y = SEA_LEVEL + 0.04;
+    const sea = (gx, gz) => !tileGrid.has(`${gx},${gz}`);
+    const quad = (corners) => {
+      // corners: four [x, z, alpha] going round
+      for (const k of [0, 2, 1, 0, 3, 2]) {
+        const [x, z, a] = corners[k];
+        pos.push(x * TILE_SIZE, y, z * TILE_SIZE);
+        col.push(1, 1, 1, a);
+      }
+    };
+    for (const key of tileGrid.keys()) {
+      const [gx, gz] = key.split(',').map(Number);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (!sea(gx + dx, gz + dz)) continue;
+        // the edge runs along (tx, tz), from -0.5 to 0.5 of the tile
+        const [tx, tz] = [-dz, dx];
+        const ex = gx + dx / 2;
+        const ez = gz + dz / 2;
+        quad([
+          [ex - tx / 2, ez - tz / 2, 1],
+          [ex - tx / 2 + dx * W, ez - tz / 2 + dz * W, 0],
+          [ex + tx / 2 + dx * W, ez + tz / 2 + dz * W, 0],
+          [ex + tx / 2, ez + tz / 2, 1],
+        ]);
+        // round the corner, where the coast turns away
+        if (sea(gx + tx, gz + tz) && sea(gx + dx + tx, gz + dz + tz)) {
+          const cx = ex + tx / 2;
+          const cz = ez + tz / 2;
+          quad([
+            [cx, cz, 1],
+            [cx + dx * W, cz + dz * W, 0],
+            [cx + (dx + tx) * W * 0.7, cz + (dz + tz) * W * 0.7, 0],
+            [cx + tx * W, cz + tz * W, 0],
+          ]);
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    const foam = new THREE.Mesh(geo, foamMat);
+    foam.renderOrder = 1; // over the sea
+    root.add(foam);
+  }
 
   // ---------- Felling trees ----------
   const moving = new Set(); // trees in the middle of shaking, falling or growing
