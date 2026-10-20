@@ -27,6 +27,12 @@ addEventListener('pointerdown', (e) => e.pointerType === 'touch' && !isTouch() &
 small.addEventListener('change', fit);
 fit();
 
+// Safari on iOS ignores user-scalable=no: two fingers anywhere (the game's own
+// pinch zooms the camera) zoomed the whole page instead, and left it stuck
+// there. Its gesture events are what start that zoom.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend'])
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+
 const STICK_RADIUS = 46; // px the knob travels from the middle
 const DEAD_ZONE = 0.18;
 

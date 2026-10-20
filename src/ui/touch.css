@@ -21,7 +21,7 @@
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   -webkit-text-size-adjust: 100%;
-  touch-action: manipulation;
+  touch-action: pan-x pan-y; /* (menus still scroll; no pinch or double-tap zoom) */
 }
 /* Upright: a toolbar of 6 × 2 big slots, with the stick and the buttons above it */
 @media (orientation: portrait) {
