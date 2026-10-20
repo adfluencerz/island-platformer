@@ -1,5 +1,6 @@
-// Where the lobbies are kept between runs of the server: one JSON file
-// (data/lobbies.json unless GAME_DATA says otherwise), written whole.
+// One JSON file the server keeps between runs, written whole: the lobbies
+// (data/lobbies.json unless GAME_DATA says otherwise), and each farm
+// (data/farms/<id>.json, see server/farms.js).
 //
 // A write goes to a .tmp file first; then the last good file becomes the .bak
 // and the .tmp takes its place, so a crash halfway never leaves half a file
@@ -17,7 +18,7 @@ export class Store {
     this.failing = false; // (a write that fails is said once, not every few seconds)
   }
 
-  // the saved lobbies, or null for none
+  // what was saved, or null for nothing
   load() {
     for (const file of [this.path, `${this.path}.bak`]) {
       let text;
@@ -36,6 +37,7 @@ export class Store {
     return null;
   }
 
+  // (true: it is on disk)
   save(data) {
     const tmp = `${this.path}.tmp`;
     try {
@@ -44,9 +46,11 @@ export class Store {
       if (existsSync(this.path)) renameSync(this.path, `${this.path}.bak`);
       renameSync(tmp, this.path);
       this.failing = false;
+      return true;
     } catch (e) {
-      if (!this.failing) this.log(`could not save the lobbies to ${this.path}: ${e.message}`);
+      if (!this.failing) this.log(`could not save ${this.path}: ${e.message}`);
       this.failing = true;
+      return false;
     }
   }
 
@@ -57,7 +61,7 @@ export class Store {
     for (let n = 2; existsSync(to); n++) to = `${stem}-${n}${ext}`; // (never over an earlier one)
     try {
       renameSync(file, to);
-      this.log(`lobby save ${file} is ${why}: set aside as ${to}`);
+      this.log(`${file} is ${why}: set aside as ${to}`);
     } catch {}
   }
 }

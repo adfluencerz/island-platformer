@@ -9,6 +9,7 @@ import WebSocket from 'ws';
 import { Room } from '../shared/room.js';
 import { Lobby } from '../server/lobby.js';
 import { Store } from '../server/store.js';
+import { Farms, normalizePairCode } from '../server/farms.js';
 import { C, S } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, woodFor } from '../shared/level.js';
@@ -362,6 +363,69 @@ await test('the store writes atomically and sets aside a file it cannot read', (
   }
 });
 
+console.log('farms');
+const aSave = (gold = 0) => ({ v: 3, farm: null, backpack: { slots: [], gold, selected: 0 } });
+const bearer = ({ id, token }) => `Bearer ${id}.${token}`;
+
+await test('a farm is made from a save, kept on disk with only its token\'s hash, and read back', () => {
+  const dir = mkdtempSync(joinPath(tmpdir(), 'farms-'));
+  try {
+    const farms = new Farms({ dir, log: () => {} });
+    const made = farms.create(aSave(5), 'session-one');
+    assert.match(made.id, /^[a-f0-9]{16}$/);
+    assert.equal(made.rev, 1);
+    const text = readFileSync(joinPath(dir, `${made.id}.json`), 'utf8');
+    assert.ok(!text.includes(made.token), 'the token itself is not kept');
+    const again = new Farms({ dir, log: () => {} }); // (after a restart)
+    const farm = again.auth(bearer(made));
+    assert.equal(farm?.save.backpack.gold, 5);
+    assert.equal(again.auth(bearer({ id: made.id, token: 'not-the-token-at-all' })), null);
+    assert.equal(again.auth(`Bearer ../../etc.${made.token}`), null);
+    assert.equal(again.auth(undefined), null);
+    assert.equal(farms.create({ v: 'x' }, 'session-one').status, 400, 'not a save');
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+await test('the device that opened the farm last holds it', () => {
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create(aSave(1), 'laptop-page');
+  const farm = farms.auth(bearer(made));
+  assert.equal(farms.put(farm, 'laptop-page', aSave(2)).rev, 2);
+  // the phone opens it: it gets what the laptop saved, and holds it now
+  assert.deepEqual(farms.open(farm, 'phone-page'), { save: aSave(2), rev: 2 });
+  assert.equal(farms.put(farm, 'laptop-page', aSave(99)).status, 409, 'the laptop\'s tab is too late');
+  assert.equal(farms.put(farm, 'phone-page', aSave(3)).rev, 3);
+  assert.equal(farm.save.backpack.gold, 3);
+});
+
+await test('a pairing code gives another device a token of its own, once, for a while', () => {
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create(aSave(7), 'p1');
+  const farm = farms.auth(bearer(made));
+  const { code, expiresIn } = farms.pair(farm);
+  assert.equal(code.length, 6);
+  assert.equal(expiresIn, 600);
+  assert.equal(normalizePairCode(` ${code.slice(0, 3).toLowerCase()}-${code.slice(3)} `), code);
+  const phone = farms.claim(`${code.slice(0, 3)}-${code.slice(3)}`);
+  assert.equal(phone.id, made.id);
+  assert.notEqual(phone.token, made.token);
+  assert.equal(farms.auth(bearer(phone)), farm);
+  assert.equal(farms.auth(bearer(made)), farm, 'the first device still has it');
+  assert.equal(farms.claim(code).status, 404, 'only once');
+  const late = farms.pair(farm).code;
+  farms.pairs.get(late).until = Date.now() - 1;
+  assert.equal(farms.claim(late).status, 404, 'not after it ran out');
+  const first = farms.pair(farm).code;
+  const second = farms.pair(farm).code;
+  assert.equal(farms.claim(first).status, 404, 'a new code undoes the last');
+  assert.equal(farms.claim(second).id, made.id);
+  // guessing is slowed down
+  const tries = Array.from({ length: 8 }, () => farms.claim('ZZZZZZ', '10.0.0.9').status);
+  assert.ok(tries.includes(429));
+});
+
 // ---------- The server, over sockets ----------
 console.log('server');
 const PORT = 3900 + Math.floor(Math.random() * 90);
@@ -457,6 +521,28 @@ try {
     q.ws.close(1000);
     const bad = client('ABCDEF');
     assert.equal(await bad.closed, CLOSE.NO_GAME);
+  });
+
+  await test('farms over HTTP: make, open, save, pair; another device\'s page is turned down', async () => {
+    const call = (method, path, { body = {}, auth, session = 'page-aaaaaaaa', type = 'application/json' } = {}) =>
+      fetch(`${base}${path}`, {
+        method,
+        headers: { 'content-type': type, 'x-farm-session': session, ...(auth && { authorization: bearer(auth) }) },
+        body: method === 'GET' ? undefined : JSON.stringify(body),
+      }).then(async (r) => ({ status: r.status, body: await r.json() }));
+    const made = (await call('POST', '/api/farms', { body: { save: aSave(4) } })).body;
+    assert.equal(made.rev, 1);
+    assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(5) }, auth: made })).body.rev, 2);
+    const { code } = (await call('POST', '/api/farms/me/pair', { auth: made })).body;
+    const phone = (await call('POST', '/api/farms/pair', { body: { code }, session: 'page-bbbbbbbb' })).body;
+    const opened = await call('POST', '/api/farms/me/open', { auth: phone, session: 'page-bbbbbbbb' });
+    assert.deepEqual(opened.body, { save: aSave(5), rev: 2 });
+    assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(6) }, auth: made })).status, 409);
+    assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(6) }, auth: { id: made.id, token: 'wrong-token-here' } })).status, 401);
+    assert.equal((await call('POST', '/api/farms', { body: { save: aSave() }, type: 'text/plain' })).status, 415);
+    assert.equal((await call('POST', '/api/farms', { body: { save: aSave() }, session: '' })).status, 400);
+    assert.equal((await call('POST', '/api/farms', { body: { save: { v: 3, junk: 'x'.repeat(70_000) } } })).status, 413);
+    assert.equal((await call('GET', '/api/farms/me', { auth: made })).status, 404);
   });
 
   await test('a restart keeps the lobbies: the same island, what was taken, the seat', async () => {

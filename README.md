@@ -35,11 +35,18 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `I` — backpack
 - `L` — visit a lobby (from home)
 - `Enter` — chat (in a lobby)
-- `Esc` — menu (copy the invite link, head home, controls)
+- `Esc` — menu (copy the invite link, head home, play on another device, controls)
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
 
 ## Your farm and online lobbies
-**Your farm** is yours alone and lives in your browser: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing. Each address the game is opened at is a browser of its own here: `localhost:5173`, your network address and `localhost:3001` (after `npm start`) each have their own farm. A save the page can't read is kept aside as `tp.save.broken`, an older one is kept as `tp.save.v<N>` when it's brought up to date, and a save from a newer version of the game is left alone (nothing is saved until you reload with that version).
+**Your farm** is yours alone: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing. The page plays from a copy in your browser and keeps the game server's copy up to date (every 15 seconds, before you set off for a lobby, and when you close the page), so there are no accounts and you can still carry on from another device:
+
+- On the device that has your farm, open the menu (`Esc`) and pick **Play on another device**: you get a code like `K7P-4QM`, good once, for 10 minutes.
+- On the other device, type it under **Your farm from another device** on the title screen. That browser now plays your farm (the farm it had is kept aside as `tp.save.replaced`), and both devices keep it from then on.
+- The device that opened the farm last is the one playing it. A tab left open on another device is told so the next time it saves, and stops saving: reload it to carry on there.
+- A farm played before the server kept farms is taken up as it is the first time the page reaches the server.
+
+Without the game server (`npm run dev:client`) the farm stays in the browser until the page next reaches it. A save the page can't read is kept aside as `tp.save.broken`, an older one is kept as `tp.save.v<N>` when it's brought up to date, and a save from a newer version of the game is left alone (nothing is saved until you reload with that version).
 
 **The merchant** keeps a stall just east of the plaza on your farm. Walk up to the counter and press `E` to trade: buy turnip, carrot, flax and sunflower seeds (click: one, `Shift`+click: five), and sell your crops, forage, gems and spare seeds from your backpack (click: the whole stack, right click: one). Tools and the old key aren't for sale. Prices are `price` (buy) and `sell` on each item in `src/items.js`; the item tooltips show what the merchant pays.
 
@@ -71,7 +78,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - Trees are grown on each page from the seed (the same on every page), so the lobby only keeps which ones are down, by their number. The page says which tree it felled and where it stands; the lobby checks you are next to that spot, that the tree is still up and that you aren't felling trees faster than an axe can (`TREE` in `shared/level.js` has the swings, wood and regrow times).
 - Other players are drawn from the lobby's 20 Hz snapshots, 100 ms in the past and interpolated between them, so they move smoothly through network jitter (`src/remotes.js`).
 - Messages are small JSON objects; `shared/protocol.js` lists them all.
-- The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm.
+- The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm. With one, the server keeps a copy of each farm in `data/farms/<id>.json` (`server/farms.js`, `src/net/farm.js`). A farm is known by its id, and each device has a token of its own for it (the server keeps only their hashes); the save is the page's, kept as it's sent. Accounts, later, can point at a farm id, so farms stay where they are.
 
 The lobby system follows [Survive the Night](https://github.com/webdevcody/survive-the-night-fps)'s (codes, quick join, invite links, held seats on rejoin, idle shutdown), without the survival.
 
@@ -92,7 +99,8 @@ threejs-platformer/
 │   ├── remotes.js       # other players: interpolation, name tags
 │   ├── net/
 │   │   ├── connection.js  # WebSocket to a lobby
-│   │   └── lobby.js       # the lobbies' HTTP API, invite links
+│   │   ├── lobby.js       # the lobbies' HTTP API, invite links
+│   │   └── farm.js        # the farm's copy on the server, pairing codes
 │   └── ui/              # title screen (splash.js), in-game HUD (hud.js), styles
 ├── shared/              # runs on both the server and the client
 │   ├── room.js          # one lobby: players, resource spots
@@ -103,7 +111,8 @@ threejs-platformer/
 ├── server/
 │   ├── index.js         # HTTP API + WebSocket + built client, one port
 │   ├── lobby.js         # lobbies by code, quick join, dormant lobbies, saving them
-│   └── store.js         # the lobbies' save file (data/lobbies.json)
+│   ├── farms.js         # farms kept for their devices, pairing codes
+│   └── store.js         # a save file written safely (the lobbies, each farm)
 ├── scripts/
 │   ├── dev.js           # npm run dev: game server + Vite
 │   ├── island.js        # npm run island: draw a seed's island in the terminal

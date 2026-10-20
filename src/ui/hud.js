@@ -4,7 +4,7 @@
 // - the prompt over the toolbar (E  Pick berries)
 // - a big word for a rare find
 // - chat (bottom right, lobbies only): Enter to talk
-// - the pause menu (Esc)
+// - the pause menu (Esc), with a pairing code to play the farm on another device
 import { inviteLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 
@@ -17,9 +17,10 @@ const CHAT_LINES = 40;
 
 export class Hud {
   // onTravel(): open the lobby board. onHome(): leave the lobby for the farm.
+  // onPair(): a pairing code for another device, { code, expiresIn } (src/net/farm.js).
   // isBlocked(): another screen (the backpack, the lobby board) has the keyboard.
-  constructor({ onTravel, onHome, onChat, isBlocked }) {
-    Object.assign(this, { onTravel, onHome, onChat, isBlocked });
+  constructor({ onTravel, onHome, onChat, onPair, isBlocked }) {
+    Object.assign(this, { onTravel, onHome, onChat, onPair, isBlocked });
     this.place = null; // 'home' | 'lobby' | null (the title screen)
     this.session = null;
     this.myId = 0;
@@ -81,6 +82,9 @@ export class Hud {
       this.setPaused(false);
       this.onHome();
     });
+    button('ui-btn', card, 'Play on another device', () => this.showPairCode());
+    this.pairBox = el('div', 'ui-pair', card);
+    this.pairBox.hidden = true;
     el('div', 'ui-help', card, CONTROLS);
 
     // Capture phase: runs before the inventory's and the game's own key handlers
@@ -206,6 +210,22 @@ export class Hud {
 
   setPaused(on) {
     this.pause.hidden = !on;
+    if (!on) this.pairBox.hidden = true;
+  }
+
+  async showPairCode() {
+    this.pairBox.hidden = false;
+    this.pairBox.textContent = 'Asking the server for a code…';
+    try {
+      const { code, expiresIn } = await this.onPair();
+      this.pairBox.textContent = '';
+      el('div', 'ui-pair-code', this.pairBox, `${code.slice(0, 3)}-${code.slice(3)}`);
+      el('div', 'ui-muted', this.pairBox,
+        `On your other device, open the game and type this code under “Your farm from another device”. ` +
+        `It works once, for ${Math.round(expiresIn / 60)} minutes. Whichever device opened the farm last is the one that plays it.`);
+    } catch (e) {
+      this.pairBox.textContent = e.message;
+    }
   }
 
   async copyInvite() {

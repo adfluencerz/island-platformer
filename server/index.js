@@ -6,18 +6,28 @@
 //   POST /api/lobbies          open one: { name, seed, inviteOnly, maxPlayers } -> its info
 //   WS   /ws?lobby=CODE        be in that lobby; /ws alone is a quick join
 //
+//   POST /api/farms            a new farm: { save } -> { id, token, rev }
+//   POST /api/farms/me/open    this page holds the farm now -> { save, rev }
+//   PUT  /api/farms/me         { save } -> { rev } (409: it is open on another device)
+//   POST /api/farms/me/pair    a pairing code for another device -> { code, expiresIn }
+//   POST /api/farms/pair       { code } -> { id, token }: this device's own token
+//   (/me: "Authorization: Bearer <id>.<token>", and every farm call names the
+//   page in "X-Farm-Session"; see server/farms.js)
+//
 // In development Vite serves the client and proxies /api and /ws here
 // (vite.config.js); `npm run dev` starts both.
 //
 // The lobbies are kept in data/lobbies.json (GAME_DATA=<file> for another
-// file, GAME_DATA=off for none), so they outlive a restart (server/store.js).
+// file, GAME_DATA=off for none), so they outlive a restart (server/store.js),
+// and the farms beside it, in farms/ (in memory only with GAME_DATA=off).
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize, resolve, sep } from 'node:path';
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Lobby, CODE_RE } from './lobby.js';
 import { Store } from './store.js';
+import { Farms, MAX_SAVE } from './farms.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -29,6 +39,7 @@ const DEV = process.env.GAME_DEV === '1'; // set by `npm run dev`: joining an un
 const DATA = process.env.GAME_DATA || fileURLToPath(new URL('../data/lobbies.json', import.meta.url));
 
 const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)) });
+const farms = new Farms({ dir: DATA === 'off' ? null : join(dirname(resolve(DATA)), 'farms') });
 
 // ---------- HTTP ----------
 const MIME = {
@@ -47,15 +58,19 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function readJson(req) {
+function readJson(req, limit = MAX_BODY) {
   return new Promise((done, fail) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
+        // (the rest is read and dropped, so the answer gets through; then the connection closes)
         fail(new Error('too large'));
-        req.destroy();
+        chunks.length = 0;
+        req.removeAllListeners('data');
+        req.resume();
+        req.on('end', () => req.socket.end());
       } else chunks.push(c);
     });
     req.on('end', () => {
@@ -114,10 +129,41 @@ const server = createServer(async (req, res) => {
     const room = lobby.find(one[1].toUpperCase());
     return room ? json(res, 200, room.info()) : json(res, 404, { error: 'no such lobby' });
   }
+  if (path.startsWith('/api/farms')) return farmApi(req, res, path);
   if (path.startsWith('/api/')) return json(res, 404, { error: 'not found' });
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
   return serveStatic(req, res, path);
 });
+
+// ---------- Farms ----------
+async function farmApi(req, res, path) {
+  const route = `${req.method} ${path}`;
+  const routes = ['POST /api/farms', 'POST /api/farms/me/open', 'PUT /api/farms/me', 'POST /api/farms/me/pair', 'POST /api/farms/pair'];
+  if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
+  // JSON only (as for lobbies), and the page that is asking
+  if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 415, { error: 'JSON only' });
+  const session = String(req.headers['x-farm-session'] ?? '');
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(session)) return json(res, 400, { error: 'bad request' });
+  let body;
+  try {
+    body = await readJson(req, MAX_SAVE + 1024);
+  } catch {
+    return json(res, 413, { error: 'That is too big for a farm.' });
+  }
+  const address = req.socket.remoteAddress;
+  let out;
+  if (route === 'POST /api/farms') out = farms.create(body?.save, session, address);
+  else if (route === 'POST /api/farms/pair') out = farms.claim(body?.code, address);
+  else {
+    const farm = farms.auth(req.headers.authorization);
+    if (!farm) return json(res, 401, { error: 'This device does not have that farm.' });
+    if (route === 'POST /api/farms/me/open') out = farms.open(farm, session);
+    else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save);
+    else out = farms.pair(farm);
+  }
+  if (out.error) return json(res, out.status, { error: out.error });
+  return json(res, 200, out);
+}
 
 // ---------- Game sockets ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 });

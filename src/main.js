@@ -7,6 +7,7 @@ import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
 import { showCodeInAddress } from './net/lobby.js';
+import { FarmSync } from './net/farm.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import './ui/ui.css';
@@ -624,6 +625,7 @@ const hud = new Hud({
   onTravel: () => splash.show({ from: 'home' }),
   onHome: () => goHome(),
   onChat: (text) => net?.send({ t: C.CHAT, text }),
+  onPair: () => farmSync.pairCode(),
   isBlocked: () => inventory.isOpen() || shop.isOpen() || !splash.hidden,
 });
 // (after the HUD: its key handler goes first, see shop.js)
@@ -631,7 +633,7 @@ const shop = createShop({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
 });
-const splash = new Splash({ onPlay: joinLobby, onHome: () => goHome() });
+const splash = new Splash({ onPlay: joinLobby, onHome: () => goHome(), onFarmCode: (code) => bringFarm(code) });
 
 function putDown({ x, y, z }) {
   player.position.set(x, y, z);
@@ -680,6 +682,7 @@ function joinLobby({ name, code }) {
     if (place !== 'lobby') {
       // Off we go: the farm stays at home (saved, and growing while we are out)
       saveGame();
+      farmSync.flush();
       resetFarm();
       farmOnScreen = false;
     } else {
@@ -777,9 +780,13 @@ function sendState(dt) {
 }
 
 // ---------- Saving ----------
-// The home farm is yours alone and lives in this browser: the backpack, the
-// tilled soil, the crops and the time of day. While you are away (in a lobby,
-// or with the page closed) the crops keep growing and the clock keeps turning.
+// The home farm is yours alone: the backpack, the tilled soil, the crops and
+// the time of day. While you are away (in a lobby, or with the page closed)
+// the crops keep growing and the clock keeps turning. The page plays from its
+// own copy in this browser, and keeps the game server's copy up to date
+// (src/net/farm.js), so the farm can be played from another device too: a
+// pairing code from the menu (Esc) brings it over. Whichever device opened
+// the farm last holds it.
 //
 // A save is never written over unseen: one that can't be read is kept aside
 // (tp.save.broken), an older one is kept as it was (tp.save.v<N>) before it
@@ -788,7 +795,13 @@ function sendState(dt) {
 const SAVE_STORE = 'tp.save';
 const SAVE_VERSION = 3; // v2: flax seeds joined the starter kit; v3: the axe
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
-let saving = true; // (false: the save is from a newer version of the game)
+let saving = true; // (false: the save is from a newer version of the game, or the farm is open on another device)
+const farmSync = new FarmSync({
+  onTakenOver: () => {
+    saving = false;
+    hud.setConnStatus('Your farm is open on another device now. Reload the page to carry on here.');
+  },
+});
 
 const keyXZ = (key) => key.split(',').map((n) => Number(n) * TILE_SIZE);
 
@@ -812,12 +825,18 @@ function showFarm(farm) {
   }
 }
 
+function currentSave() {
+  if (farmOnScreen) homeFarm = captureFarm();
+  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize() };
+}
+
 function saveGame() {
   if (!saving) return;
-  if (farmOnScreen) homeFarm = captureFarm();
+  const save = currentSave();
   try {
-    localStorage.setItem(SAVE_STORE, JSON.stringify({ v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize() }));
+    localStorage.setItem(SAVE_STORE, JSON.stringify(save));
   } catch {}
+  farmSync.push(save);
 }
 
 // A gift from the merchant: add() is all-or-nothing, so hand over as many
@@ -833,6 +852,23 @@ function keepAside(name, text) {
   } catch {}
 }
 
+// Play a save: the backpack, and the farm (shown, if it is on screen). An
+// older save gets what joined the kit since; one from a newer version of the
+// game is left alone (false).
+function useSave(save) {
+  if (save.v > SAVE_VERSION) {
+    saving = false;
+    hud.setConnStatus('This farm was saved by a newer version of the game. Reload the page to play it: nothing is saved until then.');
+    return false;
+  }
+  inventory.restore(save.backpack ?? {});
+  homeFarm = save.farm ?? null;
+  if (save.v < 2) gift('flax_seeds', 5);
+  if (save.v < 3) gift('axe', 1);
+  if (farmOnScreen) showFarm(homeFarm);
+  return true;
+}
+
 function loadGame() {
   let text = null;
   let save = null;
@@ -841,22 +877,9 @@ function loadGame() {
     save = JSON.parse(text);
   } catch {}
   if (text && !(save?.v >= 1)) keepAside(`${SAVE_STORE}.broken`, text); // (a fresh farm starts; the old one is kept)
-  if (save?.v > SAVE_VERSION) {
-    saving = false;
-    hud.setConnStatus('This farm was saved by a newer version of the game. Reload the page to play it: nothing is saved until then.');
-  }
-  if (save?.v === SAVE_VERSION) {
-    inventory.restore(save.backpack);
-    homeFarm = save.farm;
-  } else if (save?.v >= 1 && save.v < SAVE_VERSION) {
-    // An older save: keep it as it was, and hand out what joined the kit since then
-    keepAside(`${SAVE_STORE}.v${save.v}`, text);
-    inventory.restore(save.backpack);
-    homeFarm = save.farm;
-    if (save.v < 2) gift('flax_seeds', 5);
-    gift('axe', 1);
-  } else {
-    // A new farmer's starting kit
+  if (save?.v >= 1 && save.v < SAVE_VERSION) keepAside(`${SAVE_STORE}.v${save.v}`, text); // (kept as it was)
+  if (!(save?.v >= 1 && useSave(save))) {
+    // A new farmer's starting kit (or, beside a save from a newer version, one to play this time)
     inventory.add('hoe', 1, { quiet: true });
     inventory.add('axe', 1, { quiet: true });
     inventory.add('turnip_seeds', 10, { quiet: true });
@@ -867,9 +890,47 @@ function loadGame() {
   if (new URLSearchParams(location.search).has('hour')) dayNight.setTime(startHour); // (testing: ?hour=21)
 }
 
+// Then the server's copy: made from this one, or the one to play when the
+// farm was played on another device since
+async function openFarm() {
+  if (!saving) return; // (a save from a newer version: leave every copy alone)
+  const theirs = await farmSync.open(currentSave());
+  if (theirs && useSave(theirs)) saveGame();
+}
+
+// A pairing code from another device: this browser plays that farm from now
+// on. The farm it had is kept aside (tp.save.replaced), then the page starts
+// over, straight onto the farm it brought (ARRIVED says so across the reload).
+const ARRIVED = 'tp.farmArrived';
+async function bringFarm(code) {
+  await farmSync.claim(code);
+  saving = false;
+  try {
+    const text = localStorage.getItem(SAVE_STORE);
+    if (text) keepAside(`${SAVE_STORE}.replaced`, text);
+    sessionStorage.setItem(ARRIVED, '1');
+  } catch {}
+  location.reload();
+}
+
+function broughtFarm() {
+  try {
+    const arrived = sessionStorage.getItem(ARRIVED);
+    sessionStorage.removeItem(ARRIVED);
+    return !!arrived;
+  } catch {
+    return false;
+  }
+}
+
+function leavePage() {
+  saveGame();
+  farmSync.flush({ leaving: true });
+}
+
 setInterval(saveGame, 5000);
-addEventListener('pagehide', saveGame);
-document.addEventListener('visibilitychange', () => document.hidden && saveGame());
+addEventListener('pagehide', leavePage);
+document.addEventListener('visibilitychange', () => document.hidden && leavePage());
 
 // ---------- Game loop ----------
 const clock = new THREE.Clock();
@@ -975,4 +1036,14 @@ if (import.meta.env.DEV) {
 
 loadGame();
 splash.show({ from: 'title' });
+if (broughtFarm()) {
+  splash.setStatus('Fetching your farm…');
+  openFarm().then(() => {
+    if (place !== 'title') return;
+    if (!farmSync.ready) return splash.setStatus('Could not reach the game server to fetch your farm. Reload the page to try again.', true);
+    splash.setStatus('');
+    goHome();
+    hud.flash('Your farm is here!');
+  });
+} else openFarm();
 animate();

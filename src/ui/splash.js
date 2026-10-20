@@ -2,7 +2,8 @@
 // way to your farm, and the online lobbies - Quick join (the fullest public
 // lobby with room, or a new one), Browse, Open a lobby, or Join with a code. A
 // page opened from an invite link (?lobby=CODE) shows that lobby's
-// invitation first.
+// invitation first. And the way to bring your farm over from another device,
+// with a pairing code from that device's menu (src/net/farm.js).
 import { MAX_PLAYERS, MAX_NAME } from '../../shared/constants.js';
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
 import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode } from '../net/lobby.js';
@@ -22,9 +23,11 @@ function storedName() {
 
 export class Splash {
   // onPlay({ name, code }): visit a lobby ('' code: quick join). onHome(): go to the farm.
-  constructor({ onPlay, onHome }) {
+  // onFarmCode(code): play the farm of another device here (a promise; it fails with why).
+  constructor({ onPlay, onHome, onFarmCode }) {
     this.onPlay = onPlay;
     this.onHome = onHome;
+    this.onFarmCode = onFarmCode;
     const root = (this.root = el('div', 'ui-splash', document.body));
     const card = el('div', 'ui-card inv-frame', root);
     const titleRow = el('div', 'ui-title-row', card);
@@ -69,6 +72,20 @@ export class Splash {
       const code = normalizeCode(this.codeInput.value);
       if (!code) return this.setStatus('A lobby code is 6 or 10 letters and digits.', true);
       this.play(code);
+    });
+
+    // ---- your farm, from another device ----
+    el('h2', 'ui-section', this.menu, 'Your farm from another device');
+    el('div', 'ui-muted', this.menu, 'Get a code from the menu (Esc) on the device that has your farm.');
+    const pairRow = el('form', 'ui-row ui-code-row', this.menu);
+    this.pairInput = el('input', 'ui-input', pairRow);
+    this.pairInput.placeholder = 'Farm code';
+    this.pairInput.maxLength = 8;
+    this.pairInput.autocomplete = 'off';
+    button('ui-btn', pairRow, 'Bring it here', null).type = 'submit';
+    pairRow.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.bringFarm();
     });
 
     // ---- Browse ----
@@ -169,6 +186,18 @@ export class Splash {
 
   play(code) {
     this.onPlay({ name: this.name(), code });
+  }
+
+  async bringFarm() {
+    const code = this.pairInput.value.trim();
+    if (!code) return this.setStatus('Open the menu (Esc) on your other device and pick “Play on another device” for a code.', true);
+    if (!confirm('Play the farm from your other device here? The farm in this browser is put aside.')) return;
+    this.setStatus('Fetching your farm…');
+    try {
+      await this.onFarmCode(code);
+    } catch (e) {
+      this.setStatus(e.message, true);
+    }
   }
 
   async showInvite(code) {
