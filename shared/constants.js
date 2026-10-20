@@ -10,6 +10,9 @@ export const INTERP_DELAY = 0.1; // seconds remote players are drawn in the past
 // A full day on the game clock lasts this many real seconds (src/daynight.js
 // draws it; a farm with helpers keeps its clock on the server)
 export const DAY_LENGTH_SECONDS = 360;
+// Tilled soil left bare (nothing planted in it) goes back to grass after
+// somewhere between this many game hours: each tile rolls its own
+export const SOIL_BARE_HOURS = [1.5, 2.5];
 
 export const MAX_PLAYERS = 8;
 export const MAX_NAME = 16;

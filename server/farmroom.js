@@ -21,14 +21,14 @@
 // it next has them (src/animals.js restore()).
 //
 // The farm is kept in the farm's own file, in the page's save format (the
-// save's `farm`: { savedAt, hours, tilled, crops: [[key, crop, age]], felled
+// save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age]], felled
 // and mined: [[tree or rock id, when it comes back (ms)]], ...the animals }), so the owner's page can always play it, alone, from there; the
 // chest beside the save (farm.chest), where no page's save can write over it.
 // Each time the room writes the farm, farm.roomRev goes up: a page that
 // played the farm alone, offline, meanwhile knows its farm is out of date.
 import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
-import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME } from '../shared/constants.js';
+import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, TREE, ROCK, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
@@ -39,6 +39,7 @@ const MAX_STACK = 999; // of one item in the chest
 const MAX_KINDS = 64; // different items in the chest
 const MAX_ANIMALS = 16 * 1024; // bytes of the animals' state
 const CLOCK_EVERY = 10_000; // ms between FARM_CLOCKs
+const SOIL_EVERY = 1000; // ms between looks at the bare soil
 // (as in a lobby: shared/room.js)
 const CHOP_REACH = 2.6;
 const CHOP_EVERY = 1000; // ms
@@ -63,7 +64,18 @@ export class FarmRoom extends Place {
     const away = Number.isFinite(saved?.savedAt) ? Math.max(0, now - saved.savedAt) / 1000 : 0;
     this.clockBase = savedHours + away / SECONDS_PER_HOUR;
     this.clockAt = now;
-    this.tilled = new Set((saved?.tilled ?? []).filter((key) => KEY_RE.test(key)));
+    // key -> { since: when it has lain bare from (game hours; it only counts
+    // with nothing growing), life: how long it may (game hours) }
+    // (a save from before soil went back to grass has just the keys)
+    this.tilled = new Map();
+    for (const t of saved?.tilled ?? []) {
+      const [key, bare, life] = Array.isArray(t) ? t : [t];
+      if (!KEY_RE.test(key)) continue;
+      this.tilled.set(key, {
+        since: savedHours - (Number.isFinite(bare) ? bare : 0) / SECONDS_PER_HOUR,
+        life: Number.isFinite(life) ? life / SECONDS_PER_HOUR : this.soilLife(),
+      });
+    }
     this.crops = new Map(); // key -> { crop, plantedAt (game hours) }
     for (const [key, crop, age] of saved?.crops ?? []) {
       if (this.tilled.has(key) && CROP_GROW_TIME[crop] && Number.isFinite(age)) {
@@ -79,6 +91,7 @@ export class FarmRoom extends Place {
     this.chest = { ...(farm.chest ?? {}) };
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
     this.clockSentAt = now;
+    this.soilAt = now;
   }
 
   // the farm's clock now, in game hours
@@ -118,7 +131,7 @@ export class FarmRoom extends Place {
       color: p.color,
       farm: { id: this.farmId, name: this.name, owner: this.ownerName },
       mine: p.owner,
-      tilled: [...this.tilled],
+      tilled: this.tilledList(this.hours()),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
       felled: [...this.felled],
       mined: [...this.mined],
@@ -153,7 +166,7 @@ export class FarmRoom extends Place {
       case C.TILL: {
         const { key } = msg;
         if (!onFarm(key) || this.tilled.has(key) || !this.near(p, key)) return this.deny(p, 'till', key);
-        this.tilled.add(key);
+        this.tilled.set(key, { since: this.hours(), life: this.soilLife() });
         this.changed = true;
         this.broadcast({ t: S.TILLED, key, by: p.id });
         break;
@@ -180,6 +193,7 @@ export class FarmRoom extends Place {
           return this.deny(p, 'harvest', key);
         }
         this.crops.delete(key);
+        this.tilled.set(key, { since: this.hours(), life: this.soilLife() }); // (bare again from now)
         this.store(item, 1);
         this.changed = true;
         this.broadcast({ t: S.HARVESTED, key, by: p.id, item });
@@ -266,6 +280,21 @@ export class FarmRoom extends Place {
     this.send(p, { t: S.FARM_DENY, op, key: typeof key === 'string' ? key.slice(0, 16) : '', crop });
   }
 
+  // [[key, game seconds it has lain bare (none, with something growing), how long it may]]
+  tilledList(hours) {
+    return [...this.tilled].map(([key, { since, life }]) => [
+      key,
+      this.crops.has(key) ? 0 : round3(Math.max(0, hours - since) * SECONDS_PER_HOUR),
+      round3(life * SECONDS_PER_HOUR),
+    ]);
+  }
+
+  // how long a tile may lie bare, in game hours
+  soilLife() {
+    const [lo, hi] = SOIL_BARE_HOURS;
+    return lo + this.rand() * (hi - lo);
+  }
+
   canStore(item, count) {
     const have = this.chest[item] ?? 0;
     return have + count <= MAX_STACK && (have > 0 || Object.keys(this.chest).length < MAX_KINDS);
@@ -285,6 +314,16 @@ export class FarmRoom extends Place {
         this.broadcast({ t, id });
       }
     }
+    if (now - this.soilAt >= SOIL_EVERY) {
+      this.soilAt = now;
+      const hours = this.hours(now);
+      for (const [key, { since, life }] of this.tilled) {
+        if (this.crops.has(key) || hours - since < life) continue;
+        this.tilled.delete(key);
+        this.changed = true;
+        this.broadcast({ t: S.UNTILLED, key });
+      }
+    }
     if (now - this.clockSentAt < CLOCK_EVERY) return;
     this.clockSentAt = now;
     if (this.connected()) this.broadcast({ t: S.FARM_CLOCK, hours: round3(this.hours(now)) });
@@ -298,7 +337,7 @@ export class FarmRoom extends Place {
       ...this.animals,
       savedAt: now,
       hours,
-      tilled: [...this.tilled],
+      tilled: this.tilledList(hours),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3((hours - c.plantedAt) * SECONDS_PER_HOUR)]),
       felled: [...this.felled],
       mined: [...this.mined],

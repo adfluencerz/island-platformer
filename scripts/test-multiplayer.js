@@ -590,7 +590,7 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.equal(ann.conn.last(S.FARM).mine, true);
   const welcome = bo.conn.last(S.FARM);
   assert.equal(welcome.mine, false);
-  assert.deepEqual(welcome.tilled, ['3,3']);
+  assert.deepEqual(welcome.tilled.map(([key]) => key), ['3,3']);
   assert.deepEqual(welcome.animals.hens, [[0, 1, 2, 9]]);
   assert.ok(welcome.hours >= 8);
   // Bo stands by 4,3: tills it, plants a turnip; too far for 9,9
@@ -650,13 +650,13 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.tickPlace(Math.max(felled.at, mined.at) + 1);
   assert.deepEqual([bo.conn.last(S.REGROWN)?.id, bo.conn.last(S.RESURFACED)?.id], [7, 3]);
   assert.equal(room.felled.size + room.mined.size, 0);
-  assert.deepEqual(a.save.farm.tilled.sort(), ['3,3', '4,3']);
+  assert.deepEqual(a.save.farm.tilled.map(([key]) => key).sort(), ['3,3', '4,3']);
   assert.deepEqual(a.save.farm.hens, [[1, 1, 1, 1]]);
   assert.deepEqual(a.chest, { turnip: 1, flax: 1 });
   assert.equal(a.roomRev, 1);
   // a save from a page that didn't have that farm keeps the room's farm, but its backpack counts
   farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: { gold: 77 } }, { live: false, roomRev: 0 });
-  assert.deepEqual(a.save.farm.tilled.sort(), ['3,3', '4,3']);
+  assert.deepEqual(a.save.farm.tilled.map(([key]) => key).sort(), ['3,3', '4,3']);
   assert.equal(a.save.backpack.gold, 77);
   farms.allowPut = () => true;
   farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: {} }, { live: true, roomRev: 1 });

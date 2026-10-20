@@ -16,7 +16,7 @@ import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { TouchControls } from './ui/touch.js';
 import './ui/ui.css';
-import { TICK_DT, PLAYER_COLORS } from '../shared/constants.js';
+import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
@@ -205,7 +205,10 @@ function letOutAnimal(kind) {
 }
 
 // ---------- Farming: hoe tool + tillable soil ----------
+// (userData.bare: game seconds with nothing growing in it; userData.life: how
+// long it may lie bare before it goes back to grass)
 const farmTiles = new Map(); // "gridX,gridZ" -> tilled tile mesh
+const soilLife = () => ((SOIL_BARE_HOURS[0] + Math.random() * (SOIL_BARE_HOURS[1] - SOIL_BARE_HOURS[0])) * DAY_LENGTH_SECONDS) / 24;
 
 // Tilled soil: a dark bed with three furrows ridged across it
 const soilBedGeo = new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.06, TILE_SIZE * 0.92);
@@ -215,7 +218,8 @@ const soilRidgeGeo = new THREE.CylinderGeometry(0.075, 0.075, TILE_SIZE * 0.84, 
 const soilMat = new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 });
 const soilRidgeMat = new THREE.MeshStandardMaterial({ color: 0x6e4826, roughness: 1, flatShading: true });
 
-function tillTileAt(x, z) {
+// bare: game seconds it has lain bare already, life: how long it may (soil tilled before we came)
+function tillTileAt(x, z, bare = 0, life = soilLife()) {
   const key = tileKeyFor(x, z);
   if (farmTiles.has(key)) return false; // already tilled
 
@@ -223,6 +227,8 @@ function tillTileAt(x, z) {
   const mesh = new THREE.Mesh(soilBedGeo, soilMat);
   mesh.position.set(gx * TILE_SIZE, 0.03, gz * TILE_SIZE);
   mesh.receiveShadow = true;
+  mesh.userData.bare = bare;
+  mesh.userData.life = life;
   for (const rz of [-0.27, 0, 0.27]) {
     const ridge = new THREE.Mesh(soilRidgeGeo, soilRidgeMat);
     ridge.position.set(0, 0.03, rz * TILE_SIZE);
@@ -249,10 +255,14 @@ function plantAt(x, z, cropId, age = 0) {
   if (cropId === 'sunflower') view.group.rotation.y = 0; // keep the bloom facing the camera
   scene.add(view.group);
   crops.set(key, { cropId, age, view, ripe: false, pop: 0 });
+  const soil = farmTiles.get(key).userData;
+  soil.bare = 0; // (bare again from when it's pulled, for a while of its own)
+  soil.life = soilLife();
   return true;
 }
 
-// A tile the farm's room turned down (a farm with helpers): back to grass
+// Back to grass: a tile the farm's room turned down (a farm with helpers), or
+// soil left bare too long
 function untillTile(key) {
   const mesh = farmTiles.get(key);
   if (!mesh) return;
@@ -303,6 +313,14 @@ function resetFarm() {
 
 // `growDt` is game-clock seconds (growth); `dt` is real seconds (animation)
 function updateCrops(dt, growDt, t) {
+  // Bare soil goes back to grass in a while (on a farm with helpers the room says when: UNTILLED)
+  if (!farmNet) {
+    for (const [key, mesh] of farmTiles) {
+      if (crops.has(key)) continue;
+      mesh.userData.bare += growDt;
+      if (mesh.userData.bare >= mesh.userData.life) untillTile(key);
+    }
+  }
   for (const crop of crops.values()) {
     if (!crop.ripe) {
       crop.age += growDt;
@@ -1320,6 +1338,11 @@ async function joinFarm(id) {
     pendingTills.delete(m.key);
     tillTileAt(...keyXZ(m.key)); // (ours is there already)
   });
+  on(S.UNTILLED, (m) => {
+    pendingTills.delete(m.key);
+    removeCrop(m.key);
+    untillTile(m.key);
+  });
   on(S.PLANTED, (m) => {
     const crop = crops.get(m.key);
     if (crop?.cropId === m.crop) {
@@ -1431,7 +1454,10 @@ const ageAt = (plantedAt) => Math.max(0, ((farmHours() - plantedAt) * DAY_LENGTH
 function showRoomFarm(m) {
   resetFarm();
   dayNight.setTime(m.hours);
-  for (const key of m.tilled) tillTileAt(...keyXZ(key));
+  for (const t of m.tilled) {
+    const [key, bare, life] = Array.isArray(t) ? t : [t, 0];
+    tillTileAt(...keyXZ(key), bare, life);
+  }
   showFarmWilds(m);
   for (const [key, cropId, at] of m.crops) {
     if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
@@ -1613,7 +1639,7 @@ function captureFarm() {
   return {
     savedAt: Date.now(),
     hours: farmHours(),
-    tilled: [...farmTiles.keys()],
+    tilled: [...farmTiles].map(([key, mesh]) => [key, crops.has(key) ? 0 : mesh.userData.bare, mesh.userData.life]),
     crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
     felled: [...farmFelled],
     mined: [...farmMined],
@@ -1627,7 +1653,14 @@ function showFarm(farm) {
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
-  for (const key of farm.tilled) tillTileAt(...keyXZ(key));
+  // (soil left bare while we were away may have gone back to grass; a save
+  // from before it did that has just the keys)
+  const growing = new Set(farm.crops.filter(([, cropId]) => CROPS[cropId]).map(([key]) => key));
+  for (const t of farm.tilled) {
+    const [key, bare, life = soilLife()] = Array.isArray(t) ? t : [t, 0];
+    const bareNow = growing.has(key) ? 0 : (bare || 0) + away;
+    if (bareNow < life) tillTileAt(...keyXZ(key), bareNow, life);
+  }
   showFarmWilds(farm);
   for (const [key, cropId, age] of farm.crops) {
     if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);

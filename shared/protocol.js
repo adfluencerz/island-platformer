@@ -43,8 +43,10 @@ export const S = {
   // on a farm
   FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, felled, mined, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
+  //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may.
   //   chest: { item: count }. hours: the farm's clock, in game hours since it began)
   TILLED: 'tilled', // { key, by }
+  UNTILLED: 'untilled', // { key }: left bare too long (SOIL_BARE_HOURS), back to grass
   PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
   HARVESTED: 'harvested', // { key, by, item }
   FARM_DENY: 'farmDeny', // { op, key, crop }: that did not count (crop: a seed to give back)
