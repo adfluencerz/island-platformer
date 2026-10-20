@@ -11,6 +11,8 @@
 //   PUT  /api/farms/me         { save } -> { rev } (409: it is open on another device)
 //   POST /api/farms/me/pair    a pairing code for another device -> { code, expiresIn }
 //   POST /api/farms/pair       { code } -> { id, token }: this device's own token
+//   PUT  /api/farms/me/recovery  { name, pin } -> { name }: the farm's name and PIN
+//   POST /api/farms/recover    { name, pin } -> { id, token, name }: a farm got back
 //   (/me: "Authorization: Bearer <id>.<token>", and every farm call names the
 //   page in "X-Farm-Session"; see server/farms.js)
 //
@@ -138,7 +140,10 @@ const server = createServer(async (req, res) => {
 // ---------- Farms ----------
 async function farmApi(req, res, path) {
   const route = `${req.method} ${path}`;
-  const routes = ['POST /api/farms', 'POST /api/farms/me/open', 'PUT /api/farms/me', 'POST /api/farms/me/pair', 'POST /api/farms/pair'];
+  const routes = [
+    'POST /api/farms', 'POST /api/farms/me/open', 'PUT /api/farms/me', 'POST /api/farms/me/pair', 'POST /api/farms/pair',
+    'PUT /api/farms/me/recovery', 'POST /api/farms/recover',
+  ];
   if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
   // JSON only (as for lobbies), and the page that is asking
   if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 415, { error: 'JSON only' });
@@ -154,11 +159,13 @@ async function farmApi(req, res, path) {
   let out;
   if (route === 'POST /api/farms') out = farms.create(body?.save, session, address);
   else if (route === 'POST /api/farms/pair') out = farms.claim(body?.code, address);
+  else if (route === 'POST /api/farms/recover') out = await farms.recover(body ?? {}, address);
   else {
     const farm = farms.auth(req.headers.authorization);
     if (!farm) return json(res, 401, { error: 'This device does not have that farm.' });
     if (route === 'POST /api/farms/me/open') out = farms.open(farm, session);
     else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save);
+    else if (route === 'PUT /api/farms/me/recovery') out = await farms.setRecovery(farm, body ?? {});
     else out = farms.pair(farm);
   }
   if (out.error) return json(res, out.status, { error: out.error });

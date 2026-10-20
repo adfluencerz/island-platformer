@@ -10,7 +10,7 @@ import { Room } from '../shared/room.js';
 import { Lobby } from '../server/lobby.js';
 import { Store } from '../server/store.js';
 import { Farms, normalizePairCode } from '../server/farms.js';
-import { C, S } from '../shared/protocol.js';
+import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, woodFor } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32 } from '../shared/worldgen.js';
@@ -394,7 +394,7 @@ await test('the device that opened the farm last holds it', () => {
   const farm = farms.auth(bearer(made));
   assert.equal(farms.put(farm, 'laptop-page', aSave(2)).rev, 2);
   // the phone opens it: it gets what the laptop saved, and holds it now
-  assert.deepEqual(farms.open(farm, 'phone-page'), { save: aSave(2), rev: 2 });
+  assert.deepEqual(farms.open(farm, 'phone-page'), { save: aSave(2), rev: 2, name: '' });
   assert.equal(farms.put(farm, 'laptop-page', aSave(99)).status, 409, 'the laptop\'s tab is too late');
   assert.equal(farms.put(farm, 'phone-page', aSave(3)).rev, 3);
   assert.equal(farm.save.backpack.gold, 3);
@@ -424,6 +424,73 @@ await test('a pairing code gives another device a token of its own, once, for a 
   // guessing is slowed down
   const tries = Array.from({ length: 8 }, () => farms.claim('ZZZZZZ', '10.0.0.9').status);
   assert.ok(tries.includes(429));
+});
+
+await test('a farm\'s name is one of a kind, whatever the capitals and punctuation; easy PINs are refused', async () => {
+  assert.equal(farmNameKey('Sunny Acres!'), farmNameKey('  sunny-ACRES '));
+  assert.equal(farmNameKey('Café Ölmühle'), 'cafe-olmuhle');
+  assert.equal(farmNameKey('a!'), '');
+  for (const easy of ['000000', '123456', '987654', '890123']) assert.ok(pinProblem(easy), easy);
+  assert.ok(pinProblem('12345') && pinProblem('12a456') && pinProblem(undefined));
+  assert.equal(pinProblem('482913'), '');
+
+  const farms = new Farms({ log: () => {} });
+  const a = farms.auth(bearer(farms.create(aSave(1), 'pa')));
+  const b = farms.auth(bearer(farms.create(aSave(2), 'pb')));
+  assert.equal((await farms.setRecovery(a, { name: 'Sunny Acres', pin: '111111' })).status, 400, 'too easy');
+  assert.equal((await farms.setRecovery(a, { name: 'Sunny Acres' })).status, 400, 'a first PIN is needed');
+  assert.equal((await farms.setRecovery(a, { name: '!!', pin: '482913' })).status, 400, 'no name');
+  assert.deepEqual(await farms.setRecovery(a, { name: '  Sunny   Acres ', pin: '482913' }), { name: 'Sunny Acres' });
+  assert.equal((await farms.setRecovery(b, { name: 'sunny-acres!', pin: '271828' })).status, 409, 'taken');
+  // racing for one name: only one gets it
+  const c = farms.auth(bearer(farms.create(aSave(3), 'pc')));
+  const race = await Promise.all([farms.setRecovery(b, { name: 'Moss Hill', pin: '271828' }), farms.setRecovery(c, { name: 'moss hill', pin: '314159' })]);
+  assert.deepEqual(race.map((r) => r.status ?? 200).sort(), [200, 409]);
+  // renaming frees the old name, and an empty PIN keeps the PIN
+  assert.deepEqual(await farms.setRecovery(a, { name: 'Clover Field', pin: '' }), { name: 'Clover Field' });
+  assert.ok(!farms.names.has('sunny-acres'));
+  assert.equal((await farms.recover({ name: 'Clover Field', pin: '482913' })).id, a.id, 'the old PIN still works');
+  assert.equal(JSON.stringify(a).includes('482913'), false, 'the PIN itself is not kept');
+});
+
+await test('a farm comes back with its name and PIN, as a device of its own; wrong PINs lock it a while', async () => {
+  const dir = mkdtempSync(joinPath(tmpdir(), 'farms-'));
+  try {
+    let farms = new Farms({ dir, log: () => {} });
+    const made = farms.create(aSave(9), 'p1');
+    await farms.setRecovery(farms.auth(bearer(made)), { name: 'Turnip Hollow', pin: '505172' });
+    farms = new Farms({ dir, log: () => {} }); // (a restart: the names are gathered again)
+    const back = await farms.recover({ name: 'turnip hollow', pin: '505172' });
+    assert.equal(back.id, made.id);
+    assert.equal(back.name, 'Turnip Hollow');
+    assert.notEqual(back.token, made.token);
+    assert.equal(farms.auth(bearer(back)).save.backpack.gold, 9);
+    assert.equal((await farms.recover({ name: 'Nowhere Farm', pin: '505172' })).status, 403);
+    // five wrong, then even the right PIN waits
+    for (let i = 0; i < 5; i++) assert.equal((await farms.recover({ name: 'Turnip Hollow', pin: '000001' })).status, 403);
+    const locked = await farms.recover({ name: 'Turnip Hollow', pin: '505172' });
+    assert.equal(locked.status, 429);
+    assert.match(locked.error, /15 minutes/);
+    // still locked after a restart; the next lock is longer
+    farms = new Farms({ dir, log: () => {} });
+    const farm = farms.get(made.id);
+    assert.equal((await farms.recover({ name: 'Turnip Hollow', pin: '505172' })).status, 429);
+    farm.lockedUntil = 0;
+    for (let i = 0; i < 5; i++) await farms.recover({ name: 'Turnip Hollow', pin: '000001' });
+    assert.match((await farms.recover({ name: 'Turnip Hollow', pin: '505172' })).error, /30 minutes/);
+    // guesses sent all at once don't slip past the lock
+    farm.lockedUntil = 0;
+    farm.pinFails = 0;
+    const burst = await Promise.all(Array.from({ length: 40 }, (_, i) => farms.recover({ name: 'Turnip Hollow', pin: String(600000 + i) })));
+    assert.equal(burst.filter((r) => r.status === 403).length, 5, 'only five were checked');
+    // from one address, tries are limited too
+    farm.lockedUntil = 0;
+    const tries = [];
+    for (let i = 0; i < 12; i++) tries.push((await farms.recover({ name: 'Nowhere Farm', pin: '505172' }, '10.0.0.7')).status);
+    assert.ok(tries.includes(429));
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });
 
 // ---------- The server, over sockets ----------
@@ -536,13 +603,19 @@ try {
     const { code } = (await call('POST', '/api/farms/me/pair', { auth: made })).body;
     const phone = (await call('POST', '/api/farms/pair', { body: { code }, session: 'page-bbbbbbbb' })).body;
     const opened = await call('POST', '/api/farms/me/open', { auth: phone, session: 'page-bbbbbbbb' });
-    assert.deepEqual(opened.body, { save: aSave(5), rev: 2 });
+    assert.deepEqual(opened.body, { save: aSave(5), rev: 2, name: '' });
     assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(6) }, auth: made })).status, 409);
     assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(6) }, auth: { id: made.id, token: 'wrong-token-here' } })).status, 401);
     assert.equal((await call('POST', '/api/farms', { body: { save: aSave() }, type: 'text/plain' })).status, 415);
     assert.equal((await call('POST', '/api/farms', { body: { save: aSave() }, session: '' })).status, 400);
     assert.equal((await call('POST', '/api/farms', { body: { save: { v: 3, junk: 'x'.repeat(70_000) } } })).status, 413);
     assert.equal((await call('GET', '/api/farms/me', { auth: made })).status, 404);
+    // a name and PIN, then the farm back on a device with nothing
+    assert.deepEqual((await call('PUT', '/api/farms/me/recovery', { body: { name: 'Http Meadow', pin: '820417' }, auth: phone, session: 'page-bbbbbbbb' })).body, { name: 'Http Meadow' });
+    const lost = await call('POST', '/api/farms/recover', { body: { name: 'http meadow', pin: '820417' }, session: 'page-cccccccc' });
+    assert.equal(lost.body.id, made.id);
+    assert.equal((await call('POST', '/api/farms/me/open', { auth: lost.body, session: 'page-cccccccc' })).body.name, 'Http Meadow');
+    assert.equal((await call('POST', '/api/farms/recover', { body: 7, session: 'page-cccccccc' })).status, 403);
   });
 
   await test('a restart keeps the lobbies: the same island, what was taken, the seat', async () => {

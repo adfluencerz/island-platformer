@@ -105,7 +105,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 }
 .ui-tagline { text-align: center; font-size: 21px; margin-bottom: 4px; }
 .ui-section { margin: 6px 0 0; font-size: 25px; }
-.ui-menu, .ui-browse, .ui-create, .ui-invite { display: flex; flex-direction: column; gap: 8px; }
+.ui-menu, .ui-browse, .ui-create, .ui-invite, .ui-recovery { display: flex; flex-direction: column; gap: 8px; }
 .ui-code-row .ui-input { flex: 2; text-transform: uppercase; letter-spacing: 0.1em; }
 .ui-invite { padding: 10px; border-radius: 4px; background: var(--inv-slot-bg); }
 .ui-invite-title { font-size: 27px; font-weight: 700; }

@@ -10,6 +10,8 @@ export const INTERP_DELAY = 0.1; // seconds remote players are drawn in the past
 export const MAX_PLAYERS = 8;
 export const MAX_NAME = 16;
 export const MAX_CHAT = 160;
+export const MAX_FARM_NAME = 24;
+export const PIN_LENGTH = 6;
 
 // A dropped player's seat (and what they found) is kept this long so a reload or a
 // flaky connection puts them back where they were.

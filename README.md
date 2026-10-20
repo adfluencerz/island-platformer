@@ -35,7 +35,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `I` — backpack
 - `L` — visit a lobby (from home)
 - `Enter` — chat (in a lobby)
-- `Esc` — menu (copy the invite link, head home, play on another device, controls)
+- `Esc` — menu (copy the invite link, head home, play on another device, farm name & PIN, controls)
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
 
 ## Your farm and online lobbies
@@ -43,6 +43,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 
 - On the device that has your farm, open the menu (`Esc`) and pick **Play on another device**: you get a code like `K7P-4QM`, good once, for 10 minutes.
 - On the other device, type it under **Your farm from another device** on the title screen. That browser now plays your farm (the farm it had is kept aside as `tp.save.replaced`), and both devices keep it from then on.
+- **No other device to ask** (a cleared browser, a lost phone)? Give your farm a **name and a 6-digit PIN** in the menu (`Esc`, **Farm name & PIN**) while you still have it. Then on any device, pick **No other device? Use your farm's name and PIN** on the title screen. A farm name is one of a kind on the server ("Sunny Acres" and "sunny-acres" are the same farm), so names are no secret: the PIN is. Easy PINs (`111111`, `123456`) are refused, and five wrong PINs in a row lock that farm's recovery for 15 minutes, twice as long each time after (up to a day), from wherever the tries come.
 - The device that opened the farm last is the one playing it. A tab left open on another device is told so the next time it saves, and stops saving: reload it to carry on there.
 - A farm played before the server kept farms is taken up as it is the first time the page reaches the server.
 
@@ -78,7 +79,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - Trees are grown on each page from the seed (the same on every page), so the lobby only keeps which ones are down, by their number. The page says which tree it felled and where it stands; the lobby checks you are next to that spot, that the tree is still up and that you aren't felling trees faster than an axe can (`TREE` in `shared/level.js` has the swings, wood and regrow times).
 - Other players are drawn from the lobby's 20 Hz snapshots, 100 ms in the past and interpolated between them, so they move smoothly through network jitter (`src/remotes.js`).
 - Messages are small JSON objects; `shared/protocol.js` lists them all.
-- The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm. With one, the server keeps a copy of each farm in `data/farms/<id>.json` (`server/farms.js`, `src/net/farm.js`). A farm is known by its id, and each device has a token of its own for it (the server keeps only their hashes); the save is the page's, kept as it's sent. Accounts, later, can point at a farm id, so farms stay where they are.
+- The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm. With one, the server keeps a copy of each farm in `data/farms/<id>.json` (`server/farms.js`, `src/net/farm.js`). A farm is known by its id, and each device has a token of its own for it (the server keeps only their hashes, and the PIN only as a scrypt hash); the save is the page's, kept as it's sent. The farm-name index is gathered from the farm files when the server starts. Accounts, later, can point at a farm id, so farms stay where they are.
 
 The lobby system follows [Survive the Night](https://github.com/webdevcody/survive-the-night-fps)'s (codes, quick join, invite links, held seats on rejoin, idle shutdown), without the survival.
 

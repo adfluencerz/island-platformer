@@ -1,5 +1,6 @@
 // Messages between a client and its lobby. Every message is a JSON object
 // whose `t` field is one of these; the comments list the other fields.
+import { PIN_LENGTH } from './constants.js';
 
 // client -> lobby
 export const C = {
@@ -43,3 +44,23 @@ export function cleanText(s, max) {
 }
 
 export const finite = (...xs) => xs.every((x) => typeof x === 'number' && Number.isFinite(x));
+
+// ---------- Farm names and PINs (server/farms.js: getting a farm back) ----------
+// A farm's name is how it is found again, so it is one of a kind on a server,
+// whatever the capitals, accents or punctuation: "Sunny Acres!" and
+// "sunny-acres" are the same farm. '' for a name too short to be one.
+export function farmNameKey(name) {
+  const key = String(name ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+  return key.length >= 3 ? key : '';
+}
+
+// Why this PIN won't do, or '' when it will: PIN_LENGTH digits, and not one
+// that is tried first (all the same, or counting up or down)
+export function pinProblem(pin, length = PIN_LENGTH) {
+  if (!new RegExp(`^\\d{${length}}$`).test(String(pin ?? ''))) return `A PIN is ${length} digits.`;
+  const d = [...pin].map(Number);
+  const steps = new Set(d.slice(1).map((n, i) => (n - d[i] + 10) % 10));
+  if (steps.size === 1 && [0, 1, 9].includes([...steps][0])) return 'That PIN is too easy to guess.';
+  return '';
+}

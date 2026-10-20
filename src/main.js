@@ -626,6 +626,7 @@ const hud = new Hud({
   onHome: () => goHome(),
   onChat: (text) => net?.send({ t: C.CHAT, text }),
   onPair: () => farmSync.pairCode(),
+  onRecovery: ({ name, pin }) => farmSync.setRecovery(name, pin),
   isBlocked: () => inventory.isOpen() || shop.isOpen() || !splash.hidden,
 });
 // (after the HUD: its key handler goes first, see shop.js)
@@ -633,7 +634,12 @@ const shop = createShop({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
 });
-const splash = new Splash({ onPlay: joinLobby, onHome: () => goHome(), onFarmCode: (code) => bringFarm(code) });
+const splash = new Splash({
+  onPlay: joinLobby,
+  onHome: () => goHome(),
+  onFarmCode: (code) => bringFarm(() => farmSync.claim(code)),
+  onRecover: (name, pin) => bringFarm(() => farmSync.recover(name, pin)),
+});
 
 function putDown({ x, y, z }) {
   player.position.set(x, y, z);
@@ -893,17 +899,20 @@ function loadGame() {
 // Then the server's copy: made from this one, or the one to play when the
 // farm was played on another device since
 async function openFarm() {
+  hud.setFarmName(farmSync.name());
   if (!saving) return; // (a save from a newer version: leave every copy alone)
   const theirs = await farmSync.open(currentSave());
+  hud.setFarmName(farmSync.name());
   if (theirs && useSave(theirs)) saveGame();
 }
 
-// A pairing code from another device: this browser plays that farm from now
-// on. The farm it had is kept aside (tp.save.replaced), then the page starts
-// over, straight onto the farm it brought (ARRIVED says so across the reload).
+// A farm from another device (a pairing code), or got back by its name and
+// PIN: this browser plays that farm from now on. The farm it had is kept
+// aside (tp.save.replaced), then the page starts over, straight onto the farm
+// it brought (ARRIVED says so across the reload).
 const ARRIVED = 'tp.farmArrived';
-async function bringFarm(code) {
-  await farmSync.claim(code);
+async function bringFarm(fetchFarm) {
+  await fetchFarm();
   saving = false;
   try {
     const text = localStorage.getItem(SAVE_STORE);

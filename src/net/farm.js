@@ -3,7 +3,7 @@
 // (src/main.js) and sends it along every PUSH_EVERY and when it is left; the
 // server's copy is the one a page starts from.
 //
-// This browser's farm is { id, token, rev } in localStorage (tp.farm): rev is
+// This browser's farm is { id, token, rev, name } in localStorage (tp.farm): rev is
 // the server's revision of the farm this browser last saw. At start the page
 // opens the farm, and holds it from then on:
 // - no farm on the server yet: one is made from the save this browser has
@@ -12,6 +12,9 @@
 // - another rev: another device has played since; the page starts from that
 // A page that no longer holds the farm (it was opened somewhere else since) is
 // told by onTakenOver and stops sending.
+//
+// Another device gets the farm with a pairing code from one that has it, or,
+// with no device left to ask, with the farm's name and PIN (set in the menu).
 //
 // Without the game server (npm run dev:client) the farm just stays in this browser.
 
@@ -66,9 +69,9 @@ export class FarmSync {
     try {
       if (this.farm) {
         try {
-          const { save, rev } = await call('POST', '/api/farms/me/open', { farm: this.farm });
+          const { save, rev, name } = await call('POST', '/api/farms/me/open', { farm: this.farm });
           const elsewhere = rev !== this.farm.rev;
-          this.farm.rev = rev;
+          Object.assign(this.farm, { rev, name });
           keep(this.farm);
           this.ready = true;
           if (elsewhere) {
@@ -84,7 +87,7 @@ export class FarmSync {
         }
       }
       const { id, token, rev } = await call('POST', '/api/farms', { body: { save: local } });
-      this.farm = { id, token, rev };
+      this.farm = { id, token, rev, name: '' };
       keep(this.farm);
       this.ready = true;
     } catch {
@@ -128,18 +131,44 @@ export class FarmSync {
     });
   }
 
+  // The farm's name ('' for none yet)
+  name() {
+    return this.farm?.name ?? '';
+  }
+
+  // Name the farm and set its PIN, to get it back without another device
+  // (pin '': keep the one it has). Resolves to the name as the server keeps it.
+  async setRecovery(name, pin) {
+    if (!this.ready) throw new Error(`${NO_SERVER} Your farm is only in this browser for now.`);
+    const out = await call('PUT', '/api/farms/me/recovery', { body: { name, pin }, farm: this.farm }).catch((e) => {
+      throw e.status ? e : new Error(NO_SERVER);
+    });
+    this.farm.name = out.name;
+    keep(this.farm);
+    return out.name;
+  }
+
   // A pairing code from another device: this browser plays that farm from now
   // on (the page reloads to open it)
-  async claim(code) {
+  claim(code) {
+    return this.adopt(call('POST', '/api/farms/pair', { body: { code } }));
+  }
+
+  // The same, with the farm's name and PIN
+  recover(name, pin) {
+    return this.adopt(call('POST', '/api/farms/recover', { body: { name, pin } }));
+  }
+
+  async adopt(asked) {
     let got;
     try {
-      got = await call('POST', '/api/farms/pair', { body: { code } });
+      got = await asked;
     } catch (e) {
       throw e.status ? e : new Error(NO_SERVER);
     }
     this.ready = false;
     this.pending = null;
-    this.farm = { id: got.id, token: got.token, rev: null };
+    this.farm = { id: got.id, token: got.token, rev: null, name: got.name ?? '' };
     keep(this.farm);
   }
 }

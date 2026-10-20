@@ -3,8 +3,9 @@
 // lobby with room, or a new one), Browse, Open a lobby, or Join with a code. A
 // page opened from an invite link (?lobby=CODE) shows that lobby's
 // invitation first. And the way to bring your farm over from another device,
-// with a pairing code from that device's menu (src/net/farm.js).
-import { MAX_PLAYERS, MAX_NAME } from '../../shared/constants.js';
+// with a pairing code from that device's menu, or with the farm's name and
+// PIN when there is no other device to ask (src/net/farm.js).
+import { MAX_PLAYERS, MAX_NAME, MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
 import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode } from '../net/lobby.js';
 import { el, button } from './dom.js';
@@ -24,10 +25,12 @@ function storedName() {
 export class Splash {
   // onPlay({ name, code }): visit a lobby ('' code: quick join). onHome(): go to the farm.
   // onFarmCode(code): play the farm of another device here (a promise; it fails with why).
-  constructor({ onPlay, onHome, onFarmCode }) {
+  // onRecover(name, pin): the same, with the farm's name and PIN.
+  constructor({ onPlay, onHome, onFarmCode, onRecover }) {
     this.onPlay = onPlay;
     this.onHome = onHome;
     this.onFarmCode = onFarmCode;
+    this.onRecover = onRecover;
     const root = (this.root = el('div', 'ui-splash', document.body));
     const card = el('div', 'ui-card inv-frame', root);
     const titleRow = el('div', 'ui-title-row', card);
@@ -87,6 +90,7 @@ export class Splash {
       e.preventDefault();
       this.bringFarm();
     });
+    button('ui-btn ui-btn-ghost ui-btn-small', this.menu, 'No other device? Use your farm’s name and PIN', () => this.showPanel('recover'));
 
     // ---- Browse ----
     this.browse = el('div', 'ui-browse', card);
@@ -128,6 +132,30 @@ export class Splash {
       this.makeLobby();
     });
 
+    // ---- your farm back, by its name and PIN ----
+    this.recover = el('form', 'ui-create', card);
+    el('h2', '', this.recover, 'Get your farm back');
+    el('div', 'ui-muted', this.recover, 'Type the name and PIN you gave your farm (in the menu, Esc, on a device that had it).');
+    const farmName = el('label', 'ui-field', this.recover);
+    el('span', '', farmName, 'Farm name');
+    this.farmName = el('input', 'ui-input', farmName);
+    this.farmName.maxLength = MAX_FARM_NAME;
+    this.farmName.autocomplete = 'off';
+    const pin = el('label', 'ui-field', this.recover);
+    el('span', '', pin, 'PIN');
+    this.pin = el('input', 'ui-input', pin);
+    Object.assign(this.pin, { type: 'password', inputMode: 'numeric', maxLength: PIN_LENGTH, autocomplete: 'off' });
+    const recoverRow = el('div', 'ui-row', this.recover);
+    button('ui-btn ui-btn-ghost', recoverRow, 'Back', () => this.showPanel('menu'));
+    button('ui-btn', recoverRow, 'Get it back', null).type = 'submit';
+    this.recover.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = this.farmName.value.trim();
+      const digits = this.pin.value.trim();
+      if (!name || !new RegExp(`^\\d{${PIN_LENGTH}}$`).test(digits)) return this.setStatus(`Type the farm's name and its ${PIN_LENGTH}-digit PIN.`, true);
+      this.bring(() => this.onRecover(name, digits));
+    });
+
     this.status = el('div', 'ui-status', card);
     el('div', 'ui-help', card, CONTROLS);
     this.hidden = true;
@@ -164,6 +192,7 @@ export class Splash {
     this.menu.hidden = which !== 'menu';
     this.browse.hidden = which !== 'browse';
     this.create.hidden = which !== 'create';
+    this.recover.hidden = which !== 'recover';
   }
 
   setStatus(text, isError = false) {
@@ -188,13 +217,18 @@ export class Splash {
     this.onPlay({ name: this.name(), code });
   }
 
-  async bringFarm() {
+  bringFarm() {
     const code = this.pairInput.value.trim();
     if (!code) return this.setStatus('Open the menu (Esc) on your other device and pick “Play on another device” for a code.', true);
-    if (!confirm('Play the farm from your other device here? The farm in this browser is put aside.')) return;
+    this.bring(() => this.onFarmCode(code));
+  }
+
+  // fetchFarm: the farm's way here (it reloads the page, or fails with why)
+  async bring(fetchFarm) {
+    if (!confirm('Play that farm here? The farm in this browser is put aside.')) return;
     this.setStatus('Fetching your farm…');
     try {
-      await this.onFarmCode(code);
+      await fetchFarm();
     } catch (e) {
       this.setStatus(e.message, true);
     }

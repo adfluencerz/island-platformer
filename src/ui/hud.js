@@ -4,7 +4,10 @@
 // - the prompt over the toolbar (E  Pick berries)
 // - a big word for a rare find
 // - chat (bottom right, lobbies only): Enter to talk
-// - the pause menu (Esc), with a pairing code to play the farm on another device
+// - the pause menu (Esc), with a pairing code to play the farm on another
+//   device, and the farm's name and PIN to get it back without one
+import { MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
+import { pinProblem } from '../../shared/protocol.js';
 import { inviteLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 
@@ -18,10 +21,12 @@ const CHAT_LINES = 40;
 export class Hud {
   // onTravel(): open the lobby board. onHome(): leave the lobby for the farm.
   // onPair(): a pairing code for another device, { code, expiresIn } (src/net/farm.js).
+  // onRecovery({ name, pin }): name the farm and set its PIN; resolves to the name.
   // isBlocked(): another screen (the backpack, the lobby board) has the keyboard.
-  constructor({ onTravel, onHome, onChat, onPair, isBlocked }) {
-    Object.assign(this, { onTravel, onHome, onChat, onPair, isBlocked });
+  constructor({ onTravel, onHome, onChat, onPair, onRecovery, isBlocked }) {
+    Object.assign(this, { onTravel, onHome, onChat, onPair, onRecovery, isBlocked });
     this.place = null; // 'home' | 'lobby' | null (the title screen)
+    this.farmName = '';
     this.session = null;
     this.myId = 0;
 
@@ -85,6 +90,33 @@ export class Hud {
     button('ui-btn', card, 'Play on another device', () => this.showPairCode());
     this.pairBox = el('div', 'ui-pair', card);
     this.pairBox.hidden = true;
+
+    // the farm's name and PIN
+    this.recoveryBtn = button('ui-btn', card, '', () => {
+      this.recovery.hidden = !this.recovery.hidden;
+      if (!this.recovery.hidden) this.recoveryName.focus();
+    });
+    this.recovery = el('form', 'ui-recovery', card);
+    this.recovery.hidden = true;
+    el('div', 'ui-muted', this.recovery,
+      'With its name and PIN you can get your farm back on any device, even with no other device to ask. Keep the PIN to yourself.');
+    const nameField = el('label', 'ui-field', this.recovery);
+    el('span', '', nameField, 'Farm name');
+    this.recoveryName = el('input', 'ui-input', nameField);
+    this.recoveryName.maxLength = MAX_FARM_NAME;
+    this.recoveryName.placeholder = 'Sunny Acres';
+    this.recoveryName.autocomplete = 'off';
+    const pinField = el('label', 'ui-field', this.recovery);
+    el('span', '', pinField, `PIN (${PIN_LENGTH} digits)`);
+    this.recoveryPin = el('input', 'ui-input', pinField);
+    Object.assign(this.recoveryPin, { type: 'password', inputMode: 'numeric', maxLength: PIN_LENGTH, autocomplete: 'off' });
+    button('ui-btn', this.recovery, 'Save', null).type = 'submit';
+    this.recoveryStatus = el('div', 'ui-status', this.recovery);
+    this.recovery.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.saveRecovery();
+    });
+    this.setFarmName('');
     el('div', 'ui-help', card, CONTROLS);
 
     // Capture phase: runs before the inventory's and the game's own key handlers
@@ -95,7 +127,7 @@ export class Hud {
   showHome() {
     this.enter('home');
     this.session = null;
-    this.placeName.textContent = 'My farm';
+    this.placeName.textContent = this.farmName || 'My farm';
     this.blurb.textContent = 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.';
     this.pauseNote.textContent = 'Time on your farm stands still while paused.';
   }
@@ -210,7 +242,35 @@ export class Hud {
 
   setPaused(on) {
     this.pause.hidden = !on;
-    if (!on) this.pairBox.hidden = true;
+    if (!on) this.pairBox.hidden = this.recovery.hidden = true;
+  }
+
+  // ---------- The farm's name and PIN ----------
+  setFarmName(name) {
+    this.farmName = name;
+    this.recoveryBtn.textContent = name ? `Farm name & PIN: ${name}` : 'Farm name & PIN (not set up yet)';
+    this.recoveryName.value = name;
+    this.recoveryPin.placeholder = name ? 'leave empty to keep it' : '';
+    if (this.place === 'home') this.placeName.textContent = name || 'My farm';
+  }
+
+  async saveRecovery() {
+    const name = this.recoveryName.value.trim();
+    const pin = this.recoveryPin.value.trim();
+    const problem = (pin || !this.farmName) && pinProblem(pin);
+    const say = (text, isError) => {
+      this.recoveryStatus.textContent = text;
+      this.recoveryStatus.classList.toggle('error', isError);
+    };
+    if (problem) return say(problem, true);
+    say('Saving…', false);
+    try {
+      this.setFarmName(await this.onRecovery({ name, pin }));
+      this.recoveryPin.value = '';
+      say('Saved. Remember the PIN: nobody can look it up for you.', false);
+    } catch (e) {
+      say(e.message, true);
+    }
   }
 
   async showPairCode() {
@@ -246,7 +306,11 @@ export class Hud {
       }
       return; // the input has the keys; the game ignores them (see isTyping)
     }
-    if (e.target.closest?.('input, textarea, select') || this.isBlocked()) return;
+    if (e.target.closest?.('input, textarea, select')) {
+      if (e.code === 'Escape' && this.pause.contains(e.target)) this.setPaused(false);
+      return;
+    }
+    if (this.isBlocked()) return;
     if (e.code === 'Escape') {
       e.stopPropagation();
       this.setPaused(!this.isPaused());
