@@ -81,10 +81,14 @@ export function addRipples(material) {
   return material;
 }
 
-// The sea around every island (main.js puts it there) and the foam where it
-// meets the shore
+// The sea around every island (main.js puts it there), lighter in the
+// shallows along the shore, and the foam where it meets the shore
 export const SEA_LEVEL = -0.6;
-const FOAM_WIDTH = 0.5;
+const SHALLOWS_WIDTH = 2.4;
+const SHALLOWS_COLOR = new THREE.Color(0x6fd6d0);
+const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.45, depthWrite: false });
+const FOAM_WIDTH = 0.8;
+const FOAM_COLOR = new THREE.Color(0xffffff);
 const foamMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
 foamMat.onBeforeCompile = (shader) => {
   shader.uniforms.uWindTime = windTime;
@@ -100,8 +104,8 @@ foamMat.onBeforeCompile = (shader) => {
     `#include <color_fragment>
     float shore = vColor.a;
     float drift = sin(vFoamPos.x * 0.8 + vFoamPos.y * 0.6) * 1.5;
-    float wave = sin(shore * 9.0 + uWindTime * 1.6 + drift);
-    diffuseColor.a = max(smoothstep(0.7, 1.0, shore) * 0.85, smoothstep(0.55, 0.95, wave) * shore * 0.6);`
+    float wave = sin(shore * 11.0 + uWindTime * 1.6 + drift);
+    diffuseColor.a = max(smoothstep(0.55, 0.9, shore) * 0.9, smoothstep(0.5, 0.9, wave) * shore * 0.75);`
   );
 };
 
@@ -162,11 +166,11 @@ function roughBox(x, y, z, w, h, d, color, { push = 0.07, dark = 0.3, layers = 0
 }
 
 // The earth under the island's tiles: lighter just under the turf, darker down by the sea
-const earthMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9, vertexColors: true });
+const earthMat = new THREE.MeshStandardMaterial({ color: 0x9a7650, roughness: 0.9, vertexColors: true });
 const earthGeo = new THREE.BoxGeometry(1, 1, 1);
 earthGeo.setAttribute('color', new THREE.Float32BufferAttribute(
   Array.from({ length: earthGeo.attributes.position.count }, (_, i) => {
-    const k = 0.6 + 0.4 * (earthGeo.attributes.position.getY(i) + 0.5);
+    const k = 0.7 + 0.3 * (earthGeo.attributes.position.getY(i) + 0.5);
     return [k, k, k];
   }).flat(), 3));
 
@@ -544,18 +548,24 @@ export function buildWorld(map) {
   // One mesh for every tile, colored by what the map says the ground is at
   // each vertex rather than per tile, so a path winds along its own curve
   // instead of in grid steps, and grass meets it and the sand without hard
-  // tile lines. Each tile is a 5x5 patch of vertices; one that the map puts
-  // on another floor (or in the sea) takes its tile's own kind. The ground is
-  // shaded a little darker right around whatever stands on it, which is why
-  // it is laid after the decorations.
+  // tile lines. Each tile is a 5x5 patch of vertices, a quarter tile apart;
+  // a vertex mixes the kinds of ground at it and the eight points around it
+  // (a quarter tile away), which softens the edges. A point the map puts on
+  // another floor (or in the sea) counts as its tile's own kind. The ground
+  // is shaded a little darker right around whatever stands on it, which is
+  // why it is laid after the decorations.
   // Stone tiles get a slab each on top: a plaza should look paved.
   {
-    const groundColor = (type, x, z, out) => {
-      const style = map.tileStyles[type];
-      out.setHex(style.color);
-      if (type === 'stone') out.offsetHSL(0, -0.05, -0.16); // the gaps between the slabs
-      if (style.lush) out.offsetHSL(meadowNoise(x, z) * 0.03, 0, meadowNoise(x, z) * -0.05);
-      return out.offsetHSL(0, 0, (hash2(x, z) - 0.5) * style.jitter * 2.5);
+    const kindColors = {}; // the plain color of each kind of ground
+    for (const [type, style] of Object.entries(map.tileStyles)) {
+      kindColors[type] = new THREE.Color(style.color);
+      if (type === 'stone') kindColors[type].offsetHSL(0, -0.03, -0.07); // the gaps between the slabs
+    }
+    const kinds = new Map(); // "qx,qz" (in quarter tiles) -> the map's kind of ground there
+    const kindAt = (qx, qz) => {
+      const key = `${qx},${qz}`;
+      if (!kinds.has(key)) kinds.set(key, map.tileType(qx / 4, qz / 4));
+      return kinds.get(key);
     };
 
     const standing = platforms.filter((box) => !box.ground);
@@ -590,9 +600,23 @@ export function buildWorld(map) {
           const oz = (i - 2) / 4;
           const x = (gx + ox) * TILE_SIZE;
           const z = (gz + oz) * TILE_SIZE;
-          let here = map.tileType(gx + ox, gz + oz);
-          if (!here || floorOf(here) !== floor) here = type;
-          groundColor(here, gx + ox, gz + oz, tint).multiplyScalar(1 - 0.4 * contactShade(x, floor, z));
+          const qx = gx * 4 + j - 2;
+          const qz = gz * 4 + i - 2;
+          tint.setRGB(0, 0, 0);
+          let lush = 0;
+          let jitter = 0;
+          for (let di = -1; di <= 1; di++) {
+            for (let dj = -1; dj <= 1; dj++) {
+              let kind = kindAt(qx + dj, qz + di);
+              if (!kind || floorOf(kind) !== floor) kind = type;
+              const w = (di ? 1 : 2) * (dj ? 1 : 2) / 16;
+              tint.add(c.copy(kindColors[kind]).multiplyScalar(w));
+              if (map.tileStyles[kind].lush) lush += w;
+              jitter += map.tileStyles[kind].jitter * w;
+            }
+          }
+          const shade = 1 - meadowNoise(x, z) * 0.1 * lush + (hash2(x, z) - 0.5) * jitter * 5;
+          tint.multiplyScalar(shade * (1 - 0.4 * contactShade(x, floor, z)));
           pos.push(x, floor + GROUND_LIFT, z);
           col.push(tint.r, tint.g, tint.b);
         }
@@ -628,24 +652,24 @@ export function buildWorld(map) {
     root.add(stones);
   }
 
-  // ---------- Foam along the shore ----------
-  // A strip on the sea along every tile edge that faces open water, and a
-  // corner piece round each outside corner of the coast. Vertex alpha: 1 at
-  // the shore, 0 out at sea (the shader makes foam of it).
-  {
+  // ---------- Shallows and foam along the shore ----------
+  // Strips on the sea along every tile edge that faces open water, with a
+  // corner piece round each outside corner of the coast: lighter water
+  // reaching out from the island, and foam over it. Vertex alpha: 1 at the
+  // shore, 0 out at sea.
+  const sea = (gx, gz) => !tileGrid.has(`${gx},${gz}`);
+  function shoreStrip(width, color, y, material) {
     const pos = [];
     const col = [];
-    const W = FOAM_WIDTH;
-    const y = SEA_LEVEL + 0.04;
-    const sea = (gx, gz) => !tileGrid.has(`${gx},${gz}`);
     const quad = (corners) => {
       // corners: four [x, z, alpha] going round
       for (const k of [0, 2, 1, 0, 3, 2]) {
         const [x, z, a] = corners[k];
         pos.push(x * TILE_SIZE, y, z * TILE_SIZE);
-        col.push(1, 1, 1, a);
+        col.push(color.r, color.g, color.b, a);
       }
     };
+    const W = width;
     for (const key of tileGrid.keys()) {
       const [gx, gz] = key.split(',').map(Number);
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -677,10 +701,13 @@ export function buildWorld(map) {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
-    const foam = new THREE.Mesh(geo, foamMat);
-    foam.renderOrder = 1; // over the sea
-    root.add(foam);
+    return new THREE.Mesh(geo, material);
   }
+  const shallows = shoreStrip(SHALLOWS_WIDTH, SHALLOWS_COLOR, SEA_LEVEL + 0.035, shallowsMat);
+  const foam = shoreStrip(FOAM_WIDTH, FOAM_COLOR, SEA_LEVEL + 0.04, foamMat);
+  shallows.renderOrder = 1; // over the sea
+  foam.renderOrder = 2; // and over the shallows
+  root.add(shallows, foam);
 
   // ---------- Felling trees ----------
   const moving = new Set(); // trees in the middle of shaking, falling or growing
