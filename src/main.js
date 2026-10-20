@@ -1005,7 +1005,7 @@ const touch = new TouchControls(); // (only shown on a touch screen)
 const hud = new Hud({
   onTravel: () => splash.show({ from: 'home' }),
   onHome: () => goHome(),
-  onChat: (text) => net?.send({ t: C.CHAT, text }),
+  onChat: (text) => (place === 'lobby' ? net : farmNet)?.send({ t: C.CHAT, text }),
   onPair: () => farmSync.pairCode(),
   onRecovery: ({ name, pin }) => farmSync.setRecovery(name, pin),
   isBlocked: () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || !splash.hidden,
