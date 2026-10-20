@@ -201,7 +201,7 @@ function updateCrops(dt, growDt, t) {
 // back: berry bushes and mushrooms to gather with E, and treasures out in the
 // meadow and up on the ledges to walk into. The lobby rolls what is on each
 // spot and decides who got there first; the page draws them and asks.
-const spots = []; // { id, kind, use, x, y, z, item, count, view, pending, retryAt }
+const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
 const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms' };
@@ -210,7 +210,9 @@ const treasureGeo = new THREE.IcosahedronGeometry(0.35, 0);
 const itemMats = new Map(); // item -> material, shared by every treasure showing it
 function itemMat(item) {
   if (!itemMats.has(item)) {
-    const { color } = ITEMS[item];
+    // A spot holding an item this page doesn't know yet (a newer server): draw
+    // it as a plain treasure instead of losing every spot.
+    const color = ITEMS[item]?.color ?? ITEMS.coin.color;
     itemMats.set(item, new THREE.MeshStandardMaterial({
       color,
       emissive: color,
@@ -283,16 +285,18 @@ function showSpot(spot) {
 function setSpots(list) {
   clearSpots();
   for (const [id, kind, x, y, z, item, count] of list) {
-    const spot = { id, kind, use: SPOT_KINDS[kind].use, x, y, z, item, count, pending: false, retryAt: 0 };
+    const use = SPOT_KINDS[kind]?.use; // a spot from a newer server: skip it, don't lose the island
+    if (!use) continue;
+    const spot = { id, kind, use, x, y, z, item, count, pending: false, retryAt: 0 };
     spot.view = makeSpotView(spot);
     showSpot(spot);
-    spots.push(spot);
+    spots.set(id, spot); // keyed by id, so the lobby's messages find the right spot
   }
 }
 
 function clearSpots() {
-  for (const spot of spots) scene.remove(spot.view.group);
-  spots.length = 0;
+  for (const spot of spots.values()) scene.remove(spot.view.group);
+  spots.clear();
 }
 
 // Ask the lobby for what is on a spot. It vanishes at once so it feels
@@ -313,7 +317,7 @@ function takeSpot(spot) {
 function gatherSpotInReach() {
   let best = null;
   let bestD = GATHER_REACH;
-  for (const spot of spots) {
+  for (const spot of spots.values()) {
     if (spot.use !== 'gather' || !spot.item || spot.pending) continue;
     const d = Math.hypot(spot.x - player.position.x, spot.z - player.position.z);
     if (d < bestD && Math.abs(player.position.y - GROUND_STAND_Y - spot.y) < 1.2) {
@@ -326,7 +330,7 @@ function gatherSpotInReach() {
 
 const _treasurePos = new THREE.Vector3();
 function updateSpots(dt, t) {
-  for (const spot of spots) {
+  for (const spot of spots.values()) {
     const { content, glint, glintY } = spot.view;
     if (glint.visible) {
       glint.rotation.y += dt * 3;
@@ -611,13 +615,13 @@ function joinLobby({ name, code }) {
   });
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
-    const spot = spots[m.id];
+    const spot = spots.get(m.id);
     if (!spot) return;
     Object.assign(spot, { item: m.item, count: m.count, pending: false });
     showSpot(spot);
   });
   on(S.TAKEN, (m) => {
-    const spot = spots[m.id];
+    const spot = spots.get(m.id);
     if (spot) {
       Object.assign(spot, { item: null, count: 0, pending: false });
       showSpot(spot);
@@ -628,7 +632,7 @@ function joinLobby({ name, code }) {
     }
   });
   on(S.DENY, (m) => {
-    const spot = spots[m.id];
+    const spot = spots.get(m.id);
     if (!spot) return;
     spot.pending = false;
     spot.retryAt = performance.now() + 500; // (not again every frame while we stand in it)
@@ -669,6 +673,7 @@ function sendState(dt) {
 // tilled soil, the crops and the time of day. While you are away (in a lobby,
 // or with the page closed) the crops keep growing and the clock keeps turning.
 const SAVE_STORE = 'tp.save';
+const SAVE_VERSION = 2; // v2: flax seeds joined the starter kit
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
 
 const keyXZ = (key) => key.split(',').map((n) => Number(n) * TILE_SIZE);
@@ -696,8 +701,14 @@ function showFarm(farm) {
 function saveGame() {
   if (farmOnScreen) homeFarm = captureFarm();
   try {
-    localStorage.setItem(SAVE_STORE, JSON.stringify({ v: 1, farm: homeFarm, backpack: inventory.serialize() }));
+    localStorage.setItem(SAVE_STORE, JSON.stringify({ v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize() }));
   } catch {}
+}
+
+// A gift from the seed merchant: add() is all-or-nothing, so hand over as many
+// as the bag has room for instead of dropping the whole gift when it's full.
+function gift(id, count) {
+  for (let n = count; n >= 1; n--) if (inventory.add(id, n, { quiet: true })) return;
 }
 
 function loadGame() {
@@ -705,13 +716,19 @@ function loadGame() {
   try {
     save = JSON.parse(localStorage.getItem(SAVE_STORE));
   } catch {}
-  if (save?.v === 1) {
+  if (save?.v === SAVE_VERSION) {
     inventory.restore(save.backpack);
     homeFarm = save.farm;
+  } else if (save?.v === 1) {
+    // An older save: keep it, and hand out what joined the kit since then
+    inventory.restore(save.backpack);
+    homeFarm = save.farm;
+    gift('flax_seeds', 5);
   } else {
     // A new farmer's starting kit
     inventory.add('hoe', 1, { quiet: true });
     inventory.add('turnip_seeds', 10, { quiet: true });
+    gift('flax_seeds', 5);
   }
   showFarm(homeFarm);
   farmOnScreen = true;

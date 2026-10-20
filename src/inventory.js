@@ -242,6 +242,7 @@ export function createInventory({ onOpenChange } = {}) {
   // so the pickup can stay where it is. `quiet` skips the pickup notice.
   function add(id, count = 1, { quiet = false } = {}) {
     const def = ITEMS[id];
+    if (!def) return false; // an item this page doesn't know (a newer server): leave it alone
     if (def.currency) {
       gold += def.currency * count;
       toast('gold', spriteURL(def), (n) => `+${n}g`, def.currency * count);
@@ -442,7 +443,9 @@ export function createInventory({ onOpenChange } = {}) {
 
   // Would add(id) succeed? (Pickups ask before claiming an item from the game.)
   function canAdd(id, count = 1) {
-    return !!ITEMS[id].currency || roomFor(id, ALL) >= count;
+    const def = ITEMS[id];
+    if (!def) return false; // an item this page doesn't know: don't claim it
+    return !!def.currency || roomFor(id, ALL) >= count;
   }
 
   return {

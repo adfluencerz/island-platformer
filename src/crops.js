@@ -31,6 +31,9 @@ const sunflowerStemGeo = new THREE.CylinderGeometry(0.035, 0.05, 1.3, 6);
 const sunflowerDiscGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10);
 const petalMat = mat(0xffd23f);
 const discMat = mat(0x6b3f17);
+const flaxStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1.0, 5);
+const bellGeo = new THREE.ConeGeometry(0.09, 0.16, 6);
+const bellMat = mat(0x6f8fd6);
 
 function mesh(geo, material, [x, y, z] = [0, 0, 0], [sx, sy, sz] = [1, 1, 1]) {
   const m = new THREE.Mesh(geo, material);
@@ -100,9 +103,23 @@ function buildSunflower() {
   return g;
 }
 
+// Flax: a slender stalk with a few thin leaves and one blue bell at the top
+function buildFlax() {
+  const g = new THREE.Group();
+  g.add(mesh(flaxStemGeo, stemMat, [0, 0.5, 0]));
+  for (let i = 0; i < 3; i++) {
+    g.add(leaf((i / 3) * Math.PI * 2, { y: 0.35 + i * 0.15, length: 0.14, width: 0.05, lean: 1.1 }));
+  }
+  const bell = mesh(bellGeo, bellMat, [0, 1.06, 0]);
+  bell.rotation.x = Math.PI; // open end facing down, like a flax flower
+  g.add(bell);
+  return g;
+}
+
 export const CROPS = {
   turnip: { growTime: CROP_GROW_TIME.turnip, produce: 'turnip', build: buildTurnip },
   carrot: { growTime: CROP_GROW_TIME.carrot, produce: 'carrot', build: buildCarrot },
+  flax: { growTime: CROP_GROW_TIME.flax, produce: 'flax', build: buildFlax },
   sunflower: { growTime: CROP_GROW_TIME.sunflower, produce: 'sunflower', build: buildSunflower },
   golden_turnip: {
     growTime: CROP_GROW_TIME.golden_turnip,

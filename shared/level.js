@@ -8,7 +8,7 @@ export const GROUND_STAND_Y = 0.8; // player center height standing on bare grou
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
 
 // Seconds from planting to ripe (src/crops.js draws them)
-export const CROP_GROW_TIME = { turnip: 20, carrot: 30, sunflower: 45, golden_turnip: 60 };
+export const CROP_GROW_TIME = { turnip: 20, carrot: 30, flax: 35, sunflower: 45, golden_turnip: 60 };
 
 // ---------- Lobby resources ----------
 // What can stand on a spot (each island says where its spots are). `use`: 'gather' is picked with E from nearby,
@@ -26,12 +26,12 @@ export const SPOT_KINDS = {
   meadow: {
     use: 'touch',
     regrow: [30, 50],
-    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['golden_seeds', 0.04, 1, 1], ['key', 0.02, 1, 1]],
+    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.02, 1, 1]],
   },
   ledge: {
     use: 'touch',
     regrow: [40, 60],
-    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['golden_seeds', 0.06, 1, 1], ['key', 0.04, 1, 1]],
+    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.04, 1, 1]],
   },
 };
 
