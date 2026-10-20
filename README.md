@@ -1,17 +1,15 @@
-# Three.js Platformer — Starter
+# Island Platformer
 
-A minimal 3D platformer scaffold built with [Three.js](https://threejs.org/) and [Vite](https://vitejs.dev/).
+A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](https://vitejs.dev/): tend your own little farm on an island, then drop into online lobbies to gather berries, mushrooms and rare finds with other farmers.
 
 ## What's included
-- A player capsule with gravity, jumping, and WASD/arrow-key movement
-- Simple AABB collision so you can land on and jump between platforms
-- A staggered set of grass-topped platforms to test jumping
-- A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, and wind-swayed grass and flowers; trees fade out when they block the view of the player
-- A camera that smoothly follows the player from an angled overhead view
-- A stylized farmer character with walk, jump, landing and tool-swing animations, and a hoe and an axe
-- Shadows and basic lighting (hemisphere + directional "sun")
+- A stylized farmer with walk, jump, landing and tool-swing animations, a hoe and an axe, and a camera that follows from an angled overhead view
+- A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, wind-swayed grass and flowers, and grass-topped platforms to jump between; trees fade out when they block the view of the player
+- Farming: till, plant and harvest turnips, carrots, flax and sunflowers, in a backpack-and-toolbar inventory
+- A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and buys what you grow and find
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
+- Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
 ## Setup
 
@@ -37,6 +35,12 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `Enter` — chat (in a lobby)
 - `Esc` — menu (copy the invite link, head home, play on another device, farm name & PIN, controls)
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
+- Click the ground — walk there
+
+On a touch screen the game shows its own controls: a thumbstick (bottom left) to walk, and **Use** (`E`), **Jump**, **Bag** (the backpack) and, in a lobby, **Chat** (bottom right). Tap the ground to walk there (at home, a ripe crop is harvested, and a tile next to you is tilled or planted with what you hold), tap the stall to trade, a bush or mushrooms to gather, or a tree to chop it with the axe in hand. Hold the clock to fast-forward time at home. **Menu** (the `Esc` menu) is in the place panel.
+
+## Playing on a phone
+Open the address Vite prints for your network (`npm run dev`) on the phone. The built game (`npm run build`, `npm start`) can also be installed as an app ("Add to Home Screen"): it opens full screen, and the farm opens without a connection (only the lobbies need the game server). The app's files are in `public/` (`manifest.webmanifest`, the icons, and `sw.js`, the service worker, which runs in built pages only so Vite's dev server always shows your changes). Browsers only install apps from `https://` or `localhost`.
 
 ## Your farm and online lobbies
 **Your farm** is yours alone: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing. The page plays from a copy in your browser and keeps the game server's copy up to date (every 15 seconds, before you set off for a lobby, and when you close the page), so there are no accounts and you can still carry on from another device:
@@ -88,13 +92,18 @@ A full day lasts 6 real minutes (`DAY_LENGTH_SECONDS` in `src/daynight.js`). The
 
 ## Project structure
 ```
-threejs-platformer/
+island-platformer/
 ├── index.html          # entry point, mounts the canvas
+├── public/             # the installable app: manifest, icons, service worker (sw.js)
 ├── src/
-│   ├── main.js          # scene, player physics, farming, lobby spots, saving, travel, game loop
+│   ├── main.js          # scene, player physics, farming, lobby spots, tap to walk, saving, travel, game loop
 │   ├── world.js         # builds an island from a map: tiles, colliders, foliage, trees, rocks
 │   ├── maps.js          # the maps: your farm's island, and a lobby's wild island from its seed
 │   ├── character.js     # the farmer model and its animations (you, everyone else, the merchant)
+│   ├── items.js         # the item catalog: names, prices, pixel-art sprites
+│   ├── inventory.js     # the backpack and toolbar
+│   ├── crops.js         # what each seed grows into, and the growing plants
+│   ├── daynight.js      # the clock, sun, moon, sky and fireflies
 │   ├── merchant.js      # the merchant's stall on the farm, and the merchant behind it
 │   ├── shop.js          # the merchant's shop window: buy seeds, sell from the backpack
 │   ├── remotes.js       # other players: interpolation, name tags
@@ -102,7 +111,7 @@ threejs-platformer/
 │   │   ├── connection.js  # WebSocket to a lobby
 │   │   ├── lobby.js       # the lobbies' HTTP API, invite links
 │   │   └── farm.js        # the farm's copy on the server, pairing codes
-│   └── ui/              # title screen (splash.js), in-game HUD (hud.js), styles
+│   └── ui/              # title screen (splash.js), in-game HUD (hud.js), touch controls (touch.js), styles
 ├── shared/              # runs on both the server and the client
 │   ├── room.js          # one lobby: players, resource spots
 │   ├── protocol.js      # message types
@@ -118,12 +127,13 @@ threejs-platformer/
 │   ├── dev.js           # npm run dev: game server + Vite
 │   ├── island.js        # npm run island: draw a seed's island in the terminal
 │   └── test-multiplayer.js  # npm test
+├── docs/CONCEPTS.md     # an early brainstorm of game ideas
 ├── package.json
 ```
 
 ## Where to go next
-- Swap the capsule/boxes for real models (glTF via `GLTFLoader`)
-- Add collectibles, moving platforms, or hazards
+- Accounts, which can point at the farm ids the server already keeps
+- More crops, tools and things to find in the lobbies
 - Replace the simple AABB resolver with a physics engine (e.g. `cannon-es` or `rapier3d`) once you need more complex shapes
 - Make movement server-authoritative (run the physics on the server too) if cheating ever matters
 

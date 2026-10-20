@@ -11,7 +11,7 @@
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
-export const WILD_HALF = 34; // tiles reach this far from the middle, on both axes
+const WILD_HALF = 34; // tiles reach this far from the middle, on both axes
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
 

@@ -17,7 +17,7 @@ export const STALL = { x: 5.5, z: 6.5 };
 const COUNTER = { w: 3, h: 1, d: 0.8, z: 0.3 }; // local to the stall
 const FRONT = COUNTER.z + COUNTER.d / 2; // the counter's front face
 export const TRADE_SPOT = { x: STALL.x, z: STALL.z + FRONT + 0.8 }; // where a customer stands
-export const TRADE_REACH = 1.9;
+const TRADE_REACH = 1.9;
 const WATCH_RANGE = 7; // the merchant turns to look at you inside this
 
 const woodMat = foliageMat(0xa0682f);

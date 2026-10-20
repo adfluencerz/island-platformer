@@ -14,7 +14,7 @@ import { el, button } from './ui/dom.js';
 //   E / Esc / ×             close
 
 // What the merchant has for sale: every item with a price, cheapest first
-export const STOCK = Object.keys(ITEMS)
+const STOCK = Object.keys(ITEMS)
   .filter((id) => ITEMS[id].price)
   .sort((a, b) => ITEMS[a].price - ITEMS[b].price);
 

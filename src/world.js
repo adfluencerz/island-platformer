@@ -24,14 +24,14 @@ export function tileKeyFor(x, z) {
 }
 
 // Cheap smooth "noise" for meadow patches (lush grass, flower fields)
-export const meadowNoise = (x, z) =>
+const meadowNoise = (x, z) =>
   Math.sin(x * 0.21) * Math.cos(z * 0.17) * 0.6 + Math.sin((x + z) * 0.11 + 1.3) * 0.4;
 
 // Wind sway for grass and flowers, done in the vertex shader so thousands of
 // instances cost nothing on the CPU. Sway scales with height above the base.
 // One clock for every world (main.js sets it).
 export const windTime = { value: 0 };
-export function addWind(material, strength) {
+function addWind(material, strength) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uWindTime = windTime;
     shader.vertexShader = 'uniform float uWindTime;\n' + shader.vertexShader.replace(
@@ -47,12 +47,12 @@ export function addWind(material, strength) {
 
 // ---------- The decor kit: a few shared geometries/materials, many meshes ----------
 export const foliageMat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
-export const trunkMat = foliageMat(0x6b4423);
+const trunkMat = foliageMat(0x6b4423);
 export const leafMats = [0x3f8a3a, 0x4f9e3c, 0x2f7a45, 0x5aa83f].map(foliageMat);
-export const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
+const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
 export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map(foliageMat);
 
-export const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6).translate(0, 0.5, 0);
+const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6).translate(0, 0.5, 0);
 export const coneGeo = new THREE.ConeGeometry(1, 1.4, 7);
 export const blobGeo = new THREE.IcosahedronGeometry(1, 0);
 export const rockGeo = new THREE.DodecahedronGeometry(1, 0);

@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, extname } from 'node:path';
 
-export const STORE_VERSION = 1;
+const STORE_VERSION = 1;
 
 export class Store {
   constructor(path, { log = console.log } = {}) {
