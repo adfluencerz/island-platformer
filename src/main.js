@@ -780,9 +780,15 @@ function sendState(dt) {
 // The home farm is yours alone and lives in this browser: the backpack, the
 // tilled soil, the crops and the time of day. While you are away (in a lobby,
 // or with the page closed) the crops keep growing and the clock keeps turning.
+//
+// A save is never written over unseen: one that can't be read is kept aside
+// (tp.save.broken), an older one is kept as it was (tp.save.v<N>) before it
+// is brought up to date, and one from a newer version of the game is left
+// alone: nothing is saved until the page is reloaded with that version.
 const SAVE_STORE = 'tp.save';
 const SAVE_VERSION = 3; // v2: flax seeds joined the starter kit; v3: the axe
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
+let saving = true; // (false: the save is from a newer version of the game)
 
 const keyXZ = (key) => key.split(',').map((n) => Number(n) * TILE_SIZE);
 
@@ -807,6 +813,7 @@ function showFarm(farm) {
 }
 
 function saveGame() {
+  if (!saving) return;
   if (farmOnScreen) homeFarm = captureFarm();
   try {
     localStorage.setItem(SAVE_STORE, JSON.stringify({ v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize() }));
@@ -819,16 +826,31 @@ function gift(id, count) {
   for (let n = count; n >= 1; n--) if (inventory.add(id, n, { quiet: true })) return;
 }
 
+// Keep a copy of a save under another name (it is not to be written over)
+function keepAside(name, text) {
+  try {
+    localStorage.setItem(name, text);
+  } catch {}
+}
+
 function loadGame() {
+  let text = null;
   let save = null;
   try {
-    save = JSON.parse(localStorage.getItem(SAVE_STORE));
+    text = localStorage.getItem(SAVE_STORE);
+    save = JSON.parse(text);
   } catch {}
+  if (text && !(save?.v >= 1)) keepAside(`${SAVE_STORE}.broken`, text); // (a fresh farm starts; the old one is kept)
+  if (save?.v > SAVE_VERSION) {
+    saving = false;
+    hud.setConnStatus('This farm was saved by a newer version of the game. Reload the page to play it: nothing is saved until then.');
+  }
   if (save?.v === SAVE_VERSION) {
     inventory.restore(save.backpack);
     homeFarm = save.farm;
   } else if (save?.v >= 1 && save.v < SAVE_VERSION) {
-    // An older save: keep it, and hand out what joined the kit since then
+    // An older save: keep it as it was, and hand out what joined the kit since then
+    keepAside(`${SAVE_STORE}.v${save.v}`, text);
     inventory.restore(save.backpack);
     homeFarm = save.farm;
     if (save.v < 2) gift('flax_seeds', 5);

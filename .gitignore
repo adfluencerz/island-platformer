@@ -12,3 +12,6 @@ dist/
 # logs and editor/OS clutter
 *.log
 .DS_Store
+
+# the game server's saved lobbies
+data/

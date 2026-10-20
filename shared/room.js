@@ -25,6 +25,10 @@
 // Movement is the client's: each player simulates themselves and reports where
 // they are. Who gets a spot is settled here, checked against the position the
 // room last heard.
+//
+// A room can be saved and put back (toSave / fromSave): the lobby keeps
+// rooms on disk (server/store.js) so they outlive a restart of the server, and
+// empty ones lie dormant there until someone comes back by their code.
 import {
   PROTOCOL_VERSION, TICK_RATE, MAX_PLAYERS, MAX_NAME, MAX_CHAT, HOLD_MS, PLAYER_COLORS, CLOSE, CLOSE_TEXT,
 } from './constants.js';
@@ -64,6 +68,7 @@ export class Room {
     this.felled = new Map(); // tree id -> when it grows back (ms)
     this.tick = 0;
     this.rosterDirty = false;
+    this.changed = false; // something worth saving happened (the lobby store looks)
     this.emptySince = Date.now(); // (the lobby list closes a room that stays empty)
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
     this.timer = null;
@@ -129,6 +134,7 @@ export class Room {
       if (mine) {
         mine.conn?.close(CLOSE.REPLACED, CLOSE_TEXT[CLOSE.REPLACED]);
         mine.conn = conn;
+        mine.heldUntil = 0;
         this.rosterDirty = true;
         this.welcome(mine, true);
         this.say(`${mine.name} is back.`);
@@ -147,24 +153,30 @@ export class Room {
     const worn = new Set([...this.players.values()].map((p) => p.color));
     const color = PLAYER_COLORS.find((c) => !worn.has(c)) ?? PLAYER_COLORS[0];
 
-    const id = this.nextId++;
+    const p = this.seat({ id: this.nextId++, conn, key, name, color });
+    this.welcome(p, false);
+    this.say(`${name} wandered in.`);
+    this.log(`${this.code}: ${name} joined (${this.players.size}/${this.maxPlayers})`);
+    return p;
+  }
+
+  // A new player in a seat (or, from a save, an away one whose seat is held)
+  seat({ id, conn = null, key, name, color, finds = 0, rares = 0, wood = 0, heldUntil = 0 }) {
     const at = spawnPoint(this.island.spawn, id % 8, 8); // somewhere in the stone circle
     const p = {
       id, conn, key, name, color,
       x: at.x, y: at.y, z: at.z, yaw: Math.PI, f: STATEF.GROUND,
-      finds: 0, // spots emptied this visit
-      rares: 0, // ...of which rare finds
-      wood: 0, // logs chopped this visit
+      finds, // spots emptied this visit
+      rares, // ...of which rare finds
+      wood, // logs chopped this visit
       chopAt: 0, // when they last felled a tree
-      awayAt: 0,
+      heldUntil, // away: when their seat is let go
       chatTokens: CHAT_BURST, chatAt: Date.now(),
     };
     this.players.set(id, p);
     this.emptySince = 0;
     this.rosterDirty = true;
-    this.welcome(p, false);
-    this.say(`${name} wandered in.`);
-    this.log(`${this.code}: ${name} joined (${this.players.size}/${this.maxPlayers})`);
+    this.changed = true;
     return p;
   }
 
@@ -192,7 +204,7 @@ export class Room {
     if (!this.players.has(p.id)) return;
     p.conn = null;
     if (hold) {
-      p.awayAt = Date.now();
+      p.heldUntil = Date.now() + HOLD_MS;
       this.rosterDirty = true;
     } else {
       this.remove(p);
@@ -202,6 +214,7 @@ export class Room {
   remove(p) {
     this.players.delete(p.id);
     this.rosterDirty = true;
+    this.changed = true;
     this.say(`${p.name} headed home.`);
     this.log(`${this.code}: ${p.name} left (${this.players.size}/${this.maxPlayers})`);
     if (!this.players.size) this.emptySince = Date.now();
@@ -238,6 +251,7 @@ export class Room {
           this.say(`${p.name} found ${RARE[item].toLowerCase()}!`);
         }
         this.rosterDirty = true;
+        this.changed = true;
         this.broadcast({ t: S.TAKEN, id: spot.id, by: p.id, item, count });
         break;
       }
@@ -257,6 +271,7 @@ export class Room {
         p.chopAt = now;
         p.wood += count;
         this.rosterDirty = true;
+        this.changed = true;
         this.broadcast({ t: S.FELLED, id, by: p.id, count });
         break;
       }
@@ -289,12 +304,13 @@ export class Room {
   update(now = Date.now()) {
     this.tick++;
     for (const p of [...this.players.values()]) {
-      if (!p.conn && now - p.awayAt > HOLD_MS) this.remove(p);
+      if (!p.conn && now > p.heldUntil) this.remove(p);
     }
 
     for (const spot of this.spots) {
       if (spot.item || now < spot.regrowAt) continue;
       [spot.item, spot.count] = rollLoot(spot.kind, this.rand);
+      this.changed = true;
       this.broadcast({ t: S.SPOT, id: spot.id, item: spot.item, count: spot.count });
       if (RARE[spot.item]) {
         this.say(`Something sparkles ${WHERE[spot.kind]}... ${RARE[spot.item].toLowerCase()}!`);
@@ -304,6 +320,7 @@ export class Room {
     for (const [id, at] of this.felled) {
       if (now < at) continue;
       this.felled.delete(id);
+      this.changed = true;
       this.broadcast({ t: S.REGROWN, id });
     }
 
@@ -317,6 +334,62 @@ export class Room {
       for (const p of this.players.values()) list.push([p.id, round2(p.x), round2(p.y), round2(p.z), round2(p.yaw), p.f]);
       this.broadcast({ t: S.SNAP, tick: this.tick, p: list });
     }
+  }
+
+  // ---------- Saving ----------
+  // What the lobby keeps of a room, as plain JSON. The island grows again from
+  // the seed, so only what happened on it is kept: what is on each spot, which
+  // trees are down, and who was here (for a restart while they were playing).
+  // Times are the wall clock's, so regrowing carries on while a room is away.
+  toSave() {
+    return {
+      code: this.code,
+      name: this.name,
+      seed: this.seed,
+      inviteOnly: this.inviteOnly,
+      maxPlayers: this.maxPlayers,
+      createdAt: this.createdAt,
+      nextId: this.nextId,
+      spots: this.spots.map(({ id, kind, x, z, item, count, regrowAt }) => [id, kind, x, z, item, count, regrowAt]),
+      felled: [...this.felled],
+      seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood }) => ({ id, key, name, color, finds, rares, wood })),
+    };
+  }
+
+  // A room as it was saved. A spot keeps what was on it only if the island
+  // still has that spot (the same kind, in the same place) and it can still
+  // turn up there, so a save from before a change to shared/worldgen.js or
+  // shared/level.js still loads: whatever changed starts out fresh. The players
+  // who were here are away, their seats held until holdUntil.
+  static fromSave(save, { holdUntil = Date.now() + HOLD_MS, ...options } = {}) {
+    const { code, name, seed, inviteOnly, maxPlayers } = save;
+    const room = new Room({ ...options, code, name, seed, inviteOnly, maxPlayers });
+    if (Number.isFinite(save.createdAt)) room.createdAt = save.createdAt;
+    for (const [id, kind, x, z, item, count, regrowAt] of save.spots ?? []) {
+      const spot = Number.isInteger(id) ? room.spots[id] : null;
+      if (!spot || spot.kind !== kind || !finite(x, z) || Math.hypot(spot.x - x, spot.z - z) > 0.01) continue;
+      if (item === null) {
+        Object.assign(spot, { item: null, count: 0, regrowAt: Number.isFinite(regrowAt) ? regrowAt : 0 });
+      } else {
+        const loot = SPOT_KINDS[kind].loot.find(([it]) => it === item);
+        if (loot && Number.isInteger(count)) Object.assign(spot, { item, count: Math.max(loot[2], Math.min(loot[3], count)) });
+      }
+    }
+    for (const [id, at] of save.felled ?? []) {
+      if (Number.isInteger(id) && id >= 0 && id < MAX_TREES && Number.isFinite(at)) room.felled.set(id, at);
+    }
+    const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+    for (const s of (save.seats ?? []).slice(0, room.maxPlayers)) {
+      if (!Number.isInteger(s.id) || s.id < 1 || room.players.has(s.id) || typeof s.key !== 'string' || !s.key) continue;
+      const color = PLAYER_COLORS.includes(s.color) ? s.color : PLAYER_COLORS[0];
+      room.seat({
+        id: s.id, key: s.key.slice(0, 64), name: cleanText(s.name, MAX_NAME) || 'Farmer', color,
+        finds: n(s.finds), rares: n(s.rares), wood: n(s.wood), heldUntil: holdUntil,
+      });
+    }
+    room.nextId = Math.max(n(save.nextId), ...[...room.players.keys()].map((id) => id + 1), 1);
+    room.changed = false;
+    return room;
   }
 
   // ---------- Sending ----------

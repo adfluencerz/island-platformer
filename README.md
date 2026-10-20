@@ -22,7 +22,9 @@ npm run dev
 
 `npm run dev` starts two things side by side: the game server (`server/index.js`, port 3001, restarted when `server/` or `shared/` change) and Vite, which proxies `/api` and `/ws` to it. Open the URL Vite prints (usually `http://localhost:5173`). Vite also listens on your network address, so friends on the same network can join with that URL.
 
-If port 5173 is already taken (often an old `vite` still running in another terminal), `npm run dev` stops with "Port 5173 is already in use" instead of moving to another port: stop the other one and run it again. Under `npm run dev` the server also opens a lobby for any code you join that does not exist yet, so a `?lobby=CODE` link keeps working after the server restarts.
+If port 5173 is already taken (often an old `vite` still running in another terminal), `npm run dev` stops with "Port 5173 is already in use" instead of moving to another port: stop the other one and run it again. Under `npm run dev` the server also opens a lobby for any code you join that does not exist yet (on the island the code grows, as a seed).
+
+The server keeps its lobbies in `data/lobbies.json` (not in git), so they outlive a restart: everyone in a lobby drops for a moment and the page reconnects them to the same island, with what was taken still gone, the trees still down and their finds counted, and seats are held a minute for it. `GAME_DATA=<file>` keeps them somewhere else, `GAME_DATA=off` not at all. A file the server can't read is set aside as `lobbies.broken-<time>.json`, never written over.
 
 Without the game server you can still play on your farm (`npm run dev:client` runs only Vite).
 
@@ -37,7 +39,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
 
 ## Your farm and online lobbies
-**Your farm** is yours alone and lives in your browser: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing.
+**Your farm** is yours alone and lives in your browser: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing. Each address the game is opened at is a browser of its own here: `localhost:5173`, your network address and `localhost:3001` (after `npm start`) each have their own farm. A save the page can't read is kept aside as `tp.save.broken`, an older one is kept as `tp.save.v<N>` when it's brought up to date, and a save from a newer version of the game is left alone (nothing is saved until you reload with that version).
 
 **The merchant** keeps a stall just east of the plaza on your farm. Walk up to the counter and press `E` to trade: buy turnip, carrot, flax and sunflower seeds (click: one, `Shift`+click: five), and sell your crops, forage, gems and spare seeds from your backpack (click: the whole stack, right click: one). Tools and the old key aren't for sale. Prices are `price` (buy) and `sell` on each item in `src/items.js`; the item tooltips show what the merchant pays.
 
@@ -50,7 +52,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
-- An empty lobby closes after 90 seconds.
+- An empty lobby goes dormant after 90 seconds: it drops off the lobby list, but its link keeps working for a week. Whoever comes back by its code finds the island as it was left, with whatever grew back in the meantime.
 
 ### Island seeds
 Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-31`: the seed decides the coastline, where the pond, meadow, woods, terraces and toadstools are, the trails between them, where the berry bushes, mushrooms and treasures are, and the island's season (spring, autumn or cherry blossom). The same seed always grows the same island, so a new lobby on a seed you liked is that island again.
@@ -58,10 +60,11 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - A new lobby gets a fresh seed. To pick one, type it in **Island seed** when you open a lobby (any words; case and punctuation don't matter). `classic` is the original hand-made island.
 - The lobby panel shows the island's seed, and so do the lobby list and invite cards.
 - `npm run island -- <seed> [<seed>…]` draws seeds' islands in the terminal (no seed: a random one), to look for good ones without starting the game.
-- Under `npm run dev` a lobby the server opens for an unknown code uses the code as its seed, so the island stays the same across server restarts.
+- Under `npm run dev` a lobby the server opens for an unknown code uses the code as its seed.
 
 ### How it works
 - `shared/room.js` is one lobby: its players, its island and its resource spots. The server runs one per code. What the spots can hold, how fast they regrow and what counts as rare is in `shared/level.js`.
+- A lobby is saved as what has happened on its island (what's on each spot, which trees are down, who was there); the island itself grows again from the seed. A saved spot the island no longer has in the same place, or an item that no longer turns up there, starts out fresh, so saves survive changes to `shared/worldgen.js` and `shared/level.js`. The server writes `data/lobbies.json` a couple of seconds after something changes and when it stops (`server/lobby.js`, `server/store.js`).
 - `shared/worldgen.js` grows an island from a seed (coastline, pond, terraces, toadstools, woods, meadow, trails, spot positions). It runs on the server and in the page, and only the seed goes over the wire, so everyone in a lobby agrees on the island. Each part of an island has its own random stream, and a layout that fails the checks (every spot on land and reachable, every step within a jump of the last) is grown again from a variant of the seed; `npm test` checks hundreds of seeds.
 - The islands are built by `src/world.js` from a map definition in `src/maps.js`: per-tile ground types, platforms, what grows where, and each map's own set pieces. The farm is built once; a lobby's island when you arrive on it (the last one is kept for going back).
 - Each client moves its own farmer and reports its position 20 times a second. Who gets a spot is settled by the lobby: it only counts if something is still there and the lobby last saw you next to it.
@@ -99,7 +102,8 @@ threejs-platformer/
 │   └── worldgen.js      # islands from seeds (and the classic island)
 ├── server/
 │   ├── index.js         # HTTP API + WebSocket + built client, one port
-│   └── lobby.js         # lobbies by code, quick join, idle cleanup
+│   ├── lobby.js         # lobbies by code, quick join, dormant lobbies, saving them
+│   └── store.js         # the lobbies' save file (data/lobbies.json)
 ├── scripts/
 │   ├── dev.js           # npm run dev: game server + Vite
 │   ├── island.js        # npm run island: draw a seed's island in the terminal

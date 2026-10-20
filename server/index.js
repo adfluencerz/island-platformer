@@ -8,12 +8,16 @@
 //
 // In development Vite serves the client and proxies /api and /ws here
 // (vite.config.js); `npm run dev` starts both.
+//
+// The lobbies are kept in data/lobbies.json (GAME_DATA=<file> for another
+// file, GAME_DATA=off for none), so they outlive a restart (server/store.js).
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Lobby, CODE_RE } from './lobby.js';
+import { Store } from './store.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -22,7 +26,9 @@ const MAX_BODY = 4096;
 const MAX_MSGS_PER_SEC = 120; // a client sends ~20 states a second plus the odd action
 const DEV = process.env.GAME_DEV === '1'; // set by `npm run dev`: joining an unknown code opens it
 
-const lobby = new Lobby();
+const DATA = process.env.GAME_DATA || fileURLToPath(new URL('../data/lobbies.json', import.meta.url));
+
+const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)) });
 
 // ---------- HTTP ----------
 const MIME = {
@@ -171,3 +177,11 @@ function attach(ws, room) {
 }
 
 server.listen(PORT, () => console.log(`game server on http://localhost:${PORT}`));
+
+// Ctrl+C, or `node --watch` restarting us: keep the lobbies as they are now
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    lobby.flush();
+    process.exit(0);
+  });
+}

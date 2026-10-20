@@ -2,10 +2,15 @@
 // game server end to end (server/index.js, over real sockets).
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath } from 'node:path';
 import WebSocket from 'ws';
 import { Room } from '../shared/room.js';
+import { Lobby } from '../server/lobby.js';
+import { Store } from '../server/store.js';
 import { C, S } from '../shared/protocol.js';
-import { PROTOCOL_VERSION, HOLD_MS, CLOSE } from '../shared/constants.js';
+import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, woodFor } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32 } from '../shared/worldgen.js';
 
@@ -250,12 +255,125 @@ await test('chat is cleaned and rate limited', () => {
   assert.ok(b.conn.all(S.CHAT).filter((m) => m.from === a.p.id).length <= 5);
 });
 
+console.log('keeping lobbies');
+await test('a saved room comes back as it was: spots, felled trees, clock, seats', () => {
+  const room = new Room({ code: 'SAVE01', name: 'Kept', seed: 'mossy-cove-7', inviteOnly: true, maxPlayers: 4 });
+  const a = join(room, 'A', 'keyA');
+  join(room, 'B', 'keyB');
+  const id = room.spots.findIndex((s) => s.kind === 'meadow');
+  standAt(room, a, id);
+  room.message(a.p, { t: C.TAKE, id });
+  room.message(a.p, { t: C.STATE, x: 11, y: 0.8, z: -3, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.CHOP, id: 5, x: 10, z: -3 });
+  room.createdAt -= 3_600_000; // an hour in
+  assert.ok(room.changed);
+
+  const save = JSON.parse(JSON.stringify(room.toSave())); // (as it is on disk)
+  const holdUntil = Date.now() + 60_000;
+  const back = Room.fromSave(save, { holdUntil });
+  assert.equal(back.changed, false);
+  assert.deepEqual([back.code, back.name, back.seed, back.inviteOnly, back.maxPlayers], ['SAVE01', 'Kept', 'mossy-cove-7', true, 4]);
+  assert.equal(back.createdAt, room.createdAt);
+  assert.deepEqual(back.spots, room.spots);
+  assert.deepEqual([...back.felled], [...room.felled]);
+  assert.deepEqual(back.rosterList(), room.rosterList().map((p) => ({ ...p, away: true })));
+  assert.ok(back.nextId > 2);
+  // the seats are held, for their players to come back to
+  const again = join(back, 'A', 'keyA');
+  assert.equal(again.p.id, a.p.id);
+  assert.equal(again.conn.last(S.WELCOME).resumed, true);
+  assert.equal(again.p.finds, 1);
+  assert.ok(join(back, 'C').p.id >= 3, 'a newcomer gets an id of their own');
+  back.update(holdUntil + 1000);
+  assert.deepEqual([...back.players.values()].map((p) => p.name).sort(), ['A', 'C'], 'B never came back');
+});
+
+await test('a save from before a change keeps only what still fits', () => {
+  const room = new Room({ code: 'SAVE02', seed: 'classic' });
+  const save = room.toSave();
+  const ledge = save.spots.findIndex(([, kind]) => kind === 'ledge');
+  const bush = save.spots.findIndex(([, kind]) => kind === 'bush');
+  const meadow = save.spots.findIndex(([, kind]) => kind === 'meadow');
+  const mushroom = save.spots.findIndex(([, kind]) => kind === 'mushroom');
+  save.spots[ledge][4] = 'pineapple'; // an item that no longer turns up there
+  save.spots[bush][3] += 5; // the spot moved
+  save.spots[meadow] = [meadow, 'meadow', save.spots[meadow][2], save.spots[meadow][3], 'coin', 99, 0];
+  save.spots[mushroom] = [mushroom, 'mushroom', save.spots[mushroom][2], save.spots[mushroom][3], null, 0, Date.now() + 5000];
+  save.spots.push([9999, 'ledge', 0, 0, 'gem', 1, 0]); // a spot the island lost
+  save.felled = [[3, Date.now() + 1000], [-1, 0], ['x', 0], [5000, 0]];
+  save.seats = [{ id: 1, key: 'k', name: 'A\u0000b', color: 123, finds: -4 }, { id: 1, key: 'k2' }, { id: 2 }];
+  const back = Room.fromSave(save);
+  assert.ok(back.spots[ledge].item !== 'pineapple' && back.spots[ledge].item, 'rolled afresh');
+  assert.equal(back.spots[meadow].count, 1, 'no more than a spot can hold');
+  assert.equal(back.spots[mushroom].item, null, 'still growing back');
+  assert.equal(back.spots.length, islandFor('classic').spots.length);
+  assert.deepEqual([...back.felled.keys()], [3]);
+  assert.deepEqual(back.rosterList().map(({ name, color, finds }) => [name, color, finds]), [['Ab', PLAYER_COLORS[0], 0]]);
+});
+
+await test('an empty lobby goes dormant, wakes by its code, and is let go after a week', () => {
+  const kept = [];
+  const lobby = new Lobby({ log: () => {}, store: { load: () => null, save: (d) => kept.push(d) } });
+  const room = lobby.make({ name: 'Sleepy', seed: 'dewy glade 31' });
+  const a = join(room, 'A');
+  const id = room.spots.findIndex((s) => s.kind === 'ledge');
+  standAt(room, a, id);
+  room.message(a.p, { t: C.TAKE, id });
+  room.leave(a.p, { hold: false });
+  room.emptySince -= 91_000;
+  lobby.reap();
+  assert.equal(lobby.rooms.size, 0);
+  assert.equal(lobby.list().length, 0, 'not listed while dormant');
+  assert.equal(room.timer, null, 'stopped');
+  const woke = lobby.find(room.code);
+  assert.ok(woke && woke !== room);
+  assert.equal(woke.seed, 'dewy-glade-31');
+  assert.equal(woke.spots[id].item, null, 'what was taken is still gone');
+  assert.equal(lobby.list().length, 1);
+  woke.emptySince -= 91_000;
+  lobby.reap();
+  lobby.dormant.get(room.code).since -= 8 * 24 * 3600_000;
+  lobby.reap();
+  assert.equal(lobby.find(room.code), null);
+  lobby.save();
+  assert.deepEqual(kept.at(-1).dormant, []);
+  assert.deepEqual(kept.at(-1).rooms, []);
+  woke.close();
+});
+
+await test('the store writes atomically and sets aside a file it cannot read', () => {
+  const dir = mkdtempSync(joinPath(tmpdir(), 'lobbies-'));
+  try {
+    const path = joinPath(dir, 'lobbies.json');
+    const store = new Store(path, { log: () => {} });
+    assert.equal(store.load(), null);
+    store.save({ rooms: [1] });
+    store.save({ rooms: [2] });
+    assert.deepEqual(store.load().rooms, [2]);
+    assert.deepEqual(JSON.parse(readFileSync(`${path}.bak`, 'utf8')).rooms, [1], 'the last good one is the .bak');
+    writeFileSync(path, '{"v":1,"rooms":[3'); // a crash halfway
+    assert.deepEqual(store.load().rooms, [1], 'the .bak is read');
+    assert.ok(readdirSync(dir).some((f) => /^lobbies\.broken-\d+\.json$/.test(f)), 'the broken file is set aside');
+    writeFileSync(path, '{"v":99}');
+    store.load();
+    assert.ok(readdirSync(dir).filter((f) => f.includes('broken')).length >= 2, 'a newer server\'s file is not written over');
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
 // ---------- The server, over sockets ----------
 console.log('server');
 const PORT = 3900 + Math.floor(Math.random() * 90);
 const base = `http://localhost:${PORT}`;
-const server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] });
-await new Promise((ready) => server.stdout.on('data', (d) => String(d).includes('game server') && ready()));
+function startServer(env = {}) {
+  const proc = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, PORT: String(PORT), GAME_DATA: 'off', ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
+  const ready = new Promise((done) => proc.stdout.on('data', (d) => String(d).includes('game server') && done()));
+  const exited = new Promise((done) => proc.on('exit', done));
+  return { proc, ready, exited };
+}
+let server = startServer();
+await server.ready;
 
 function client(code = '', key = `key${Math.random()}`) {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws${code ? `?lobby=${code}` : ''}`);
@@ -340,8 +458,47 @@ try {
     const bad = client('ABCDEF');
     assert.equal(await bad.closed, CLOSE.NO_GAME);
   });
+
+  await test('a restart keeps the lobbies: the same island, what was taken, the seat', async () => {
+    server.proc.kill();
+    await server.exited;
+    const dir = mkdtempSync(joinPath(tmpdir(), 'lobbies-'));
+    const GAME_DATA = joinPath(dir, 'lobbies.json');
+    try {
+      server = startServer({ GAME_DATA });
+      await server.ready;
+      const made = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ours', seed: 'sunny knoll 5', inviteOnly: true }) }).then((r) => r.json());
+      const a = client(made.code, 'restart-key');
+      const w = await a.next(S.WELCOME);
+      const [id, , x, , z] = w.spots.find(([, kind]) => kind === 'meadow');
+      a.send({ t: C.STATE, x, y: 0.8, z, yaw: 0, f: 1 });
+      await new Promise((r) => setTimeout(r, 100));
+      a.send({ t: C.TAKE, id });
+      await a.next(S.TAKEN);
+
+      server.proc.kill('SIGTERM'); // (what node --watch does)
+      await server.exited;
+      assert.notEqual(await a.closed, 1000);
+      server = startServer({ GAME_DATA });
+      await server.ready;
+
+      const info = await fetch(`${base}/api/lobbies/${made.code}`).then((r) => r.json());
+      assert.deepEqual([info.name, info.seed, info.inviteOnly], ['Ours', 'sunny-knoll-5', true]);
+      const again = client(made.code, 'restart-key');
+      const w2 = await again.next(S.WELCOME);
+      assert.equal(w2.resumed, true);
+      assert.equal(w2.id, w.id);
+      assert.equal(w2.roster.find((p) => p.id === w.id).finds, 1);
+      assert.equal(w2.spots.find(([sid]) => sid === id)[5], null, 'still taken');
+      again.ws.close(1000);
+    } finally {
+      server.proc.kill();
+      await server.exited;
+      rmSync(dir, { recursive: true });
+    }
+  });
 } finally {
-  server.kill();
+  server.proc.kill();
 }
 
 console.log(`${passed} passed${process.exitCode ? ', some FAILED' : ''}`);
