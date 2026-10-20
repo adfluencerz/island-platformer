@@ -4,9 +4,11 @@
 // - the prompt over the toolbar (E  Pick berries)
 // - a big word for a rare find
 // - chat (bottom right, lobbies only): Enter to talk
-// - the pause menu (Esc), with the way out to the lobbies (also L), a pairing code to play the farm on another
-//   device, the farm's name and PIN to get it back without one, and the
-//   farm's helpers: friends who can come and farm on it, invited with a code
+// - the pause menu (Esc), with the way out to the lobbies (also L), and three
+//   folding sections, one open at a time: the farm's helpers (friends who can
+//   come and farm on it, invited with a code), Other devices (a pairing code
+//   to play the farm on another device, and the farm's name and PIN to get it
+//   back without one), and the controls
 // On a farm with helpers on it (yours, or one you help on) the place panel
 // lists who is there and chat is open, as in a lobby.
 import { MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
@@ -15,18 +17,40 @@ import { inviteLink, helpLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 import { isTouch } from './touch.js';
 
-const CONTROLS =
-  'WASD move · Space jump · 1–= or scroll over the bar pick an item · scroll elsewhere to zoom · E till / plant / harvest or trade at the stall at home, gather, chop trees (axe) or mine rocks (pickaxe) in lobbies · ' +
-  'I backpack · L visit a lobby · Enter chat · Esc menu · hold T to fast-forward time at home · click the ground to walk there';
-const TOUCH_CONTROLS =
-  'Stick: walk · Tap the ground to walk there and till, plant or harvest it with what you hold · ' +
-  'Tap the stall to trade, a bush or mushrooms to gather, a tree to chop it (axe), a rock to mine it (pickaxe) · Use: the same where you stand · ' +
-  'Bag: backpack · pinch to zoom · hold the clock to fast-forward time at home';
+// The controls: [keys, what they do]
+const CONTROLS = [
+  ['WASD', 'Walk (or click the ground)'],
+  ['Space', 'Jump'],
+  ['E', 'Till, plant, harvest, gather, chop, mine, or trade at the stall'],
+  ['1 – =', 'Pick an item (or scroll over the bar)'],
+  ['Scroll', 'Zoom'],
+  ['I', 'Backpack'],
+  ['L', 'Visit a lobby'],
+  ['Enter', 'Chat'],
+  ['Hold T', 'Speed up time at home'],
+  ['Esc', 'Menu'],
+];
+const TOUCH_CONTROLS = [
+  ['Stick', 'Walk (or tap the ground)'],
+  ['Tap', 'Till, plant, harvest, gather, chop, mine, or trade at the stall'],
+  ['Use', 'The same, where you stand'],
+  ['Bag', 'Backpack'],
+  ['Pinch', 'Zoom'],
+  ['Hold clock', 'Speed up time at home'],
+];
+
+function keyList(parent, className, rows) {
+  const list = el('div', `ui-help ui-keys ${className}`, parent);
+  for (const [keys, what] of rows) {
+    el('kbd', 'ui-key', list, keys);
+    el('span', '', list, what);
+  }
+}
 
 // The controls, for the keyboard or for a touch screen (touch.js shows the one in use)
 export function addHelp(parent) {
-  el('div', 'ui-help mouse-only', parent, CONTROLS);
-  el('div', 'ui-help touch-only', parent, TOUCH_CONTROLS);
+  keyList(parent, 'mouse-only', CONTROLS);
+  keyList(parent, 'touch-only', TOUCH_CONTROLS);
 }
 
 const CHAT_FADE_MS = 10_000;
@@ -66,7 +90,7 @@ export class Hud {
     this.copyBtn = button('ui-btn ui-btn-small', this.codeRow, 'Copy invite', () => this.copyInvite());
     this.islandText = el('div', 'ui-muted ui-small', body);
     this.list = el('div', 'ui-player-list', body);
-    this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', body, 'Head home', () => this.onHome());
+    this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', body, 'Go home', () => this.onHome());
     el('div', 'ui-muted ui-small', body, 'Esc: menu & controls');
     this.setFolded(true);
 
@@ -104,24 +128,30 @@ export class Hud {
       this.setPaused(false);
       this.onTravel();
     });
-    this.pauseCopy = button('ui-btn', card, 'Copy invite link', () => this.copyInvite());
-    this.pauseHome = button('ui-btn ui-btn-ghost', card, 'Head home', () => {
+    this.pauseCopy = button('ui-btn', card, 'Invite a friend', () => this.copyInvite());
+    this.pauseHome = button('ui-btn ui-btn-ghost', card, 'Go home', () => {
       this.setPaused(false);
       this.onHome();
     });
-    this.pairBtn = button('ui-btn', card, 'Play on another device', () => this.showPairCode());
-    this.pairBox = el('div', 'ui-pair', card);
-    this.pairBox.hidden = true;
 
-    // the farm's name and PIN
-    this.recoveryBtn = button('ui-btn', card, '', () => {
-      this.recovery.hidden = !this.recovery.hidden;
-      if (!this.recovery.hidden) this.recoveryName.focus();
-    });
-    this.recovery = el('form', 'ui-recovery', card);
-    this.recovery.hidden = true;
+    // the folding sections
+    this.sections = [];
+    const helpers = this.section(card, 'Helpers', () => this.showHelpers());
+    this.helpersBtn = helpers.btn;
+    this.helpersBox = helpers.box;
+
+    // other devices: a pairing code, and the farm's name and PIN
+    const devices = this.section(card, 'Other devices');
+    this.devicesBtn = devices.btn;
+    el('div', 'ui-sub', devices.box, 'Play on another device');
+    el('div', 'ui-muted', devices.box, 'Get a code, then type it on the other device under “Move my farm”.');
+    button('ui-btn ui-btn-small', devices.box, 'Get a code', () => this.showPairCode());
+    this.pairBox = el('div', 'ui-pair', devices.box);
+    this.pairBox.hidden = true;
+    this.recoveryTitle = el('div', 'ui-sub', devices.box);
+    this.recovery = el('form', 'ui-recovery', devices.box);
     el('div', 'ui-muted', this.recovery,
-      'With its name and PIN you can get your farm back on any device, even with no other device to ask. Keep the PIN to yourself.');
+      'With these you can get your farm back on any device, even with no other device to ask. Keep the PIN to yourself.');
     const nameField = el('label', 'ui-field', this.recovery);
     el('span', '', nameField, 'Farm name');
     this.recoveryName = el('input', 'ui-input', nameField);
@@ -140,14 +170,7 @@ export class Hud {
     });
     this.setFarmName('');
 
-    // the farm's helpers
-    this.helpersBtn = button('ui-btn', card, 'Helpers: friends who farm with you', () => {
-      this.helpersBox.hidden = !this.helpersBox.hidden;
-      if (!this.helpersBox.hidden) this.showHelpers();
-    });
-    this.helpersBox = el('div', 'ui-helpers', card);
-    this.helpersBox.hidden = true;
-    addHelp(card);
+    addHelp(this.section(card, 'Controls').box);
 
     // Capture phase: runs before the inventory's and the game's own key handlers
     window.addEventListener('keydown', (e) => this.onKey(e), true);
@@ -159,7 +182,7 @@ export class Hud {
     this.session = null;
     this.placeName.textContent = this.farmName || 'My farm';
     this.blurb.textContent = 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.';
-    this.pauseNote.textContent = 'Time on your farm stands still while paused.';
+    this.pauseNote.textContent = 'Your farm waits for you.';
   }
 
   // A farm with helpers, ours or a friend's. visit: { name, mine }
@@ -185,7 +208,7 @@ export class Hud {
     this.codeText.textContent = `Code ${session.code}`;
     this.islandText.textContent = `Island seed: ${session.seed}`;
     this.blurb.textContent = 'Whoever gets there first takes it. Things grow back, and now and then something rare turns up.';
-    this.pauseNote.textContent = 'The lobby keeps going for everyone else.';
+    this.pauseNote.textContent = 'Everyone else keeps playing.';
     this.chatLog.textContent = '';
     this.setConnStatus('');
   }
@@ -216,7 +239,7 @@ export class Hud {
     this.pauseHome.hidden = !away;
     const friends = place === 'farm' && !visit?.mine; // (a friend's farm: these are about ours)
     this.helpersBtn.hidden = friends;
-    this.pairBtn.hidden = friends;
+    this.devicesBtn.hidden = friends;
     this.chatBox.hidden = !online;
     this.setPrompt('');
     this.closeChat();
@@ -303,7 +326,31 @@ export class Hud {
 
   setPaused(on) {
     this.pause.hidden = !on;
-    if (!on) this.pairBox.hidden = this.recovery.hidden = this.helpersBox.hidden = true;
+    if (!on) this.closeSections();
+  }
+
+  // A button in the pause menu that opens a box under it, and closes the
+  // others. onOpen(): fill the box in.
+  section(parent, label, onOpen) {
+    const btn = button('ui-btn ui-btn-ghost ui-fold', parent, label, () => {
+      const open = box.hidden;
+      this.closeSections();
+      box.hidden = !open;
+      btn.classList.toggle('open', open);
+      if (open) onOpen?.();
+    });
+    const box = el('div', 'ui-fold-box', parent);
+    box.hidden = true;
+    this.sections.push({ btn, box });
+    return { btn, box };
+  }
+
+  closeSections() {
+    for (const { btn, box } of this.sections) {
+      box.hidden = true;
+      btn.classList.remove('open');
+    }
+    this.pairBox.hidden = true;
   }
 
   // ---------- The farm's helpers ----------
@@ -319,7 +366,7 @@ export class Hud {
     }
     box.textContent = '';
     el('div', 'ui-muted', box,
-      'Helpers can come and farm here any time, even while you are away. What they harvest goes in the farm\'s chest, by the plaza, and only you take things out.');
+      'Friends you invite can farm here any time, even while you’re away. What they harvest goes in the chest by the plaza, and only you can take it out.');
     const list = el('div', 'ui-helper-list', box);
     if (!helpers.length) el('div', 'ui-muted', list, 'No helpers yet.');
     for (const h of helpers) {
@@ -345,8 +392,8 @@ export class Hud {
         inviteBox.textContent = '';
         el('div', 'ui-pair-code', inviteBox, `${code.slice(0, 4)}-${code.slice(4)}`);
         el('div', 'ui-muted', inviteBox,
-          `Send your friend the link, or the code to type under “Farms you help on” on the title screen. ` +
-          `It works once, for ${Math.round(expiresIn / 3600)} hours.`);
+          `Send your friend the link, or have them type the code on the title screen. ` +
+          `It works once, within ${Math.round(expiresIn / 3600)} hours.`);
         const copy = button('ui-btn ui-btn-small', inviteBox, 'Copy invite link', async () => {
           const ok = await copyText(helpLink(code));
           copy.textContent = ok ? 'Copied!' : helpLink(code);
@@ -360,7 +407,7 @@ export class Hud {
   // ---------- The farm's name and PIN ----------
   setFarmName(name) {
     this.farmName = name;
-    this.recoveryBtn.textContent = name ? `Farm name & PIN: ${name}` : 'Farm name & PIN (not set up yet)';
+    this.recoveryTitle.textContent = name ? 'Farm name & PIN' : 'Farm name & PIN (not set yet)';
     this.recoveryName.value = name;
     this.recoveryPin.placeholder = name ? 'leave empty to keep it' : '';
     if (this.place === 'home') this.placeName.textContent = name || 'My farm';
@@ -393,8 +440,8 @@ export class Hud {
       this.pairBox.textContent = '';
       el('div', 'ui-pair-code', this.pairBox, `${code.slice(0, 3)}-${code.slice(3)}`);
       el('div', 'ui-muted', this.pairBox,
-        `On your other device, open the game and type this code under “Your farm from another device”. ` +
-        `It works once, for ${Math.round(expiresIn / 60)} minutes. Whichever device opened the farm last is the one that plays it.`);
+        `On your other device, pick Move my farm on the title screen and type this code. ` +
+        `It works once, for ${Math.round(expiresIn / 60)} minutes. The farm plays on whichever device opened it last.`);
     } catch (e) {
       this.pairBox.textContent = e.message;
     }
@@ -406,7 +453,12 @@ export class Hud {
     const ok = await copyText(link);
     this.chat({ from: 0, text: ok ? 'Invite link copied. Send it to a friend!' : `Invite link: ${link}` });
     this.copyBtn.textContent = ok ? 'Copied!' : 'Copy invite';
-    setTimeout(() => (this.copyBtn.textContent = 'Copy invite'), 1500);
+    this.pauseCopy.textContent = ok ? 'Link copied!' : 'Invite a friend';
+    clearTimeout(this.copyTimer);
+    this.copyTimer = setTimeout(() => {
+      this.copyBtn.textContent = 'Copy invite';
+      this.pauseCopy.textContent = 'Invite a friend';
+    }, 1500);
   }
 
   onKey(e) {

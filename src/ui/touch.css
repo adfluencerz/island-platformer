@@ -196,7 +196,8 @@ body.in-menu .tc { display: none; }
   -webkit-overflow-scrolling: touch;
 }
 :root.compact .ui-logo { font-size: 46px; }
-:root.compact .ui-help { font-size: 17px; }
+:root.compact .ui-keys { font-size: 18px; }
+:root.compact .ui-key { font-size: 17px; }
 
 :root.compact .inv-menu {
   place-items: start center;

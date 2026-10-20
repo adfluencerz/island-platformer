@@ -2,6 +2,7 @@
    (inventory.css: --inv-* and .inv-frame) so it all reads as one game. */
 
 .ui-splash, .ui-hud {
+  --ui-soft: #86522a; /* (quieter text: a lighter brown, not see-through) */
   font-family: var(--inv-font);
   font-size: 22px;
   color: var(--inv-ink);
@@ -26,7 +27,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-card h2 { margin: 4px 0 0; font-size: 34px; }
 .ui-row { display: flex; gap: 8px; }
 .ui-row > * { flex: 1; }
-.ui-muted { opacity: 0.7; font-size: 20px; }
+.ui-muted { color: var(--ui-soft); font-size: 20px; line-height: 1.15; }
 .ui-small { font-size: 17px; }
 
 .ui-btn {
@@ -46,12 +47,28 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-btn-big { font-size: 31px; padding: 12px 16px; }
 .ui-btn-small { font-size: 20px; padding: 4px 10px; border-width: 2px; }
 .ui-btn-ghost {
-  background: var(--inv-paper-dark);
+  background: var(--inv-slot-light);
   color: var(--inv-ink);
+  font-weight: 600;
   text-shadow: none;
-  box-shadow: inset 0 3px 0 var(--inv-slot-light), inset 0 -3px 0 var(--inv-slot-shade);
+  box-shadow: inset 0 3px 0 #fff4dc, inset 0 -3px 0 var(--inv-slot-shade);
 }
-.ui-btn-ghost:hover:not(:disabled) { background: #f7c47e; }
+.ui-btn-ghost:hover:not(:disabled) { background: #fff0cf; }
+/* a plain text link, for the less used ways in */
+.ui-link {
+  all: unset;
+  align-self: center;
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--inv-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ui-link:hover { color: var(--inv-wood); }
+.ui-link:focus-visible { outline: 3px solid var(--inv-wood-light); border-radius: 4px; }
 .ui-btn.on { background: #4f9e3c; box-shadow: inset 0 3px 0 #7ed957, inset 0 -3px 0 #2f6b25; }
 
 .ui-input {
@@ -104,9 +121,19 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   text-shadow: 0 1px 0 var(--inv-outline);
 }
 .ui-tagline { text-align: center; font-size: 21px; margin-bottom: 4px; }
-.ui-section { margin: 6px 0 0; font-size: 25px; }
+/* a heading between two thin rules */
+.ui-card .ui-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+  font-size: 23px;
+  color: var(--ui-soft);
+}
+.ui-section::before, .ui-section::after { content: ''; flex: 1; height: 2px; background: var(--inv-slot-shade); opacity: 0.6; }
 .ui-menu, .ui-browse, .ui-create, .ui-invite, .ui-recovery { display: flex; flex-direction: column; gap: 8px; }
 .ui-code-row .ui-input { flex: 2; text-transform: uppercase; letter-spacing: 0.1em; }
+.ui-code-row .ui-input::placeholder { text-transform: none; letter-spacing: normal; }
 .ui-invite { padding: 10px; border-radius: 4px; background: var(--inv-slot-bg); }
 .ui-invite-title { font-size: 27px; font-weight: 700; }
 .ui-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
@@ -124,7 +151,24 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-game-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-status { min-height: 1.2em; font-size: 21px; font-weight: 600; }
 .ui-status.error { color: var(--inv-red); }
-.ui-help { font-size: 18px; opacity: 0.65; text-align: center; }
+/* the controls: a key, then what it does */
+.ui-keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 10px;
+  align-items: baseline;
+  font-size: 19px;
+  line-height: 1.1;
+}
+.ui-key {
+  justify-self: end;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: var(--inv-slot-bg);
+  box-shadow: inset 0 -2px 0 var(--inv-slot-shade);
+  font: 700 18px var(--inv-font);
+  white-space: nowrap;
+}
 
 /* ---------- Player list (top left, under the controls hint) ---------- */
 .ui-players {
@@ -159,7 +203,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-player.me .ui-player-name { font-weight: 700; }
 .ui-player.away { opacity: 0.5; }
 .ui-player-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ui-found { font-size: 18px; opacity: 0.75; }
+.ui-found { font-size: 18px; color: var(--ui-soft); }
 
 /* ---------- Prompt over the toolbar, the word for a rare find ---------- */
 .ui-prompt {
@@ -220,10 +264,24 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 }
 .ui-pause { background: rgba(0, 0, 0, 0.35); z-index: 25; }
 .ui-pair { text-align: center; }
+/* the pause menu's folding sections */
+.ui-fold { position: relative; }
+.ui-fold::after { content: '▸'; position: absolute; right: 14px; }
+.ui-fold.open::after { content: '▾'; }
+.ui-fold-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: -4px;
+  border-radius: 4px;
+  background: var(--inv-slot-light);
+}
+.ui-sub { font-size: 22px; font-weight: 700; }
+.ui-fold-box .ui-sub:not(:first-child) { margin-top: 6px; }
 .ui-pair-code { font-size: 36px; font-weight: 700; letter-spacing: 0.15em; user-select: all; }
 
 /* The farm's helpers (the pause menu), and the farms you help on (the title screen) */
-.ui-helpers { display: flex; flex-direction: column; gap: 8px; }
 .ui-helper-list { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 4px; background: var(--inv-slot-bg); }
 .ui-helper { display: flex; align-items: center; gap: 8px; font-size: 21px; }
 

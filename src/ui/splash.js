@@ -1,17 +1,17 @@
 // The title screen, and the travel board you open from home: your name, the
 // way to your farm, and the online lobbies - Quick join (the fullest public
-// lobby with room, or a new one), Browse, Open a lobby, or Join with a code. A
-// page opened from an invite link (?lobby=CODE) shows that lobby's
-// invitation first. And the way to bring your farm over from another device,
-// with a pairing code from that device's menu, or with the farm's name and
-// PIN when there is no other device to ask (src/net/farm.js). And the farms
-// you help on (friends' farms, server/farms.js): visit one, or say yes to an
-// invitation (a link with ?help=CODE, or its code typed in).
+// lobby with room, or a new one), Browse, New lobby, or a code from a friend:
+// a lobby's, or an invitation to help on their farm (8 long, so the two can't
+// be mixed up). A page opened from an invite link (?lobby=CODE or ?help=CODE)
+// shows that invitation first. The farms you help on (friends' farms,
+// server/farms.js), when there are any: visit one. And, behind Move my farm,
+// the way to bring your farm over from another device, with a pairing code
+// from that device's menu, or with the farm's name and PIN when there is no
+// other device to ask (src/net/farm.js).
 import { MAX_PLAYERS, MAX_NAME, MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
 import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode } from '../net/lobby.js';
 import { el, button } from './dom.js';
-import { addHelp } from './hud.js';
 
 const NAME_STORE = 'tp.name';
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
@@ -41,7 +41,7 @@ export class Splash {
     const titleRow = el('div', 'ui-title-row', card);
     el('h1', 'ui-logo', titleRow, 'Island Platformer');
     if (devMode()) el('div', 'ui-dev-badge', titleRow, 'DEV');
-    el('div', 'ui-tagline', card, 'Tend your own little farm, then drop into online lobbies to gather berries, mushrooms and rare finds with other farmers.');
+    el('div', 'ui-tagline', card, 'Grow a little farm, then hop online to forage with other farmers.');
 
     const nameRow = el('label', 'ui-field', card);
     el('span', '', nameRow, 'Your name');
@@ -75,53 +75,33 @@ export class Splash {
     this.menu = el('div', 'ui-menu', card);
     this.homeBtn = button('ui-btn ui-btn-big', this.menu, '', () => this.goHome());
 
-    // ---- the farms we help on ----
-    el('h2', 'ui-section', this.menu, 'Farms you help on');
-    this.helpingList = el('div', 'ui-helper-list', this.menu);
-    const helpCodeRow = el('form', 'ui-row ui-code-row', this.menu);
-    this.helpInput = el('input', 'ui-input', helpCodeRow);
-    this.helpInput.placeholder = 'Invite code';
-    this.helpInput.maxLength = 10;
-    this.helpInput.autocomplete = 'off';
-    button('ui-btn', helpCodeRow, 'Help out', null).type = 'submit';
-    helpCodeRow.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const code = this.helpInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (code.length !== 8) return this.setStatus('An invite code to help on a farm is 8 letters and digits.', true);
-      this.help(code);
-    });
-    el('h2', 'ui-section', this.menu, 'Online lobbies');
+    el('h2', 'ui-section', this.menu, 'Play online');
     button('ui-btn', this.menu, 'Quick join', () => this.play(''));
     const row = el('div', 'ui-row', this.menu);
     button('ui-btn', row, 'Browse lobbies', () => this.showBrowse());
-    button('ui-btn', row, 'Open a lobby', () => this.showPanel('create'));
+    button('ui-btn', row, 'New lobby', () => this.showPanel('create'));
     const codeRow = el('form', 'ui-row ui-code-row', this.menu);
     this.codeInput = el('input', 'ui-input', codeRow);
-    this.codeInput.placeholder = 'Lobby code';
+    this.codeInput.placeholder = 'Code from a friend';
     this.codeInput.maxLength = 12;
     this.codeInput.autocomplete = 'off';
     button('ui-btn', codeRow, 'Join', null).type = 'submit';
     codeRow.addEventListener('submit', (e) => {
       e.preventDefault();
-      const code = normalizeCode(this.codeInput.value);
-      if (!code) return this.setStatus('A lobby code is 6 or 10 letters and digits.', true);
+      const typed = this.codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (typed.length === 8) return this.help(typed); // (an invitation to help on a farm)
+      const code = normalizeCode(typed);
+      if (!code) return this.setStatus('That code doesn’t look right. Codes are 6, 8 or 10 letters and digits.', true);
       this.play(code);
     });
 
-    // ---- your farm, from another device ----
-    el('h2', 'ui-section', this.menu, 'Your farm from another device');
-    el('div', 'ui-muted', this.menu, 'Get a code from the menu on the device that has your farm.');
-    const pairRow = el('form', 'ui-row ui-code-row', this.menu);
-    this.pairInput = el('input', 'ui-input', pairRow);
-    this.pairInput.placeholder = 'Farm code';
-    this.pairInput.maxLength = 8;
-    this.pairInput.autocomplete = 'off';
-    button('ui-btn', pairRow, 'Bring it here', null).type = 'submit';
-    pairRow.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.bringFarm();
-    });
-    button('ui-btn ui-btn-ghost ui-btn-small', this.menu, 'No other device? Use your farm’s name and PIN', () => this.showPanel('recover'));
+    // ---- the farms we help on (when there are any) ----
+    this.helping = el('div', 'ui-menu', this.menu);
+    this.helping.hidden = true;
+    el('h2', 'ui-section', this.helping, 'Friends’ farms');
+    this.helpingList = el('div', 'ui-helper-list', this.helping);
+
+    button('ui-link', this.menu, 'Move my farm', () => this.showPanel('move'));
 
     // ---- Browse ----
     this.browse = el('div', 'ui-browse', card);
@@ -131,9 +111,9 @@ export class Splash {
     button('ui-btn ui-btn-ghost', browseRow, 'Back', () => this.showPanel('menu'));
     button('ui-btn', browseRow, 'Refresh', () => this.showBrowse());
 
-    // ---- Open a lobby ----
+    // ---- New lobby ----
     this.create = el('form', 'ui-create', card);
-    el('h2', '', this.create, 'Open a lobby');
+    el('h2', '', this.create, 'New lobby');
     const lobbyName = el('label', 'ui-field', this.create);
     el('span', '', lobbyName, 'Lobby name');
     this.lobbyName = el('input', 'ui-input', lobbyName);
@@ -154,41 +134,52 @@ export class Splash {
     const priv = el('label', 'ui-check', this.create);
     this.inviteOnly = el('input', '', priv);
     this.inviteOnly.type = 'checkbox';
-    el('span', '', priv, 'Invite only (not listed; join by link)');
+    el('span', '', priv, 'Invite only (hidden from Browse)');
     const createRow = el('div', 'ui-row', this.create);
     button('ui-btn ui-btn-ghost', createRow, 'Back', () => this.showPanel('menu'));
-    button('ui-btn', createRow, 'Open & join', null).type = 'submit';
+    button('ui-btn', createRow, 'Create', null).type = 'submit';
     this.create.addEventListener('submit', (e) => {
       e.preventDefault();
       this.makeLobby();
     });
 
-    // ---- your farm back, by its name and PIN ----
-    this.recover = el('form', 'ui-create', card);
-    el('h2', '', this.recover, 'Get your farm back');
-    el('div', 'ui-muted', this.recover, 'Type the name and PIN you gave your farm (in the menu, Esc, on a device that had it).');
-    const farmName = el('label', 'ui-field', this.recover);
+    // ---- your farm, from another device: a code from its menu, or the farm's name and PIN ----
+    this.move = el('div', 'ui-create', card);
+    el('h2', '', this.move, 'Move my farm here');
+    el('div', 'ui-muted', this.move, 'On the device that has your farm, open the menu, pick Other devices, then Get a code.');
+    const pairRow = el('form', 'ui-row ui-code-row', this.move);
+    this.pairInput = el('input', 'ui-input', pairRow);
+    this.pairInput.placeholder = 'Code';
+    this.pairInput.maxLength = 8;
+    this.pairInput.autocomplete = 'off';
+    button('ui-btn', pairRow, 'Move it here', null).type = 'submit';
+    pairRow.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.bringFarm();
+    });
+    el('h2', 'ui-section', this.move, 'No other device?');
+    const recover = el('form', 'ui-create', this.move);
+    el('div', 'ui-muted', recover, 'Use the farm name and PIN you set in the menu.');
+    const farmName = el('label', 'ui-field', recover);
     el('span', '', farmName, 'Farm name');
     this.farmName = el('input', 'ui-input', farmName);
     this.farmName.maxLength = MAX_FARM_NAME;
     this.farmName.autocomplete = 'off';
-    const pin = el('label', 'ui-field', this.recover);
+    const pin = el('label', 'ui-field', recover);
     el('span', '', pin, 'PIN');
     this.pin = el('input', 'ui-input', pin);
     Object.assign(this.pin, { type: 'password', inputMode: 'numeric', maxLength: PIN_LENGTH, autocomplete: 'off' });
-    const recoverRow = el('div', 'ui-row', this.recover);
-    button('ui-btn ui-btn-ghost', recoverRow, 'Back', () => this.showPanel('menu'));
-    button('ui-btn', recoverRow, 'Get it back', null).type = 'submit';
-    this.recover.addEventListener('submit', (e) => {
+    button('ui-btn', recover, 'Move it here', null).type = 'submit';
+    recover.addEventListener('submit', (e) => {
       e.preventDefault();
       const name = this.farmName.value.trim();
       const digits = this.pin.value.trim();
-      if (!name || !new RegExp(`^\\d{${PIN_LENGTH}}$`).test(digits)) return this.setStatus(`Type the farm's name and its ${PIN_LENGTH}-digit PIN.`, true);
+      if (!name || !new RegExp(`^\\d{${PIN_LENGTH}}$`).test(digits)) return this.setStatus(`Type the farm name and its ${PIN_LENGTH}-digit PIN.`, true);
       this.bring(() => this.onRecover(name, digits));
     });
+    button('ui-btn ui-btn-ghost', this.move, 'Back', () => this.showPanel('menu'));
 
     this.status = el('div', 'ui-status', card);
-    addHelp(card);
     this.hidden = true;
     root.hidden = true;
 
@@ -227,7 +218,7 @@ export class Splash {
     this.menu.hidden = which !== 'menu';
     this.browse.hidden = which !== 'browse';
     this.create.hidden = which !== 'create';
-    this.recover.hidden = which !== 'recover';
+    this.move.hidden = which !== 'move';
   }
 
   setStatus(text, isError = false) {
@@ -254,13 +245,13 @@ export class Splash {
 
   bringFarm() {
     const code = this.pairInput.value.trim();
-    if (!code) return this.setStatus('Open the menu (Esc) on your other device and pick “Play on another device” for a code.', true);
+    if (!code) return this.setStatus('Get a code from the menu on your other device first.', true);
     this.bring(() => this.onFarmCode(code));
   }
 
   // fetchFarm: the farm's way here (it reloads the page, or fails with why)
   async bring(fetchFarm) {
-    if (!confirm('Play that farm here? The farm in this browser is put aside.')) return;
+    if (!confirm('Play that farm on this device? The farm here now will be put aside.')) return;
     this.setStatus('Fetching your farm…');
     try {
       await fetchFarm();
@@ -278,7 +269,7 @@ export class Splash {
       farms = await this.onHelping();
     } catch {}
     list.textContent = '';
-    if (!farms.length) el('div', 'ui-muted', list, 'None yet. A friend can invite you from their farm\'s menu (Helpers).');
+    this.helping.hidden = !farms.length;
     for (const f of farms) {
       const row = el('div', 'ui-helper', list);
       el('span', 'ui-player-name', row, f.name);
@@ -315,7 +306,7 @@ export class Splash {
     try {
       const f = await this.onHelp(code, this.name());
       forgetHelpCode();
-      this.helpInput.value = '';
+      this.codeInput.value = '';
       this.showHelping();
       this.visit(f.id, f.name);
     } catch (e) {
@@ -349,7 +340,7 @@ export class Splash {
     try {
       const lobbies = await listLobbies();
       this.list.textContent = '';
-      if (!lobbies.length) el('div', 'ui-muted', this.list, 'No public lobbies right now. Open one, or Quick join.');
+      if (!lobbies.length) el('div', 'ui-muted', this.list, 'No lobbies open right now. Start a new one, or try Quick join.');
       // the busy ones first, the fullest on top; then the quiet ones (nobody there), as the server has them
       const order = (l) => (l.quiet ? -1 : l.players);
       for (const l of lobbies.sort((a, b) => order(b) - order(a))) {
