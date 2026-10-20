@@ -12,6 +12,9 @@
 // something rare turns up and the whole lobby hears about it. Whoever gets to a
 // spot first takes it.
 //
+// The rocks can be broken up for stone with the pickaxe, the same way (the
+// room keeps which are broken, by their number; ROCK in shared/level.js).
+//
 // The trees can be chopped down for wood. The room doesn't know where they
 // stand (the pages grow them from the seed), only which are down: a page says
 // which tree it felled, where and how big it is, and the room checks the player is next to
@@ -24,7 +27,7 @@
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { SPOT_KINDS, RARE, TREE, rollLoot, woodFor, spawnPoint } from './level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, rollLoot, woodFor, stoneFor, spawnPoint } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
@@ -32,6 +35,9 @@ const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
 const CHOP_REACH = 2.6; // the client chops within 1.5 of the trunk
 const CHOP_EVERY = 1000; // ms: the fewest between two felled trees (felling one takes TREE.hits swings)
 const MAX_TREES = 2000; // tree ids are below this (an island has a couple of hundred)
+const MINE_REACH = 2.6; // the client mines within 1.3 of the rock's edge (plus the rock itself: up to 1.5 times its size, as drawn)
+const MINE_EVERY = 900; // ms: the fewest between two broken rocks (breaking one takes ROCK.hits swings)
+const MAX_ROCKS = 2000;
 const WHERE = { ledge: 'up on a ledge', meadow: 'out in the meadow', mushroom: 'among the mushrooms', bush: 'in a berry bush' };
 
 export class Room extends Place {
@@ -49,6 +55,7 @@ export class Room extends Place {
       return { id, kind, x, y, z, item, count, regrowAt: 0 };
     });
     this.felled = new Map(); // tree id -> when it grows back (ms)
+    this.mined = new Map(); // rock id -> when a new one surfaces (ms)
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
   }
 
@@ -69,7 +76,7 @@ export class Room extends Place {
   }
 
   playerExtra(p) {
-    return { finds: p.finds, rares: p.rares, wood: p.wood };
+    return { finds: p.finds, rares: p.rares, wood: p.wood, stone: p.stone };
   }
 
   spawnFor(id) {
@@ -77,13 +84,15 @@ export class Room extends Place {
   }
 
   // A new player in a seat (or, from a save, an away one whose seat is held)
-  seat({ finds = 0, rares = 0, wood = 0, ...rest }) {
+  seat({ finds = 0, rares = 0, wood = 0, stone = 0, ...rest }) {
     return super.seat({
       ...rest,
       finds, // spots emptied this visit
       rares, // ...of which rare finds
       wood, // logs chopped this visit
+      stone, // stone mined this visit
       chopAt: 0, // when they last felled a tree
+      mineAt: 0, // when they last broke a rock
     });
   }
 
@@ -98,6 +107,7 @@ export class Room extends Place {
       room: { name: this.name, inviteOnly: this.inviteOnly, maxPlayers: this.maxPlayers },
       spots: this.spots.map(({ id, kind, x, y, z, item, count }) => [id, kind, x, y, z, item, count]),
       felled: [...this.felled.keys()],
+      mined: [...this.mined.keys()],
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
       clock: (Date.now() - this.createdAt) / 1000,
@@ -149,6 +159,27 @@ export class Room extends Place {
         this.broadcast({ t: S.FELLED, id, by: p.id, count });
         break;
       }
+      case C.MINE: {
+        const { id, x, z } = msg;
+        const now = Date.now();
+        const size = Math.min(ROCK.size[1], Number.isFinite(msg.size) ? msg.size : 0);
+        const ok = Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && finite(x, z) &&
+          !this.mined.has(id) && now - p.mineAt >= MINE_EVERY &&
+          Math.hypot(x - p.x, z - p.z) <= MINE_REACH + size * 1.5 && Math.abs(p.y - 0.8) < 2;
+        if (!ok) {
+          this.send(p, { t: S.MINE_DENY, id });
+          return;
+        }
+        const [lo, hi] = ROCK.regrow;
+        this.mined.set(id, now + (lo + this.rand() * (hi - lo)) * 1000);
+        const count = stoneFor(msg.size, this.rand); // (the bigger the rock, the more stone)
+        p.mineAt = now;
+        p.stone += count;
+        this.rosterDirty = true;
+        this.changed = true;
+        this.broadcast({ t: S.MINED, id, by: p.id, count });
+        break;
+      }
     }
   }
 
@@ -175,12 +206,19 @@ export class Room extends Place {
       this.changed = true;
       this.broadcast({ t: S.REGROWN, id });
     }
+
+    for (const [id, at] of this.mined) {
+      if (now < at) continue;
+      this.mined.delete(id);
+      this.changed = true;
+      this.broadcast({ t: S.RESURFACED, id });
+    }
   }
 
   // ---------- Saving ----------
   // What the lobby keeps of a room, as plain JSON. The island grows again from
   // the seed, so only what happened on it is kept: what is on each spot, which
-  // trees are down, and who was here (for a restart while they were playing).
+  // trees are down and rocks broken, and who was here (for a restart while they were playing).
   // Times are the wall clock's, so regrowing carries on while a room is away.
   toSave() {
     return {
@@ -193,7 +231,8 @@ export class Room extends Place {
       nextId: this.nextId,
       spots: this.spots.map(({ id, kind, x, z, item, count, regrowAt }) => [id, kind, x, z, item, count, regrowAt]),
       felled: [...this.felled],
-      seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood }) => ({ id, key, name, color, finds, rares, wood })),
+      mined: [...this.mined],
+      seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood, stone }) => ({ id, key, name, color, finds, rares, wood, stone })),
     };
   }
 
@@ -219,13 +258,16 @@ export class Room extends Place {
     for (const [id, at] of save.felled ?? []) {
       if (Number.isInteger(id) && id >= 0 && id < MAX_TREES && Number.isFinite(at)) room.felled.set(id, at);
     }
+    for (const [id, at] of save.mined ?? []) {
+      if (Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && Number.isFinite(at)) room.mined.set(id, at);
+    }
     const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
     for (const s of (save.seats ?? []).slice(0, room.maxPlayers)) {
       if (!Number.isInteger(s.id) || s.id < 1 || room.players.has(s.id) || typeof s.key !== 'string' || !s.key) continue;
       const color = PLAYER_COLORS.includes(s.color) ? s.color : PLAYER_COLORS[0];
       room.seat({
         id: s.id, key: s.key.slice(0, 64), name: cleanText(s.name, MAX_NAME) || 'Farmer', color,
-        finds: n(s.finds), rares: n(s.rares), wood: n(s.wood), heldUntil: holdUntil,
+        finds: n(s.finds), rares: n(s.rares), wood: n(s.wood), stone: n(s.stone), heldUntil: holdUntil,
       });
     }
     room.nextId = Math.max(n(save.nextId), ...[...room.players.keys()].map((id) => id + 1), 1);

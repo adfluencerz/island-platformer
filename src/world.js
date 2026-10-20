@@ -14,8 +14,9 @@ export { mulberry32, distToSegment, distToPaths } from '../shared/worldgen.js';
 //
 // buildWorld() returns everything the game needs from a world: its root group
 // (added to the scene while you are there), its colliders, its tiles, its
-// trees (which can be felled and grow back), and the per-frame bits (tree
-// fading and falling, the map's own animation).
+// trees (which can be felled and grow back), its rocks (which can be broken up
+// and surface again), and the per-frame bits (tree fading and falling, the
+// map's own animation).
 
 export const TILE_SIZE = 1;
 
@@ -188,6 +189,10 @@ const TREE_GROW = 1.2; // growing back
 const STUMP_H = 0.28;
 const stumpGeo = new THREE.CylinderGeometry(0.16, 0.2, STUMP_H, 7).translate(0, STUMP_H / 2, 0);
 const stumpMats = [trunkMat, foliageMat(0xd9b48a), trunkMat]; // side, cut top, bottom
+const ROCK_BREAK = 0.3; // seconds to crumble away
+const ROCK_GROW = 0.9; // a new one surfacing
+const CHIPS = 5; // bits that fly off a breaking rock
+const CHIP_LIFE = 0.7;
 const _q = new THREE.Quaternion();
 const easeOutBack = (p) => 1 + 2.7 * (p - 1) ** 3 + 1.7 * (p - 1) ** 2;
 
@@ -533,12 +538,25 @@ export function buildWorld(map) {
     if (rng() < 0.5) addDecor(blobGeo, leaf, x - k * 0.6, k * 0.4, z + rand(-0.3, 0.3), k * 0.6, k * 0.5, k * 0.6, root);
   }
 
+  // { id, mesh, x, z, scale, radius, collider, state, ... }: radius is how far
+  // it reaches out sideways as drawn (it is stretched, so more than its scale
+  // says); state is 'up',
+  // 'breaking', 'gone' or 'growing' (see Breaking rocks). id: its place in
+  // this list, the same for everyone on the island, which is how a lobby
+  // names a rock.
+  const rocks = [];
+
   // size: [min, max] (big ones are boulders and get a collider)
   function addRock(x, z, [lo, hi] = [0.15, 0.45]) {
     const k = rand(lo, hi);
     const rock = addDecor(rockGeo, pick(rockMats), x, k * 0.3, z, k * rand(1, 1.5), k * rand(0.5, 0.8), k, root);
     rock.rotation.set(rand(0, 0.4), rand(0, Math.PI * 2), rand(0, 0.4));
-    if (k > 0.6) addCollider({ x, y: k * 0.35, z, w: k * 1.4, h: k * 0.7, d: k * 1.4 });
+    const collider = k > 0.6 ? addCollider({ x, y: k * 0.35, z, w: k * 1.4, h: k * 0.7, d: k * 1.4 }) : null;
+    rocks.push({
+      id: rocks.length, mesh: rock, x, z, scale: k, radius: Math.max(rock.scale.x, rock.scale.z) * 0.85,
+      collider, base: rock.scale.clone(), baseY: rock.position.y,
+      state: 'up', t: 0, shake: 0, chips: null,
+    });
   }
 
   Object.assign(ctx, { addTree, addBush, addRock });
@@ -773,7 +791,117 @@ export function buildWorld(map) {
     else moving.add(tree);
   }
 
+  // ---------- Breaking rocks ----------
+  const crumbling = new Set(); // rocks shaking, breaking or surfacing
+
+  function setBoulder(rock, standing) {
+    const box = rock.collider;
+    if (!box) return;
+    box.max.y = standing ? rock.scale * 0.7 : box.min.y; // (broken: nothing to bump into)
+    box.center.y = (box.min.y + box.max.y) / 2;
+  }
+
+  // a hit with the pickaxe: a jolt
+  function shakeRock(id) {
+    const rock = rocks[id];
+    if (rock?.state !== 'up') return;
+    rock.shake = 1;
+    rock.t = 0;
+    crumbling.add(rock);
+  }
+
+  // instant: it is simply gone already (it was broken before we came)
+  function breakRock(id, { instant = false } = {}) {
+    const rock = rocks[id];
+    if (!rock || rock.state === 'breaking' || rock.state === 'gone') return;
+    setBoulder(rock, false);
+    rock.state = instant ? 'gone' : 'breaking';
+    rock.t = 0;
+    rock.mesh.visible = !instant;
+    if (instant) return crumbling.delete(rock);
+    // chips fly off it
+    if (!rock.chips) {
+      rock.chips = Array.from({ length: CHIPS }, () => {
+        const chip = new THREE.Mesh(rockGeo, rock.mesh.material);
+        chip.castShadow = true;
+        root.add(chip);
+        return { mesh: chip, v: new THREE.Vector3() };
+      });
+    }
+    for (const chip of rock.chips) {
+      const a = Math.random() * Math.PI * 2;
+      const out = 1.2 + Math.random() * 1.6;
+      chip.v.set(Math.cos(a) * out, 3 + Math.random() * 2.5, Math.sin(a) * out);
+      chip.mesh.position.set(rock.x, rock.baseY + rock.scale * 0.3, rock.z);
+      chip.mesh.scale.setScalar(Math.max(0.05, rock.scale * (0.18 + Math.random() * 0.14)));
+      chip.mesh.visible = true;
+    }
+    crumbling.add(rock);
+  }
+
+  function regrowRock(id, { instant = false } = {}) {
+    const rock = rocks[id];
+    if (!rock || rock.state === 'up' || rock.state === 'growing') return;
+    setBoulder(rock, true);
+    for (const chip of rock.chips ?? []) chip.mesh.visible = false;
+    rock.mesh.visible = true;
+    rock.mesh.scale.copy(rock.base).multiplyScalar(instant ? 1 : 0.01);
+    rock.mesh.position.y = rock.baseY;
+    rock.state = instant ? 'up' : 'growing';
+    rock.t = 0;
+    rock.shake = 0;
+    if (instant) crumbling.delete(rock);
+    else crumbling.add(rock);
+  }
+
+  function updateRocks(dt) {
+    for (const rock of crumbling) {
+      rock.t += dt;
+      const { mesh, base } = rock;
+      if (rock.state === 'up') {
+        rock.shake *= Math.exp(-9 * dt);
+        mesh.position.x = rock.x + Math.sin(rock.t * 55) * 0.04 * rock.shake * Math.min(1, rock.scale * 2);
+        if (rock.shake < 0.01) {
+          mesh.position.x = rock.x;
+          crumbling.delete(rock);
+        }
+      } else if (rock.state === 'breaking') {
+        const p = Math.min(rock.t / ROCK_BREAK, 1);
+        mesh.scale.copy(base).multiplyScalar(Math.max(0.01, 1 - p * p));
+        mesh.position.set(rock.x, rock.baseY - p * rock.scale * 0.2, rock.z);
+        for (const chip of rock.chips) {
+          chip.v.y -= 22 * dt;
+          chip.mesh.position.addScaledVector(chip.v, dt);
+          if (chip.mesh.position.y < 0.03) {
+            chip.mesh.position.y = 0.03;
+            chip.v.multiplyScalar(0.4);
+            chip.v.y = Math.abs(chip.v.y) * 0.3;
+          }
+          chip.mesh.rotation.x += dt * 9;
+          chip.mesh.rotation.z += dt * 7;
+          if (rock.t > CHIP_LIFE - 0.2) chip.mesh.scale.multiplyScalar(Math.exp(-14 * dt));
+        }
+        if (p >= 1 && rock.t >= CHIP_LIFE) {
+          rock.state = 'gone';
+          mesh.visible = false;
+          for (const chip of rock.chips) chip.mesh.visible = false;
+          crumbling.delete(rock);
+        }
+      } else if (rock.state === 'growing') {
+        const p = Math.min(rock.t / ROCK_GROW, 1);
+        mesh.scale.copy(base).multiplyScalar(Math.max(0.01, easeOutBack(p)));
+        if (p >= 1) {
+          rock.state = 'up';
+          crumbling.delete(rock);
+        }
+      } else {
+        crumbling.delete(rock);
+      }
+    }
+  }
+
   function updateTrees(dt) {
+    updateRocks(dt);
     for (const tree of moving) {
       tree.t += dt;
       const { group, base, axis, scale: k } = tree;
@@ -824,7 +952,15 @@ export function buildWorld(map) {
     shakeTree,
     fellTree,
     regrowTree,
-    updateTrees,
+    updateTrees, // (and the rocks)
+    rocks,
+    shakeRock,
+    breakRock,
+    regrowRock,
+    // every rock whole again, at once (arriving on an island we were on before)
+    restoreAllRocks() {
+      for (const rock of rocks) regrowRock(rock.id, { instant: true });
+    },
     // every tree standing again, at once (arriving on an island we were on before)
     standAllTrees() {
       for (const tree of trees) regrowTree(tree.id, { instant: true });

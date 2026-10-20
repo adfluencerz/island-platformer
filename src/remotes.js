@@ -162,6 +162,7 @@ export class Remotes {
 
       r.farmer.hoe.visible = (s.f & STATEF.HOE) !== 0;
       r.farmer.axe.visible = (s.f & STATEF.AXE) !== 0;
+      r.farmer.pick.visible = (s.f & STATEF.PICK) !== 0;
       const swinging = (s.f & STATEF.SWING) !== 0;
       if (swinging && !r.wasSwinging) r.farmer.swing();
       r.wasSwinging = swinging;

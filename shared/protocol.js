@@ -11,6 +11,7 @@ export const C = {
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
   TAKE: 'take', // { id }: gathered (or walked into) what is on spot id
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
+  MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
   // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
@@ -25,8 +26,8 @@ export const C = {
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down)
-  ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, away }] }
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken)
+  ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count }: spot id was emptied by player `by`
@@ -34,6 +35,9 @@ export const S = {
   FELLED: 'felled', // { id, by, count }: tree id came down; player `by` got count wood
   REGROWN: 'regrown', // { id }: tree id has grown back
   CHOP_DENY: 'chopDeny', // { id }: that chop did not count (already down, too far, too fast)
+  MINED: 'mined', // { id, by, count }: rock id was broken up; player `by` got count stone
+  RESURFACED: 'resurfaced', // { id }: rock id is back
+  MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
@@ -57,6 +61,7 @@ export const STATEF = {
   HOE: 2, // has the hoe in hand
   AXE: 4, // has the axe in hand
   SWING: 8, // swinging the tool in hand
+  PICK: 16, // has the pickaxe in hand
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;

@@ -154,6 +154,21 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
   axe.add(part(new THREE.BoxGeometry(0.06, 0.2, 0.26), bladeMat, 0, 0.56, 0.12));
   axe.add(part(new THREE.BoxGeometry(0.03, 0.24, 0.05), edgeMat, 0, 0.56, 0.26));
 
+  // Pickaxe, held the same way: a bar across the top of the handle, its two
+  // points bent down a little
+  const pick = new THREE.Group();
+  pick.position.copy(rightArm.end.position);
+  pick.rotation.x = HOE_REST_ANGLE;
+  pick.visible = false;
+  rightArm.pivot.add(pick);
+  pick.add(part(new THREE.CylinderGeometry(0.035, 0.04, 0.8, 6), handleMat, 0, 0.25, 0));
+  pick.add(part(new THREE.BoxGeometry(0.06, 0.07, 0.36), bladeMat, 0, 0.62, 0.02));
+  for (const side of [-1, 1]) {
+    const point = part(new THREE.BoxGeometry(0.045, 0.05, 0.16), edgeMat, 0, 0.58, side * 0.25);
+    point.rotation.x = side * 0.45;
+    pick.add(point);
+  }
+
   root.traverse((obj) => {
     if (obj.isMesh) obj.castShadow = true;
   });
@@ -198,9 +213,10 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
       arms[1].pivot.rotation.x += (-0.4 - arms[1].pivot.rotation.x) * k;
     }
 
-    // A swing (hoe or axe, the same chop) overrides the right arm
+    // A swing (hoe, axe or pickaxe, the same chop) overrides the right arm
     hoe.rotation.x = HOE_REST_ANGLE;
     axe.rotation.x = HOE_REST_ANGLE;
+    pick.rotation.x = HOE_REST_ANGLE;
     if (anim.swing >= 0) {
       anim.swing += dt / HOE_SWING_TIME;
       if (anim.swing >= 1) {
@@ -210,6 +226,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
         rightArm.pivot.rotation.x = armAngle;
         hoe.rotation.x = hoeAngle;
         axe.rotation.x = hoeAngle;
+        pick.rotation.x = hoeAngle;
       }
     }
 
@@ -230,6 +247,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     root,
     hoe,
     axe,
+    pick,
     anim,
     animate,
     swing() {

@@ -16,11 +16,11 @@ import { el, button, hexColor, copyText } from './dom.js';
 import { isTouch } from './touch.js';
 
 const CONTROLS =
-  'WASD move · Space jump · 1–= or scroll over the bar pick an item · scroll elsewhere to zoom · E till / plant / harvest or trade at the stall at home, gather or chop trees (axe) in lobbies · ' +
+  'WASD move · Space jump · 1–= or scroll over the bar pick an item · scroll elsewhere to zoom · E till / plant / harvest or trade at the stall at home, gather, chop trees (axe) or mine rocks (pickaxe) in lobbies · ' +
   'I backpack · L visit a lobby · Enter chat · Esc menu · hold T to fast-forward time at home · click the ground to walk there';
 const TOUCH_CONTROLS =
   'Stick: walk · Tap the ground to walk there and till, plant or harvest it with what you hold · ' +
-  'Tap the stall to trade, a bush or mushrooms to gather, a tree to chop it (axe) · Use: the same where you stand · ' +
+  'Tap the stall to trade, a bush or mushrooms to gather, a tree to chop it (axe), a rock to mine it (pickaxe) · Use: the same where you stand · ' +
   'Bag: backpack · pinch to zoom · hold the clock to fast-forward time at home';
 
 // The controls, for the keyboard or for a touch screen (touch.js shows the one in use)
@@ -233,7 +233,7 @@ export class Hud {
       el('span', 'ui-player-name', row, p.name);
       if (p.away) el('span', 'ui-muted', row, 'away');
       else if (this.place === 'farm') el('span', 'ui-found', row, p.owner ? 'the farmer' : 'helping');
-      else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}`);
+      else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}${p.stone ? ` · ${p.stone} stone` : ''}`);
     }
   }
 

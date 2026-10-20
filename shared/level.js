@@ -60,6 +60,27 @@ export function woodFor(size, rand = Math.random) {
 // The most a tree of this size can give (room to keep in the backpack)
 export const mostWood = (size) => Math.round(TREE.wood[1] * treeSize(size));
 
+// ---------- Rocks ----------
+// Every rock on a wild island can be broken up for stone with the pickaxe,
+// the way trees are felled: the page knows where they lie (src/maps.js), the
+// lobby keeps which are broken, by their number. `hits`: swings to break one.
+// `regrow`: seconds [min, max] until a new one has surfaced. `stone`: [min,
+// max] for a rock of size `per` (a fist-sized one); smaller ones still give
+// one, the big boulders by the terraces give the most (`size`: the smallest
+// and biggest rocks there are, so a page can't claim a mountain).
+export const ROCK = { hits: 3, regrow: [90, 150], stone: [1, 2], per: 0.4, size: [0.15, 1.1] };
+
+const rockSize = (size) => Math.min(ROCK.size[1], Math.max(ROCK.size[0], Number.isFinite(size) ? size : ROCK.per));
+
+// Stone from breaking a rock of this size. rand: () => [0, 1)
+export function stoneFor(size, rand = Math.random) {
+  const [lo, hi] = ROCK.stone;
+  return Math.max(1, Math.round(((lo + Math.floor(rand() * (hi - lo + 1))) * rockSize(size)) / ROCK.per));
+}
+
+// The most a rock of this size can give (room to keep in the backpack)
+export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockSize(size)) / ROCK.per));
+
 // Finds rare enough that the whole lobby hears when one turns up
 export const RARE = {
   golden_seeds: 'Golden seeds',

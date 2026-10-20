@@ -3,7 +3,7 @@
 A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](https://vitejs.dev/): tend your own little farm on an island, then drop into online lobbies to gather berries, mushrooms and rare finds with other farmers.
 
 ## What's included
-- A stylized farmer with walk, jump, landing and tool-swing animations, a hoe and an axe, and a camera that follows from an angled overhead view
+- A stylized farmer with walk, jump, landing and tool-swing animations, a hoe, an axe and a pickaxe, and a camera that follows from an angled overhead view
 - A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, wind-swayed grass and flowers, and grass-topped platforms to jump between; trees fade out when they block the view of the player
 - Farming: till, plant and harvest turnips, carrots, flax and sunflowers, in a backpack-and-toolbar inventory
 - A day/night cycle with a sun and moon, fireflies and a clock
@@ -30,7 +30,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 ## Controls
 - `W`/`A`/`S`/`D` or arrow keys — move
 - `Space` — jump (only works while grounded)
-- `E` — at home: till / plant / harvest, trade at the merchant's stall, pet an animal (or milk the cow, shear the sheep), or let out the animal in hand in her pen; in a lobby: gather (berries, mushrooms), or chop a tree with the axe in hand (hold to keep swinging)
+- `E` — at home: till / plant / harvest, trade at the merchant's stall, pet an animal (or milk the cow, shear the sheep), or let out the animal in hand in her pen; in a lobby: gather (berries, mushrooms), chop a tree with the axe in hand, or mine a rock with the pickaxe (hold to keep swinging)
 - `I` — backpack
 - `L` — visit a lobby (from home)
 - `Enter` — chat (in a lobby)
@@ -78,6 +78,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 
 - There's no farming in a lobby and there are no rounds: wander in, gather, head home whenever you like with what you found.
 - Every tree can be chopped down for **wood**: with the axe in hand, press (or hold) `E` next to a tree. Four swings fell it for everyone and give wood to whoever finished it: 2–4 from an ordinary tree, up to 6 from the big old trees in the woods, fewer from a little one; a stump is left behind and the tree grows back 1–2 minutes later. The merchant buys wood. (The farm's own trees are left standing.)
+- Every rock can be broken up for **stone**: with the pickaxe in hand, press (or hold) `E` next to a rock. Three swings break it for everyone and give stone to whoever finished it: one or two from an ordinary rock, one from a pebble, up to 6 from the boulders at the foot of the terraces; a new rock surfaces 1½–2½ minutes later. The merchant buys stone. (The farm's own rocks are left where they are.) A farm from before the pickaxe gets one the first time it loads.
 - Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it. Each spot grows back 25–60 seconds later with a fresh roll of what's on it.
 - Now and then something rare turns up (golden seeds, an old key) with a golden glint over it, and the whole lobby hears about it in chat. Golden seeds grow a golden turnip at home.
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
@@ -99,7 +100,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - `shared/worldgen.js` grows an island from a seed (coastline, pond, terraces, toadstools, woods, meadow, trails, spot positions). It runs on the server and in the page, and only the seed goes over the wire, so everyone in a lobby agrees on the island. Each part of an island has its own random stream, and a layout that fails the checks (every spot on land and reachable, every step within a jump of the last) is grown again from a variant of the seed; `npm test` checks hundreds of seeds.
 - The islands are built by `src/world.js` from a map definition in `src/maps.js`: per-tile ground types, platforms, what grows where, and each map's own set pieces. The farm is built once; a lobby's island when you arrive on it (the last one is kept for going back).
 - Each client moves its own farmer and reports its position 20 times a second. Who gets a spot is settled by the lobby: it only counts if something is still there and the lobby last saw you next to it.
-- Trees are grown on each page from the seed (the same on every page), so the lobby only keeps which ones are down, by their number. The page says which tree it felled and where it stands; the lobby checks you are next to that spot, that the tree is still up and that you aren't felling trees faster than an axe can (`TREE` in `shared/level.js` has the swings, wood and regrow times).
+- Trees are grown on each page from the seed (the same on every page), so the lobby only keeps which ones are down, by their number. The page says which tree it felled and where it stands; the lobby checks you are next to that spot, that the tree is still up and that you aren't felling trees faster than an axe can (`TREE` in `shared/level.js` has the swings, wood and regrow times). Rocks work the same way (`ROCK`): the lobby keeps which ones are broken, by their number.
 - Other players are drawn from the lobby's 20 Hz snapshots, 100 ms in the past and interpolated between them, so they move smoothly through network jitter (`src/remotes.js`).
 - Messages are small JSON objects; `shared/protocol.js` lists them all.
 - The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm. With one, the server keeps a copy of each farm in `data/farms/<id>.json` (`server/farms.js`, `src/net/farm.js`). A farm is known by its id, and each device has a token of its own for it (the server keeps only their hashes, and the PIN only as a scrypt hash); the save is the page's, kept as it's sent. The farm-name index is gathered from the farm files when the server starts. Accounts, later, can point at a farm id, so farms stay where they are.

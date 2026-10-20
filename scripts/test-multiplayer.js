@@ -13,7 +13,7 @@ import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
-import { SPOT_KINDS, RARE, TREE, woodFor } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, woodFor, stoneFor, mostStone } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32 } from '../shared/worldgen.js';
 
 let passed = 0;
@@ -181,6 +181,52 @@ await test('bigger trees give more wood, within the sizes trees come in', () => 
   assert.equal(a.conn.last(S.FELLED).count, woodFor(1.5, luck(0.99)));
 });
 
+await test('rocks: broken by whoever finishes first, next to it, not too fast; a new one surfaces', () => {
+  const room = new Room({ code: 'TEST13' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const at = (who, x, z) => room.message(who.p, { t: C.STATE, x, y: 0.8, z, yaw: 0, f: 1 });
+  const rock = { id: 4, x: 6, z: 2, size: 0.4 };
+  at(a, 0, 0);
+  room.message(a.p, { t: C.MINE, ...rock });
+  assert.equal(a.conn.last(S.MINE_DENY)?.id, 4, 'too far');
+  at(a, 7, 2);
+  room.message(a.p, { t: C.MINE, ...rock });
+  const mined = b.conn.last(S.MINED);
+  assert.equal(mined.id, 4);
+  assert.equal(mined.by, a.p.id);
+  assert.ok(mined.count >= ROCK.stone[0] && mined.count <= ROCK.stone[1]);
+  assert.equal(a.p.stone, mined.count);
+  at(b, 6, 3);
+  room.message(b.p, { t: C.MINE, ...rock });
+  assert.equal(b.conn.last(S.MINE_DENY)?.id, 4, 'already broken');
+  room.message(a.p, { t: C.MINE, id: 5, x: 7.5, z: 2 });
+  assert.equal(a.conn.last(S.MINE_DENY)?.id, 5, 'faster than a pickaxe');
+  room.message(a.p, { t: C.MINE, id: -1, x: 7, z: 2 });
+  room.message(a.p, { t: C.MINE, id: 'x', x: 7, z: 2 });
+  assert.equal(a.conn.all(S.MINE_DENY).length, 4, 'nonsense ids are turned down');
+  assert.deepEqual(join(room, 'C').conn.last(S.WELCOME).mined, [4]);
+  assert.equal(room.rosterList().find((p) => p.id === a.p.id).stone, mined.count);
+  room.update(Date.now() + ROCK.regrow[1] * 1000 + 100);
+  assert.equal(b.conn.last(S.RESURFACED)?.id, 4);
+  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, []);
+});
+
+await test('bigger rocks give more stone, within the sizes rocks come in', () => {
+  const luck = (r) => () => r;
+  assert.equal(stoneFor(ROCK.per, luck(0)), ROCK.stone[0]);
+  assert.equal(stoneFor(ROCK.per, luck(0.99)), ROCK.stone[1]);
+  assert.ok(stoneFor(1.1, luck(0)) > stoneFor(ROCK.per, luck(0.99)), 'a boulder beats a stone');
+  assert.equal(stoneFor(0.15, luck(0)), 1, 'even a pebble gives one');
+  assert.equal(stoneFor(40, luck(0.99)), stoneFor(ROCK.size[1], luck(0.99)), 'no mountains');
+  assert.ok(mostStone(1.1) >= stoneFor(1.1, luck(0.99)));
+  const room = new Room({ code: 'TEST14', rand: luck(0.99) });
+  const a = join(room, 'A');
+  room.message(a.p, { t: C.STATE, x: 7, y: 0.8, z: 2, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.MINE, id: 2, x: 6.2, z: 2, size: 1 });
+  assert.equal(a.conn.last(S.MINED).count, stoneFor(1, luck(0.99)));
+});
+
 await test('an emptied spot grows back after a while, with a fresh roll', () => {
   const room = new Room({ code: 'TEST04' });
   const a = join(room, 'A');
@@ -258,7 +304,7 @@ await test('chat is cleaned and rate limited', () => {
 });
 
 console.log('keeping lobbies');
-await test('a saved room comes back as it was: spots, felled trees, clock, seats', () => {
+await test('a saved room comes back as it was: spots, felled trees, broken rocks, clock, seats', () => {
   const room = new Room({ code: 'SAVE01', name: 'Kept', seed: 'mossy-cove-7', inviteOnly: true, maxPlayers: 4 });
   const a = join(room, 'A', 'keyA');
   join(room, 'B', 'keyB');
@@ -267,6 +313,7 @@ await test('a saved room comes back as it was: spots, felled trees, clock, seats
   room.message(a.p, { t: C.TAKE, id });
   room.message(a.p, { t: C.STATE, x: 11, y: 0.8, z: -3, yaw: 0, f: 1 });
   room.message(a.p, { t: C.CHOP, id: 5, x: 10, z: -3 });
+  room.message(a.p, { t: C.MINE, id: 9, x: 10.5, z: -2, size: 0.5 });
   room.createdAt -= 3_600_000; // an hour in
   assert.ok(room.changed);
 
@@ -278,6 +325,8 @@ await test('a saved room comes back as it was: spots, felled trees, clock, seats
   assert.equal(back.createdAt, room.createdAt);
   assert.deepEqual(back.spots, room.spots);
   assert.deepEqual([...back.felled], [...room.felled]);
+  assert.deepEqual([...back.mined], [...room.mined]);
+  assert.equal(back.mined.size, 1);
   assert.deepEqual(back.rosterList(), room.rosterList().map((p) => ({ ...p, away: true })));
   assert.ok(back.nextId > 2);
   // the seats are held, for their players to come back to
