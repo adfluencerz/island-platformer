@@ -1,15 +1,18 @@
-/* Touch screens (html.touch, see touch.js): the on-screen controls, and the
-   HUD and menus laid out for thumbs and kept clear of the notch and the home
-   indicator. Nothing here applies with a mouse and keyboard. */
+/* Small screens (html.compact) and touch screens (html.touch, always compact
+   too; see touch.js). Compact: a smaller HUD and menus, kept clear of the
+   notch and the home indicator. Touch: the on-screen controls, and the HUD
+   laid out around them for thumbs. A big screen with a mouse gets none of it. */
 
 /* Text and buttons meant for one or the other */
-:root:not(.touch) .touch-only, :root.touch .mouse-only { display: none !important; }
+:root:not(.touch) .touch-only, :root.touch .mouse-only, :root:not(.compact) .compact-only { display: none !important; }
 
-:root.touch {
+:root.compact {
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
+}
+:root.touch {
   --inv-slot: 36px;
   --hotbar-h: calc(var(--inv-slot) + 20px); /* one row of slots and the frame's padding */
   --hotbar-b: calc(var(--safe-b) + 8px);
@@ -110,7 +113,7 @@ body.in-menu .tc { display: none; }
 :root.touch .dn-clock { pointer-events: auto; touch-action: none; }
 :root.touch .dn-clock.down { transform: translateY(2px); }
 
-/* ---------- The HUD around them ---------- */
+/* ---------- The toolbar beside them ---------- */
 :root.touch .inv-hotbar {
   bottom: var(--hotbar-b);
   padding: 10px;
@@ -125,43 +128,101 @@ body.in-menu .tc { display: none; }
 :root.touch .inv-slot:hover { background: var(--inv-slot-bg); }
 :root.touch .inv-slot:hover .inv-icon { transform: none; }
 
+/* ---------- Compact: the HUD at the top, smaller ---------- */
 /* The clock and the gold, top right; smaller */
-:root.touch .dn-clock {
+:root.compact .dn-clock {
   top: calc(var(--safe-t) + 10px);
   right: calc(var(--safe-r) + 10px);
   gap: 6px;
   padding: 6px 10px 6px 8px;
 }
-:root.touch .dn-dial { width: 44px; height: 25px; }
-:root.touch .dn-text { min-width: 74px; }
-:root.touch .dn-day { font-size: 17px; }
-:root.touch .dn-time { font-size: 24px; }
-:root.touch .inv-funds {
+:root.compact .dn-dial { width: 44px; height: 25px; }
+:root.compact .dn-text { min-width: 74px; }
+:root.compact .dn-day { font-size: 17px; }
+:root.compact .dn-time { font-size: 24px; }
+:root.compact .inv-funds {
   top: calc(var(--safe-t) + 74px);
   right: calc(var(--safe-r) + 10px);
   padding: 6px 8px;
 }
-:root.touch .inv-funds .inv-icon { width: 20px; height: 20px; margin-right: 4px; }
-:root.touch .inv-digit { width: 12px; height: 20px; font-size: 21px; }
+:root.compact .inv-funds .inv-icon { width: 20px; height: 20px; margin-right: 4px; }
+:root.compact .inv-digit { width: 12px; height: 20px; font-size: 21px; }
 
-/* The place panel, top left: just what you need, with a Menu button for Esc */
-:root.touch .ui-players {
+/* The place panel, top left, with a Menu button for Esc. No blurb, seed, ping
+   or Esc hint, and in a lobby folded up to its first line: tap the name for the rest. */
+:root.compact .ui-players {
   top: calc(var(--safe-t) + 10px);
   left: calc(var(--safe-l) + 10px);
   width: auto;
-  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 200px);
-  min-width: 150px;
+  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 190px);
+  min-width: 170px;
+  box-sizing: border-box;
   padding: 10px 12px;
   gap: 5px;
   font-size: 19px;
-  max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); /* (clear of the chat) */
+  max-height: calc(100vh - var(--safe-t) - 150px);
   overflow-y: auto;
 }
-:root.touch .ui-players .ui-btn-small { font-size: 18px; padding: 6px 10px; }
-:root.touch .ui-players > .ui-muted:not(.ui-ping) { display: none; } /* (the blurb, the seed) */
-:root.touch .ui-code { flex-wrap: wrap; font-size: 18px; }
-:root.touch .ui-player { font-size: 18px; }
-:root.touch .ui-found { font-size: 15px; }
+:root.compact .ui-players .ui-btn-small { font-size: 18px; padding: 6px 10px; }
+:root.compact .ui-players-body > .ui-muted { display: none; }
+:root.compact .ui-ping, :root.compact .ui-players.foldable.folded .ui-players-body { display: none; }
+:root.compact .ui-players.foldable .ui-players-title { cursor: pointer; align-items: center; justify-content: flex-start; }
+:root.compact .ui-players-title b { flex: 0 1 auto; }
+:root.compact .ui-players.foldable .ui-players-title::before { /* the fold arrow */
+  content: '';
+  flex: none;
+  border: 6px solid transparent;
+  border-top: 8px solid var(--inv-ink);
+  border-bottom: 0;
+  transition: transform 0.15s;
+}
+:root.compact .ui-players.foldable.folded .ui-players-title::before { transform: rotate(-90deg); }
+:root.compact .ui-code { flex-wrap: wrap; font-size: 18px; }
+:root.compact .ui-player { font-size: 18px; }
+:root.compact .ui-found { font-size: 15px; }
+
+:root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
+:root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
+
+/* ---------- Menus: kept inside the safe area, scrolled when they don't fit ---------- */
+:root.compact .ui-splash, :root.compact .ui-pause {
+  padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px);
+  box-sizing: border-box;
+}
+:root.compact .ui-card {
+  width: min(440px, 100%);
+  max-height: 100%;
+  padding: 18px 18px;
+  -webkit-overflow-scrolling: touch;
+}
+:root.compact .ui-logo { font-size: 46px; }
+:root.compact .ui-help { font-size: 17px; }
+
+:root.compact .inv-menu {
+  place-items: start center;
+  overflow-y: auto;
+  padding: calc(var(--safe-t) + 52px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 12px);
+  box-sizing: border-box;
+}
+:root.compact .inv-window { margin: auto 0; padding: 18px 14px 14px; max-width: 100%; }
+:root.compact .inv-footer { flex-wrap: wrap; gap: 8px; }
+:root.compact .inv-stats { font-size: 20px; }
+:root.compact .inv-hint { font-size: 17px; }
+:root.compact .inv-tooltip { max-width: 220px; padding: 8px 12px; }
+:root.compact .inv-tt-name { font-size: 23px; }
+:root.compact .inv-tt-desc { font-size: 18px; }
+
+/* The merchant's shop */
+:root.compact .shop-window { width: auto; margin-top: 0; }
+:root.compact .shop-say { font-size: 20px; margin-bottom: 8px; }
+:root.compact .shop-heading { font-size: 21px; margin: 8px 0 4px; }
+:root.compact .shop-item { font-size: 19px; gap: 6px; padding: 6px 8px 6px 6px; }
+:root.compact .shop-item .inv-icon { width: 28px; height: 28px; }
+:root.compact .shop-funds { font-size: 22px; }
+:root.compact .shop-hint { text-align: left; }
+
+/* ---------- Touch: the HUD around the controls ---------- */
+:root.touch .ui-players { max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); } /* (clear of the chat) */
 
 /* What there is to do here: over the Use button */
 :root.touch .ui-prompt {
@@ -190,46 +251,6 @@ body.in-menu .tc { display: none; }
 }
 :root.touch .ui-chat-line { font-size: 18px; }
 :root.touch .ui-chat-log { max-height: 140px; }
-
-:root.touch .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
-:root.touch .ui-big { font-size: clamp(40px, 12vw, 80px); }
-
-/* ---------- Menus: kept inside the safe area, scrolled when they don't fit ---------- */
-:root.touch .ui-splash, :root.touch .ui-pause {
-  padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px);
-  box-sizing: border-box;
-}
-:root.touch .ui-card {
-  width: min(440px, 100%);
-  max-height: 100%;
-  padding: 18px 18px;
-  -webkit-overflow-scrolling: touch;
-}
-:root.touch .ui-logo { font-size: 46px; }
-:root.touch .ui-help { font-size: 17px; }
-
-:root.touch .inv-menu {
-  place-items: start center;
-  overflow-y: auto;
-  padding: calc(var(--safe-t) + 52px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 12px);
-  box-sizing: border-box;
-}
-:root.touch .inv-window { margin: auto 0; padding: 18px 14px 14px; max-width: 100%; }
-:root.touch .inv-footer { flex-wrap: wrap; gap: 8px; }
-:root.touch .inv-stats { font-size: 20px; }
-:root.touch .inv-hint { font-size: 17px; }
-:root.touch .inv-tooltip { max-width: 220px; padding: 8px 12px; }
-:root.touch .inv-tt-name { font-size: 23px; }
-:root.touch .inv-tt-desc { font-size: 18px; }
-
-/* The merchant's shop */
-:root.touch .shop-window { width: auto; margin-top: 0; }
-:root.touch .shop-say { font-size: 20px; margin-bottom: 8px; }
-:root.touch .shop-heading { font-size: 21px; margin: 8px 0 4px; }
-:root.touch .shop-item { font-size: 19px; gap: 6px; padding: 6px 8px 6px 6px; }
-:root.touch .shop-item .inv-icon { width: 28px; height: 28px; }
-:root.touch .shop-funds { font-size: 22px; }
-:root.touch .shop-hint { text-align: left; }
 
 @media (orientation: portrait) {
   :root.touch .inv-grid { grid-template-columns: repeat(6, var(--inv-slot)); }

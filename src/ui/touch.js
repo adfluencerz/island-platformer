@@ -6,16 +6,26 @@
 // menus treat them just like the keyboard.
 //
 // They show on touch screens only: html.touch, set as soon as the page knows
-// it is on one (a phone or tablet, or the first touch on a laptop's screen).
-// touch.css also lays the rest of the HUD out for thumbs under html.touch.
+// it is on one (a phone or tablet, a phone's browser, or the first touch on a
+// laptop's screen). Any small screen, touch or not, also gets html.compact: a
+// smaller HUD with the place panel folded up. touch.css has both layouts.
 // Tapping the world itself (walk there, farm a tile, gather) is in main.js.
 import './touch.css';
 import { el } from './dom.js';
 
 const html = document.documentElement;
 export const isTouch = () => html.classList.contains('touch');
-if (matchMedia('(pointer: coarse)').matches) html.classList.add('touch');
-addEventListener('pointerdown', (e) => e.pointerType === 'touch' && html.classList.add('touch'), { capture: true, passive: true });
+const small = matchMedia('(max-width: 700px), (max-height: 500px)');
+const fit = () => html.classList.toggle('compact', isTouch() || small.matches);
+const touchOn = () => {
+  html.classList.add('touch');
+  fit();
+};
+const phone = navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod|Mobi/.test(navigator.userAgent);
+if (phone || matchMedia('(pointer: coarse)').matches) touchOn();
+addEventListener('pointerdown', (e) => e.pointerType === 'touch' && !isTouch() && touchOn(), { capture: true, passive: true });
+small.addEventListener('change', fit);
+fit();
 
 const STICK_RADIUS = 46; // px the knob travels from the middle
 const DEAD_ZONE = 0.18;
@@ -109,10 +119,10 @@ export class TouchControls {
     this.setPlace(null);
   }
 
-  // 'home' | 'lobby' | null (the title screen: no controls)
+  // 'home' | 'lobby' | 'farm' (a farm with helpers: chat, as in a lobby) | null (the title screen: no controls)
   setPlace(place) {
     this.root.hidden = !place;
-    this.chatBtn.hidden = place !== 'lobby';
+    this.chatBtn.hidden = place !== 'lobby' && place !== 'farm';
   }
 
   // Something to use within reach (the HUD's prompt): the Use button lights up

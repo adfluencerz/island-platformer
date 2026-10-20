@@ -1,24 +1,27 @@
 // Everything on screen while playing, apart from the inventory:
-// - the place panel (top left): at home, the way out to the lobbies; in a
-//   lobby, its code and invite link, who is here and what they have found
+// - the place panel (top left): where you are; in a lobby, its code and
+//   invite link, who is here and what they have found
 // - the prompt over the toolbar (E  Pick berries)
 // - a big word for a rare find
 // - chat (bottom right, lobbies only): Enter to talk
-// - the pause menu (Esc), with a pairing code to play the farm on another
-//   device, and the farm's name and PIN to get it back without one
+// - the pause menu (Esc), with the way out to the lobbies (also L), a pairing code to play the farm on another
+//   device, the farm's name and PIN to get it back without one, and the
+//   farm's helpers: friends who can come and farm on it, invited with a code
+// On a farm with helpers on it (yours, or one you help on) the place panel
+// lists who is there and chat is open, as in a lobby.
 import { MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
 import { pinProblem } from '../../shared/protocol.js';
-import { inviteLink } from '../net/lobby.js';
+import { inviteLink, helpLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 import { isTouch } from './touch.js';
 
 const CONTROLS =
-  'WASD move · Space jump · 1–= or scroll pick an item · E till / plant / harvest or trade at the stall at home, gather or chop trees (axe) in lobbies · ' +
+  'WASD move · Space jump · 1–= or scroll over the bar pick an item · scroll elsewhere to zoom · E till / plant / harvest or trade at the stall at home, gather or chop trees (axe) in lobbies · ' +
   'I backpack · L visit a lobby · Enter chat · Esc menu · hold T to fast-forward time at home · click the ground to walk there';
 const TOUCH_CONTROLS =
   'Stick: walk · Tap the ground to walk there and till, plant or harvest it with what you hold · ' +
   'Tap the stall to trade, a bush or mushrooms to gather, a tree to chop it (axe) · Use: the same where you stand · ' +
-  'Bag: backpack · hold the clock to fast-forward time at home';
+  'Bag: backpack · pinch to zoom · hold the clock to fast-forward time at home';
 
 // The controls, for the keyboard or for a touch screen (touch.js shows the one in use)
 export function addHelp(parent) {
@@ -35,9 +38,12 @@ export class Hud {
   // onRecovery({ name, pin }): name the farm and set its PIN; resolves to the name.
   // isBlocked(): another screen (the backpack, the lobby board) has the keyboard.
   // onPrompt(text): the prompt changed ('' : nothing to do here).
-  constructor({ onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt }) {
-    Object.assign(this, { onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt });
-    this.place = null; // 'home' | 'lobby' | null (the title screen)
+  // onInvite(): an invite code for a helper, { code, expiresIn }. onHelpers():
+  // the farm's helpers, [{ id, name }]. onRemoveHelper(id): resolves to the rest.
+  constructor({ onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt, onInvite, onHelpers, onRemoveHelper }) {
+    Object.assign(this, { onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt, onInvite, onHelpers, onRemoveHelper });
+    this.place = null; // 'home' | 'lobby' | 'farm' (a farm with helpers) | null (the title screen)
+    this.visit = null; // on a farm with helpers: { name, mine }
     this.farmName = '';
     this.session = null;
     this.myId = 0;
@@ -46,20 +52,23 @@ export class Hud {
     root.hidden = true;
 
     // ---- the place panel ----
-    const panel = el('div', 'ui-players inv-frame', root);
-    const head = el('div', 'ui-players-head', panel);
-    this.placeName = el('b', '', head);
-    this.pingEl = el('span', 'ui-muted ui-ping', head);
-    this.blurb = el('div', 'ui-muted', panel);
-    this.codeRow = el('div', 'ui-code', panel);
+    // (on a small screen in a lobby, folded up to its name and a Menu button: tap the name for the rest)
+    this.panel = el('div', 'ui-players inv-frame', root);
+    const head = el('div', 'ui-players-head', this.panel);
+    this.foldBtn = button('ui-players-title', head, null, () => this.setFolded(!this.folded));
+    this.placeName = el('b', '', this.foldBtn);
+    this.pingEl = el('span', 'ui-muted ui-ping', this.foldBtn);
+    button('ui-btn ui-btn-small ui-btn-ghost compact-only', head, 'Menu', () => this.setPaused(true));
+    const body = el('div', 'ui-players-body', this.panel);
+    this.blurb = el('div', 'ui-muted', body);
+    this.codeRow = el('div', 'ui-code', body);
     this.codeText = el('span', '', this.codeRow);
     this.copyBtn = button('ui-btn ui-btn-small', this.codeRow, 'Copy invite', () => this.copyInvite());
-    this.islandText = el('div', 'ui-muted ui-small', panel);
-    this.list = el('div', 'ui-player-list', panel);
-    this.travelBtn = button('ui-btn ui-btn-small', panel, 'Visit a lobby (L)', () => this.onTravel());
-    this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', panel, 'Head home', () => this.onHome());
-    el('div', 'ui-muted ui-small mouse-only', panel, 'Esc: menu & controls');
-    button('ui-btn ui-btn-small ui-btn-ghost touch-only', panel, 'Menu', () => this.setPaused(true));
+    this.islandText = el('div', 'ui-muted ui-small', body);
+    this.list = el('div', 'ui-player-list', body);
+    this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', body, 'Head home', () => this.onHome());
+    el('div', 'ui-muted ui-small', body, 'Esc: menu & controls');
+    this.setFolded(true);
 
     this.prompt = el('div', 'ui-prompt', root);
     this.prompt.hidden = true;
@@ -100,7 +109,7 @@ export class Hud {
       this.setPaused(false);
       this.onHome();
     });
-    button('ui-btn', card, 'Play on another device', () => this.showPairCode());
+    this.pairBtn = button('ui-btn', card, 'Play on another device', () => this.showPairCode());
     this.pairBox = el('div', 'ui-pair', card);
     this.pairBox.hidden = true;
 
@@ -130,6 +139,14 @@ export class Hud {
       this.saveRecovery();
     });
     this.setFarmName('');
+
+    // the farm's helpers
+    this.helpersBtn = button('ui-btn', card, 'Helpers: friends who farm with you', () => {
+      this.helpersBox.hidden = !this.helpersBox.hidden;
+      if (!this.helpersBox.hidden) this.showHelpers();
+    });
+    this.helpersBox = el('div', 'ui-helpers', card);
+    this.helpersBox.hidden = true;
     addHelp(card);
 
     // Capture phase: runs before the inventory's and the game's own key handlers
@@ -143,6 +160,20 @@ export class Hud {
     this.placeName.textContent = this.farmName || 'My farm';
     this.blurb.textContent = 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.';
     this.pauseNote.textContent = 'Time on your farm stands still while paused.';
+  }
+
+  // A farm with helpers, ours or a friend's. visit: { name, mine }
+  showFarm(visit, myId) {
+    this.enter('farm', visit);
+    this.session = null;
+    this.myId = myId;
+    this.placeName.textContent = visit.mine ? this.farmName || 'My farm' : visit.name;
+    this.blurb.textContent = visit.mine
+      ? 'Your helpers can farm here any time, you here or not. What anyone harvests goes in the chest by the plaza.'
+      : 'Till, plant and harvest with what you brought: the harvest goes in the farm\'s chest, for the farmer.';
+    this.pauseNote.textContent = 'The farm keeps going for everyone on it.';
+    this.chatLog.textContent = '';
+    this.setConnStatus('');
   }
 
   // session: { code, seed, room: { name, inviteOnly, maxPlayers } }
@@ -159,21 +190,34 @@ export class Hud {
     this.setConnStatus('');
   }
 
-  enter(place) {
+  // Small screens in a lobby only: the panel down to its first line, or all of it
+  setFolded(on) {
+    this.folded = on;
+    this.panel.classList.toggle('folded', on);
+    this.foldBtn.setAttribute('aria-expanded', String(!on));
+  }
+
+  enter(place, visit = null) {
     this.place = place;
+    this.visit = visit;
     this.root.hidden = false;
     document.body.classList.add('in-game');
     const lobby = place === 'lobby';
+    const online = lobby || place === 'farm'; // (others about: who is here, and chat)
+    const away = lobby || (place === 'farm' && !visit?.mine); // (not on our own farm: the way home)
+    this.panel.classList.toggle('foldable', online);
     this.codeRow.hidden = !lobby;
     this.islandText.hidden = !lobby;
-    this.list.hidden = !lobby;
-    this.pingEl.hidden = !lobby;
-    this.homeBtn.hidden = !lobby;
-    this.travelBtn.hidden = lobby;
+    this.list.hidden = !online;
+    this.pingEl.hidden = !online;
+    this.homeBtn.hidden = !away;
     this.pauseTravel.hidden = lobby;
     this.pauseCopy.hidden = !lobby;
-    this.pauseHome.hidden = !lobby;
-    this.chatBox.hidden = !lobby;
+    this.pauseHome.hidden = !away;
+    const friends = place === 'farm' && !visit?.mine; // (a friend's farm: these are about ours)
+    this.helpersBtn.hidden = friends;
+    this.pairBtn.hidden = friends;
+    this.chatBox.hidden = !online;
     this.setPrompt('');
     this.closeChat();
     this.setPaused(false);
@@ -188,6 +232,7 @@ export class Hud {
       el('i', 'ui-dot', row).style.background = hexColor(p.color);
       el('span', 'ui-player-name', row, p.name);
       if (p.away) el('span', 'ui-muted', row, 'away');
+      else if (this.place === 'farm') el('span', 'ui-found', row, p.owner ? 'the farmer' : 'helping');
       else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}`);
     }
   }
@@ -258,7 +303,58 @@ export class Hud {
 
   setPaused(on) {
     this.pause.hidden = !on;
-    if (!on) this.pairBox.hidden = this.recovery.hidden = true;
+    if (!on) this.pairBox.hidden = this.recovery.hidden = this.helpersBox.hidden = true;
+  }
+
+  // ---------- The farm's helpers ----------
+  async showHelpers() {
+    const box = this.helpersBox;
+    box.textContent = 'Asking the server…';
+    let helpers;
+    try {
+      helpers = await this.onHelpers();
+    } catch (e) {
+      box.textContent = e.message;
+      return;
+    }
+    box.textContent = '';
+    el('div', 'ui-muted', box,
+      'Helpers can come and farm here any time, even while you are away. What they harvest goes in the farm\'s chest, by the plaza, and only you take things out.');
+    const list = el('div', 'ui-helper-list', box);
+    if (!helpers.length) el('div', 'ui-muted', list, 'No helpers yet.');
+    for (const h of helpers) {
+      const row = el('div', 'ui-helper', list);
+      el('span', 'ui-player-name', row, h.name);
+      const remove = button('ui-btn ui-btn-small ui-btn-ghost', row, 'Remove', async () => {
+        if (!confirm(`Take ${h.name} off your helpers? They can't come to your farm any more.`)) return;
+        remove.disabled = true;
+        try {
+          await this.onRemoveHelper(h.id);
+          this.showHelpers();
+        } catch (e) {
+          remove.disabled = false;
+          this.chat({ from: 0, text: e.message });
+        }
+      });
+    }
+    const inviteBox = el('div', 'ui-pair', box);
+    button('ui-btn', box, 'Invite a helper', async () => {
+      inviteBox.textContent = 'Asking the server for a code…';
+      try {
+        const { code, expiresIn } = await this.onInvite();
+        inviteBox.textContent = '';
+        el('div', 'ui-pair-code', inviteBox, `${code.slice(0, 4)}-${code.slice(4)}`);
+        el('div', 'ui-muted', inviteBox,
+          `Send your friend the link, or the code to type under “Farms you help on” on the title screen. ` +
+          `It works once, for ${Math.round(expiresIn / 3600)} hours.`);
+        const copy = button('ui-btn ui-btn-small', inviteBox, 'Copy invite link', async () => {
+          const ok = await copyText(helpLink(code));
+          copy.textContent = ok ? 'Copied!' : helpLink(code);
+        });
+      } catch (e) {
+        inviteBox.textContent = e.message;
+      }
+    });
   }
 
   // ---------- The farm's name and PIN ----------
@@ -336,11 +432,11 @@ export class Hud {
       e.stopPropagation(); // (no backpack or toolbar keys behind the menu)
       return;
     }
-    if (e.code === 'Enter' && this.place === 'lobby') {
+    if (e.code === 'Enter' && (this.place === 'lobby' || this.place === 'farm')) {
       e.preventDefault();
       e.stopPropagation();
       this.openChat();
-    } else if (e.code === 'KeyL' && this.place === 'home' && !e.repeat) {
+    } else if (e.code === 'KeyL' && (this.place === 'home' || this.place === 'farm') && !e.repeat) {
       this.onTravel();
     }
   }

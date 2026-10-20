@@ -7,7 +7,10 @@ import './daynight.css';
 //
 // Time is in game hours (0..24). A full day takes DAY_LENGTH_SECONDS of real
 // time, so one game hour is DAY_LENGTH_SECONDS / 24 seconds.
-export const DAY_LENGTH_SECONDS = 360;
+import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
+
+export { DAY_LENGTH_SECONDS };
+
 const FAST_FORWARD = 30; // time multiplier while fast-forwarding
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

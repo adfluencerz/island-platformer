@@ -13,8 +13,15 @@
 //   POST /api/farms/pair       { code } -> { id, token }: this device's own token
 //   PUT  /api/farms/me/recovery  { name, pin } -> { name }: the farm's name and PIN
 //   POST /api/farms/recover    { name, pin } -> { id, token, name }: a farm got back
+//   POST /api/farms/me/helpers         -> { helpers: [{ id, name, since }] }
+//   POST /api/farms/me/helpers/invite  { name } -> { code, expiresIn }: an invite code for a helper
+//   POST /api/farms/me/helpers/remove  { id } -> { helpers }
+//   POST /api/farms/invite     { code } -> { id, name }: the farm an invite code is for
+//   POST /api/farms/me/help    { code, name } -> { id, name }: this farm's farmer helps on that one now
+//   POST /api/farms/me/helping -> { farms: [{ id, name, here }] }: the farms they help on (here: farmers on it now)
 //   (/me: "Authorization: Bearer <id>.<token>", and every farm call names the
 //   page in "X-Farm-Session"; see server/farms.js)
+//   WS   /ws?farm=ID           be on that farm, its owner or one of its helpers (server/farmroom.js)
 //
 // In development Vite serves the client and proxies /api and /ws here
 // (vite.config.js); `npm run dev` starts both.
@@ -30,6 +37,7 @@ import { WebSocketServer } from 'ws';
 import { Lobby, CODE_RE } from './lobby.js';
 import { Store } from './store.js';
 import { Farms, MAX_SAVE } from './farms.js';
+import { FarmRooms } from './farmroom.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -46,6 +54,7 @@ const DATA = process.env.GAME_DATA || fileURLToPath(new URL('../data/lobbies.jso
 
 const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)) });
 const farms = new Farms({ dir: DATA === 'off' ? null : join(dirname(resolve(DATA)), 'farms') });
+const farmRooms = new FarmRooms({ farms });
 
 // ---------- HTTP ----------
 // The visitor's address, for the limits on opening lobbies and farms
@@ -154,6 +163,8 @@ async function farmApi(req, res, path) {
   const routes = [
     'POST /api/farms', 'POST /api/farms/me/open', 'PUT /api/farms/me', 'POST /api/farms/me/pair', 'POST /api/farms/pair',
     'PUT /api/farms/me/recovery', 'POST /api/farms/recover',
+    'POST /api/farms/me/helpers', 'POST /api/farms/me/helpers/invite', 'POST /api/farms/me/helpers/remove',
+    'POST /api/farms/invite', 'POST /api/farms/me/help', 'POST /api/farms/me/helping',
   ];
   if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
   // JSON only (as for lobbies), and the page that is asking
@@ -171,13 +182,22 @@ async function farmApi(req, res, path) {
   if (route === 'POST /api/farms') out = farms.create(body?.save, session, address);
   else if (route === 'POST /api/farms/pair') out = farms.claim(body?.code, address);
   else if (route === 'POST /api/farms/recover') out = await farms.recover(body ?? {}, address);
+  else if (route === 'POST /api/farms/invite') out = farms.invited(body?.code, address);
   else {
     const farm = farms.auth(req.headers.authorization);
     if (!farm) return json(res, 401, { error: 'This device does not have that farm.' });
     if (route === 'POST /api/farms/me/open') out = farms.open(farm, session);
-    else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save);
+    else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save, { live: farmRooms.has(farm.id), roomRev: body?.roomRev });
     else if (route === 'PUT /api/farms/me/recovery') out = await farms.setRecovery(farm, body ?? {});
-    else out = farms.pair(farm);
+    else if (route === 'POST /api/farms/me/helpers') out = { helpers: farms.helpersOf(farm) };
+    else if (route === 'POST /api/farms/me/helpers/invite') out = farms.invite(farm, body?.name);
+    else if (route === 'POST /api/farms/me/helpers/remove') {
+      out = farms.removeHelper(farm, String(body?.id ?? ''));
+      if (!out.error) farmRooms.turnOut(farm.id, String(body.id));
+    } else if (route === 'POST /api/farms/me/help') out = farms.acceptHelp(body?.code, farm, body?.name, address);
+    else if (route === 'POST /api/farms/me/helping') {
+      out = { farms: farms.helpingOf(farm).map((f) => ({ ...f, here: farmRooms.rooms.get(f.id)?.connected() ?? 0 })) };
+    } else out = farms.pair(farm);
   }
   if (out.error) return json(res, out.status, { error: out.error });
   return json(res, 200, out);
@@ -190,6 +210,13 @@ server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname !== '/ws') return socket.destroy();
   wss.handleUpgrade(req, socket, head, (ws) => {
+    // a farm (its owner, or one of its helpers: the room asks who they are)
+    const farmId = url.searchParams.get('farm');
+    if (farmId !== null) {
+      const room = /^[a-f0-9]{16}$/.test(farmId) ? farmRooms.open(farmId) : null;
+      if (!room) return ws.close(CLOSE.NO_GAME, 'That farm does not exist (any more).');
+      return attach(ws, room);
+    }
     const code = (url.searchParams.get('lobby') || '').toUpperCase();
     let room = code ? (CODE_RE.test(code) ? lobby.find(code) : null) : lobby.quick();
     if (!room && code && DEV) room = lobby.makeWithCode(code);
@@ -242,10 +269,11 @@ function attach(ws, room) {
 
 server.listen(PORT, HOST, () => console.log(`game server on http://${HOST ?? 'localhost'}:${PORT}`));
 
-// Ctrl+C, or `node --watch` restarting us: keep the lobbies as they are now
+// Ctrl+C, or `node --watch` restarting us: keep the lobbies and the farms being played as they are now
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     lobby.flush();
+    farmRooms.flush();
     process.exit(0);
   });
 }

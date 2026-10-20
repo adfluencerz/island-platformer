@@ -1,6 +1,7 @@
-// The page's line to the lobby it is visiting: a WebSocket to its Room on the
-// game server. Game code sees the messages of shared/protocol.js through
-// on()/send(). (The home farm needs no connection: it is all in the page.)
+// The page's line to the online place it is in: a WebSocket to a lobby's Room
+// on the game server, or to a farm with helpers (server/farmroom.js). Game
+// code sees the messages of shared/protocol.js through on()/send(). (A farm
+// nobody helps on needs no connection: it is all in the page.)
 //
 // A socket that drops after joining reconnects by itself, a few times, saying it
 // is coming back (JOIN.back): the room has held the seat, so the player picks
@@ -28,10 +29,13 @@ function browserKey() {
 }
 
 export class Connection {
-  // code: the lobby to join ('' quick joins)
-  constructor({ name, code = '' }) {
+  // code: the lobby to join ('' quick joins). Or farm: the farm to be on,
+  // and auth: "<id>.<token>" of this browser's own farm (src/net/farm.js)
+  constructor({ name, code = '', farm = null, auth = null }) {
     this.name = name;
     this.code = code;
+    this.farm = farm;
+    this.auth = auth;
     this.handlers = new Map();
     this.welcomed = false;
     this.left = false;
@@ -58,10 +62,12 @@ export class Connection {
 
   connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const query = this.code ? `?lobby=${encodeURIComponent(this.code)}` : '';
+    const query = this.farm ? `?farm=${encodeURIComponent(this.farm)}` : this.code ? `?lobby=${encodeURIComponent(this.code)}` : '';
     const ws = (this.ws = new WebSocket(`${proto}//${location.host}/ws${query}`));
     ws.onopen = () => {
-      ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: this.name, key: browserKey(), back: this.welcomed }));
+      const join = { t: C.JOIN, v: PROTOCOL_VERSION, name: this.name, key: browserKey(), back: this.welcomed };
+      if (this.farm) join.auth = this.auth;
+      ws.send(JSON.stringify(join));
     };
     ws.onmessage = (e) => {
       let msg;
@@ -71,22 +77,23 @@ export class Connection {
         return;
       }
       if (this.left) return;
-      if (msg.t === S.WELCOME) {
+      if (msg.t === S.WELCOME || msg.t === S.FARM) {
         this.welcomed = true;
-        this.code = msg.code;
+        if (msg.code) this.code = msg.code;
         this.retries = 0;
       }
       this.emit(msg.t, msg);
     };
     ws.onclose = (e) => {
       if (this.left || ws !== this.ws) return;
-      if (e.code >= 4000) return this.end(CLOSE_TEXT[e.code] || e.reason || 'Disconnected.');
+      if (e.code >= 4000) return this.end((this.farm && e.reason) || CLOSE_TEXT[e.code] || e.reason || 'Disconnected.');
       if (this.welcomed && this.retries < RETRIES) {
         this.emit('reconnecting', ++this.retries);
         setTimeout(() => !this.left && this.connect(), 600 * this.retries);
         return;
       }
-      this.end(this.welcomed ? 'Lost the connection to the lobby.' : 'Could not reach the game server. Is it running (npm run dev)?');
+      const where = this.farm ? 'the farm' : 'the lobby';
+      this.end(this.welcomed ? `Lost the connection to ${where}.` : 'Could not reach the game server. Is it running (npm run dev)?');
     };
   }
 

@@ -16,6 +16,15 @@
 // Another device gets the farm with a pairing code from one that has it, or,
 // with no device left to ask, with the farm's name and PIN (set in the menu).
 //
+// A farm can have helpers (friends who farm on it, server/farms.js): it is
+// then played through its room on the server whenever the server is there
+// (src/main.js joinFarm), and the room keeps the farm's copy up to date. This
+// page's saves then only carry the backpack, unless the page played the farm
+// alone (offline) and nobody changed it on the server since: roomRev is how
+// many times the room had written the farm when this page last had it, and -1
+// once the page has handed the farm to the room and doesn't know any more.
+// The server keeps the farm it has when the two don't match.
+//
 // Without the game server (npm run dev:client) the farm just stays in this browser.
 
 const FARM_STORE = 'tp.farm';
@@ -53,9 +62,11 @@ async function call(method, path, { body = {}, farm = null, leaving = false } = 
 }
 
 export class FarmSync {
-  // onTakenOver(): the farm was opened on another device since; this page's saves no longer count
-  constructor({ onTakenOver }) {
+  // onTakenOver(): the farm was opened on another device since; this page's saves no longer count.
+  // onShared(): the farm has helpers now (it was played alone until then)
+  constructor({ onTakenOver, onShared }) {
     this.onTakenOver = onTakenOver;
+    this.onShared = onShared;
     this.farm = stored();
     this.ready = false; // the farm is open on the server, and this page holds it
     this.pending = null; // the latest save, not sent yet
@@ -64,19 +75,21 @@ export class FarmSync {
   }
 
   // At start, with the save this browser has. Resolves to the server's save
-  // when that is the one to play (another device has played since), else null.
+  // when that is the one to play (another device has played since; or, with
+  // this backpack, its helpers have changed the farm since), else null.
   async open(local) {
     try {
       if (this.farm) {
         try {
-          const { save, rev, name } = await call('POST', '/api/farms/me/open', { farm: this.farm });
+          const { save, rev, roomRev = 0, helpers = 0, name } = await call('POST', '/api/farms/me/open', { farm: this.farm });
           const elsewhere = rev !== this.farm.rev;
-          Object.assign(this.farm, { rev, name });
+          const tended = roomRev !== (this.farm.roomRev ?? 0);
+          Object.assign(this.farm, { rev, roomRev, helpers, name });
           keep(this.farm);
           this.ready = true;
-          if (elsewhere) {
+          if (elsewhere || tended) {
             this.pending = null; // (what this page saved before now is the older farm)
-            return save;
+            return elsewhere ? save : { ...local, farm: save.farm };
           }
           this.pending ??= local;
           this.flush();
@@ -87,7 +100,7 @@ export class FarmSync {
         }
       }
       const { id, token, rev } = await call('POST', '/api/farms', { body: { save: local } });
-      this.farm = { id, token, rev, name: '' };
+      this.farm = { id, token, rev, roomRev: 0, helpers: 0, name: '' };
       keep(this.farm);
       this.ready = true;
     } catch {
@@ -108,9 +121,11 @@ export class FarmSync {
     this.pending = null;
     this.sending = true;
     try {
-      const { rev } = await call('PUT', '/api/farms/me', { body: { save }, farm: this.farm, leaving });
-      this.farm.rev = rev;
+      const { rev, helpers = 0 } = await call('PUT', '/api/farms/me', { body: { save, roomRev: this.farm.roomRev ?? 0 }, farm: this.farm, leaving });
+      const shared = helpers > 0 && !this.shared();
+      Object.assign(this.farm, { rev, helpers });
       keep(this.farm);
+      if (shared) this.onShared?.();
     } catch (e) {
       if (e.status === 409 || e.status === 401) {
         this.ready = false;
@@ -134,6 +149,75 @@ export class FarmSync {
   // The farm's name ('' for none yet)
   name() {
     return this.farm?.name ?? '';
+  }
+
+  // ---------- Helpers ----------
+  // This browser's farm: its id, and "<id>.<token>" to show it is ours (on
+  // our farm, or one we help on)
+  id() {
+    return this.farm?.id ?? null;
+  }
+
+  auth() {
+    return this.farm ? `${this.farm.id}.${this.farm.token}` : null;
+  }
+
+  // Does the farm have helpers? (it is played through the server then)
+  shared() {
+    return (this.farm?.helpers ?? 0) > 0;
+  }
+
+  // The farm went to its room on the server: what this page has of it is
+  // not the latest any more (see roomRev above)
+  handedToRoom() {
+    if (!this.farm) return;
+    this.farm.roomRev = -1;
+    keep(this.farm);
+  }
+
+  // An invite code for a helper: { code, expiresIn }. name: ours, for the farm's name till it has one
+  inviteHelper(name) {
+    return this.me('/api/farms/me/helpers/invite', { name });
+  }
+
+  // [{ id, name, since }]
+  async helpers() {
+    const { helpers } = await this.me('/api/farms/me/helpers');
+    this.farm.helpers = helpers.length;
+    keep(this.farm);
+    return helpers;
+  }
+
+  async removeHelper(id) {
+    const { helpers } = await this.me('/api/farms/me/helpers/remove', { id });
+    this.farm.helpers = helpers.length;
+    keep(this.farm);
+    return helpers;
+  }
+
+  // The farm an invitation (its code) is for: { id, name }
+  invited(code) {
+    return call('POST', '/api/farms/invite', { body: { code } }).catch((e) => {
+      throw e.status ? e : new Error(NO_SERVER);
+    });
+  }
+
+  // Say yes to an invitation: we are one of that farm's helpers now. { id, name }
+  help(code, name) {
+    return this.me('/api/farms/me/help', { code, name });
+  }
+
+  // The farms we help on: [{ id, name, here }]
+  async helping() {
+    return (await this.me('/api/farms/me/helping')).farms;
+  }
+
+  // A call about this browser's farm (it needs one on the server)
+  me(path, body = {}) {
+    if (!this.ready) return Promise.reject(new Error(`${NO_SERVER} Your farm is only in this browser for now.`));
+    return call('POST', path, { body, farm: this.farm }).catch((e) => {
+      throw e.status ? e : new Error(NO_SERVER);
+    });
   }
 
   // Name the farm and set its PIN, to get it back without another device

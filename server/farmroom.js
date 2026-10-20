@@ -1,0 +1,341 @@
+// A farm with helpers, played together. A farm whose owner has let friends
+// help (server/farms.js keeps who) is run here, on the server, whenever
+// anyone is on it, the owner or a helper, so it can be tended while its owner
+// is away. One FarmRoom per farm, made when the first farmer arrives and put
+// away a little while after the last one leaves.
+//
+// The room owns the farm while it runs: the tilled soil, the crops, the
+// farm's chest and its clock. Pages ask (TILL, PLANT, HARVEST) and the room
+// says what happened to everyone. What is harvested goes into the chest, which
+// everyone can see and put things in, and only the owner takes things out of.
+// The backpacks stay everyone's own (their own farm's save keeps them).
+//
+// The animals are the owner's page's: it drives them (eggs, milk and wool go
+// to the owner, as at home) and sends their state along (ANIMALS); everyone
+// else's page draws them from that, for company. With the owner away they
+// keep as they were, and the owner's page catches up on what they gave when
+// it next has them (src/animals.js restore()).
+//
+// The farm is kept in the farm's own file, in the page's save format (the
+// save's `farm`: { savedAt, hours, tilled, crops: [[key, crop, age]], ...the
+// animals }), so the owner's page can always play it, alone, from there; the
+// chest beside the save (farm.chest), where no page's save can write over it.
+// Each time the room writes the farm, farm.roomRev goes up: a page that
+// played the farm alone, offline, meanwhile knows its farm is out of date.
+import { Place } from '../shared/place.js';
+import { S, C, finite } from '../shared/protocol.js';
+import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME } from '../shared/constants.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, spawnPoint } from '../shared/level.js';
+
+const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
+const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
+const SECONDS_PER_HOUR = DAY_LENGTH_SECONDS / 24;
+const RIPE_SLACK = 1; // seconds: pages count growth on their own clocks
+const MAX_STACK = 999; // of one item in the chest
+const MAX_KINDS = 64; // different items in the chest
+const MAX_ANIMALS = 16 * 1024; // bytes of the animals' state
+const CLOCK_EVERY = 10_000; // ms between FARM_CLOCKs
+const ITEM_RE = /^[a-z][a-z0-9_]{0,31}$/;
+const KEY_RE = /^-?\d{1,3},-?\d{1,3}$/;
+
+export class FarmRoom extends Place {
+  // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
+  // { id, owner }, or null for someone who isn't the owner or a helper.
+  constructor({ farm, admit, log = () => {} }) {
+    super({ code: farm.id, name: farmTitle(farm), worldLimit: FARM_HALF + 40, log });
+    this.farmId = farm.id;
+    this.admit = admit;
+    const saved = farm.save?.farm ?? null;
+    const now = Date.now();
+    // the clock: game hours since the farm began, running on from when it was saved
+    const savedHours = Number.isFinite(saved?.hours) ? saved.hours : 6;
+    const away = Number.isFinite(saved?.savedAt) ? Math.max(0, now - saved.savedAt) / 1000 : 0;
+    this.clockBase = savedHours + away / SECONDS_PER_HOUR;
+    this.clockAt = now;
+    this.tilled = new Set((saved?.tilled ?? []).filter((key) => KEY_RE.test(key)));
+    this.crops = new Map(); // key -> { crop, plantedAt (game hours) }
+    for (const [key, crop, age] of saved?.crops ?? []) {
+      if (this.tilled.has(key) && CROP_GROW_TIME[crop] && Number.isFinite(age)) {
+        this.crops.set(key, { crop, plantedAt: savedHours - age / SECONDS_PER_HOUR });
+      }
+    }
+    // the rest of the farm is the animals', as the owner's page saved them
+    const { savedAt, hours, tilled, crops, ...animals } = saved ?? {};
+    this.animals = animals;
+    this.chest = { ...(farm.chest ?? {}) };
+    this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
+    this.clockSentAt = now;
+  }
+
+  // the farm's clock now, in game hours
+  hours(now = Date.now()) {
+    return this.clockBase + (now - this.clockAt) / 1000 / SECONDS_PER_HOUR;
+  }
+
+  // ---------- Who is here ----------
+  join(conn, msg) {
+    const who = this.admit(msg?.auth, msg?.name);
+    if (!who) {
+      conn.close(CLOSE.NOT_HELPER, CLOSE_TEXT[CLOSE.NOT_HELPER]);
+      return null;
+    }
+    const p = super.join(conn, msg, { farmId: who.id, owner: who.owner });
+    if (p?.owner) this.ownerName = p.name;
+    return p;
+  }
+
+  spawnFor(id) {
+    return spawnPoint(SPAWN, id % 8, 8); // around the plaza
+  }
+
+  playerExtra(p) {
+    return { owner: p.owner };
+  }
+
+  greet(p) {
+    this.say(p.owner ? `${p.name} is home.` : `${p.name} came to help.`);
+  }
+
+  welcome(p, resumed) {
+    this.send(p, {
+      t: S.FARM,
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      farm: { id: this.farmId, name: this.name, owner: this.ownerName },
+      mine: p.owner,
+      tilled: [...this.tilled],
+      crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
+      chest: this.chest,
+      hours: round3(this.hours()),
+      animals: this.animals,
+      roster: this.rosterList(),
+      pos: { x: p.x, y: p.y, z: p.z },
+      resumed,
+    });
+  }
+
+  // The owner took them off the helpers: out they go
+  turnOut(helperFarmId) {
+    for (const p of [...this.players.values()]) {
+      if (p.farmId !== helperFarmId || p.owner) continue;
+      p.conn?.close(CLOSE.NOT_HELPER, CLOSE_TEXT[CLOSE.NOT_HELPER]);
+      p.conn = null;
+      this.remove(p);
+    }
+  }
+
+  // ---------- What they do ----------
+  // Close enough to the tile, and down on the ground (not up on a platform)
+  near(p, key) {
+    const [gx, gz] = key.split(',').map(Number);
+    return Math.hypot(gx - p.x, gz - p.z) <= REACH && Math.abs(p.y - GROUND_STAND_Y) < 0.6;
+  }
+
+  act(p, msg) {
+    switch (msg?.t) {
+      case C.TILL: {
+        const { key } = msg;
+        if (!onFarm(key) || this.tilled.has(key) || !this.near(p, key)) return this.deny(p, 'till', key);
+        this.tilled.add(key);
+        this.changed = true;
+        this.broadcast({ t: S.TILLED, key, by: p.id });
+        break;
+      }
+      case C.PLANT: {
+        const { key, crop } = msg;
+        if (!onFarm(key) || !CROP_GROW_TIME[crop] || !this.tilled.has(key) || this.crops.has(key) || !this.near(p, key)) {
+          return this.deny(p, 'plant', key, CROP_GROW_TIME[crop] ? crop : undefined);
+        }
+        const at = round3(this.hours());
+        this.crops.set(key, { crop, plantedAt: at });
+        this.changed = true;
+        this.broadcast({ t: S.PLANTED, key, crop, at, by: p.id });
+        break;
+      }
+      case C.HARVEST: {
+        const { key } = msg;
+        const c = onFarm(key) && this.crops.get(key);
+        const age = c && (this.hours() - c.plantedAt) * SECONDS_PER_HOUR;
+        if (!c || age < CROP_GROW_TIME[c.crop] - RIPE_SLACK || !this.near(p, key)) return this.deny(p, 'harvest', key);
+        const item = CROP_PRODUCE[c.crop];
+        if (!this.canStore(item, 1)) {
+          this.send(p, { t: S.CHAT, from: 0, text: 'The farm\'s chest is full: the owner needs to take some things out.' });
+          return this.deny(p, 'harvest', key);
+        }
+        this.crops.delete(key);
+        this.store(item, 1);
+        this.changed = true;
+        this.broadcast({ t: S.HARVESTED, key, by: p.id, item });
+        this.broadcast({ t: S.CHEST, items: this.chest });
+        break;
+      }
+      case C.CHEST_PUT: {
+        const { item, count } = msg;
+        if (!ITEM_RE.test(item) || !Number.isInteger(count) || count < 1 || !this.canStore(item, count)) {
+          // (the page took it out of the backpack: it goes back)
+          if (ITEM_RE.test(item) && Number.isInteger(count) && count >= 1 && count <= MAX_STACK) this.send(p, { t: S.CHEST_GOT, item, count });
+          return;
+        }
+        this.store(item, count);
+        this.changed = true;
+        this.broadcast({ t: S.CHEST, items: this.chest });
+        break;
+      }
+      case C.CHEST_TAKE: {
+        const { item, count } = msg;
+        if (!p.owner || !Number.isInteger(count) || count < 1 || !(this.chest[item] >= count)) return;
+        this.chest[item] -= count;
+        if (!this.chest[item]) delete this.chest[item];
+        this.changed = true;
+        this.send(p, { t: S.CHEST_GOT, item, count });
+        this.broadcast({ t: S.CHEST, items: this.chest });
+        break;
+      }
+      case C.CLOCK: {
+        // The owner, alone on the farm, fast-forwarding (T): only ever forward, and not past a week
+        const now = this.hours();
+        if (!p.owner || this.connected() > 1 || !finite(msg.hours) || msg.hours < now - 0.05 || msg.hours > now + 24 * 7) return;
+        this.clockBase = msg.hours;
+        this.clockAt = Date.now();
+        this.changed = true;
+        break;
+      }
+      case C.ANIMALS: {
+        const state = msg.state;
+        if (!p.owner || !state || typeof state !== 'object' || Array.isArray(state)) return;
+        if (JSON.stringify(state).length > MAX_ANIMALS) return;
+        const { savedAt, hours, tilled, crops, ...animals } = state; // (only the animals' part)
+        this.animals = animals;
+        this.changed = true;
+        break;
+      }
+    }
+  }
+
+  deny(p, op, key, crop) {
+    this.send(p, { t: S.FARM_DENY, op, key: typeof key === 'string' ? key.slice(0, 16) : '', crop });
+  }
+
+  canStore(item, count) {
+    const have = this.chest[item] ?? 0;
+    return have + count <= MAX_STACK && (have > 0 || Object.keys(this.chest).length < MAX_KINDS);
+  }
+
+  store(item, count) {
+    this.chest[item] = (this.chest[item] ?? 0) + count;
+  }
+
+  // ---------- Every tick ----------
+  tickPlace(now) {
+    if (now - this.clockSentAt < CLOCK_EVERY) return;
+    this.clockSentAt = now;
+    if (this.connected()) this.broadcast({ t: S.FARM_CLOCK, hours: round3(this.hours(now)) });
+  }
+
+  // ---------- Keeping it ----------
+  // The farm as the page saves it (src/main.js captureFarm())
+  toFarm(now = Date.now()) {
+    const hours = round3(this.hours(now));
+    return {
+      ...this.animals,
+      savedAt: now,
+      hours,
+      tilled: [...this.tilled],
+      crops: [...this.crops].map(([key, c]) => [key, c.crop, round3((hours - c.plantedAt) * SECONDS_PER_HOUR)]),
+    };
+  }
+}
+
+// What a farm is called to its helpers
+export function farmTitle(farm) {
+  if (farm.name) return farm.name;
+  return farm.ownerName ? `${farm.ownerName}'s farm`.slice(0, MAX_NAME + 7) : 'A farm';
+}
+
+// A tile key on the farm's island: "gx,gz", whole tiles, inside the shore
+function onFarm(key) {
+  if (typeof key !== 'string' || !KEY_RE.test(key)) return false;
+  const [gx, gz] = key.split(',').map(Number);
+  return Math.abs(gx) <= FARM_HALF && Math.abs(gz) <= FARM_HALF;
+}
+
+const round3 = (v) => Math.round(v * 1000) / 1000;
+
+// ---------- The farms being played together right now ----------
+const SAVE_EVERY = 3000;
+const IDLE_MS = 30_000; // an empty farm is put away after this (long enough for a reload)
+
+export class FarmRooms {
+  constructor({ farms, log = console.log }) {
+    this.farms = farms;
+    this.log = log;
+    this.rooms = new Map(); // farm id -> FarmRoom
+    setInterval(() => this.save(), SAVE_EVERY).unref();
+    setInterval(() => this.reap(), 5000).unref();
+  }
+
+  has(id) {
+    return this.rooms.has(id);
+  }
+
+  // The farm with this id, being played (made now if it isn't yet), or null
+  open(id) {
+    if (this.rooms.has(id)) return this.rooms.get(id);
+    const farm = this.farms.get(id);
+    if (!farm) return null;
+    const room = new FarmRoom({ farm, admit: (auth, name) => this.admit(farm, auth, name), log: this.log });
+    room.start();
+    this.rooms.set(id, room);
+    this.log(`farm ${id} opened for helpers`);
+    return room;
+  }
+
+  // Who is joining: the owner (their device's token for this farm), or a
+  // helper (a token for a farm the owner has down as a helper)
+  admit(farm, auth, name) {
+    const theirs = typeof auth === 'string' ? this.farms.auth(`Bearer ${auth}`) : null;
+    if (!theirs) return null;
+    if (theirs.id === farm.id) {
+      this.farms.seenOwner(farm, name);
+      return { id: farm.id, owner: true };
+    }
+    if (!this.farms.seenHelper(farm, theirs.id, name)) return null;
+    return { id: theirs.id, owner: false };
+  }
+
+  // Taken off a farm's helpers: out of it, if they are on it
+  turnOut(farmId, helperId) {
+    this.rooms.get(farmId)?.turnOut(helperId);
+  }
+
+  write(room) {
+    const farm = this.farms.get(room.farmId);
+    if (!farm) return;
+    room.changed = false;
+    farm.save = { ...farm.save, farm: room.toFarm() };
+    farm.chest = { ...room.chest };
+    farm.roomRev = (farm.roomRev ?? 0) + 1;
+    this.farms.write(farm);
+  }
+
+  save() {
+    for (const room of this.rooms.values()) if (room.changed) this.write(room);
+  }
+
+  reap() {
+    const now = Date.now();
+    for (const [id, room] of this.rooms) {
+      if (room.players.size || now - room.emptySince < IDLE_MS) continue;
+      if (room.changed) this.write(room);
+      room.close();
+      this.rooms.delete(id);
+      this.log(`farm ${id} put away (nobody on it)`);
+    }
+  }
+
+  // The server is stopping: write every farm being played
+  flush() {
+    for (const room of this.rooms.values()) this.write(room);
+  }
+}

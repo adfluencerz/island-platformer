@@ -6,9 +6,13 @@
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
+export const FARM_CHEST = { x: -2.8, z: 7.4 }; // the farm's chest, on a farm with helpers (src/chest.js): on the grass by the plaza
 
 // Seconds from planting to ripe (src/crops.js draws them)
 export const CROP_GROW_TIME = { turnip: 20, carrot: 30, flax: 35, sunflower: 45, golden_turnip: 60 };
+// what a ripe crop gives when it is harvested (on a farm with helpers the
+// server hands it out, into the farm's chest)
+export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', sunflower: 'sunflower', golden_turnip: 'golden_turnip' };
 
 // ---------- Lobby resources ----------
 // What can stand on a spot (each island says where its spots are). `use`: 'gather' is picked with E from nearby,

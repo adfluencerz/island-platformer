@@ -34,11 +34,12 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `I` — backpack
 - `L` — visit a lobby (from home)
 - `Enter` — chat (in a lobby)
-- `Esc` — menu (copy the invite link, head home, play on another device, farm name & PIN, controls)
+- `Esc` — menu (visit a lobby, copy the invite link, head home, play on another device, farm name & PIN, helpers, controls)
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
 - Click the ground — walk there
+- Mouse wheel — zoom in and out (over the hotbar it picks an item)
 
-On a touch screen the game shows its own controls: a thumbstick (bottom left) to walk, and **Use** (`E`), **Jump**, **Bag** (the backpack) and, in a lobby, **Chat** (bottom right). Tap the ground to walk there (at home, a ripe crop is harvested, and a tile next to you is tilled or planted with what you hold), tap the stall to trade, a bush or mushrooms to gather, or a tree to chop it with the axe in hand. Hold the clock to fast-forward time at home. **Menu** (the `Esc` menu) is in the place panel.
+On a touch screen the game shows its own controls: a thumbstick (bottom left) to walk, and **Use** (`E`), **Jump**, **Bag** (the backpack) and, in a lobby, **Chat** (bottom right). Tap the ground to walk there (at home, a ripe crop is harvested, and a tile next to you is tilled or planted with what you hold), tap the stall to trade, a bush or mushrooms to gather, or a tree to chop it with the axe in hand. Pinch with two fingers to zoom in and out. Hold the clock to fast-forward time at home. **Menu** (the `Esc` menu) is in the place panel.
 
 ## Playing on a phone
 Open the address Vite prints for your network (`npm run dev`) on the phone. The built game (`npm run build`, `npm start`) can also be installed as an app ("Add to Home Screen"): it opens full screen, and the farm opens without a connection (only the lobbies need the game server). The app's files are in `public/` (`manifest.webmanifest`, the icons, and `sw.js`, the service worker, which runs in built pages only so Vite's dev server always shows your changes). Browsers only install apps from `https://` or `localhost`.
@@ -64,6 +65,14 @@ What they give comes on the farm's clock, so it keeps coming while you're away:
 - **Wool** (120g): a sheep's fleece grows back two days after shearing, and you can see it fill out.
 
 The animals and eggs are saved with the farm (`src/animals.js`).
+
+**Helpers: farming together.** Friends can help on your farm, any time, even while you're away. Open the menu (`Esc`), pick **Helpers** and **Invite a helper**: you get a code like `K7P4-QM2X` and a link (good once, for a day). Your friend opens the link (or types the code under **Farms you help on** on the title screen) and is one of your helpers from then on: the farm is on their title screen, to **Visit** whenever they like. The same menu lists your helpers, with **Remove** to take someone off (they're sent home if they're there).
+
+- Everyone tills, plants and harvests as at home, with their own tools and seeds. What anyone harvests goes in the **farm chest**, which stands on the grass by the plaza on a farm with helpers: everyone can see what's in it and put things in from their backpack, and only you take things out (`E` at the chest, or tap it).
+- Backpacks and gold stay each farmer's own, and so does the merchant: helpers can trade at your stall.
+- The animals are yours: helpers can pet them, but the eggs, milk and wool are for you when you're there.
+- The farm keeps its own clock, the same for everyone on it. It doesn't stop for the menu, and `T` fast-forwards it only while you're alone on it.
+- Once a farm has helpers it's played through the game server whenever the server is there, also when you're alone, so it's the same farm whoever comes. Without the server you can still play it in your browser, but if your helpers changed it meanwhile, their farm is the one you get back (your backpack stays as you left it).
 
 **Online lobbies** are drop-in places to gather with other farmers, each out on a wild island of its own: bigger and wilder than a farm, with a ragged coast, a mossy forest with giant toadstools to hop across, a shallow pond to wade into (there may be something on the bottom), a flower meadow, rocky terraces climbing to the north, and a ring of standing stones where you arrive. Press `L` at home (or pick one on the title screen): **Quick join** (the fullest public lobby with room, or a new one), **Browse lobbies**, **Open a lobby** (name, size, island seed, public or invite-only), or **Join with a code**.
 
@@ -94,6 +103,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - Other players are drawn from the lobby's 20 Hz snapshots, 100 ms in the past and interpolated between them, so they move smoothly through network jitter (`src/remotes.js`).
 - Messages are small JSON objects; `shared/protocol.js` lists them all.
 - The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm. With one, the server keeps a copy of each farm in `data/farms/<id>.json` (`server/farms.js`, `src/net/farm.js`). A farm is known by its id, and each device has a token of its own for it (the server keeps only their hashes, and the PIN only as a scrypt hash); the save is the page's, kept as it's sent. The farm-name index is gathered from the farm files when the server starts. Accounts, later, can point at a farm id, so farms stay where they are.
+- A farm with helpers runs as a room on the server (`server/farmroom.js`) whenever anyone is on it, its owner or a helper, and is put away 30 seconds after the last one leaves. A helper is known by their own farm's id (their device's token for it proves it), so it needs no accounts either. The room has the soil, the crops, the chest and the clock: pages ask (till, plant, harvest) and draw what it says, as in a lobby. It writes the farm back into the owner's save (`data/farms/<id>.json`, the chest beside it) every few seconds, in the page's own save format, so the owner's page can always play it alone. A page's save carries the farm only when the page had the farm as the room last left it (`roomRev`), so a page that played offline can't write over what the helpers did. The animals stay the owner's page's to run: it sends their state to the room, and everyone else's page draws them from that. Lobbies and farm rooms share their players, seats, chat and snapshots (`shared/place.js`).
 
 The lobby system follows [Survive the Night](https://github.com/webdevcody/survive-the-night-fps)'s (codes, quick join, invite links, held seats on rejoin, idle shutdown), without the survival.
 
@@ -116,6 +126,7 @@ island-platformer/
 │   ├── daynight.js      # the clock, sun, moon, sky and fireflies
 │   ├── merchant.js      # the merchant's stall on the farm, and the merchant behind it
 │   ├── shop.js          # the merchant's shop window: buy seeds and animals, sell from the backpack
+│   ├── chest.js         # the farm chest on a farm with helpers, and its window
 │   ├── animals.js       # the hen yard and the pasture, the hens, cows and sheep, eggs
 │   ├── remotes.js       # other players: interpolation, name tags
 │   ├── net/
@@ -124,7 +135,8 @@ island-platformer/
 │   │   └── farm.js        # the farm's copy on the server, pairing codes
 │   └── ui/              # title screen (splash.js), in-game HUD (hud.js), touch controls (touch.js), styles
 ├── shared/              # runs on both the server and the client
-│   ├── room.js          # one lobby: players, resource spots
+│   ├── place.js         # what every online place has: players, seats, chat, snapshots
+│   ├── room.js          # one lobby: resource spots, trees
 │   ├── protocol.js      # message types
 │   ├── constants.js     # tick rate, limits
 │   ├── level.js         # resource spots' loot, rare finds, crop grow times
@@ -132,7 +144,8 @@ island-platformer/
 ├── server/
 │   ├── index.js         # HTTP API + WebSocket + built client, one port
 │   ├── lobby.js         # lobbies by code, quick join, dormant lobbies, saving them
-│   ├── farms.js         # farms kept for their devices, pairing codes
+│   ├── farms.js         # farms kept for their devices, pairing codes, helpers
+│   ├── farmroom.js      # a farm with helpers, played together
 │   └── store.js         # a save file written safely (the lobbies, each farm)
 ├── scripts/
 │   ├── dev.js           # npm run dev: game server + Vite

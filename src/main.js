@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
+import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS } from './animals.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
@@ -15,7 +16,7 @@ import { TouchControls } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, TREE, mostWood, GROUND_STAND_Y } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, mostWood, GROUND_STAND_Y, FARM_CHEST } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -32,7 +33,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 30, 90);
+const FOG_NEAR = 30;
+const FOG_FAR = 90;
+scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
 
 const camera = new THREE.PerspectiveCamera(
   60,
@@ -60,14 +63,29 @@ const camTarget = new THREE.Vector3(); // point the camera looks at, set once th
 // narrow, so the camera pulls back to show more of the island to either side:
 // partway toward the width a square screen shows, at most CAM_MAX_ZOOM.
 const CAM_MAX_ZOOM = 1.6;
+// On top of that the player zooms with the mouse wheel or a two-finger pinch,
+// within CAM_ZOOM_NEAR..CAM_ZOOM_FAR all told; the camera eases to it.
+const CAM_ZOOM_NEAR = 0.6;
+const CAM_ZOOM_FAR = 2.2;
+const CAM_ZOOM_EASE = 10;
 const camOffset = new THREE.Vector3();
+let fitZoom = 1;
+let playerZoom = 1;
+const zoomGoal = () => fitZoom * playerZoom;
 function fitCamera() {
+  // (a phone can start the page before the screen has a size: wait for the resize)
+  if (!(window.innerWidth > 0 && window.innerHeight > 0)) return;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  const zoom = Math.min(Math.sqrt(Math.max(1, 1 / camera.aspect)), CAM_MAX_ZOOM);
-  camOffset.copy(CAM_OFFSET).multiplyScalar(zoom);
+  fitZoom = Math.min(Math.sqrt(Math.max(1, 1 / camera.aspect)), CAM_MAX_ZOOM);
+  zoomBy(1); // keep the player's zoom inside the range for the new shape
+}
+function zoomBy(factor) {
+  if (!Number.isFinite(factor)) return;
+  playerZoom = THREE.MathUtils.clamp(playerZoom * factor, CAM_ZOOM_NEAR / fitZoom, CAM_ZOOM_FAR / fitZoom);
 }
 fitCamera();
+let camZoom = zoomGoal();
 
 // ---------- Lighting ----------
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444466, 1.0);
@@ -91,10 +109,19 @@ sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 
 // Moved in steps of a few shadow-map texels, so the shadows' edges don't crawl as it pans
-const SUN_STEP = ((SUN_REACH * 2) / 2048) * 4;
+// Zoomed out, the box grows with the view (in steps, so it isn't rebuilt every frame)
+let sunReach = SUN_REACH;
+function reachSun(zoom) {
+  const reach = SUN_REACH * Math.max(1, Math.ceil(zoom * 4) / 4);
+  if (reach === sunReach) return;
+  sunReach = reach;
+  Object.assign(sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach });
+  sun.shadow.camera.updateProjectionMatrix();
+}
 const _sunOffset = new THREE.Vector3();
 function followSun(focus, ahead = SUN_AHEAD) {
-  const snap = (n) => Math.round(n / SUN_STEP) * SUN_STEP;
+  const step = ((sunReach * 2) / 2048) * 4;
+  const snap = (n) => Math.round(n / step) * step;
   _sunOffset.subVectors(sun.position, sun.target.position); // (the day/night cycle sets its direction)
   sun.target.position.set(snap(focus.x), 0, snap(focus.z - ahead));
   sun.position.copy(sun.target.position).add(_sunOffset);
@@ -164,9 +191,11 @@ worlds.home.root.add(merchant.root);
 const animals = createAnimals();
 worlds.home.root.add(animals.root);
 const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
-const collect = (item) => place === 'home' && inventory.add(item);
+// (on a friend's farm the eggs, milk and wool are the farmer's)
+const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
 
 function letOutAnimal(kind) {
+  if (visiting()) return inventory.notify('Only the farmer lets animals out here');
   const problem = animals.letOut(kind, player.position.x, player.position.z);
   if (problem) return inventory.notify(problem);
   inventory.consumeSelected();
@@ -221,6 +250,14 @@ function plantAt(x, z, cropId, age = 0) {
   return true;
 }
 
+// A tile the farm's room turned down (a farm with helpers): back to grass
+function untillTile(key) {
+  const mesh = farmTiles.get(key);
+  if (!mesh) return;
+  scene.remove(mesh);
+  farmTiles.delete(key);
+}
+
 function removeCrop(key) {
   const crop = crops.get(key);
   if (!crop) return;
@@ -228,11 +265,20 @@ function removeCrop(key) {
   crops.delete(key);
 }
 
-// Returns true if there was a ripe crop here (even if the bag was too full to take it)
+// Returns true if there was a ripe crop here (even if the bag was too full to take it).
+// On a farm with helpers it goes in the farm's chest: it vanishes now, and the
+// room's HARVESTED (or FARM_DENY: it comes back) settles it.
 function harvestAt(x, z) {
   const key = tileKeyFor(x, z);
   const crop = crops.get(key);
   if (!crop?.ripe) return false;
+  if (crop.pending) return true;
+  if (farmNet) {
+    crop.pending = true;
+    crop.view.group.visible = false;
+    farmNet.send({ t: C.HARVEST, key });
+    return true;
+  }
   if (inventory.add(CROPS[crop.cropId].produce)) removeCrop(key);
   return true;
 }
@@ -542,9 +588,17 @@ function updateCamera(dt) {
   camTarget.z += (player.position.z - camTarget.z) * kXZ;
   camTarget.y += (camGroundY - camTarget.y) * damp(CAM_FOLLOW_Y, dt);
 
+  camZoom += (zoomGoal() - camZoom) * damp(CAM_ZOOM_EASE, dt);
+  if (!Number.isFinite(camZoom)) camZoom = zoomGoal(); // never leave the camera nowhere
+  camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
+  // Pushed back with the camera, so zooming out shows more island, not more fog
+  scene.fog.near = FOG_NEAR * Math.max(1, camZoom);
+  scene.fog.far = FOG_FAR * Math.max(1, camZoom);
+  reachSun(camZoom);
+
   camera.position.copy(camTarget).add(camOffset);
   camera.lookAt(camTarget);
-  followSun(camTarget);
+  followSun(camTarget, SUN_AHEAD * Math.max(1, camZoom));
 }
 updateCamera(0);
 
@@ -573,7 +627,7 @@ function updateMenuCamera(t) {
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
-const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || hud.isTyping() || hud.isPaused();
+const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || chest.isOpen() || hud.isTyping() || hud.isPaused();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
@@ -597,6 +651,7 @@ function useAction() {
     }
     return;
   }
+  if (chest.inReach(player.position)) return chest.open();
   if (atStall(player.position)) {
     shop.open();
     return;
@@ -624,7 +679,10 @@ function farmHere() {
     return;
   }
   if (held === 'hoe') {
-    tillTileAt(x, z);
+    if (tillTileAt(x, z) && farmNet) {
+      pendingTills.add(tileKeyFor(x, z));
+      farmNet.send({ t: C.TILL, key: tileKeyFor(x, z) });
+    }
     startHoeSwing();
   } else if (held === 'axe') {
     inventory.notify('Leave the farm\'s trees be: chop wood in a lobby');
@@ -632,6 +690,11 @@ function farmHere() {
     if (plantAt(x, z, ITEMS[held].plants)) {
       inventory.consumeSelected();
       anim.squash = 0.15; // little crouch to plant
+      if (farmNet) {
+        const key = tileKeyFor(x, z);
+        crops.get(key).pending = true; // (till the room says so; if it says no, the seed comes back)
+        farmNet.send({ t: C.PLANT, key, crop: ITEMS[held].plants });
+      }
     } else if (!farmTiles.has(tileKeyFor(x, z))) {
       inventory.notify('Seeds go on tilled soil');
     }
@@ -747,12 +810,49 @@ const presses = new Map(); // pointerId -> where and when it went down
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'mouse' || e.button === 0) presses.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
 });
-canvas.addEventListener('pointercancel', (e) => presses.delete(e.pointerId));
+canvas.addEventListener('pointercancel', (e) => {
+  presses.delete(e.pointerId);
+  pinch.delete(e.pointerId);
+});
 canvas.addEventListener('pointerup', (e) => {
   const press = presses.get(e.pointerId);
   presses.delete(e.pointerId);
+  pinch.delete(e.pointerId);
   if (!press || e.timeStamp - press.t > TAP_MS || Math.hypot(e.clientX - press.x, e.clientY - press.y) > TAP_PX) return;
   if (place !== 'title' && !inputBlocked()) tapAt(e.clientX, e.clientY);
+});
+
+// Zoom: the mouse wheel (a trackpad pinch arrives as a wheel too), or two
+// fingers pinched on the screen. Spreading them, or wheeling up, comes closer.
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault(); // or a trackpad pinch zooms the page
+  if (place === 'title' || inputBlocked()) return;
+  const lines = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  zoomBy(Math.exp(THREE.MathUtils.clamp(lines, -100, 100) * 0.002));
+}, { passive: false });
+
+const pinch = new Map(); // pointerId -> where each finger on the canvas is now
+let pinchGap = 0;
+const fingerGap = () => {
+  const [a, b] = pinch.values();
+  return Math.hypot(a.x - b.x, a.y - b.y);
+};
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch') return;
+  pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch.size !== 2) return;
+  pinchGap = fingerGap();
+  presses.clear(); // a pinch is not a tap
+});
+canvas.addEventListener('pointermove', (e) => {
+  const finger = pinch.get(e.pointerId);
+  if (!finger) return;
+  finger.x = e.clientX;
+  finger.y = e.clientY;
+  if (pinch.size !== 2) return;
+  const gap = fingerGap();
+  if (pinchGap > 0 && gap > 0 && place !== 'title' && !inputBlocked()) zoomBy(pinchGap / gap);
+  pinchGap = gap;
 });
 
 function tapAt(x, y) {
@@ -776,6 +876,7 @@ function tappedThing() {
     for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
   } else {
     const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
+    if (chest.shown()) things.set(chest.root, { kind: 'chest', x: FARM_CHEST.x, z: FARM_CHEST.z + 0.9 });
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
     for (const animal of animals.list()) if (animal.root.visible) things.set(animal.root, { kind: 'animal', animal, x: animal.pos.x, z: animal.pos.z });
@@ -817,6 +918,7 @@ function stopWalking() {
 function arrived(d) {
   switch (walk.kind) {
     case 'stall': return atStall(player.position);
+    case 'chest': return chest.inReach(player.position);
     case 'spot': return d < GATHER_REACH * 0.8 && Math.abs(player.position.y - GROUND_STAND_Y - walk.spot.y) < 1.2;
     case 'tree': return treeInReach() === walk.tree;
     case 'animal': return animals.canReach(walk.animal, player.position);
@@ -829,6 +931,7 @@ function arrive() {
   const { kind, farm, spot, tree, animal } = walk;
   stopWalking();
   if (kind === 'stall') shop.open();
+  else if (kind === 'chest') chest.open();
   else if (kind === 'animal') tendAnimal(animal);
   else if (kind === 'tile' && farm) farmHere();
   else if (kind === 'spot' && spot.item && !spot.pending) {
@@ -877,8 +980,20 @@ function steer(dt) {
 // Home is your own farm, all in this page. A lobby is an online place
 // (shared/room.js on the game server) where farmers drop in to gather what
 // grows there; nothing of the farm comes along but the backpack.
+//
+// A farm with helpers (friends its owner invited, server/farms.js) is played
+// together, through its room on the server (server/farmroom.js): your own,
+// whenever the server is there, and a friend's when you go and help. Place
+// is 'home' on any farm; farmVisit says whose, and farmNet is the line to its
+// room. The room has the soil, the crops, the chest and the clock; this page
+// farms as it does at home, asks the room, and draws what it says.
 let place = 'title'; // 'title' | 'home' | 'lobby'
 let net = null; // the Connection while in (or on the way to) a lobby
+let farmNet = null; // the Connection to a farm's room (ours with its helpers, or a friend's), on it or on the way
+let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone }
+let farmJoining = 0; // (each joinFarm's number: a newer one wins)
+const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
+const visiting = () => !!farmVisit && !farmVisit.mine; // on a friend's farm
 let session = null; // { code, room } once a lobby has welcomed us
 let myId = 0;
 let sendTimer = 0;
@@ -893,19 +1008,48 @@ const hud = new Hud({
   onChat: (text) => net?.send({ t: C.CHAT, text }),
   onPair: () => farmSync.pairCode(),
   onRecovery: ({ name, pin }) => farmSync.setRecovery(name, pin),
-  isBlocked: () => inventory.isOpen() || shop.isOpen() || !splash.hidden,
+  isBlocked: () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || !splash.hidden,
   onPrompt: (text) => touch.setReady(!!text),
+  onInvite: () => farmSync.inviteHelper(splash.name()),
+  onHelpers: () => farmSync.helpers(),
+  onRemoveHelper: (id) => farmSync.removeHelper(id),
 });
 // (after the HUD: its key handler goes first, see shop.js)
 const shop = createShop({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
 });
+// The farm's chest (chest.js): only there on a farm with helpers. It is a
+// thing to bump into while it is there.
+const chest = createChest({
+  inventory,
+  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  onPut: (item, count) => farmNet?.send({ t: C.CHEST_PUT, item, count }),
+  onTake: (item, count) => farmNet?.send({ t: C.CHEST_TAKE, item, count }),
+});
+worlds.home.root.add(chest.root);
+let chestCollider = null;
+function showChest(on) {
+  chest.show(on);
+  const list = worlds.home.platforms;
+  if (on && !chestCollider) {
+    const { x, y, z, w, h, d } = chest.box;
+    chestCollider = { center: new THREE.Vector3(x, y, z), min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2) };
+    list.push(chestCollider);
+  } else if (!on && chestCollider) {
+    list.splice(list.indexOf(chestCollider), 1);
+    chestCollider = null;
+  }
+}
 const splash = new Splash({
   onPlay: joinLobby,
   onHome: () => goHome(),
   onFarmCode: (code) => bringFarm(() => farmSync.claim(code)),
   onRecover: (name, pin) => bringFarm(() => farmSync.recover(name, pin)),
+  onHelping: () => farmSync.helping(),
+  onVisitFarm: (id) => joinFarm(id),
+  onInvited: (code) => farmSync.invited(code),
+  onHelp: (code, name) => farmSync.help(code, name),
 });
 
 function putDown({ x, y, z }) {
@@ -922,18 +1066,206 @@ function goHome() {
     net = null;
   }
   const from = place;
+  const fromFriend = visiting();
   if (from === 'lobby') leaveLobbyWorld();
+  if (fromFriend) leaveFarm(); // (a friend's farm: back to ours)
   place = 'home';
   enterWorld('home');
+  splash.hide();
+  if (farmVisit) return; // (on our own farm with its helpers already)
   farmer.setShirt(PLAYER_COLORS[0]);
   if (!farmOnScreen) {
     showFarm(homeFarm);
     farmOnScreen = true;
   }
-  splash.hide();
   hud.showHome();
   touch.setPlace('home');
-  if (from !== 'home') putDown(arrival());
+  if (from !== 'home' || fromFriend) putDown(arrival());
+  // A farm with helpers is played with them, on the server, whenever it is there
+  // (this farm stays on screen meanwhile: the room's is the same, or newer)
+  if (farmSync.shared() && farmSync.ready && !farmNet && !farmJoining) joinFarm(farmSync.id());
+}
+
+// ---------- A farm with helpers ----------
+// Onto a farm's room: ours (its helpers may be on it) or a friend's
+async function joinFarm(id) {
+  const mine = id === farmSync.id();
+  if (farmVisit) leaveFarm();
+  farmNet?.leave();
+  farmNet = null;
+  if (!mine) splash.setStatus('Walking over…');
+  const ticket = ++farmJoining;
+  if (mine) {
+    // (so a room that starts now starts from the farm as we have it)
+    saveGame();
+    await farmSync.flush();
+    if (ticket !== farmJoining) return; // (another farm meanwhile)
+    if (net) {
+      farmJoining = 0; // (off to a lobby meanwhile)
+      return;
+    }
+  }
+  farmJoining = 0;
+  const conn = (farmNet = new Connection({ name: splash.name(), farm: id, auth: farmSync.auth() }));
+  const on = (type, fn) => conn.on(type, (m) => farmNet === conn && fn(m));
+
+  on(S.FARM, (m) => {
+    const from = place;
+    if (net) {
+      net.leave(); // (a lobby we were on the way to)
+      net = null;
+    }
+    if (from === 'lobby') leaveLobbyWorld();
+    if (!m.mine && farmOnScreen) {
+      // Off to help: our own farm stays at home (saved, and growing while we are out)
+      saveGame();
+      farmSync.flush();
+      farmOnScreen = false;
+    }
+    place = 'home';
+    enterWorld('home');
+    farmVisit = { id: m.farm.id, name: m.farm.name, owner: m.farm.owner, mine: m.mine, alone: true };
+    myId = m.id;
+    farmer.setShirt(m.color);
+    showRoomFarm(m);
+    farmOnScreen = m.mine;
+    if (m.mine) farmSync.handedToRoom();
+    chest.setOwner(m.mine, m.farm.owner);
+    chest.setItems(m.chest);
+    showChest(true);
+    remotes.clear();
+    setFarmRoster(m.roster);
+    if (!m.resumed && !(m.mine && from === 'home')) putDown(m.pos);
+    splash.hide();
+    splash.setStatus('');
+    hud.showFarm(farmVisit, myId);
+    hud.setRoster(m.roster);
+    touch.setPlace('farm');
+    if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
+  });
+  on(S.ROSTER, (m) => {
+    hud.setRoster(m.list);
+    setFarmRoster(m.list);
+  });
+  on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
+  on(S.TILLED, (m) => {
+    pendingTills.delete(m.key);
+    tillTileAt(...keyXZ(m.key)); // (ours is there already)
+  });
+  on(S.PLANTED, (m) => {
+    const crop = crops.get(m.key);
+    if (crop?.cropId === m.crop) {
+      crop.pending = false;
+      crop.plantedAt = m.at;
+      return;
+    }
+    removeCrop(m.key);
+    tillTileAt(...keyXZ(m.key));
+    if (plantAt(...keyXZ(m.key), m.crop, ageAt(m.at))) crops.get(m.key).plantedAt = m.at;
+  });
+  on(S.HARVESTED, (m) => {
+    removeCrop(m.key);
+    if (m.by === myId) inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
+  });
+  on(S.FARM_DENY, (m) => {
+    const crop = crops.get(m.key);
+    if (m.op === 'till' && pendingTills.delete(m.key)) untillTile(m.key);
+    else if (m.op === 'plant' && crop?.pending) {
+      removeCrop(m.key);
+      const seed = Object.keys(ITEMS).find((id) => ITEMS[id].plants === m.crop);
+      if (seed) inventory.add(seed, 1, { quiet: true }); // (the seed back)
+    } else if (m.op === 'harvest' && crop) {
+      crop.pending = false;
+      crop.view.group.visible = true;
+    }
+  });
+  on(S.CHEST, (m) => chest.setItems(m.items));
+  on(S.CHEST_GOT, (m) => {
+    // (no room for it after all: back in the chest)
+    if (!inventory.add(m.item, m.count)) farmNet.send({ t: C.CHEST_PUT, item: m.item, count: m.count });
+    chest.refresh();
+  });
+  on(S.FARM_CLOCK, (m) => syncFarmClock(m.hours));
+  on(S.CHAT, (m) => hud.chat(m));
+  on('ping', (ms) => hud.setPing(ms));
+  on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
+  on('closed', ({ reason }) => {
+    const was = farmVisit;
+    farmNet = null;
+    if (!was) {
+      // (never got there: our own farm is played here, alone; a friend's, say why)
+      if (!mine) splash.setStatus(reason, true);
+      return;
+    }
+    leaveFarm();
+    if (was.mine) {
+      // On our own farm still, alone: it carries on in this page
+      hud.showHome();
+      touch.setPlace('home');
+      hud.setConnStatus(`${reason} Your farm carries on here.`);
+      setTimeout(() => hud.setConnStatus(''), 6000);
+    } else {
+      goHome();
+      splash.show({ from: 'home', message: reason });
+    }
+  });
+}
+
+// Off the farm's room. Our own farm stays on screen (it plays on in this
+// page); a friend's goes.
+function leaveFarm() {
+  const was = farmVisit;
+  if (was?.mine) saveGame(); // (the animals, to the room)
+  farmNet?.leave();
+  farmNet = null;
+  farmVisit = null;
+  pendingTills.clear();
+  showChest(false);
+  remotes.clear();
+  keys.clear();
+  myId = 0;
+  for (const crop of crops.values()) crop.pending = false;
+  if (was && !was.mine) {
+    resetFarm();
+    farmOnScreen = false;
+  }
+}
+
+function setFarmRoster(list) {
+  remotes.setRoster(list, myId);
+  if (farmVisit) farmVisit.alone = list.filter((p) => !p.away).length <= 1;
+}
+
+// game seconds a crop planted at `plantedAt` (the farm's game hours) has been growing
+const ageAt = (plantedAt) => Math.max(0, ((farmHours() - plantedAt) * DAY_LENGTH_SECONDS) / 24);
+
+// The farm as its room has it (FARM)
+function showRoomFarm(m) {
+  resetFarm();
+  dayNight.setTime(m.hours);
+  for (const key of m.tilled) tillTileAt(...keyXZ(key));
+  for (const [key, cropId, at] of m.crops) {
+    if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
+  }
+  animals.restore(Object.keys(m.animals ?? {}).length ? m.animals : null, farmHours());
+}
+
+// The room's clock, now and then: pages drift (not while we fast-forward it ourselves)
+function syncFarmClock(hours) {
+  if (keys.has('KeyT') || Math.abs(hours - farmHours()) < 0.05) return;
+  dayNight.setTime(hours);
+  for (const crop of crops.values()) if (crop.plantedAt !== undefined) crop.age = ageAt(crop.plantedAt);
+}
+
+// Holding T on our own farm, alone on it: the room's clock goes along
+let clockSentAt = 0;
+let fastForwarding = false;
+function sendFarmClock(ff, t) {
+  if (!ff && !fastForwarding) return;
+  if (ff && t - clockSentAt < 0.25) return;
+  fastForwarding = ff;
+  clockSentAt = t;
+  farmNet.send({ t: C.CLOCK, hours: farmHours() });
 }
 
 function leaveLobbyWorld() {
@@ -954,6 +1286,7 @@ function joinLobby({ name, code }) {
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 
   on(S.WELCOME, (m) => {
+    if (farmVisit || farmNet) leaveFarm(); // (off a farm with helpers)
     if (place !== 'lobby') {
       // Off we go: the farm stays at home (saved, and growing while we are out)
       saveGame();
@@ -1039,15 +1372,15 @@ function joinLobby({ name, code }) {
   });
 }
 
-// Where we are, for the lobby: spots are checked against it, and everyone
-// else draws us there
-function sendState(dt) {
+// Where we are, for the lobby (or a farm's room): what we do is checked
+// against it, and everyone else draws us there
+function sendState(dt, conn = net) {
   sendTimer += dt;
   if (sendTimer < TICK_DT) return;
   sendTimer %= TICK_DT;
   const p = player.position;
   const r = (v) => Math.round(v * 100) / 100;
-  net.send({
+  conn.send({
     t: C.STATE,
     x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
     f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0) |
@@ -1076,6 +1409,10 @@ const farmSync = new FarmSync({
   onTakenOver: () => {
     saving = false;
     hud.setConnStatus('Your farm is open on another device now. Reload the page to carry on here.');
+  },
+  // the farm got its first helper: from now on it is played with them, on the server
+  onShared: () => {
+    if (place === 'home' && !farmNet && !farmJoining) joinFarm(farmSync.id());
   },
 });
 
@@ -1111,6 +1448,8 @@ function currentSave() {
 
 function saveGame() {
   if (!saving) return;
+  // (on our farm with its helpers: the animals are ours to keep, the rest is the room's)
+  if (farmVisit?.mine) farmNet?.send({ t: C.ANIMALS, state: animals.capture() });
   const save = currentSave();
   try {
     localStorage.setItem(SAVE_STORE, JSON.stringify(save));
@@ -1177,6 +1516,9 @@ async function openFarm() {
   const theirs = await farmSync.open(currentSave());
   hud.setFarmName(farmSync.name());
   if (theirs && useSave(theirs)) saveGame();
+  if (!splash.hidden) splash.showHelping(); // (the farms we help on: the server knows who we are now)
+  // a farm with helpers, already home (the page was quick): onto its room
+  if (place === 'home' && farmSync.shared() && farmSync.ready && !farmNet && !farmJoining) joinFarm(farmSync.id());
 }
 
 // A farm from another device (a pairing code), or got back by its name and
@@ -1282,7 +1624,12 @@ function update(dt) {
     remotes.update(dt, t);
   } else {
     merchant.update(dt, t, player.position);
+    chest.update(dt);
     if (place === 'home') hud.setPrompt(homePrompt());
+    if (farmVisit) {
+      sendState(dt, farmNet);
+      remotes.update(dt, t);
+    }
   }
 
   windTime.value = t;
@@ -1292,14 +1639,18 @@ function update(dt) {
   water.position.y = WATER_Y + Math.sin(t * 0.8) * 0.03;
 
   // At home, time stops while the backpack or the menu is open and holding T
-  // fast-forwards it. In a lobby the time of day is everyone's, so it just runs.
-  const atHome = place !== 'lobby';
+  // fast-forwards it. In a lobby the time of day is everyone's, so it just
+  // runs; so it does on a farm with helpers (the owner, alone on it, may
+  // still fast-forward it).
+  const atHome = place !== 'lobby' && !farmVisit;
+  const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour();
   dayNight.update(dt, {
-    paused: atHome && (inventory.isOpen() || shop.isOpen() || hud.isPaused()),
-    fastForward: atHome && keys.has('KeyT'),
+    paused: atHome && (inventory.isOpen() || shop.isOpen() || chest.isOpen() || hud.isPaused()),
+    fastForward,
     focus: player.position,
   });
+  if (farmVisit?.mine) sendFarmClock(fastForward, t);
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
@@ -1317,7 +1668,8 @@ function update(dt) {
 
 // What E does here at home, for the prompt
 function homePrompt() {
-  if (shop.isOpen()) return '';
+  if (shop.isOpen() || chest.isOpen()) return '';
+  if (chest.inReach(player.position)) return 'E  Open the farm chest';
   if (atStall(player.position)) return 'E  Trade with the merchant';
   const held = inventory.selectedId();
   if (ANIMAL_KINDS.includes(held) && animals.inPenFor(held, player.position.x, player.position.z, 0.5)) return `E  Let the ${ITEMS[held].name.toLowerCase()} out`;
@@ -1341,7 +1693,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, animals, dayNight, saveGame, camera, get place() { return place; }, get net() { return net; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, chest, animals, dayNight, saveGame, camera, farmSync, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

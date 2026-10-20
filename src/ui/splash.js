@@ -4,10 +4,12 @@
 // page opened from an invite link (?lobby=CODE) shows that lobby's
 // invitation first. And the way to bring your farm over from another device,
 // with a pairing code from that device's menu, or with the farm's name and
-// PIN when there is no other device to ask (src/net/farm.js).
+// PIN when there is no other device to ask (src/net/farm.js). And the farms
+// you help on (friends' farms, server/farms.js): visit one, or say yes to an
+// invitation (a link with ?help=CODE, or its code typed in).
 import { MAX_PLAYERS, MAX_NAME, MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
-import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode } from '../net/lobby.js';
+import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode } from '../net/lobby.js';
 import { el, button } from './dom.js';
 import { addHelp } from './hud.js';
 
@@ -26,11 +28,14 @@ export class Splash {
   // onPlay({ name, code }): visit a lobby ('' code: quick join). onHome(): go to the farm.
   // onFarmCode(code): play the farm of another device here (a promise; it fails with why).
   // onRecover(name, pin): the same, with the farm's name and PIN.
-  constructor({ onPlay, onHome, onFarmCode, onRecover }) {
+  // onHelping(): the farms we help on, [{ id, name, here }]. onVisitFarm(id, name): go and help there.
+  // onInvited(code): the farm an invitation is for, { id, name }. onHelp(code, name): say yes to it.
+  constructor({ onPlay, onHome, onFarmCode, onRecover, onHelping, onVisitFarm, onInvited, onHelp }) {
     this.onPlay = onPlay;
     this.onHome = onHome;
     this.onFarmCode = onFarmCode;
     this.onRecover = onRecover;
+    Object.assign(this, { onHelping, onVisitFarm, onInvited, onHelp });
     const root = (this.root = el('div', 'ui-splash', document.body));
     const card = el('div', 'ui-card inv-frame', root);
     const titleRow = el('div', 'ui-title-row', card);
@@ -56,9 +61,35 @@ export class Splash {
       this.showPanel('menu');
     });
 
+    // ---- an invitation to help on a farm (?help=CODE) ----
+    this.helpInvite = el('div', 'ui-invite', card);
+    this.helpText = el('div', '', this.helpInvite);
+    const helpRow = el('div', 'ui-row', this.helpInvite);
+    this.helpJoin = button('ui-btn ui-btn-big', helpRow, 'Help out', () => this.help(this.helpCode));
+    button('ui-btn ui-btn-ghost', helpRow, 'Not now', () => {
+      forgetHelpCode();
+      this.showPanel('menu');
+    });
+
     // ---- the menu ----
     this.menu = el('div', 'ui-menu', card);
     this.homeBtn = button('ui-btn ui-btn-big', this.menu, '', () => this.goHome());
+
+    // ---- the farms we help on ----
+    el('h2', 'ui-section', this.menu, 'Farms you help on');
+    this.helpingList = el('div', 'ui-helper-list', this.menu);
+    const helpCodeRow = el('form', 'ui-row ui-code-row', this.menu);
+    this.helpInput = el('input', 'ui-input', helpCodeRow);
+    this.helpInput.placeholder = 'Invite code';
+    this.helpInput.maxLength = 10;
+    this.helpInput.autocomplete = 'off';
+    button('ui-btn', helpCodeRow, 'Help out', null).type = 'submit';
+    helpCodeRow.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const code = this.helpInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length !== 8) return this.setStatus('An invite code to help on a farm is 8 letters and digits.', true);
+      this.help(code);
+    });
     el('h2', 'ui-section', this.menu, 'Online lobbies');
     button('ui-btn', this.menu, 'Quick join', () => this.play(''));
     const row = el('div', 'ui-row', this.menu);
@@ -176,9 +207,12 @@ export class Splash {
     document.body.classList.toggle('in-menu', from === 'title');
     this.homeBtn.textContent = from === 'title' ? 'Go to my farm' : 'Back to my farm (Esc)';
     this.setStatus(message, !!message);
+    const help = linkedHelpCode();
     const code = linkedCode();
-    if (code) this.showInvite(code);
+    if (help) this.showHelpInvite(help);
+    else if (code) this.showInvite(code);
     else this.showPanel('menu');
+    this.showHelping();
   }
 
   hide() {
@@ -189,6 +223,7 @@ export class Splash {
 
   showPanel(which) {
     this.invite.hidden = which !== 'invite';
+    this.helpInvite.hidden = which !== 'help';
     this.menu.hidden = which !== 'menu';
     this.browse.hidden = which !== 'browse';
     this.create.hidden = which !== 'create';
@@ -229,6 +264,60 @@ export class Splash {
     this.setStatus('Fetching your farm…');
     try {
       await fetchFarm();
+    } catch (e) {
+      this.setStatus(e.message, true);
+    }
+  }
+
+  // ---------- Farms we help on ----------
+  async showHelping() {
+    const list = this.helpingList;
+    list.textContent = '';
+    let farms = [];
+    try {
+      farms = await this.onHelping();
+    } catch {}
+    list.textContent = '';
+    if (!farms.length) el('div', 'ui-muted', list, 'None yet. A friend can invite you from their farm\'s menu (Helpers).');
+    for (const f of farms) {
+      const row = el('div', 'ui-helper', list);
+      el('span', 'ui-player-name', row, f.name);
+      if (f.here) el('span', 'ui-muted', row, `${f.here} there now`);
+      button('ui-btn ui-btn-small', row, 'Visit', () => this.visit(f.id, f.name));
+    }
+  }
+
+  visit(id, name) {
+    this.name(); // (remember it)
+    this.setStatus(`Walking over to ${name}…`);
+    this.onVisitFarm(id, name);
+  }
+
+  async showHelpInvite(code) {
+    this.helpCode = code;
+    this.showPanel('help');
+    this.helpText.textContent = 'You are invited to help on a farm…';
+    this.helpJoin.disabled = false;
+    try {
+      const f = await this.onInvited(code);
+      this.helpText.textContent = '';
+      el('div', 'ui-invite-title', this.helpText, `You are invited to help on “${f.name}”`);
+      el('div', 'ui-muted', this.helpText, 'Come and farm there any time, even while they are away. What you harvest goes in their farm\'s chest.');
+    } catch (e) {
+      this.helpText.textContent = e.status ? e.message : NO_SERVER;
+      this.helpJoin.disabled = true;
+    }
+  }
+
+  // Say yes to an invitation, then off to that farm
+  async help(code) {
+    this.setStatus('Saying yes…');
+    try {
+      const f = await this.onHelp(code, this.name());
+      forgetHelpCode();
+      this.helpInput.value = '';
+      this.showHelping();
+      this.visit(f.id, f.name);
     } catch (e) {
       this.setStatus(e.message, true);
     }

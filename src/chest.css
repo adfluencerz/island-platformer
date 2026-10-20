@@ -1,0 +1,51 @@
+/* The farm's chest: built from the backpack's pieces (inventory.css), like the shop */
+.chest-window {
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  margin-top: 30px; /* room for the tab */
+}
+
+.chest-note {
+  margin: 2px 0 10px;
+  font-size: 22px;
+  opacity: 0.85;
+  max-width: calc(var(--inv-slot) * 12 + 40px);
+}
+
+.chest-heading {
+  margin: 12px 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+/* What is in the chest: slots that wrap, as many as there are kinds of thing */
+.chest-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: var(--inv-slot);
+  max-width: calc(var(--inv-slot) * 12 + 44px);
+  padding: 6px;
+  border-radius: 4px;
+  background: #7a3f14;
+  box-shadow: inset 0 3px 0 #3d1a04;
+}
+.chest-cell {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.chest-cell:hover { background: #ffdca4; }
+.chest-cell.chest-locked { cursor: default; }
+.chest-empty {
+  align-self: center;
+  padding: 0 8px;
+  color: #ffd38f;
+  font-size: 22px;
+}
+
+.inv-slot.chest-nokeep { cursor: not-allowed; }
+.inv-slot.chest-nokeep .inv-icon { opacity: 0.4; filter: grayscale(0.7); }
+.chest-hint { margin-top: 8px; }

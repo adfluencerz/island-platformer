@@ -1,5 +1,8 @@
-// Messages between a client and its lobby. Every message is a JSON object
-// whose `t` field is one of these; the comments list the other fields.
+// Messages between a client and the online place it is in: a lobby
+// (shared/room.js) or a farm with helpers on it (server/farmroom.js). Every
+// message is a JSON object whose `t` field is one of these; the comments list
+// the other fields. JOIN, STATE, CHAT and PING (and ROSTER, SNAP, CHAT and
+// PONG back) are the same in both.
 import { PIN_LENGTH } from './constants.js';
 
 // client -> lobby
@@ -10,6 +13,14 @@ export const C = {
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
+  // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
+  TILL: 'till', // { key }: till tile key ("gx,gz") underfoot
+  PLANT: 'plant', // { key, crop }: plant a seed from the backpack on tilled tile key
+  HARVEST: 'harvest', // { key }: the ripe crop on tile key, into the farm's chest
+  CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest
+  CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
+  CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
+  ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture())
 };
 
 // lobby -> client
@@ -25,6 +36,17 @@ export const S = {
   CHOP_DENY: 'chopDeny', // { id }: that chop did not count (already down, too far, too fast)
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
+  // on a farm
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, chest, hours, animals, roster, pos, resumed }
+  //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
+  //   chest: { item: count }. hours: the farm's clock, in game hours since it began)
+  TILLED: 'tilled', // { key, by }
+  PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
+  HARVESTED: 'harvested', // { key, by, item }
+  FARM_DENY: 'farmDeny', // { op, key, crop }: that did not count (crop: a seed to give back)
+  CHEST: 'chest', // { items: { item: count } }
+  CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
+  FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
 };
 
 // spots in WELCOME: [[id, kind, x, y, z, item, count], ...] (item null: nothing there right now)

@@ -20,6 +20,13 @@
 // device that opened the farm last holds it: a save from any other is turned
 // down, so a tab left open somewhere can't write over what was played since.
 //
+// A farm's owner can let friends help on it: an invite code (good once, for
+// HELP_MS) puts the farm of whoever types it on the farm's helpers, and from
+// then on they can come and farm there any time, the owner there or not
+// (server/farmroom.js runs it). A helper is known by their own farm's id (no
+// accounts: their device's token for their own farm proves it), and the owner
+// can take them off again.
+//
 // One file per farm, data/farms/<id>.json (server/store.js); with no folder
 // (GAME_DATA=off) the farms are kept in memory only.
 import { randomBytes, createHash, timingSafeEqual, randomInt, scrypt } from 'node:crypto';
@@ -27,7 +34,8 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { Store } from './store.js';
-import { MAX_FARM_NAME } from '../shared/constants.js';
+import { MAX_FARM_NAME, MAX_NAME } from '../shared/constants.js';
+import { farmTitle } from './farmroom.js';
 import { cleanText, farmNameKey, pinProblem } from '../shared/protocol.js';
 
 export const MAX_SAVE = 64 * 1024; // bytes of JSON (a farm's save is a few KB)
@@ -40,6 +48,10 @@ const PIN_TRIES = 5; // wrong PINs in a row before a farm's recovery locks
 const LOCK_MS = 15 * 60_000; // the first lock; each one after lasts twice as long...
 const MAX_LOCK_MS = 24 * 3600_000; // ...up to this
 const NO_MATCH = "That farm name and PIN don't match.";
+const HELP_LENGTH = 8; // (longer than a pairing code, so the two can't be mixed up)
+const HELP_MS = 24 * 3600_000;
+const MAX_HELPERS = 12;
+const MAX_INVITES = 10; // invite codes out at once, per farm
 
 const scryptAsync = promisify(scrypt);
 const pinHash = async (pin, salt) => (await scryptAsync(pin, Buffer.from(salt, 'hex'), 32)).toString('hex');
@@ -50,6 +62,21 @@ const hash = (token) => createHash('sha256').update(token).digest('hex');
 export function normalizePairCode(text) {
   const code = String(text ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   return code.length === PAIR_LENGTH && [...code].every((c) => PAIR_CHARS.includes(c)) ? code : '';
+}
+
+// "k7p4-qm2x" -> "K7P4QM2X" (or '' for something that can't be a helper's invite code)
+export function normalizeHelpCode(text) {
+  const code = String(text ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return code.length === HELP_LENGTH && [...code].every((c) => PAIR_CHARS.includes(c)) ? code : '';
+}
+
+function newCode(length, taken) {
+  let code;
+  do {
+    code = '';
+    for (let i = 0; i < length; i++) code += PAIR_CHARS[randomInt(PAIR_CHARS.length)];
+  } while (taken.has(code));
+  return code;
 }
 
 // A few in a row, then one per `every` seconds, per key (an address)
@@ -81,7 +108,9 @@ export class Farms {
     this.allowPut = limiter(5, 1); // per farm (a page saves every 15 s, and when it is left)
     this.allowRecover = limiter(10, 30);
     this.names = new Map(); // farm name key -> farm id
-    // (the names are in the farms' own files; the index is gathered when the server starts)
+    this.invites = new Map(); // helper's invite code -> { id, until }
+    this.helping = new Map(); // a helper's farm id -> the ids of the farms they help on
+    // (the names and helpers are in the farms' own files; the indexes are gathered when the server starts)
     let files = [];
     try {
       files = dir ? readdirSync(dir).filter((f) => /^[a-f0-9]{16}\.json$/.test(f)) : [];
@@ -89,6 +118,7 @@ export class Farms {
     for (const f of files) {
       const farm = this.get(f.slice(0, -5));
       if (farm?.nameKey) this.names.set(farm.nameKey, farm.id);
+      for (const h of farm?.helpers ?? []) this.indexHelper(h.id, farm.id, true);
       this.farms.delete(farm?.id); // (read again when it is wanted)
     }
   }
@@ -148,20 +178,27 @@ export class Farms {
   }
 
   // A page opens the farm: it holds it from now on
+  // (roomRev: how many times the farm was written by its helpers' room;
+  // helpers: how many there are, so the page knows to play it with them)
   open(farm, session) {
     farm.holder = session;
     this.write(farm);
-    return { save: farm.save, rev: farm.rev, name: farm.name ?? '' };
+    return { save: farm.save, rev: farm.rev, roomRev: farm.roomRev ?? 0, helpers: farm.helpers?.length ?? 0, name: farm.name ?? '' };
   }
 
-  put(farm, session, save) {
+  // The page's save. Its farm counts only when the farm isn't being played
+  // with helpers right now (live: server/farmroom.js has it) and the page had
+  // the farm as the helpers' room last left it (roomRev); otherwise the farm
+  // stays as the room left it and only the rest (the backpack) is taken.
+  put(farm, session, save, { live = false, roomRev = null } = {}) {
     if (farm.holder !== session) return { error: 'Your farm is open on another device.', status: 409 };
     if (!validSave(save)) return { error: 'That is not a farm save.', status: 400 };
     if (!this.allowPut(farm.id)) return { error: 'Saving too often.', status: 429 };
-    farm.save = save;
+    const current = (farm.roomRev ?? 0) === (roomRev ?? 0);
+    farm.save = live || !current ? { ...save, farm: farm.save?.farm ?? null } : save;
     farm.rev++;
     if (!this.write(farm)) return { error: 'The server could not keep your farm.', status: 500 };
-    return { rev: farm.rev };
+    return { rev: farm.rev, roomRev: farm.roomRev ?? 0, helpers: farm.helpers?.length ?? 0 };
   }
 
   // A pairing code for another device (a new one undoes the last)
@@ -189,6 +226,100 @@ export class Farms {
     if (!this.write(farm)) return { error: 'The server could not keep your farm.', status: 500 };
     this.log(`farm ${farm.id}: a device was paired (${farm.tokens.length} now)`);
     return { id: farm.id, token };
+  }
+
+  // ---------- Helpers ----------
+  indexHelper(helperId, farmId, on) {
+    const set = this.helping.get(helperId) ?? new Set();
+    if (on) set.add(farmId);
+    else set.delete(farmId);
+    if (set.size) this.helping.set(helperId, set);
+    else this.helping.delete(helperId);
+  }
+
+  // An invite code for a helper. name: the owner's, to call the farm by
+  // until it has a name of its own.
+  invite(farm, name) {
+    const now = Date.now();
+    for (const [code, inv] of this.invites) if (now > inv.until) this.invites.delete(code);
+    const mine = [...this.invites].filter(([, inv]) => inv.id === farm.id);
+    if (mine.length >= MAX_INVITES) this.invites.delete(mine[0][0]); // (the oldest goes)
+    this.seenOwner(farm, name);
+    const code = newCode(HELP_LENGTH, this.invites);
+    this.invites.set(code, { id: farm.id, until: now + HELP_MS });
+    return { code, expiresIn: HELP_MS / 1000 };
+  }
+
+  // The farm an invite code is for (its invitation card), or null
+  invited(text, address) {
+    if (address && !this.allowClaim(address)) return { error: 'Too many tries. Wait a little and try again.', status: 429 };
+    const inv = this.invites.get(normalizeHelpCode(text));
+    const farm = inv && Date.now() <= inv.until && this.get(inv.id);
+    if (!farm) return { error: 'That invitation does not work (any more). Ask for a new one.', status: 404 };
+    return { id: farm.id, name: farmTitle(farm) };
+  }
+
+  // An invite code typed by a helper (theirs: their own farm): they are one of the farm's helpers now
+  acceptHelp(text, theirs, name, address) {
+    const card = this.invited(text, address);
+    if (card.error) return card;
+    const farm = this.get(card.id);
+    if (farm.id === theirs.id) return { error: 'That is an invitation to your own farm.', status: 400 };
+    farm.helpers ??= [];
+    if (!farm.helpers.some((h) => h.id === theirs.id)) {
+      if (farm.helpers.length >= MAX_HELPERS) return { error: 'That farm has all the helpers it can have.', status: 409 };
+      farm.helpers.push({ id: theirs.id, name: cleanText(name, MAX_NAME) || 'Farmer', since: Date.now() });
+      this.indexHelper(theirs.id, farm.id, true);
+    }
+    this.invites.delete(normalizeHelpCode(text));
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    this.log(`farm ${farm.id}: a helper joined (${farm.helpers.length} now)`);
+    return card;
+  }
+
+  // The owner's list: [{ id, name, since }]
+  helpersOf(farm) {
+    return (farm.helpers ?? []).map(({ id, name, since }) => ({ id, name, since }));
+  }
+
+  removeHelper(farm, id) {
+    const before = farm.helpers?.length ?? 0;
+    farm.helpers = (farm.helpers ?? []).filter((h) => h.id !== id);
+    if (farm.helpers.length === before) return { error: 'They are not one of your helpers.', status: 404 };
+    this.indexHelper(id, farm.id, false);
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    this.log(`farm ${farm.id}: a helper was taken off (${farm.helpers.length} left)`);
+    return { helpers: this.helpersOf(farm) };
+  }
+
+  // The farms this one's farmer helps on: [{ id, name }]
+  helpingOf(farm) {
+    const list = [];
+    for (const id of this.helping.get(farm.id) ?? []) {
+      const other = this.get(id);
+      if (other?.helpers?.some((h) => h.id === farm.id)) list.push({ id, name: farmTitle(other) });
+    }
+    return list;
+  }
+
+  // The owner came onto the farm (or asked for an invite): what to call the farm by
+  seenOwner(farm, name) {
+    name = cleanText(name, MAX_NAME);
+    if (!name || name === farm.ownerName) return;
+    farm.ownerName = name;
+    this.write(farm);
+  }
+
+  // A helper came onto the farm: are they still one of its helpers? (their name is kept up to date)
+  seenHelper(farm, id, name) {
+    const h = farm.helpers?.find((x) => x.id === id);
+    if (!h) return false;
+    name = cleanText(name, MAX_NAME);
+    if (name && name !== h.name) {
+      h.name = name;
+      this.write(farm);
+    }
+    return true;
   }
 
   // ---------- Getting a farm back by its name and PIN ----------

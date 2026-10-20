@@ -137,9 +137,21 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   gap: 6px;
   z-index: 10;
 }
-.ui-players-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ui-players-head { display: flex; align-items: center; gap: 8px; }
+.ui-players-title {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+/* (it only folds the panel, on a small screen in a lobby) */
+:root:not(.compact) .ui-players-title, .ui-players:not(.foldable) .ui-players-title { pointer-events: none; }
 .ui-players-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-ping { flex: none; font-size: 17px; }
+.ui-players-body { display: flex; flex-direction: column; gap: inherit; }
 .ui-code { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 20px; letter-spacing: 0.05em; }
 .ui-player-list { display: flex; flex-direction: column; gap: 3px; }
 .ui-player { display: flex; align-items: center; gap: 6px; font-size: 21px; }
@@ -208,6 +220,11 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-pause { background: rgba(0, 0, 0, 0.35); z-index: 25; }
 .ui-pair { text-align: center; }
 .ui-pair-code { font-size: 36px; font-weight: 700; letter-spacing: 0.15em; user-select: all; }
+
+/* The farm's helpers (the pause menu), and the farms you help on (the title screen) */
+.ui-helpers { display: flex; flex-direction: column; gap: 8px; }
+.ui-helper-list { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 4px; background: var(--inv-slot-bg); }
+.ui-helper { display: flex; align-items: center; gap: 8px; font-size: 21px; }
 
 /* ---------- Chat (bottom right) ---------- */
 .ui-chat {

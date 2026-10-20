@@ -53,6 +53,24 @@ export function inviteLink(code) {
   return `${location.origin}${location.pathname}?lobby=${encodeURIComponent(code)}`;
 }
 
+// An invitation to help on a farm: the page's address with ?help=CODE (server/farms.js)
+export function helpLink(code) {
+  return `${location.origin}${location.pathname}?help=${encodeURIComponent(code)}`;
+}
+
+// the helper's invite code this page was opened with, or ''
+export function linkedHelpCode() {
+  const code = String(new URLSearchParams(location.search).get('help') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return code.length === 8 ? code : '';
+}
+
+// takes ?help=CODE out of the address bar (the invitation was answered)
+export function forgetHelpCode() {
+  const url = new URL(location.href);
+  url.searchParams.delete('help');
+  history.replaceState(history.state, '', url);
+}
+
 // puts the lobby's link in the address bar ('' takes it out), without a reload or a history entry
 export function showCodeInAddress(code) {
   const url = new URL(location.href);

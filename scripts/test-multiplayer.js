@@ -10,6 +10,7 @@ import { Room } from '../shared/room.js';
 import { Lobby } from '../server/lobby.js';
 import { Store } from '../server/store.js';
 import { Farms, normalizePairCode } from '../server/farms.js';
+import { FarmRooms } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, woodFor } from '../shared/level.js';
@@ -394,7 +395,7 @@ await test('the device that opened the farm last holds it', () => {
   const farm = farms.auth(bearer(made));
   assert.equal(farms.put(farm, 'laptop-page', aSave(2)).rev, 2);
   // the phone opens it: it gets what the laptop saved, and holds it now
-  assert.deepEqual(farms.open(farm, 'phone-page'), { save: aSave(2), rev: 2, name: '' });
+  assert.deepEqual(farms.open(farm, 'phone-page'), { save: aSave(2), rev: 2, roomRev: 0, helpers: 0, name: '' });
   assert.equal(farms.put(farm, 'laptop-page', aSave(99)).status, 409, 'the laptop\'s tab is too late');
   assert.equal(farms.put(farm, 'phone-page', aSave(3)).rev, 3);
   assert.equal(farm.save.backpack.gold, 3);
@@ -493,6 +494,106 @@ await test('a farm comes back with its name and PIN, as a device of its own; wro
   }
 });
 
+console.log('farms with helpers');
+await test('a helper is invited once, comes onto the farm, and can be taken off again', () => {
+  const farms = new Farms({ log: () => {} });
+  const madeA = farms.create(aSave(1), 'pa');
+  const madeB = farms.create(aSave(2), 'pb');
+  const a = farms.auth(bearer(madeA));
+  const b = farms.auth(bearer(madeB));
+  const { code } = farms.invite(a, 'Ann');
+  assert.equal(farms.invited(code).name, "Ann's farm");
+  assert.equal(farms.acceptHelp(code, a, 'Ann').status, 400, 'not on your own farm');
+  assert.deepEqual(farms.acceptHelp(code, b, 'Bo'), { id: a.id, name: "Ann's farm" });
+  assert.equal(farms.acceptHelp(code, b, 'Bo').status, 404, 'good once');
+  assert.deepEqual(farms.helpersOf(a).map((h) => h.name), ['Bo']);
+  assert.deepEqual(farms.helpingOf(b), [{ id: a.id, name: "Ann's farm" }]);
+  assert.ok(farms.seenHelper(a, b.id, 'Bo'));
+  assert.deepEqual(farms.removeHelper(a, b.id), { helpers: [] });
+  assert.ok(!farms.seenHelper(a, b.id, 'Bo'));
+  assert.deepEqual(farms.helpingOf(b), []);
+});
+
+await test('a farm room: farming together, the chest, and the farm kept in the owner\'s save', () => {
+  const farms = new Farms({ log: () => {} });
+  const madeA = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3'], crops: [], hens: [[0, 1, 2, 9]] }, backpack: {} }, 'pa');
+  const madeB = farms.create(aSave(2), 'pb');
+  const madeC = farms.create(aSave(3), 'pc');
+  const a = farms.auth(bearer(madeA));
+  farms.acceptHelp(farms.invite(a, 'Ann').code, farms.auth(bearer(madeB)), 'Bo');
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const enter = (made, name) => {
+    const conn = fakeConn();
+    const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name, key: name, auth: `${made.id}.${made.token}` });
+    return { conn, p };
+  };
+  const ann = enter(madeA, 'Ann');
+  const bo = enter(madeB, 'Bo');
+  const stranger = enter(madeC, 'Cy');
+  assert.equal(stranger.p, null);
+  assert.equal(stranger.conn.closed, CLOSE.NOT_HELPER);
+  assert.equal(ann.conn.last(S.FARM).mine, true);
+  const welcome = bo.conn.last(S.FARM);
+  assert.equal(welcome.mine, false);
+  assert.deepEqual(welcome.tilled, ['3,3']);
+  assert.deepEqual(welcome.animals.hens, [[0, 1, 2, 9]]);
+  assert.ok(welcome.hours >= 8);
+  // Bo stands by 4,3: tills it, plants a turnip; too far for 9,9
+  room.message(bo.p, { t: C.STATE, x: 4, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(bo.p, { t: C.TILL, key: '4,3' });
+  assert.equal(ann.conn.last(S.TILLED).key, '4,3');
+  room.message(bo.p, { t: C.TILL, key: '9,9' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'till');
+  room.message(bo.p, { t: C.PLANT, key: '4,3', crop: 'turnip' });
+  assert.equal(ann.conn.last(S.PLANTED).crop, 'turnip');
+  room.message(bo.p, { t: C.PLANT, key: '4,3', crop: 'carrot' });
+  assert.deepEqual([bo.conn.last(S.FARM_DENY).op, bo.conn.last(S.FARM_DENY).crop], ['plant', 'carrot'], 'the seed comes back');
+  // not ripe yet; an hour on (15 s of growing, then more), it is, and into the chest
+  room.message(bo.p, { t: C.HARVEST, key: '4,3' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'harvest');
+  room.clockBase += 2; // (two game hours: 30 s)
+  room.message(bo.p, { t: C.HARVEST, key: '4,3' });
+  assert.equal(ann.conn.last(S.HARVESTED).item, 'turnip');
+  assert.deepEqual(ann.conn.last(S.CHEST).items, { turnip: 1 });
+  // the chest: anyone puts in, only the owner takes out
+  room.message(bo.p, { t: C.CHEST_PUT, item: 'flax', count: 3 });
+  room.message(bo.p, { t: C.CHEST_TAKE, item: 'flax', count: 3 });
+  assert.equal(bo.conn.last(S.CHEST_GOT), undefined);
+  room.message(ann.p, { t: C.CHEST_TAKE, item: 'flax', count: 2 });
+  assert.deepEqual(ann.conn.last(S.CHEST_GOT), { t: S.CHEST_GOT, item: 'flax', count: 2 });
+  assert.deepEqual(room.chest, { turnip: 1, flax: 1 });
+  // the clock is the owner's only when alone; the animals are the owner's to say
+  const before = room.hours();
+  room.message(ann.p, { t: C.CLOCK, hours: before + 5 });
+  assert.ok(room.hours() < before + 1);
+  room.message(bo.p, { t: C.ANIMALS, state: { hens: [] } });
+  assert.deepEqual(room.animals.hens, [[0, 1, 2, 9]]);
+  room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], tilled: ['0,0'] } });
+  assert.deepEqual(Object.keys(room.animals), ['hens']);
+  // written into the owner's save, the chest beside it
+  rooms.write(room);
+  assert.deepEqual(a.save.farm.tilled.sort(), ['3,3', '4,3']);
+  assert.deepEqual(a.save.farm.hens, [[1, 1, 1, 1]]);
+  assert.deepEqual(a.chest, { turnip: 1, flax: 1 });
+  assert.equal(a.roomRev, 1);
+  // a save from a page that didn't have that farm keeps the room's farm, but its backpack counts
+  farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: { gold: 77 } }, { live: false, roomRev: 0 });
+  assert.deepEqual(a.save.farm.tilled.sort(), ['3,3', '4,3']);
+  assert.equal(a.save.backpack.gold, 77);
+  farms.allowPut = () => true;
+  farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: {} }, { live: true, roomRev: 1 });
+  assert.equal(a.save.farm.tilled.length, 2, 'not while the room has it');
+  farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: {} }, { live: false, roomRev: 1 });
+  assert.equal(a.save.farm.tilled.length, 0, 'the page had the latest');
+  // taken off the helpers: out of the farm
+  farms.removeHelper(a, madeB.id);
+  rooms.turnOut(a.id, madeB.id);
+  assert.equal(bo.conn.closed, CLOSE.NOT_HELPER);
+  assert.equal(room.players.size, 1);
+  room.close();
+});
+
 // ---------- The server, over sockets ----------
 console.log('server');
 const PORT = 3900 + Math.floor(Math.random() * 90);
@@ -506,8 +607,9 @@ function startServer(env = {}) {
 let server = startServer();
 await server.ready;
 
-function client(code = '', key = `key${Math.random()}`) {
-  const ws = new WebSocket(`ws://localhost:${PORT}/ws${code ? `?lobby=${code}` : ''}`);
+// (farm: be on that farm instead, as the farm auth says: "<id>.<token>")
+function client(code = '', key = `key${Math.random()}`, { farm = null, auth = null } = {}) {
+  const ws = new WebSocket(`ws://localhost:${PORT}/ws${farm ? `?farm=${farm}` : code ? `?lobby=${code}` : ''}`);
   const inbox = [];
   const waiters = [];
   ws.on('message', (d) => {
@@ -516,7 +618,7 @@ function client(code = '', key = `key${Math.random()}`) {
     for (const w of [...waiters]) if (w.match(m)) waiters.splice(waiters.indexOf(w), 1) && w.done(m);
   });
   const closed = new Promise((done) => ws.on('close', (code) => done(code)));
-  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key })));
+  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(farm && { auth }) })));
   return {
     ws,
     inbox,
@@ -603,7 +705,27 @@ try {
     const { code } = (await call('POST', '/api/farms/me/pair', { auth: made })).body;
     const phone = (await call('POST', '/api/farms/pair', { body: { code }, session: 'page-bbbbbbbb' })).body;
     const opened = await call('POST', '/api/farms/me/open', { auth: phone, session: 'page-bbbbbbbb' });
-    assert.deepEqual(opened.body, { save: aSave(5), rev: 2, name: '' });
+    assert.deepEqual(opened.body, { save: aSave(5), rev: 2, roomRev: 0, helpers: 0, name: '' });
+    // a helper, over HTTP
+    const friend = (await call('POST', '/api/farms', { body: { save: aSave(1) }, session: 'page-cccccccc' })).body;
+    const invite = (await call('POST', '/api/farms/me/helpers/invite', { body: { name: 'Ann' }, auth: made })).body;
+    assert.equal((await call('POST', '/api/farms/invite', { body: { code: invite.code } })).body.name, "Ann's farm");
+    assert.equal((await call('POST', '/api/farms/me/help', { body: { code: invite.code, name: 'Bo' }, auth: friend, session: 'page-cccccccc' })).body.id, made.id);
+    assert.deepEqual((await call('POST', '/api/farms/me/helping', { auth: friend, session: 'page-cccccccc' })).body.farms, [{ id: made.id, name: "Ann's farm", here: 0 }]);
+    assert.equal((await call('POST', '/api/farms/me/helpers', { auth: made })).body.helpers[0].name, 'Bo');
+    // both on the farm: the helper tills, the owner sees it; a stranger is turned away
+    const owner = client('', 'k-owner', { farm: made.id, auth: `${phone.id}.${phone.token}` });
+    const helper = client('', 'k-helper', { farm: made.id, auth: `${friend.id}.${friend.token}` });
+    assert.equal((await owner.next(S.FARM)).mine, true);
+    assert.equal((await helper.next(S.FARM)).mine, false);
+    helper.send({ t: C.STATE, x: 2, y: 0.8, z: 2, yaw: 0, f: 1 });
+    await new Promise((r) => setTimeout(r, 100));
+    helper.send({ t: C.TILL, key: '2,2' });
+    assert.equal((await owner.next(S.TILLED)).key, '2,2');
+    const stranger = client('', 'k-stranger', { farm: made.id, auth: `${made.id}.not-the-right-token` });
+    assert.equal(await stranger.closed, CLOSE.NOT_HELPER);
+    owner.ws.close(1000);
+    helper.ws.close(1000);
     assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(6) }, auth: made })).status, 409);
     assert.equal((await call('PUT', '/api/farms/me', { body: { save: aSave(6) }, auth: { id: made.id, token: 'wrong-token-here' } })).status, 401);
     assert.equal((await call('POST', '/api/farms', { body: { save: aSave() }, type: 'text/plain' })).status, 415);

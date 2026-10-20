@@ -404,7 +404,8 @@ export function createInventory({ onOpenChange } = {}) {
     else if (!open && HOTBAR_KEYS.includes(e.code)) select(HOTBAR_KEYS.indexOf(e.code));
   });
 
-  window.addEventListener('wheel', (e) => {
+  // Over the hotbar the wheel picks an item (elsewhere it zooms the camera, see main.js)
+  hotbarEl.addEventListener('wheel', (e) => {
     if (open || !e.deltaY) return;
     select((selected + Math.sign(e.deltaY) + COLS) % COLS);
   }, { passive: true });
