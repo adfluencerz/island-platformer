@@ -1,7 +1,7 @@
 // Numbers both the server and the client go by. Pure JS: no DOM, no three.js,
 // no Node modules, so the same file runs in the browser and on the server.
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4; // v4: chopping trees
 
 export const TICK_RATE = 20; // room ticks (and snapshots) per second
 export const TICK_DT = 1 / TICK_RATE;

@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 import { Room } from '../shared/room.js';
 import { C, S } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE } from '../shared/constants.js';
-import { SPOT_KINDS, RARE } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, woodFor } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32 } from '../shared/worldgen.js';
 
 let passed = 0;
@@ -123,6 +123,55 @@ await test('spots: whoever gets there first, checked against position, counted',
   room.message(b.p, { t: C.STATE, x: x + 1.2, y: 0.8, z, yaw: 0, f: 1 });
   room.message(b.p, { t: C.TAKE, id: bush });
   assert.equal(b.conn.last(S.TAKEN).item, 'berries');
+});
+
+await test('trees: felled by whoever finishes first, next to it, not too fast; they grow back', () => {
+  const room = new Room({ code: 'TEST11' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const at = (who, x, z) => room.message(who.p, { t: C.STATE, x, y: 0.8, z, yaw: 0, f: 1 });
+  const tree = { id: 7, x: 10, z: -3 };
+  at(a, 0, 0);
+  room.message(a.p, { t: C.CHOP, ...tree });
+  assert.equal(a.conn.last(S.CHOP_DENY)?.id, 7, 'too far');
+  at(a, 11, -3);
+  room.message(a.p, { t: C.CHOP, ...tree });
+  const felled = b.conn.last(S.FELLED);
+  assert.equal(felled.id, 7);
+  assert.equal(felled.by, a.p.id);
+  assert.ok(felled.count >= TREE.wood[0] && felled.count <= TREE.wood[1]);
+  assert.equal(a.p.wood, felled.count);
+  at(b, 9, -3);
+  room.message(b.p, { t: C.CHOP, ...tree });
+  assert.equal(b.conn.last(S.CHOP_DENY)?.id, 7, 'already down');
+  room.message(a.p, { t: C.CHOP, id: 8, x: 11.5, z: -3 });
+  assert.equal(a.conn.last(S.CHOP_DENY)?.id, 8, 'faster than an axe');
+  room.message(a.p, { t: C.CHOP, id: -1, x: 11, z: -3 });
+  room.message(a.p, { t: C.CHOP, id: 'x', x: 11, z: -3 });
+  assert.equal(a.conn.all(S.CHOP_DENY).length, 4, 'nonsense ids are turned down');
+  // a newcomer sees it down; then it grows back for everyone
+  const c = join(room, 'C');
+  assert.deepEqual(c.conn.last(S.WELCOME).felled, [7]);
+  assert.equal(room.rosterList().find((p) => p.id === a.p.id).wood, felled.count);
+  room.update(Date.now() + TREE.regrow[1] * 1000 + 100);
+  assert.equal(b.conn.last(S.REGROWN)?.id, 7);
+  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).felled, []);
+});
+
+await test('bigger trees give more wood, within the sizes trees come in', () => {
+  const luck = (r) => () => r; // the same roll every time
+  assert.equal(woodFor(1, luck(0)), TREE.wood[0]);
+  assert.equal(woodFor(1, luck(0.99)), TREE.wood[1]);
+  assert.ok(woodFor(1.6, luck(0.99)) > woodFor(1, luck(0.99)), 'a big old tree beats an ordinary one');
+  assert.ok(woodFor(0.8, luck(0)) >= 1, 'even a little one gives some');
+  assert.equal(woodFor(50, luck(0.99)), woodFor(TREE.size[1], luck(0.99)), 'no giants');
+  assert.equal(woodFor(undefined, luck(0.5)), woodFor(1, luck(0.5)), 'no size: an ordinary tree');
+  // and the room goes by the size the page says
+  const room = new Room({ code: 'TEST12', rand: luck(0.99) });
+  const a = join(room, 'A');
+  room.message(a.p, { t: C.STATE, x: 11, y: 0.8, z: -3, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.CHOP, id: 3, x: 10, z: -3, size: 1.5 });
+  assert.equal(a.conn.last(S.FELLED).count, woodFor(1.5, luck(0.99)));
 });
 
 await test('an emptied spot grows back after a while, with a fresh roll', () => {

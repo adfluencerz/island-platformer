@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat } from './world.js';
+import { STALL, buildStall } from './merchant.js';
 
 // ---------- Maps ----------
 // What the worlds look like (built by world.js): your farm, and the wild
@@ -13,11 +14,12 @@ import { distToPaths, addDecor, rockGeo, rockMats, foliageMat } from './world.js
 
 // ---------- Home: your farm's island ----------
 // A square island: a sand rim, a stone plaza at spawn, dirt paths toward a
-// staggered set of platforms, and grass everywhere else.
+// staggered set of platforms and the merchant's stall, and grass everywhere else.
 const HOME_PATHS = [
   [[1, 27], [1, 15], [0, 6]], // from the south shore up to spawn
   [[0, 6], [-3, 1], [-6, -1]], // spawn -> first platform
   [[0, 6], [4, 2], [8, -6], [11, -12]], // spawn -> under the high platforms
+  [[1, 7], [STALL.x, STALL.z + 2]], // spawn -> the merchant's stall
 ];
 const HOME_PLAZA = { x: 0, z: 5, r: 2.6 };
 const HOME_HALF = 29;
@@ -55,7 +57,8 @@ export const HOME = {
     platform(12, 5.5, -16, 4, 1, 4),
     platform(-10, 3, -14, 3, 1, 3, 0xa0522d),
   ],
-  keepClear: [[SPAWN.x, SPAWN.z, 1.5]],
+  keepClear: [[SPAWN.x, SPAWN.z, 1.5], [STALL.x, STALL.z + 1.5, 4]],
+  build: buildStall,
   decorate({ scatter, addTree, addBush, addRock, isOpenGround, tileAt }) {
     scatter(70, 2.6, (x, z) => !inPlayArea(x, z) && isOpenGround(x, z, 1), (x, z) => addTree(x, z));
     scatter(40, 2, (x, z) => isOpenGround(x, z, 0.8), addBush);

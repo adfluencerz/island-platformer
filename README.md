@@ -8,8 +8,9 @@ A minimal 3D platformer scaffold built with [Three.js](https://threejs.org/) and
 - A staggered set of grass-topped platforms to test jumping
 - A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, and wind-swayed grass and flowers; trees fade out when they block the view of the player
 - A camera that smoothly follows the player from an angled overhead view
-- A stylized farmer character with walk, jump, landing and hoe-swing animations
+- A stylized farmer character with walk, jump, landing and tool-swing animations, and a hoe and an axe
 - Shadows and basic lighting (hemisphere + directional "sun")
+- A merchant at a market stall on the farm who sells seeds and buys what you grow and find
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
 
 ## Setup
@@ -28,7 +29,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 ## Controls
 - `W`/`A`/`S`/`D` or arrow keys — move
 - `Space` — jump (only works while grounded)
-- `E` — at home: till / plant / harvest; in a lobby: gather (berries, mushrooms)
+- `E` — at home: till / plant / harvest, or trade at the merchant's stall; in a lobby: gather (berries, mushrooms), or chop a tree with the axe in hand (hold to keep swinging)
 - `I` — backpack
 - `L` — visit a lobby (from home)
 - `Enter` — chat (in a lobby)
@@ -38,12 +39,15 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 ## Your farm and online lobbies
 **Your farm** is yours alone and lives in your browser: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing.
 
+**The merchant** keeps a stall just east of the plaza on your farm. Walk up to the counter and press `E` to trade: buy turnip, carrot, flax and sunflower seeds (click: one, `Shift`+click: five), and sell your crops, forage, gems and spare seeds from your backpack (click: the whole stack, right click: one). Tools and the old key aren't for sale. Prices are `price` (buy) and `sell` on each item in `src/items.js`; the item tooltips show what the merchant pays.
+
 **Online lobbies** are drop-in places to gather with other farmers, each out on a wild island of its own: bigger and wilder than a farm, with a ragged coast, a mossy forest with giant toadstools to hop across, a shallow pond to wade into (there may be something on the bottom), a flower meadow, rocky terraces climbing to the north, and a ring of standing stones where you arrive. Press `L` at home (or pick one on the title screen): **Quick join** (the fullest public lobby with room, or a new one), **Browse lobbies**, **Open a lobby** (name, size, island seed, public or invite-only), or **Join with a code**.
 
 - There's no farming in a lobby and there are no rounds: wander in, gather, head home whenever you like with what you found.
+- Every tree can be chopped down for **wood**: with the axe in hand, press (or hold) `E` next to a tree. Four swings fell it for everyone and give wood to whoever finished it: 2–4 from an ordinary tree, up to 6 from the big old trees in the woods, fewer from a little one; a stump is left behind and the tree grows back 1–2 minutes later. The merchant buys wood. (The farm's own trees are left standing.)
 - Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it. Each spot grows back 25–60 seconds later with a fresh roll of what's on it.
 - Now and then something rare turns up (golden seeds, an old key) with a golden glint over it, and the whole lobby hears about it in chat. Golden seeds grow a golden turnip at home.
-- The player list shows how much everyone has found this visit; the lobby list shows how many rare finds are lying about.
+- The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
 - An empty lobby closes after 90 seconds.
@@ -61,6 +65,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - `shared/worldgen.js` grows an island from a seed (coastline, pond, terraces, toadstools, woods, meadow, trails, spot positions). It runs on the server and in the page, and only the seed goes over the wire, so everyone in a lobby agrees on the island. Each part of an island has its own random stream, and a layout that fails the checks (every spot on land and reachable, every step within a jump of the last) is grown again from a variant of the seed; `npm test` checks hundreds of seeds.
 - The islands are built by `src/world.js` from a map definition in `src/maps.js`: per-tile ground types, platforms, what grows where, and each map's own set pieces. The farm is built once; a lobby's island when you arrive on it (the last one is kept for going back).
 - Each client moves its own farmer and reports its position 20 times a second. Who gets a spot is settled by the lobby: it only counts if something is still there and the lobby last saw you next to it.
+- Trees are grown on each page from the seed (the same on every page), so the lobby only keeps which ones are down, by their number. The page says which tree it felled and where it stands; the lobby checks you are next to that spot, that the tree is still up and that you aren't felling trees faster than an axe can (`TREE` in `shared/level.js` has the swings, wood and regrow times).
 - Other players are drawn from the lobby's 20 Hz snapshots, 100 ms in the past and interpolated between them, so they move smoothly through network jitter (`src/remotes.js`).
 - Messages are small JSON objects; `shared/protocol.js` lists them all.
 - The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm.
@@ -78,7 +83,9 @@ threejs-platformer/
 │   ├── main.js          # scene, player physics, farming, lobby spots, saving, travel, game loop
 │   ├── world.js         # builds an island from a map: tiles, colliders, foliage, trees, rocks
 │   ├── maps.js          # the maps: your farm's island, and a lobby's wild island from its seed
-│   ├── character.js     # the farmer model and its animations (you and everyone else)
+│   ├── character.js     # the farmer model and its animations (you, everyone else, the merchant)
+│   ├── merchant.js      # the merchant's stall on the farm, and the merchant behind it
+│   ├── shop.js          # the merchant's shop window: buy seeds, sell from the backpack
 │   ├── remotes.js       # other players: interpolation, name tags
 │   ├── net/
 │   │   ├── connection.js  # WebSocket to a lobby

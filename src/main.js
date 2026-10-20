@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { createInventory } from './inventory.js';
-import { createFarmer, damp } from './character.js';
+import { createShop } from './shop.js';
+import { createMerchant, inReach as atStall } from './merchant.js';
+import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
 import { showCodeInAddress } from './net/lobby.js';
@@ -10,7 +12,7 @@ import { Hud } from './ui/hud.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, GROUND_STAND_Y } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, mostWood, GROUND_STAND_Y } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor } from './world.js';
@@ -110,6 +112,13 @@ scene.add(water);
 // player input, so drop any keys that were held at that moment. The backpack
 // goes everywhere with you, and is saved with the farm (see Saving).
 const inventory = createInventory({ onOpenChange: (open) => open && keys.clear() });
+
+// ---------- The merchant ----------
+// Behind the stall on the farm (merchant.js): E at the counter opens the shop
+// (shop.js) to buy seeds and sell what you grew or found. They live on the
+// farm's island, so they are only in the scene at home.
+const merchant = createMerchant();
+worlds.home.root.add(merchant.root);
 
 // ---------- Farming: hoe tool + tillable soil ----------
 const farmTiles = new Map(); // "gridX,gridZ" -> tilled tile mesh
@@ -343,8 +352,79 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
+  const tree = inventory.selectedId() === 'axe' ? treeInReach() : null;
   const near = gatherSpotInReach();
-  hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
+  if (tree) hud.setPrompt(`E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${TREE.hits}` : ' (hold to keep going)'}`);
+  else hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
+}
+
+// ---------- Chopping trees (lobbies) ----------
+// With the axe in hand, E next to a tree swings at it (hold E to keep
+// swinging). Each swing shakes it; the last of TREE.hits asks the lobby,
+// which says who felled it (FELLED: down for everyone, wood to whoever, more
+// from a bigger tree) and
+// when it has grown back (REGROWN). Trees are named by their number in the
+// island's list (world.js), the same on every page.
+const CHOP_REACH = 1.3; // from the bark
+const SWING_GAP = 0.15; // seconds between swings, so everyone else sees each one
+const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
+
+// the standing tree within reach, nearest first
+function treeInReach() {
+  if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.6) return null;
+  let best = null;
+  let bestD = CHOP_REACH;
+  for (const tree of world.trees) {
+    if (tree.state !== 'up' || chop.pending.has(tree.id)) continue;
+    const d = Math.hypot(tree.x - player.position.x, tree.z - player.position.z) - 0.25 * tree.scale;
+    if (d < bestD) {
+      best = tree;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+// Swing at the tree in reach (if the last swing is done). False: no tree here.
+function swingAxe() {
+  const tree = treeInReach();
+  if (!tree) return false;
+  const now = clock.elapsedTime;
+  if (anim.swing >= 0 || now < chop.nextSwing) return true;
+  if (!inventory.canAdd('wood', mostWood(tree.scale))) {
+    inventory.add('wood', mostWood(tree.scale)); // (says "Inventory full")
+    chop.nextSwing = now + 1;
+    return true;
+  }
+  if (chop.id !== tree.id) Object.assign(chop, { id: tree.id, hits: 0 });
+  anim.facing = Math.atan2(tree.x - player.position.x, tree.z - player.position.z); // face the trunk
+  farmer.swing();
+  chop.swingAt = now;
+  chop.nextSwing = now + HOE_SWING_TIME + SWING_GAP;
+  return true;
+}
+
+function updateChopping() {
+  // The blade bites partway through the swing, on the way down
+  if (chop.swingAt >= 0 && clock.elapsedTime - chop.swingAt >= HOE_SWING_TIME * 0.6) {
+    chop.swingAt = -1;
+    const tree = world.trees[chop.id];
+    if (tree?.state === 'up' && !chop.pending.has(tree.id)) {
+      world.shakeTree(tree.id, player.position);
+      if (++chop.hits >= TREE.hits) {
+        chop.pending.add(tree.id);
+        chop.hits = 0;
+        const r = (v) => Math.round(v * 100) / 100;
+        net?.send({ t: C.CHOP, id: tree.id, x: r(tree.x), z: r(tree.z), size: r(tree.scale) });
+      }
+    }
+  }
+  if (keys.has('KeyE') && inventory.selectedId() === 'axe') swingAxe(); // holding E keeps chopping
+}
+
+function resetChopping() {
+  Object.assign(chop, { id: -1, hits: 0, swingAt: -1 });
+  chop.pending.clear();
 }
 
 // ---------- Player ----------
@@ -425,18 +505,20 @@ function updateMenuCamera(t) {
 // The keys drive the farmer only while nothing else has the keyboard: the
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
-const inputBlocked = () => !splash.hidden || inventory.isOpen() || hud.isTyping() || hud.isPaused();
+const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || hud.isTyping() || hud.isPaused();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
   if (e.code === 'KeyE' && !e.repeat) useAction();
 });
 
-// E: in a lobby, gather what is in reach. At home: harvest a ripe crop
-// underfoot, otherwise use the selected toolbar item. Farming only works
-// while standing on bare ground (not on a raised platform).
+// E: in a lobby, chop the tree in reach with the axe in hand, else gather
+// what is in reach. At home: trade at the merchant's counter, else harvest a
+// ripe crop underfoot, otherwise use the selected toolbar item. Farming only
+// works while standing on bare ground (not on a raised platform).
 function useAction() {
   if (place === 'lobby') {
+    if (inventory.selectedId() === 'axe' && swingAxe()) return;
     const spot = gatherSpotInReach();
     if (spot) {
       takeSpot(spot);
@@ -444,6 +526,10 @@ function useAction() {
     } else if (inventory.selectedId() === 'hoe' || ITEMS[inventory.selectedId()]?.plants) {
       inventory.notify('This is not your land: farm at home');
     }
+    return;
+  }
+  if (atStall(player.position)) {
+    shop.open();
     return;
   }
   if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return;
@@ -454,6 +540,8 @@ function useAction() {
   if (held === 'hoe') {
     tillTileAt(x, z);
     startHoeSwing();
+  } else if (held === 'axe') {
+    inventory.notify('Leave the farm\'s trees be: chop wood in a lobby');
   } else if (ITEMS[held]?.plants) {
     if (plantAt(x, z, ITEMS[held].plants)) {
       inventory.consumeSelected();
@@ -536,7 +624,12 @@ const hud = new Hud({
   onTravel: () => splash.show({ from: 'home' }),
   onHome: () => goHome(),
   onChat: (text) => net?.send({ t: C.CHAT, text }),
-  isBlocked: () => inventory.isOpen() || !splash.hidden,
+  isBlocked: () => inventory.isOpen() || shop.isOpen() || !splash.hidden,
+});
+// (after the HUD: its key handler goes first, see shop.js)
+const shop = createShop({
+  inventory,
+  onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
 });
 const splash = new Splash({ onPlay: joinLobby, onHome: () => goHome() });
 
@@ -570,6 +663,7 @@ function leaveLobbyWorld() {
   session = null;
   myId = 0;
   clearSpots();
+  resetChopping();
   remotes.clear();
   keys.clear();
   showCodeInAddress('');
@@ -600,6 +694,10 @@ function joinLobby({ name, code }) {
     farmer.setShirt(m.color);
     putDown(m.pos);
     setSpots(m.spots);
+    // the trees that are down right now (the rest stand, even on an island we were on before)
+    resetChopping();
+    world.standAllTrees();
+    for (const id of m.felled ?? []) world.fellTree(id, null, { instant: true });
     remotes.setRoster(m.roster, myId);
     // one time of day for everyone in the lobby, counted from when it opened
     dayNight.setTime(LOBBY_DAWN + (m.clock / DAY_LENGTH_SECONDS) * 24);
@@ -638,6 +736,15 @@ function joinLobby({ name, code }) {
     spot.retryAt = performance.now() + 500; // (not again every frame while we stand in it)
     showSpot(spot);
   });
+  on(S.FELLED, (m) => {
+    chop.pending.delete(m.id);
+    if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
+    // it falls away from whoever felled it
+    world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
+    if (m.by === myId) inventory.add('wood', m.count);
+  });
+  on(S.REGROWN, (m) => world.regrowTree(m.id));
+  on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
@@ -664,7 +771,8 @@ function sendState(dt) {
   net.send({
     t: C.STATE,
     x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
-    f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0),
+    f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0) |
+      (farmer.axe.visible ? STATEF.AXE : 0) | (anim.swing >= 0 ? STATEF.SWING : 0),
   });
 }
 
@@ -673,7 +781,7 @@ function sendState(dt) {
 // tilled soil, the crops and the time of day. While you are away (in a lobby,
 // or with the page closed) the crops keep growing and the clock keeps turning.
 const SAVE_STORE = 'tp.save';
-const SAVE_VERSION = 2; // v2: flax seeds joined the starter kit
+const SAVE_VERSION = 3; // v2: flax seeds joined the starter kit; v3: the axe
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
 
 const keyXZ = (key) => key.split(',').map((n) => Number(n) * TILE_SIZE);
@@ -705,7 +813,7 @@ function saveGame() {
   } catch {}
 }
 
-// A gift from the seed merchant: add() is all-or-nothing, so hand over as many
+// A gift from the merchant: add() is all-or-nothing, so hand over as many
 // as the bag has room for instead of dropping the whole gift when it's full.
 function gift(id, count) {
   for (let n = count; n >= 1; n--) if (inventory.add(id, n, { quiet: true })) return;
@@ -719,14 +827,16 @@ function loadGame() {
   if (save?.v === SAVE_VERSION) {
     inventory.restore(save.backpack);
     homeFarm = save.farm;
-  } else if (save?.v === 1) {
+  } else if (save?.v >= 1 && save.v < SAVE_VERSION) {
     // An older save: keep it, and hand out what joined the kit since then
     inventory.restore(save.backpack);
     homeFarm = save.farm;
-    gift('flax_seeds', 5);
+    if (save.v < 2) gift('flax_seeds', 5);
+    gift('axe', 1);
   } else {
     // A new farmer's starting kit
     inventory.add('hoe', 1, { quiet: true });
+    inventory.add('axe', 1, { quiet: true });
     inventory.add('turnip_seeds', 10, { quiet: true });
     gift('flax_seeds', 5);
   }
@@ -790,14 +900,20 @@ function update(dt) {
   }
 
   playerMesh.position.copy(player.position);
-  hoeGroup.visible = inventory.selectedId() === 'hoe'; // only hold the hoe while it's selected
+  hoeGroup.visible = inventory.selectedId() === 'hoe'; // only hold a tool while it's selected
+  farmer.axe.visible = inventory.selectedId() === 'axe';
   animateCharacter(dt, moving);
 
   const t = clock.elapsedTime;
+  world.updateTrees(dt);
   if (place === 'lobby') {
+    updateChopping();
     updateSpots(dt, t);
     sendState(dt);
     remotes.update(dt, t);
+  } else {
+    merchant.update(dt, t, player.position);
+    if (place === 'home') hud.setPrompt(atStall(player.position) && !shop.isOpen() ? 'E  Trade with the merchant' : '');
   }
 
   windTime.value = t;
@@ -811,7 +927,7 @@ function update(dt) {
   const atHome = place !== 'lobby';
   const hoursBefore = dayNight.day() * 24 + dayNight.hour();
   dayNight.update(dt, {
-    paused: atHome && (inventory.isOpen() || hud.isPaused()),
+    paused: atHome && (inventory.isOpen() || shop.isOpen() || hud.isPaused()),
     fastForward: atHome && keys.has('KeyT'),
     focus: player.position,
   });
@@ -832,7 +948,7 @@ function animate() {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, saveGame, get place() { return place; }, get net() { return net; } };
+  window.__game = { player, spots, remotes, inventory, shop, saveGame, get place() { return place; }, get net() { return net; }, get world() { return world; } };
 }
 
 loadGame();

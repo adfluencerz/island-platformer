@@ -9,7 +9,7 @@ import { inviteLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 
 export const CONTROLS =
-  'WASD move · Space jump · 1–= or scroll pick an item · E till / plant / harvest at home, gather in lobbies · ' +
+  'WASD move · Space jump · 1–= or scroll pick an item · E till / plant / harvest or trade at the stall at home, gather or chop trees (axe) in lobbies · ' +
   'I backpack · L visit a lobby · Enter chat · Esc menu · hold T to fast-forward time at home';
 
 const CHAT_FADE_MS = 10_000;
@@ -131,7 +131,7 @@ export class Hud {
   }
 
   // ---------- State from the lobby ----------
-  // list: [{ id, name, color, finds, rares, away }]
+  // list: [{ id, name, color, finds, rares, wood, away }]
   setRoster(list) {
     this.list.textContent = '';
     for (const p of list) {
@@ -139,7 +139,7 @@ export class Hud {
       el('i', 'ui-dot', row).style.background = hexColor(p.color);
       el('span', 'ui-player-name', row, p.name);
       if (p.away) el('span', 'ui-muted', row, 'away');
-      else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}`);
+      else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}`);
     }
   }
 

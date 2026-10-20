@@ -11,8 +11,9 @@ import { ITEMS, spriteURL } from './items.js';
 //   shift + click     move a stack between the toolbar and the backpack
 //   trash slot        destroy the carried stack (tools refuse)
 
-const COLS = 12;
+export const COLS = 12;
 const ROWS = 3;
+export const SLOT_COUNT = COLS * ROWS;
 const HOTBAR = [...Array(COLS).keys()];
 const BACKPACK = [...Array(COLS * (ROWS - 1)).keys()].map((i) => i + COLS);
 const ALL = [...HOTBAR, ...BACKPACK];
@@ -21,11 +22,12 @@ const HOTBAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
   'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
 const HOTBAR_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='];
 
-const CATEGORIES = {
+export const CATEGORIES = {
   Tool: '#6b5a45',
   Seed: '#3f7f24',
   Produce: '#c25a12',
   Forage: '#9a1b33',
+  Material: '#7a4a22',
   Mineral: '#7b3fb0',
   'Key Item': '#b8257a',
   Currency: '#a86e00',
@@ -169,11 +171,12 @@ export function createInventory({ onOpenChange } = {}) {
     }
     const def = ITEMS[stack.id];
     const stackLine = def.maxStack > 1 ? `<div class="inv-tt-meta">Stack ${stack.count} / ${def.maxStack}</div>` : '';
+    const sellLine = def.sell ? `<div class="inv-tt-meta">The merchant pays ${def.sell}g</div>` : '';
     tooltipEl.innerHTML = `
       <div class="inv-tt-name">${def.name}</div>
       <div class="inv-tt-cat" style="color:${CATEGORIES[def.category]}">${def.category}</div>
       <div class="inv-tt-desc">${def.description}</div>
-      ${stackLine}`;
+      ${stackLine}${sellLine}`;
     tooltipEl.hidden = false;
     // Sit below-right of the cursor, flipping when it would leave the screen
     const r = tooltipEl.getBoundingClientRect();
@@ -244,12 +247,7 @@ export function createInventory({ onOpenChange } = {}) {
     const def = ITEMS[id];
     if (!def) return false; // an item this page doesn't know (a newer server): leave it alone
     if (def.currency) {
-      gold += def.currency * count;
-      toast('gold', spriteURL(def), (n) => `+${n}g`, def.currency * count);
-      fundsEl.classList.remove('bump');
-      void fundsEl.offsetWidth;
-      fundsEl.classList.add('bump');
-      render();
+      earn(def.currency * count);
       return true;
     }
     if (roomFor(id, ALL) < count) {
@@ -262,6 +260,23 @@ export function createInventory({ onOpenChange } = {}) {
     }
     insert({ id, count }, ALL);
     if (!quiet) toast(id, spriteURL(def), (n) => `${def.name} ×${n}`, count);
+    render();
+    return true;
+  }
+
+  function earn(amount) {
+    gold += amount;
+    toast('gold', spriteURL(ITEMS.coin), (n) => `+${n}g`, amount);
+    fundsEl.classList.remove('bump');
+    void fundsEl.offsetWidth;
+    fundsEl.classList.add('bump');
+    render();
+  }
+
+  // Pay for something; false (and nothing spent) if there isn't enough
+  function spend(amount) {
+    if (gold < amount) return false;
+    gold -= amount;
     render();
     return true;
   }
@@ -448,9 +463,24 @@ export function createInventory({ onOpenChange } = {}) {
     return !!def.currency || roomFor(id, ALL) >= count;
   }
 
+  // Take up to n items out of slot i (selling them, say); returns how many
+  function take(i, n) {
+    const s = slots[i];
+    if (!s) return 0;
+    const count = Math.min(n, s.count);
+    takeFrom(i, count);
+    render();
+    return count;
+  }
+
   return {
     add,
     canAdd,
+    earn,
+    spend,
+    take,
+    gold: () => gold,
+    slot: (i) => slots[i] && { ...slots[i] },
     serialize,
     restore,
     consumeSelected,

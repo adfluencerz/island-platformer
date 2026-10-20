@@ -35,6 +35,27 @@ export const SPOT_KINDS = {
   },
 };
 
+// ---------- Trees ----------
+// Every tree on a wild island can be chopped down for wood. Where the trees
+// stand is the page's business (src/maps.js grows them from the seed, the same
+// for everyone); the lobby only keeps which ones are down, by their number.
+// `hits`: swings with the axe to fell one. `regrow`: seconds [min, max] until
+// it stands again. `wood`: [min, max] logs for whoever felled it, from a tree
+// of size 1; bigger trees give more (`size`: the smallest and biggest there are,
+// so a page can't claim a giant).
+export const TREE = { hits: 4, regrow: [60, 120], wood: [2, 4], size: [0.8, 1.6] };
+
+const treeSize = (size) => Math.min(TREE.size[1], Math.max(TREE.size[0], Number.isFinite(size) ? size : 1));
+
+// Logs from felling a tree of this size. rand: () => [0, 1)
+export function woodFor(size, rand = Math.random) {
+  const [lo, hi] = TREE.wood;
+  return Math.max(1, Math.round((lo + Math.floor(rand() * (hi - lo + 1))) * treeSize(size)));
+}
+
+// The most a tree of this size can give (room to keep in the backpack)
+export const mostWood = (size) => Math.round(TREE.wood[1] * treeSize(size));
+
 // Finds rare enough that the whole lobby hears when one turns up
 export const RARE = {
   golden_seeds: 'Golden seeds',

@@ -13,8 +13,9 @@ export { mulberry32, distToSegment, distToPaths } from '../shared/worldgen.js';
 // same on every load, and for everyone in a lobby.
 //
 // buildWorld() returns everything the game needs from a world: its root group
-// (added to the scene while you are there), its colliders, its tiles, and the
-// per-frame bits (tree fading, the map's own animation).
+// (added to the scene while you are there), its colliders, its tiles, its
+// trees (which can be felled and grow back), and the per-frame bits (tree
+// fading and falling, the map's own animation).
 
 export const TILE_SIZE = 1;
 
@@ -73,6 +74,17 @@ const CAP_MATS = {
   moss: new THREE.MeshStandardMaterial({ color: 0x4f8a3a, roughness: 1 }),
 };
 const earthMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9 });
+
+// A felled tree topples away from whoever chopped it, then shrinks away and
+// leaves a stump (low enough to step onto) until it grows back.
+const TREE_FALL = 1; // seconds to topple
+const TREE_GONE = 0.4; // then to shrink away
+const TREE_GROW = 1.2; // growing back
+const STUMP_H = 0.28;
+const stumpGeo = new THREE.CylinderGeometry(0.16, 0.2, STUMP_H, 7).translate(0, STUMP_H / 2, 0);
+const stumpMats = [trunkMat, foliageMat(0xd9b48a), trunkMat]; // side, cut top, bottom
+const _q = new THREE.Quaternion();
+const easeOutBack = (p) => 1 + 2.7 * (p - 1) ** 3 + 1.7 * (p - 1) ** 2;
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 
 // Fade trees whose canopy sits on the line of sight from the camera to the
@@ -366,7 +378,11 @@ export function buildWorld(map) {
   }
 
   // ---------- Trees, bushes, rocks ----------
-  const trees = []; // { group, scale, materials, fade } — fade drives see-through when blocking the player
+  // { id, group, scale, materials, fade, x, z, collider, state, ... } — fade
+  // drives see-through when blocking the player; state is 'up', 'falling',
+  // 'down' or 'growing' (see Felling trees). id: its place in this list, the
+  // same for everyone on the island, which is how a lobby names a tree.
+  const trees = [];
 
   // kind: 'pine' | 'round' (default: either). scale: its size.
   // A map may dress its trees and bushes in its own leaves (a season, say)
@@ -403,10 +419,13 @@ export function buildWorld(map) {
       if (!materials.has(obj.material)) materials.set(obj.material, obj.material.clone());
       obj.material = materials.get(obj.material);
     });
-    trees.push({ group: tree, scale: k, materials: [...materials.values()], fade: 1 });
-
     // Trunk collider; tall enough that you can't jump up into the canopy
-    addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k });
+    const collider = addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k });
+    trees.push({
+      id: trees.length, group: tree, scale: k, materials: [...materials.values()], fade: 1,
+      x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
+      state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
+    });
   }
 
   function addBush(x, z) {
@@ -428,6 +447,110 @@ export function buildWorld(map) {
   Object.assign(ctx, { addTree, addBush, addRock });
   map.decorate(ctx);
 
+  // ---------- Felling trees ----------
+  const moving = new Set(); // trees in the middle of shaking, falling or growing
+
+  // the way a tree tips: away from `from` (a position), or any way at all
+  function tipAway(tree, from) {
+    let dx = from ? tree.x - from.x : rand(-1, 1);
+    let dz = from ? tree.z - from.z : rand(-1, 1);
+    const len = Math.hypot(dx, dz) || 1;
+    // rotating about (dz, 0, -dx) tips the top toward (dx, dz)
+    tree.axis.set(dz / len, 0, -dx / len);
+  }
+
+  function setTrunk(tree, standing) {
+    const box = tree.collider;
+    box.max.y = standing ? 6 : STUMP_H * tree.scale;
+    box.center.y = (box.min.y + box.max.y) / 2;
+  }
+
+  // a hit with the axe: a shiver up the trunk
+  function shakeTree(id, from) {
+    const tree = trees[id];
+    if (tree?.state !== 'up') return;
+    tipAway(tree, from);
+    tree.shake = 1;
+    tree.t = 0;
+    moving.add(tree);
+  }
+
+  // instant: it is simply down already (it was felled before we came)
+  function fellTree(id, from, { instant = false } = {}) {
+    const tree = trees[id];
+    if (!tree || tree.state === 'falling' || tree.state === 'down') return;
+    if (!tree.stump) {
+      tree.stump = new THREE.Mesh(stumpGeo, stumpMats);
+      tree.stump.position.set(tree.x, 0, tree.z);
+      tree.stump.scale.set(tree.scale * tree.trunk, tree.scale, tree.scale * tree.trunk);
+      tree.stump.castShadow = tree.stump.receiveShadow = true;
+      root.add(tree.stump);
+    }
+    tree.stump.visible = true;
+    setTrunk(tree, false);
+    tipAway(tree, from);
+    tree.state = instant ? 'down' : 'falling';
+    tree.t = 0;
+    tree.group.visible = !instant;
+    if (instant) moving.delete(tree);
+    else moving.add(tree);
+  }
+
+  function regrowTree(id, { instant = false } = {}) {
+    const tree = trees[id];
+    if (!tree || tree.state === 'up' || tree.state === 'growing') return;
+    setTrunk(tree, true);
+    tree.stump.visible = false;
+    tree.group.visible = true;
+    tree.group.quaternion.copy(tree.base);
+    tree.group.scale.setScalar(instant ? tree.scale : 0.01);
+    tree.state = instant ? 'up' : 'growing';
+    tree.t = 0;
+    tree.shake = 0;
+    if (instant) moving.delete(tree);
+    else moving.add(tree);
+  }
+
+  function updateTrees(dt) {
+    for (const tree of moving) {
+      tree.t += dt;
+      const { group, base, axis, scale: k } = tree;
+      if (tree.state === 'falling') {
+        // Slow at first, then faster, with a little bounce as it lands
+        const p = Math.min(tree.t / TREE_FALL, 1);
+        const landed = tree.t - TREE_FALL;
+        const bounce = landed > 0 ? Math.sin(Math.min(landed / 0.25, 1) * Math.PI) * 0.12 : 0;
+        group.quaternion.setFromAxisAngle(axis, (Math.PI / 2 - 0.1) * p * p - bounce).multiply(base);
+        if (landed > 0.25) {
+          const q = Math.min((landed - 0.25) / TREE_GONE, 1);
+          group.scale.setScalar(k * (1 - q * q));
+          if (q >= 1) {
+            tree.state = 'down';
+            group.visible = false;
+            moving.delete(tree);
+          }
+        }
+      } else if (tree.state === 'growing') {
+        const p = Math.min(tree.t / TREE_GROW, 1);
+        group.scale.setScalar(k * Math.max(0.01, easeOutBack(p)));
+        if (p >= 1) {
+          tree.state = 'up';
+          moving.delete(tree);
+        }
+      } else if (tree.state === 'up') {
+        tree.shake *= Math.exp(-6 * dt);
+        group.quaternion.copy(base);
+        if (tree.shake < 0.01) {
+          moving.delete(tree);
+        } else {
+          group.quaternion.premultiply(_q.setFromAxisAngle(axis, Math.sin(tree.t * 32) * 0.05 * tree.shake));
+        }
+      } else {
+        moving.delete(tree);
+      }
+    }
+  }
+
   const _eye = new THREE.Vector3();
   return {
     name: map.name,
@@ -435,6 +558,15 @@ export function buildWorld(map) {
     platforms,
     tileGrid,
     spawn: map.spawn,
+    trees,
+    shakeTree,
+    fellTree,
+    regrowTree,
+    updateTrees,
+    // every tree standing again, at once (arriving on an island we were on before)
+    standAllTrees() {
+      for (const tree of trees) regrowTree(tree.id, { instant: true });
+    },
     tileAt,
     clearFoliageOnTile,
     restoreFoliage,
@@ -443,7 +575,8 @@ export function buildWorld(map) {
       const k = damp(8, dt);
       _eye.copy(eye);
       for (const tree of trees) {
-        tree.fade += ((blocksView(tree, _eye, camera) ? 0.25 : 1) - tree.fade) * k;
+        const blocking = tree.state === 'up' && blocksView(tree, _eye, camera);
+        tree.fade += ((blocking ? 0.25 : 1) - tree.fade) * k;
         const transparent = tree.fade < 0.99;
         for (const mat of tree.materials) {
           mat.opacity = tree.fade;

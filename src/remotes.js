@@ -59,7 +59,7 @@ function makeNameTag(name, color) {
   canvas.width = 256;
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
-  ctx.font = '600 30px "Pixelify Sans", "Trebuchet MS", sans-serif';
+  ctx.font = '600 42px "Jersey 10", "Trebuchet MS", sans-serif';
   const w = Math.min(248, ctx.measureText(name).width + 48);
   const x0 = (256 - w) / 2;
   ctx.fillStyle = 'rgba(30, 14, 2, 0.6)';
@@ -105,7 +105,7 @@ export class Remotes {
         farmer.root.visible = false; // until it has a position
         this.scene.add(farmer.root);
         r = { id: p.id, farmer, samples: new Samples(), tag: null, name: '', color: -1, away: false,
-          last: new THREE.Vector3(), wasGround: true };
+          last: new THREE.Vector3(), wasGround: true, wasSwinging: false };
         this.players.set(p.id, r);
       }
       if (r.name !== p.name || r.color !== p.color) {
@@ -161,6 +161,10 @@ export class Remotes {
       r.wasGround = onGround;
 
       r.farmer.hoe.visible = (s.f & STATEF.HOE) !== 0;
+      r.farmer.axe.visible = (s.f & STATEF.AXE) !== 0;
+      const swinging = (s.f & STATEF.SWING) !== 0;
+      if (swinging && !r.wasSwinging) r.farmer.swing();
+      r.wasSwinging = swinging;
       r.farmer.anim.facing = s.yaw; // the owner already eased it
       r.farmer.animate(dt, { moving: speed > 0.8, onGround, targetYaw: s.yaw, time });
     }
@@ -168,6 +172,12 @@ export class Remotes {
 
   swing(id) {
     this.players.get(id)?.farmer.swing();
+  }
+
+  // where player id is drawn right now (null: not here, or not drawn yet)
+  positionOf(id) {
+    const r = this.players.get(id);
+    return r?.farmer.root.visible ? r.farmer.root.position : null;
   }
 
   remove(id) {

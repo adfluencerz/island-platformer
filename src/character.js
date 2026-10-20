@@ -11,18 +11,20 @@ const SKIN = 0xffcc99;
 const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...opts });
 // Shared by every farmer; only the shirt is per player
 const skinMat = mat(SKIN);
-const denimMat = mat(0x3b5b92, { roughness: 0.85 });
+const sharedDenimMat = mat(0x3b5b92, { roughness: 0.85 });
 const bootMat = mat(0x4a2f1b, { roughness: 0.9 });
-const strawMat = mat(0xe8c66a, { roughness: 0.95 });
+const sharedStrawMat = mat(0xe8c66a, { roughness: 0.95 });
 const darkMat = mat(0x1a1a1a, { roughness: 0.3 });
 const noseMat = mat(0xffb380);
 const cheekMat = mat(0xff9f8a);
-const bandMat = mat(0xc0392b);
+const sharedBandMat = mat(0xc0392b);
+const mustacheMat = mat(0x5a3a22, { roughness: 0.9 });
 const handleMat = mat(0x8b5a2b);
 const bladeMat = mat(0x9a9a9a, { metalness: 0.6, roughness: 0.4 });
+const edgeMat = mat(0xdfe5ec, { metalness: 0.7, roughness: 0.3 });
 
 const HOE_REST_ANGLE = 0.9; // handle tilted forward/up from the arm
-const HOE_SWING_TIME = 0.4; // seconds
+export const HOE_SWING_TIME = 0.4; // seconds
 
 // Hoe swing keyframes: [time 0..1, arm angle, hoe angle relative to arm]
 const SWING_KEYS = [
@@ -53,8 +55,20 @@ function part(geo, material, x = 0, y = 0, z = 0) {
   return mesh;
 }
 
-export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
+// The merchant at the farm stall wears the same model in their own colors:
+// `overalls`, `hat` and `band` swap those materials, `mustache` adds one.
+export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: hatColor, band, mustache = false } = {}) {
   const shirtMat = mat(shirt);
+  const own = []; // materials made for this farmer alone, to dispose
+  const ownMat = (color, shared, opts) => {
+    if (color == null) return shared;
+    const m = mat(color, opts);
+    own.push(m);
+    return m;
+  };
+  const denimMat = ownMat(overalls, sharedDenimMat, { roughness: 0.85 });
+  const strawMat = ownMat(hatColor, sharedStrawMat, { roughness: 0.95 });
+  const bandMat = ownMat(band, sharedBandMat);
 
   const root = new THREE.Group(); // positioned at the collision center
 
@@ -83,6 +97,11 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
   for (const sx of [-1, 1]) {
     head.add(part(new THREE.SphereGeometry(0.042, 8, 6), darkMat, sx * 0.09, 0.03, 0.22)); // eye
     head.add(part(new THREE.SphereGeometry(0.045, 8, 6), cheekMat, sx * 0.15, -0.06, 0.18)); // cheek
+    if (mustache) {
+      const whisker = part(new THREE.CapsuleGeometry(0.03, 0.08, 3, 6), mustacheMat, sx * 0.055, -0.075, 0.235);
+      whisker.rotation.z = sx * 1.25; // curling up at the ends
+      head.add(whisker);
+    }
   }
   const hat = new THREE.Group();
   hat.position.set(0, 0.17, -0.05);
@@ -125,6 +144,16 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
   hoe.add(part(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 6), handleMat, 0, 0.3, 0));
   hoe.add(part(new THREE.BoxGeometry(0.24, 0.05, 0.2), bladeMat, 0, 0.76, 0.08));
 
+  // Axe, held the same way: a shorter handle with a wedge of a head
+  const axe = new THREE.Group();
+  axe.position.copy(rightArm.end.position);
+  axe.rotation.x = HOE_REST_ANGLE;
+  axe.visible = false;
+  rightArm.pivot.add(axe);
+  axe.add(part(new THREE.CylinderGeometry(0.035, 0.04, 0.8, 6), handleMat, 0, 0.25, 0));
+  axe.add(part(new THREE.BoxGeometry(0.06, 0.2, 0.26), bladeMat, 0, 0.56, 0.12));
+  axe.add(part(new THREE.BoxGeometry(0.03, 0.24, 0.05), edgeMat, 0, 0.56, 0.26));
+
   root.traverse((obj) => {
     if (obj.isMesh) obj.castShadow = true;
   });
@@ -135,7 +164,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
     walkPhase: 0,
     walkAmount: 0, // 0 = idle pose, 1 = full walk cycle
     squash: 0, // >0 squashes (landing), <0 stretches (jumping)
-    swing: -1, // hoe swing progress 0..1, or -1 when not swinging
+    swing: -1, // tool swing progress 0..1, or -1 when not swinging
   };
 
   // moving: walking (or steering in the air) this frame. targetYaw: where it
@@ -169,8 +198,9 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
       arms[1].pivot.rotation.x += (-0.4 - arms[1].pivot.rotation.x) * k;
     }
 
-    // Hoe swing overrides the right arm
+    // A swing (hoe or axe, the same chop) overrides the right arm
     hoe.rotation.x = HOE_REST_ANGLE;
+    axe.rotation.x = HOE_REST_ANGLE;
     if (anim.swing >= 0) {
       anim.swing += dt / HOE_SWING_TIME;
       if (anim.swing >= 1) {
@@ -179,6 +209,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
         const [armAngle, hoeAngle] = sampleSwing(anim.swing);
         rightArm.pivot.rotation.x = armAngle;
         hoe.rotation.x = hoeAngle;
+        axe.rotation.x = hoeAngle;
       }
     }
 
@@ -198,6 +229,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
   return {
     root,
     hoe,
+    axe,
     anim,
     animate,
     swing() {
@@ -210,6 +242,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6 } = {}) {
     dispose() {
       root.traverse((obj) => obj.isMesh && obj.geometry.dispose());
       shirtMat.dispose();
+      for (const m of own) m.dispose();
     },
   };
 }

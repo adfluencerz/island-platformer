@@ -12,6 +12,12 @@
 // something rare turns up and the whole lobby hears about it. Whoever gets to a
 // spot first takes it.
 //
+// The trees can be chopped down for wood. The room doesn't know where they
+// stand (the pages grow them from the seed), only which are down: a page says
+// which tree it felled, where and how big it is, and the room checks the player is next to
+// that spot, that the tree is still standing, and that they haven't been
+// felling trees faster than an axe can.
+//
 // A Room never touches a socket. A connection is anything with
 // send(string) and close(code, reason); the transport calls join() with the
 // first message, then message() and leave() for that player.
@@ -23,11 +29,14 @@ import {
   PROTOCOL_VERSION, TICK_RATE, MAX_PLAYERS, MAX_NAME, MAX_CHAT, HOLD_MS, PLAYER_COLORS, CLOSE, CLOSE_TEXT,
 } from './constants.js';
 import { C, S, STATEF, cleanText, finite } from './protocol.js';
-import { SPOT_KINDS, RARE, rollLoot, spawnPoint } from './level.js';
+import { SPOT_KINDS, RARE, TREE, rollLoot, woodFor, spawnPoint } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
 const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
+const CHOP_REACH = 2.6; // the client chops within 1.5 of the trunk
+const CHOP_EVERY = 1000; // ms: the fewest between two felled trees (felling one takes TREE.hits swings)
+const MAX_TREES = 2000; // tree ids are below this (an island has a couple of hundred)
 const CHAT_BURST = 5; // messages in a row...
 const CHAT_EVERY = 2; // ...then one per this many seconds
 const WHERE = { ledge: 'up on a ledge', meadow: 'out in the meadow', mushroom: 'among the mushrooms', bush: 'in a berry bush' };
@@ -52,6 +61,7 @@ export class Room {
       const [item, count] = rollLoot(kind, rand);
       return { id, kind, x, y, z, item, count, regrowAt: 0 };
     });
+    this.felled = new Map(); // tree id -> when it grows back (ms)
     this.tick = 0;
     this.rosterDirty = false;
     this.emptySince = Date.now(); // (the lobby list closes a room that stays empty)
@@ -94,7 +104,7 @@ export class Room {
 
   rosterList() {
     return [...this.players.values()].map((p) => ({
-      id: p.id, name: p.name, color: p.color, finds: p.finds, rares: p.rares, away: !p.conn,
+      id: p.id, name: p.name, color: p.color, finds: p.finds, rares: p.rares, wood: p.wood, away: !p.conn,
     }));
   }
 
@@ -144,6 +154,8 @@ export class Room {
       x: at.x, y: at.y, z: at.z, yaw: Math.PI, f: STATEF.GROUND,
       finds: 0, // spots emptied this visit
       rares: 0, // ...of which rare finds
+      wood: 0, // logs chopped this visit
+      chopAt: 0, // when they last felled a tree
       awayAt: 0,
       chatTokens: CHAT_BURST, chatAt: Date.now(),
     };
@@ -166,6 +178,7 @@ export class Room {
       seed: this.seed,
       room: { name: this.name, inviteOnly: this.inviteOnly, maxPlayers: this.maxPlayers },
       spots: this.spots.map(({ id, kind, x, y, z, item, count }) => [id, kind, x, y, z, item, count]),
+      felled: [...this.felled.keys()],
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
       clock: (Date.now() - this.createdAt) / 1000,
@@ -228,6 +241,25 @@ export class Room {
         this.broadcast({ t: S.TAKEN, id: spot.id, by: p.id, item, count });
         break;
       }
+      case C.CHOP: {
+        const { id, x, z } = msg;
+        const now = Date.now();
+        const ok = Number.isInteger(id) && id >= 0 && id < MAX_TREES && finite(x, z) &&
+          !this.felled.has(id) && now - p.chopAt >= CHOP_EVERY &&
+          Math.hypot(x - p.x, z - p.z) <= CHOP_REACH && Math.abs(p.y - 0.8) < 2;
+        if (!ok) {
+          this.send(p, { t: S.CHOP_DENY, id });
+          return;
+        }
+        const [lo, hi] = TREE.regrow;
+        this.felled.set(id, now + (lo + this.rand() * (hi - lo)) * 1000);
+        const count = woodFor(msg.size, this.rand); // (the bigger the tree, the more wood)
+        p.chopAt = now;
+        p.wood += count;
+        this.rosterDirty = true;
+        this.broadcast({ t: S.FELLED, id, by: p.id, count });
+        break;
+      }
       case C.CHAT: {
         const text = cleanText(msg.text, MAX_CHAT);
         if (!text) return;
@@ -267,6 +299,12 @@ export class Room {
       if (RARE[spot.item]) {
         this.say(`Something sparkles ${WHERE[spot.kind]}... ${RARE[spot.item].toLowerCase()}!`);
       }
+    }
+
+    for (const [id, at] of this.felled) {
+      if (now < at) continue;
+      this.felled.delete(id);
+      this.broadcast({ t: S.REGROWN, id });
     }
 
     if (this.rosterDirty) {

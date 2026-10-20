@@ -9,7 +9,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 14px 9px 11px;
-  font-family: var(--inv-font, 'Pixelify Sans', 'Trebuchet MS', system-ui, sans-serif);
+  font-family: var(--inv-font, 'Jersey 10', 'Trebuchet MS', system-ui, sans-serif);
   color: var(--inv-ink, #5b2b0a);
   user-select: none;
   -webkit-user-select: none;
@@ -69,12 +69,12 @@ body .inv-funds {
   line-height: 1.1;
 }
 .dn-day {
-  font-size: 15px;
+  font-size: 21px;
   font-weight: 600;
   opacity: 0.85;
 }
 .dn-time {
-  font-size: 22px;
+  font-size: 31px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -89,7 +89,7 @@ body .inv-funds {
   bottom: -10px;
   display: none;
   padding: 1px 5px;
-  font-size: 11px;
+  font-size: 15px;
   color: #fff;
   background: var(--inv-outline, #3d1a04);
   border-radius: 4px;
