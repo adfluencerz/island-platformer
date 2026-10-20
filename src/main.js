@@ -16,7 +16,7 @@ import { TouchControls } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, mostWood, mostStone, GROUND_STAND_Y, FARM_CHEST } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -290,6 +290,12 @@ function resetFarm() {
   for (const mesh of farmTiles.values()) scene.remove(mesh);
   farmTiles.clear();
   worlds.home.restoreFoliage();
+  worlds.home.standAllTrees();
+  worlds.home.restoreAllRocks();
+  farmFelled.clear();
+  farmMined.clear();
+  resetChopping();
+  resetMining();
   animals.clear();
 }
 
@@ -463,21 +469,25 @@ function updateSpots(dt, t) {
   const tree = inventory.selectedId() === 'axe' ? treeInReach() : null;
   const rock = inventory.selectedId() === 'pickaxe' ? rockInReach() : null;
   const near = gatherSpotInReach();
-  if (tree) hud.setPrompt(`E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${TREE.hits}` : ' (hold to keep going)'}`);
-  else if (rock) hud.setPrompt(`E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${ROCK.hits}` : ' (hold to keep going)'}`);
+  if (tree) hud.setPrompt(chopPrompt(tree));
+  else if (rock) hud.setPrompt(minePrompt(rock));
   else hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
 }
 
-// ---------- Chopping trees (lobbies) ----------
+// ---------- Chopping trees ----------
 // With the axe in hand, E next to a tree swings at it (hold E to keep
 // swinging). Each swing shakes it; the last of TREE.hits asks the lobby,
 // which says who felled it (FELLED: down for everyone, wood to whoever, more
 // from a bigger tree) and
 // when it has grown back (REGROWN). Trees are named by their number in the
-// island's list (world.js), the same on every page.
+// island's list (world.js), the same on every page. The farm's trees too, as
+// its rocks are (see Mining rocks): farmFelled.
 const CHOP_REACH = 1.3; // from the bark
 const SWING_GAP = 0.15; // seconds between swings, so everyone else sees each one
 const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
+const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
+
+const chopPrompt = (tree) => `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${TREE.hits}` : ' (hold to keep going)'}`;
 
 // the standing tree within reach, nearest first
 function treeInReach() {
@@ -525,7 +535,9 @@ function updateChopping() {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
-        net?.send({ t: C.CHOP, id: tree.id, x: r(tree.x), z: r(tree.z), size: r(tree.scale) });
+        const conn = place === 'lobby' ? net : farmNet;
+        if (conn) conn.send({ t: C.CHOP, id: tree.id, x: r(tree.x), z: r(tree.z), size: r(tree.scale) });
+        else chopAlone(tree);
       }
     }
   }
@@ -540,14 +552,38 @@ function resetChopping() {
   chop.pending.clear();
 }
 
-// ---------- Mining rocks (lobbies) ----------
+// FELLED, from a lobby or a farm's room
+function treeFelled(m) {
+  chop.pending.delete(m.id);
+  if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
+  // it falls away from whoever felled it
+  world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
+  if (m.by === myId) inventory.add('wood', m.count);
+}
+
+// On a farm played alone: the tree is ours to fell
+function chopAlone(tree) {
+  treeFelled({ id: tree.id, by: myId, count: woodFor(tree.scale) });
+  farmFelled.set(tree.id, comeBackAt(TREE.regrow));
+}
+
+// When a felled tree or a broken rock is back: [min, max] seconds from now
+const comeBackAt = ([lo, hi]) => Math.round(Date.now() + (lo + Math.random() * (hi - lo)) * 1000);
+
+// ---------- Mining rocks ----------
 // With the pickaxe in hand, E next to a rock swings at it (hold E to keep
 // swinging). Each swing jolts it; the last of ROCK.hits asks the lobby, which
 // says who broke it (MINED: gone for everyone, stone to whoever, more from a
 // bigger rock) and when a new one has surfaced (RESURFACED). Rocks are named
 // by their number in the island's list (world.js), the same on every page.
+// The farm's rocks too: its room says so the same way, and on a farm played
+// alone the page breaks the rock itself and keeps when it comes back
+// (farmMined, saved with the farm).
 const MINE_REACH = 1.3; // from the rock's edge, as it is drawn
 const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
+const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
+
+const minePrompt = (rock) => `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${ROCK.hits}` : ' (hold to keep going)'}`;
 
 // the whole rock within reach, nearest first
 function rockInReach() {
@@ -595,7 +631,9 @@ function updateMining() {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
-        net?.send({ t: C.MINE, id: rock.id, x: r(rock.x), z: r(rock.z), size: r(rock.scale) });
+        const conn = place === 'lobby' ? net : farmNet;
+        if (conn) conn.send({ t: C.MINE, id: rock.id, x: r(rock.x), z: r(rock.z), size: r(rock.scale) });
+        else mineAlone(rock);
       }
     }
   }
@@ -608,6 +646,50 @@ function resetMining() {
   mining = null;
   Object.assign(mine, { id: -1, hits: 0, swingAt: -1 });
   mine.pending.clear();
+}
+
+// MINED, from a lobby or a farm's room
+function rockMined(m) {
+  mine.pending.delete(m.id);
+  if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
+  world.breakRock(m.id);
+  if (m.by === myId) inventory.add('stone', m.count);
+}
+
+// On a farm played alone: the rock is ours to break
+function mineAlone(rock) {
+  rockMined({ id: rock.id, by: myId, count: stoneFor(rock.scale) });
+  farmMined.set(rock.id, comeBackAt(ROCK.regrow));
+}
+
+// ...and the farm's trees grow back and its rocks surface again when it's time
+// (a farm's room says so itself)
+function regrowFarm() {
+  if (farmNet) return;
+  const now = Date.now();
+  for (const [list, regrow] of [[farmFelled, worlds.home.regrowTree], [farmMined, worlds.home.regrowRock]]) {
+    for (const [id, at] of list) {
+      if (now < at) continue;
+      list.delete(id);
+      regrow(id);
+    }
+  }
+}
+
+// The farm's felled trees and broken rocks as saved, or as its room has them:
+// [[id, when it comes back]]
+function showFarmWilds({ felled, mined }) {
+  const now = Date.now();
+  for (const [id, at] of felled ?? []) {
+    if (!(at > now) || !worlds.home.trees[id]) continue;
+    worlds.home.fellTree(id, null, { instant: true });
+    farmFelled.set(id, at);
+  }
+  for (const [id, at] of mined ?? []) {
+    if (!(at > now) || !worlds.home.rocks[id]) continue;
+    worlds.home.breakRock(id, { instant: true });
+    farmMined.set(id, at);
+  }
 }
 
 // ---------- Player ----------
@@ -732,6 +814,8 @@ function useAction() {
   if (ANIMAL_KINDS.includes(inventory.selectedId())) return letOutAnimal(inventory.selectedId());
   const animal = animals.inReach(player.position);
   if (animal) return tendAnimal(animal);
+  if (inventory.selectedId() === 'axe' && swingAxe()) return;
+  if (inventory.selectedId() === 'pickaxe' && swingPick()) return;
   farmHere();
 }
 
@@ -757,10 +841,6 @@ function farmHere() {
       farmNet.send({ t: C.TILL, key: tileKeyFor(x, z) });
     }
     startHoeSwing();
-  } else if (held === 'axe') {
-    inventory.notify('Leave the farm\'s trees be: chop wood in a lobby');
-  } else if (held === 'pickaxe') {
-    inventory.notify('Leave the farm\'s rocks be: mine stone in a lobby');
   } else if (ITEMS[held]?.plants) {
     if (plantAt(x, z, ITEMS[held].plants)) {
       inventory.consumeSelected();
@@ -957,6 +1037,9 @@ function tappedThing() {
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
     for (const animal of animals.list()) if (animal.root.visible) things.set(animal.root, { kind: 'animal', animal, x: animal.pos.x, z: animal.pos.z });
+    // (the farm's trees with the axe in hand, its rocks with the pickaxe: otherwise a tap there is for the tile)
+    if (inventory.selectedId() === 'axe') for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
+    if (inventory.selectedId() === 'pickaxe') for (const rock of world.rocks) if (rock.state === 'up') things.set(rock.mesh, { kind: 'rock', rock, x: rock.x, z: rock.z });
   }
   const hits = raycaster.intersectObjects([...things.keys()].filter(Boolean), true);
   for (let obj = hits[0]?.object; obj; obj = obj.parent) if (things.has(obj)) return things.get(obj);
@@ -1261,6 +1344,24 @@ async function joinFarm(id) {
       crop.view.group.visible = true;
     }
   });
+  on(S.FELLED, (m) => {
+    farmFelled.set(m.id, m.at); // (so the page knows, should it play on alone)
+    treeFelled(m);
+  });
+  on(S.REGROWN, (m) => {
+    farmFelled.delete(m.id);
+    world.regrowTree(m.id);
+  });
+  on(S.CHOP_DENY, (m) => chop.pending.delete(m.id));
+  on(S.MINED, (m) => {
+    farmMined.set(m.id, m.at);
+    rockMined(m);
+  });
+  on(S.RESURFACED, (m) => {
+    farmMined.delete(m.id);
+    world.regrowRock(m.id);
+  });
+  on(S.MINE_DENY, (m) => mine.pending.delete(m.id));
   on(S.CHEST, (m) => chest.setItems(m.items));
   on(S.CHEST_GOT, (m) => {
     // (no room for it after all: back in the chest)
@@ -1302,6 +1403,8 @@ function leaveFarm() {
   farmNet = null;
   farmVisit = null;
   pendingTills.clear();
+  resetChopping();
+  resetMining();
   showChest(false);
   remotes.clear();
   keys.clear();
@@ -1326,6 +1429,7 @@ function showRoomFarm(m) {
   resetFarm();
   dayNight.setTime(m.hours);
   for (const key of m.tilled) tillTileAt(...keyXZ(key));
+  showFarmWilds(m);
   for (const [key, cropId, at] of m.crops) {
     if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
   }
@@ -1435,21 +1539,10 @@ function joinLobby({ name, code }) {
     spot.retryAt = performance.now() + 500; // (not again every frame while we stand in it)
     showSpot(spot);
   });
-  on(S.FELLED, (m) => {
-    chop.pending.delete(m.id);
-    if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
-    // it falls away from whoever felled it
-    world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
-    if (m.by === myId) inventory.add('wood', m.count);
-  });
+  on(S.FELLED, treeFelled);
   on(S.REGROWN, (m) => world.regrowTree(m.id));
   on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
-  on(S.MINED, (m) => {
-    mine.pending.delete(m.id);
-    if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
-    world.breakRock(m.id);
-    if (m.by === myId) inventory.add('stone', m.count);
-  });
+  on(S.MINED, rockMined);
   on(S.RESURFACED, (m) => world.regrowRock(m.id));
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.CHAT, (m) => hud.chat(m));
@@ -1519,6 +1612,8 @@ function captureFarm() {
     hours: farmHours(),
     tilled: [...farmTiles.keys()],
     crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
+    felled: [...farmFelled],
+    mined: [...farmMined],
     ...animals.capture(), // hens, cows, sheep, eggs
   };
 }
@@ -1530,6 +1625,7 @@ function showFarm(farm) {
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
   for (const key of farm.tilled) tillTileAt(...keyXZ(key));
+  showFarmWilds(farm);
   for (const [key, cropId, age] of farm.crops) {
     if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);
   }
@@ -1724,13 +1820,18 @@ function update(dt) {
   } else {
     merchant.update(dt, t, player.position);
     chest.update(dt);
-    if (place === 'home') hud.setPrompt(homePrompt());
+    if (place === 'home') {
+      updateChopping();
+      updateMining();
+      hud.setPrompt(homePrompt());
+    }
     if (farmVisit) {
       sendState(dt, farmNet);
       remotes.update(dt, t);
     }
   }
 
+  regrowFarm();
   windTime.value = t;
   _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
   world.updateTreeFade(dt, _chest, camera);
@@ -1774,6 +1875,10 @@ function homePrompt() {
   if (ANIMAL_KINDS.includes(held) && animals.inPenFor(held, player.position.x, player.position.z, 0.5)) return `E  Let the ${ITEMS[held].name.toLowerCase()} out`;
   const animal = animals.inReach(player.position);
   if (animal) return `E  ${animals.verbFor(animal)}`;
+  const tree = held === 'axe' ? treeInReach() : null;
+  if (tree) return chopPrompt(tree);
+  const rock = held === 'pickaxe' ? rockInReach() : null;
+  if (rock) return minePrompt(rock);
   return '';
 }
 

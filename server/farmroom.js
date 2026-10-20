@@ -10,6 +10,10 @@
 // everyone can see and put things in, and only the owner takes things out of.
 // The backpacks stay everyone's own (their own farm's save keeps them).
 //
+// The farm's trees are chopped for wood and its rocks broken up for stone the
+// way a lobby's are (CHOP, MINE: the wood or stone goes to whoever did it),
+// and the room keeps when each comes back.
+//
 // The animals are the owner's page's: it drives them (eggs, milk and wool go
 // to the owner, as at home) and sends their state along (ANIMALS); everyone
 // else's page draws them from that, for company. With the owner away they
@@ -17,15 +21,15 @@
 // it next has them (src/animals.js restore()).
 //
 // The farm is kept in the farm's own file, in the page's save format (the
-// save's `farm`: { savedAt, hours, tilled, crops: [[key, crop, age]], ...the
-// animals }), so the owner's page can always play it, alone, from there; the
+// save's `farm`: { savedAt, hours, tilled, crops: [[key, crop, age]], felled
+// and mined: [[tree or rock id, when it comes back (ms)]], ...the animals }), so the owner's page can always play it, alone, from there; the
 // chest beside the save (farm.chest), where no page's save can write over it.
 // Each time the room writes the farm, farm.roomRev goes up: a page that
 // played the farm alone, offline, meanwhile knows its farm is out of date.
 import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME } from '../shared/constants.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, spawnPoint } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, TREE, ROCK, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
@@ -35,6 +39,13 @@ const MAX_STACK = 999; // of one item in the chest
 const MAX_KINDS = 64; // different items in the chest
 const MAX_ANIMALS = 16 * 1024; // bytes of the animals' state
 const CLOCK_EVERY = 10_000; // ms between FARM_CLOCKs
+// (as in a lobby: shared/room.js)
+const CHOP_REACH = 2.6;
+const CHOP_EVERY = 1000; // ms
+const MAX_TREES = 2000;
+const MINE_REACH = 2.6;
+const MINE_EVERY = 900; // ms
+const MAX_ROCKS = 2000;
 const ITEM_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const KEY_RE = /^-?\d{1,3},-?\d{1,3}$/;
 
@@ -59,8 +70,11 @@ export class FarmRoom extends Place {
         this.crops.set(key, { crop, plantedAt: savedHours - age / SECONDS_PER_HOUR });
       }
     }
+    const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
+    this.felled = comingBack(saved?.felled, MAX_TREES); // tree id -> when it grows back (ms)
+    this.mined = comingBack(saved?.mined, MAX_ROCKS); // rock id -> when a new one surfaces (ms)
     // the rest of the farm is the animals', as the owner's page saved them
-    const { savedAt, hours, tilled, crops, ...animals } = saved ?? {};
+    const { savedAt, hours, tilled, crops, felled, mined, ...animals } = saved ?? {};
     this.animals = animals;
     this.chest = { ...(farm.chest ?? {}) };
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
@@ -106,6 +120,8 @@ export class FarmRoom extends Place {
       mine: p.owner,
       tilled: [...this.tilled],
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
+      felled: [...this.felled],
+      mined: [...this.mined],
       chest: this.chest,
       hours: round3(this.hours()),
       animals: this.animals,
@@ -170,6 +186,39 @@ export class FarmRoom extends Place {
         this.broadcast({ t: S.CHEST, items: this.chest });
         break;
       }
+      case C.CHOP: {
+        // (as in a lobby: the page says where the tree stands, the room checks the chopper is by it)
+        const { id, x, z } = msg;
+        const now = Date.now();
+        const ok = Number.isInteger(id) && id >= 0 && id < MAX_TREES && finite(x, z) &&
+          !this.felled.has(id) && now - (p.chopAt ?? 0) >= CHOP_EVERY &&
+          Math.hypot(x - p.x, z - p.z) <= CHOP_REACH && Math.abs(p.y - GROUND_STAND_Y) < 2;
+        if (!ok) return this.send(p, { t: S.CHOP_DENY, id });
+        const [lo, hi] = TREE.regrow;
+        const at = Math.round(now + (lo + this.rand() * (hi - lo)) * 1000);
+        this.felled.set(id, at);
+        p.chopAt = now;
+        this.changed = true;
+        this.broadcast({ t: S.FELLED, id, by: p.id, count: woodFor(msg.size, this.rand), at });
+        break;
+      }
+      case C.MINE: {
+        // (the same for a rock)
+        const { id, x, z } = msg;
+        const now = Date.now();
+        const size = Math.min(ROCK.size[1], Number.isFinite(msg.size) ? msg.size : 0);
+        const ok = Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && finite(x, z) &&
+          !this.mined.has(id) && now - (p.mineAt ?? 0) >= MINE_EVERY &&
+          Math.hypot(x - p.x, z - p.z) <= MINE_REACH + size * 1.5 && Math.abs(p.y - GROUND_STAND_Y) < 2;
+        if (!ok) return this.send(p, { t: S.MINE_DENY, id });
+        const [lo, hi] = ROCK.regrow;
+        const at = Math.round(now + (lo + this.rand() * (hi - lo)) * 1000);
+        this.mined.set(id, at);
+        p.mineAt = now;
+        this.changed = true;
+        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(msg.size, this.rand), at });
+        break;
+      }
       case C.CHEST_PUT: {
         const { item, count } = msg;
         if (!ITEM_RE.test(item) || !Number.isInteger(count) || count < 1 || !this.canStore(item, count)) {
@@ -205,7 +254,7 @@ export class FarmRoom extends Place {
         const state = msg.state;
         if (!p.owner || !state || typeof state !== 'object' || Array.isArray(state)) return;
         if (JSON.stringify(state).length > MAX_ANIMALS) return;
-        const { savedAt, hours, tilled, crops, ...animals } = state; // (only the animals' part)
+        const { savedAt, hours, tilled, crops, felled, mined, ...animals } = state; // (only the animals' part)
         this.animals = animals;
         this.changed = true;
         break;
@@ -228,6 +277,14 @@ export class FarmRoom extends Place {
 
   // ---------- Every tick ----------
   tickPlace(now) {
+    for (const [list, t] of [[this.felled, S.REGROWN], [this.mined, S.RESURFACED]]) {
+      for (const [id, at] of list) {
+        if (now < at) continue;
+        list.delete(id);
+        this.changed = true;
+        this.broadcast({ t, id });
+      }
+    }
     if (now - this.clockSentAt < CLOCK_EVERY) return;
     this.clockSentAt = now;
     if (this.connected()) this.broadcast({ t: S.FARM_CLOCK, hours: round3(this.hours(now)) });
@@ -243,6 +300,8 @@ export class FarmRoom extends Place {
       hours,
       tilled: [...this.tilled],
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3((hours - c.plantedAt) * SECONDS_PER_HOUR)]),
+      felled: [...this.felled],
+      mined: [...this.mined],
     };
   }
 }

@@ -32,16 +32,16 @@ export const S = {
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count }: spot id was emptied by player `by`
   DENY: 'deny', // { id }: that did not count (someone got there first, or too far)
-  FELLED: 'felled', // { id, by, count }: tree id came down; player `by` got count wood
+  FELLED: 'felled', // { id, by, count, at }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms)
   REGROWN: 'regrown', // { id }: tree id has grown back
   CHOP_DENY: 'chopDeny', // { id }: that chop did not count (already down, too far, too fast)
-  MINED: 'mined', // { id, by, count }: rock id was broken up; player `by` got count stone
+  MINED: 'mined', // { id, by, count, at }: rock id was broken up; player `by` got count stone (at: on a farm, when it comes back, ms)
   RESURFACED: 'resurfaced', // { id }: rock id is back
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, chest, hours, animals, roster, pos, resumed }
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, felled, mined, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
   //   chest: { item: count }. hours: the farm's clock, in game hours since it began)
   TILLED: 'tilled', // { key, by }

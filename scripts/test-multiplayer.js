@@ -10,7 +10,7 @@ import { Room } from '../shared/room.js';
 import { Lobby } from '../server/lobby.js';
 import { Store } from '../server/store.js';
 import { Farms, normalizePairCode } from '../server/farms.js';
-import { FarmRooms } from '../server/farmroom.js';
+import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, woodFor, stoneFor, mostStone } from '../shared/level.js';
@@ -625,8 +625,31 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.deepEqual(room.animals.hens, [[0, 1, 2, 9]]);
   room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], tilled: ['0,0'] } });
   assert.deepEqual(Object.keys(room.animals), ['hens']);
+  // the farm's rocks: broken by whoever is next to one (the stone is theirs); the room keeps when it comes back
+  room.message(bo.p, { t: C.MINE, id: 3, x: 5, z: 3, size: 0.3 });
+  const mined = ann.conn.last(S.MINED);
+  assert.deepEqual([mined.id, mined.by], [3, bo.p.id]);
+  assert.ok(mined.count >= 1 && mined.at > Date.now());
+  room.message(ann.p, { t: C.STATE, x: 0, y: 0.8, z: 5, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.MINE, id: 4, x: 5, z: 3, size: 0.3 });
+  assert.equal(ann.conn.last(S.MINE_DENY)?.id, 4, 'too far');
+  // ...and its trees, the same way (Bo's rock was a moment ago: chopping isn't mining)
+  room.message(bo.p, { t: C.CHOP, id: 7, x: 5, z: 4, size: 1.2 });
+  const felled = ann.conn.last(S.FELLED);
+  assert.deepEqual([felled.id, felled.by], [7, bo.p.id]);
+  assert.ok(felled.count >= 1 && felled.at > Date.now());
+  room.message(ann.p, { t: C.CHOP, id: 8, x: 5, z: 4, size: 1.2 });
+  assert.equal(ann.conn.last(S.CHOP_DENY)?.id, 8, 'too far');
+  room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], felled: [], mined: [] } });
+  assert.ok(room.mined.has(3) && room.felled.has(7), 'the animals can\'t bring them back');
   // written into the owner's save, the chest beside it
   rooms.write(room);
+  assert.deepEqual([a.save.farm.felled, a.save.farm.mined], [[[7, felled.at]], [[3, mined.at]]]);
+  const reopened = new FarmRoom({ farm: a, admit: () => null });
+  assert.ok(reopened.felled.has(7) && reopened.mined.has(3), 'still down when the farm opens again');
+  room.tickPlace(Math.max(felled.at, mined.at) + 1);
+  assert.deepEqual([bo.conn.last(S.REGROWN)?.id, bo.conn.last(S.RESURFACED)?.id], [7, 3]);
+  assert.equal(room.felled.size + room.mined.size, 0);
   assert.deepEqual(a.save.farm.tilled.sort(), ['3,3', '4,3']);
   assert.deepEqual(a.save.farm.hens, [[1, 1, 1, 1]]);
   assert.deepEqual(a.chest, { turnip: 1, flax: 1 });
