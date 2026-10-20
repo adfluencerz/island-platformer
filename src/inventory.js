@@ -27,6 +27,7 @@ export const CATEGORIES = {
   Seed: '#3f7f24',
   Produce: '#c25a12',
   Forage: '#9a1b33',
+  Animal: '#b5651d',
   Material: '#7a4a22',
   Mineral: '#7b3fb0',
   'Key Item': '#b8257a',

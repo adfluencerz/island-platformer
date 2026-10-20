@@ -3,6 +3,7 @@ import { ITEMS } from './items.js';
 import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
+import { createHens, inYard } from './animals.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
@@ -153,6 +154,25 @@ const inventory = createInventory({ onOpenChange: (open) => open && keys.clear()
 const merchant = createMerchant();
 worlds.home.root.add(merchant.root);
 
+// ---------- The hens ----------
+// In their yard by the coop on the farm (animals.js): they wander, peck,
+// roost at night and lay an egg a day, which you pick up by walking over it.
+// E pets the hen in reach, or lets out the hen in hand (one bought from the
+// merchant). They're saved with the farm, and lay on while you're away.
+const hens = createHens();
+worlds.home.root.add(hens.root);
+const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
+
+function letOutHen() {
+  const { x, z } = player.position;
+  if (!inYard(x, z, 0.5)) inventory.notify('Let her out in the hen yard, by the coop');
+  else if (!hens.letOut(x, z, farmHours())) inventory.notify('The coop is full: eight hens is plenty');
+  else {
+    inventory.consumeSelected();
+    anim.squash = 0.15; // a crouch to set the basket down
+  }
+}
+
 // ---------- Farming: hoe tool + tillable soil ----------
 const farmTiles = new Map(); // "gridX,gridZ" -> tilled tile mesh
 
@@ -224,6 +244,7 @@ function resetFarm() {
   for (const mesh of farmTiles.values()) scene.remove(mesh);
   farmTiles.clear();
   worlds.home.restoreFoliage();
+  hens.clear();
 }
 
 // `growDt` is game-clock seconds (growth); `dt` is real seconds (animation)
@@ -580,6 +601,9 @@ function useAction() {
     shop.open();
     return;
   }
+  if (inventory.selectedId() === 'hen') return letOutHen();
+  const hen = hens.inReach(player.position);
+  if (hen) return hens.pet(hen, player.position);
   farmHere();
 }
 
@@ -590,6 +614,10 @@ function farmHere() {
   if (harvestAt(x, z)) return;
 
   const held = inventory.selectedId();
+  if (inYard(x, z) && (held === 'hoe' || ITEMS[held]?.plants)) {
+    inventory.notify('That\'s the hens\' yard: farm outside the fence');
+    return;
+  }
   if (held === 'hoe') {
     tillTileAt(x, z);
     startHoeSwing();
@@ -669,7 +697,7 @@ function resolveCollisions(prevY, wasOnGround) {
 // Tap (or click) somewhere and the farmer walks there, then does what that
 // place is for: at home, harvest the ripe crop tapped, farm a tile next to
 // you (till or plant it with what is in hand: a tile further off is just
-// somewhere to go) or trade at the stall; in a lobby, gather from the bush or
+// somewhere to go), pet the hen tapped or trade at the stall; in a lobby, gather from the bush or
 // mushrooms tapped, or chop the tree tapped with the axe in hand, until it
 // falls. The stick or the keys take over at once.
 const TAP_MS = 600; // a press longer than this, or that moves further, is not a tap
@@ -677,7 +705,7 @@ const TAP_PX = 14;
 const ARRIVE = 0.1; // how close to the middle of a tile counts as there
 const FARM_REACH = 2.2; // tapping a tile within this farms it
 const STUCK_TIME = 0.3; // seconds without getting closer: hop, and if that does no good, stop
-let walk = null; // { kind: 'tile' | 'stall' | 'spot' | 'tree', x, y, z, farm, spot, tree, best, stuck }
+let walk = null; // { kind: 'tile' | 'stall' | 'spot' | 'tree' | 'hen', x, y, z, farm, spot, tree, hen, best, stuck }
 let chopping = null; // the tree a tap is chopping
 
 const raycaster = new THREE.Raycaster();
@@ -735,7 +763,7 @@ function tapAt(x, y) {
   }
 }
 
-// A bush, mushrooms or a tree in a lobby; the merchant or the stall at home
+// A bush, mushrooms or a tree in a lobby; the merchant, the stall or a hen at home
 function tappedThing() {
   const things = new Map(); // object -> what tapping it means
   if (place === 'lobby') {
@@ -745,6 +773,7 @@ function tappedThing() {
     const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
+    for (const hen of hens.list()) if (hen.root.visible) things.set(hen.root, { kind: 'hen', hen, x: hen.pos.x, z: hen.pos.z });
   }
   const hits = raycaster.intersectObjects([...things.keys()].filter(Boolean), true);
   for (let obj = hits[0]?.object; obj; obj = obj.parent) if (things.has(obj)) return things.get(obj);
@@ -769,7 +798,7 @@ function tappedGround() {
   const [gx, gz] = tileKeyFor(best.x, best.z).split(',').map(Number);
   const tile = { kind: 'tile', x: gx * TILE_SIZE, y: best.y, z: gz * TILE_SIZE };
   const crop = crops.get(tileKeyFor(tile.x, tile.z));
-  tile.farm = crop?.ripe || Math.hypot(tile.x - player.position.x, tile.z - player.position.z) < FARM_REACH;
+  tile.farm = crop?.ripe || (!inYard(tile.x, tile.z) && Math.hypot(tile.x - player.position.x, tile.z - player.position.z) < FARM_REACH);
   return tile;
 }
 
@@ -785,15 +814,17 @@ function arrived(d) {
     case 'stall': return atStall(player.position);
     case 'spot': return d < GATHER_REACH * 0.8 && Math.abs(player.position.y - GROUND_STAND_Y - walk.spot.y) < 1.2;
     case 'tree': return treeInReach() === walk.tree;
+    case 'hen': return hens.canPet(walk.hen, player.position);
     default: return d < ARRIVE;
   }
 }
 
 // Then do what the tap was for
 function arrive() {
-  const { kind, farm, spot, tree } = walk;
+  const { kind, farm, spot, tree, hen } = walk;
   stopWalking();
   if (kind === 'stall') shop.open();
+  else if (kind === 'hen') hens.pet(hen, player.position);
   else if (kind === 'tile' && farm) farmHere();
   else if (kind === 'spot' && spot.item && !spot.pending) {
     takeSpot(spot);
@@ -810,6 +841,7 @@ function arrive() {
 function steer(dt) {
   const none = { x: 0, z: 0 };
   if (!walk) return none;
+  if (walk.kind === 'hen') ({ x: walk.x, z: walk.z } = walk.hen.pos); // (she wanders off)
   const dx = walk.x - player.position.x;
   const dz = walk.z - player.position.z;
   const d = Math.hypot(dx, dz);
@@ -1032,7 +1064,7 @@ function sendState(dt) {
 // is brought up to date, and one from a newer version of the game is left
 // alone: nothing is saved until the page is reloaded with that version.
 const SAVE_STORE = 'tp.save';
-const SAVE_VERSION = 3; // v2: flax seeds joined the starter kit; v3: the axe
+const SAVE_VERSION = 4; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
 let saving = true; // (false: the save is from a newer version of the game, or the farm is open on another device)
 const farmSync = new FarmSync({
@@ -1047,21 +1079,24 @@ const keyXZ = (key) => key.split(',').map((n) => Number(n) * TILE_SIZE);
 function captureFarm() {
   return {
     savedAt: Date.now(),
-    hours: (dayNight.day() - 1) * 24 + dayNight.hour(),
+    hours: farmHours(),
     tilled: [...farmTiles.keys()],
     crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
+    ...hens.capture(), // hens, eggs
   };
 }
 
+// (a farm from before there were hens gets the two a new farm comes with)
 function showFarm(farm) {
   resetFarm();
-  if (!farm) return;
+  if (!farm) return hens.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
   for (const key of farm.tilled) tillTileAt(...keyXZ(key));
   for (const [key, cropId, age] of farm.crops) {
     if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);
   }
+  hens.restore(farm.hens ? farm : null, farmHours()); // (the eggs due while we were away are in the nest)
 }
 
 function currentSave() {
@@ -1242,7 +1277,7 @@ function update(dt) {
     remotes.update(dt, t);
   } else {
     merchant.update(dt, t, player.position);
-    if (place === 'home') hud.setPrompt(atStall(player.position) && !shop.isOpen() ? 'E  Trade with the merchant' : '');
+    if (place === 'home') hud.setPrompt(homePrompt());
   }
 
   windTime.value = t;
@@ -1263,9 +1298,25 @@ function update(dt) {
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
+  if (place !== 'lobby') {
+    hens.update(dt, t, {
+      hours: farmHours(),
+      player: { pos: player.position, moving, onGround: player.onGround },
+      collect: () => place === 'home' && inventory.add('egg'),
+    });
+  }
 
   if (place === 'title') updateMenuCamera(t);
   else updateCamera(dt);
+}
+
+// What E does here at home, for the prompt
+function homePrompt() {
+  if (shop.isOpen()) return '';
+  if (atStall(player.position)) return 'E  Trade with the merchant';
+  if (inventory.selectedId() === 'hen' && inYard(player.position.x, player.position.z, 0.5)) return 'E  Let the hen out';
+  if (hens.inReach(player.position)) return 'E  Pet the hen';
+  return '';
 }
 
 function animate() {
@@ -1283,7 +1334,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, saveGame, camera, get place() { return place; }, get net() { return net; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, hens, dayNight, saveGame, camera, get place() { return place; }, get net() { return net; }, get world() { return world; } };
 }
 
 loadGame();

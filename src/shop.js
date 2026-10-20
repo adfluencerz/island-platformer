@@ -4,11 +4,11 @@ import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
 import { el, button } from './ui/dom.js';
 
 // ---------- The merchant's shop ----------
-// Opened with E at the stall on the home farm (merchant.js). Seeds to buy up
-// top; below, your backpack (toolbar row first), to sell from. Prices are the
+// Opened with E at the stall on the home farm (merchant.js). Seeds (and hens) to buy
+// up top; below, your backpack (toolbar row first), to sell from. Prices are the
 // items' own `price` and `sell` (items.js).
 //
-//   click a seed            buy one (shift: five)
+//   click something to buy  buy one (shift: five)
 //   click a backpack slot   sell the whole stack
 //   right click a slot      sell one
 //   E / Esc / ×             close
@@ -28,6 +28,7 @@ const LINES = {
     'Got anything good from the fields today?',
   ],
   bought: ['Plant them somewhere sunny!', 'Good choice. They grow like anything.', 'Happy growing!'],
+  boughtAnimal: ['She\'s a good layer, that one.', 'Mind she doesn\'t peck your boots!', 'Off to the hen yard with her!'],
   sold: ['Lovely! Pleasure doing business.', 'Oh, these are beauties.', 'The townsfolk will love these.'],
   soldRare: ['My word, I haven\'t seen one of those in years!', 'Well I never! That\'s a rare find.'],
   poor: ['Ah, you\'re a little short for that one.', 'Come back when the harvest\'s in!'],
@@ -56,7 +57,7 @@ export function createShop({ inventory, onOpenChange }) {
 
   const sayEl = el('div', 'shop-say', windowEl);
 
-  el('div', 'shop-heading', windowEl, 'Seeds for sale');
+  el('div', 'shop-heading', windowEl, 'For sale');
   const stockEl = el('div', 'shop-stock', windowEl);
   const stockViews = STOCK.map((id) => {
     const def = ITEMS[id];
@@ -90,8 +91,8 @@ export function createShop({ inventory, onOpenChange }) {
   coinImg(fundsEl);
   const fundsText = el('span', '', fundsEl);
   const hintEl = el('div', 'inv-hint shop-hint', footerEl);
-  el('span', 'mouse-only', hintEl, 'Click a seed: buy one (Shift: five) · Click your items: sell the stack · Right click: sell one');
-  el('span', 'touch-only', hintEl, 'Tap a seed: buy one · Tap your items: sell the stack');
+  el('span', 'mouse-only', hintEl, 'Click to buy one (Shift: five) · Click your items: sell the stack · Right click: sell one');
+  el('span', 'touch-only', hintEl, 'Tap to buy one · Tap your items: sell the stack');
 
   const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
   tooltipEl.hidden = true;
@@ -162,7 +163,7 @@ export function createShop({ inventory, onOpenChange }) {
     if (!inventory.canAdd(id, count)) return say(LINES.full);
     inventory.spend(cost);
     inventory.add(id, count);
-    say(LINES.bought);
+    say(ITEMS[id].category === 'Animal' ? LINES.boughtAnimal : LINES.bought);
     bumpFunds();
   }
 
