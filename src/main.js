@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { ITEMS } from './items.js';
+import { createItemMesh, itemGeometry } from './itemmesh.js';
+import { createFarmFinds } from './finds.js';
 import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
 import { createChest } from './chest.js';
@@ -329,23 +331,6 @@ const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
 const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms' };
 
-const treasureGeo = new THREE.IcosahedronGeometry(0.35, 0);
-const itemMats = new Map(); // item -> material, shared by every treasure showing it
-function itemMat(item) {
-  if (!itemMats.has(item)) {
-    // A spot holding an item this page doesn't know yet (a newer server): draw
-    // it as a plain treasure instead of losing every spot.
-    const color = ITEMS[item]?.color ?? ITEMS.coin.color;
-    itemMats.set(item, new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.4,
-      roughness: 0.3,
-      metalness: 0.4,
-    }));
-  }
-  return itemMats.get(item);
-}
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
 const stalkGeo = new THREE.CylinderGeometry(0.07, 0.09, 0.28, 7).translate(0, 0.14, 0);
@@ -382,7 +367,7 @@ function makeSpotView(spot) {
       content.add(shroom);
     }
   } else {
-    content = new THREE.Mesh(treasureGeo, itemMat('coin'));
+    content = createItemMesh('coin'); // (a treasure: the item itself, made solid, itemmesh.js)
   }
   group.add(content);
   const glint = new THREE.Mesh(glintGeo, glintMat);
@@ -399,7 +384,7 @@ function showSpot(spot) {
   content.visible = has;
   glint.visible = has && !!RARE[spot.item];
   if (spot.use === 'touch' && spot.item) {
-    content.material = itemMat(spot.item);
+    content.geometry = itemGeometry(spot.item);
     content.scale.setScalar(RARE[spot.item] ? 1.3 : 1);
   }
 }
@@ -781,7 +766,7 @@ function updateMenuCamera(t) {
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
-const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || chest.isOpen() || hud.isTyping() || hud.isPaused();
+const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || chest.isOpen() || hud.isTyping();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
@@ -1168,22 +1153,38 @@ const LOBBY_DAWN = 9; // a lobby's day starts mid-morning, in good light
 const remotes = new Remotes(scene);
 const touch = new TouchControls(); // (only shown on a touch screen)
 const hud = new Hud({
-  onTravel: () => splash.show({ from: 'home' }),
+  onTravel: () => splash.show({ page: 'online' }),
+  onMenu: () => splash.show(),
+  isMenuOpen: () => !splash.hidden,
+  onMenuEscape: () => splash.escape(),
   onHome: () => goHome(),
   onChat: (text) => (place === 'lobby' ? net : farmNet)?.send({ t: C.CHAT, text }),
-  onPair: () => farmSync.pairCode(),
-  onRecovery: ({ name, pin }) => farmSync.setRecovery(name, pin),
   isBlocked: () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || !splash.hidden,
   onPrompt: (text) => touch.setReady(!!text),
-  onInvite: () => farmSync.inviteHelper(splash.name()),
-  onHelpers: () => farmSync.helpers(),
-  onRemoveHelper: (id) => farmSync.removeHelper(id),
 });
 // (after the HUD: its key handler goes first, see shop.js)
 const shop = createShop({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
 });
+// Now and then something turns up on the farm, to walk into (finds.js):
+// out on the grass, with nothing tilled, fenced in or standing there (the
+// stall, a platform, a tree, something built), and not right underfoot
+function freeFarmSpot() {
+  const edge = HOME.half - 4;
+  const h = 0.45;
+  for (let tries = 0; tries < 40; tries++) {
+    const x = (Math.random() * 2 - 1) * edge;
+    const z = (Math.random() * 2 - 1) * edge;
+    if (HOME.tileType(x, z) !== 'grass' || farmTiles.has(tileKeyFor(x, z)) || inPen(x, z, 0.5)) continue;
+    if (world.platforms.some((box) => !box.ground && box.min.y < 2.2 && box.min.x < x + h && box.max.x > x - h && box.min.z < z + h && box.max.z > z - h)) continue;
+    if (world.rocks.some((rock) => rock.state === 'up' && Math.hypot(rock.x - x, rock.z - z) < rock.radius + 0.6)) continue;
+    if (Math.hypot(x - player.position.x, z - player.position.z) < 4) continue;
+    return { x, y: 0, z };
+  }
+  return null;
+}
+const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (item, count) => inventory.add(item, count) });
 // The farm's chest (chest.js): only there on a farm with helpers. It is a
 // thing to bump into while it is there.
 const chest = createChest({
@@ -1209,12 +1210,14 @@ function showChest(on) {
 const splash = new Splash({
   onPlay: joinLobby,
   onHome: () => goHome(),
-  onFarmCode: (code) => bringFarm(() => farmSync.claim(code)),
-  onRecover: (name, pin) => bringFarm(() => farmSync.recover(name, pin)),
   onHelping: () => farmSync.helping(),
   onVisitFarm: (id) => joinFarm(id),
   onInvited: (code) => farmSync.invited(code),
   onHelp: (code, name) => farmSync.help(code, name),
+  onHelpers: () => farmSync.helpers(),
+  onRemoveHelper: (id) => farmSync.removeHelper(id),
+  onInvite: () => farmSync.inviteHelper(splash.name()),
+  where: () => hud.here(),
 });
 
 function putDown({ x, y, z }) {
@@ -1714,32 +1717,6 @@ async function openFarm() {
   if (place === 'home' && farmSync.shared() && farmSync.ready && !farmNet && !farmJoining) joinFarm(farmSync.id());
 }
 
-// A farm from another device (a pairing code), or got back by its name and
-// PIN: this browser plays that farm from now on. The farm it had is kept
-// aside (tp.save.replaced), then the page starts over, straight onto the farm
-// it brought (ARRIVED says so across the reload).
-const ARRIVED = 'tp.farmArrived';
-async function bringFarm(fetchFarm) {
-  await fetchFarm();
-  saving = false;
-  try {
-    const text = localStorage.getItem(SAVE_STORE);
-    if (text) keepAside(`${SAVE_STORE}.replaced`, text);
-    sessionStorage.setItem(ARRIVED, '1');
-  } catch {}
-  location.reload();
-}
-
-function broughtFarm() {
-  try {
-    const arrived = sessionStorage.getItem(ARRIVED);
-    sessionStorage.removeItem(ARRIVED);
-    return !!arrived;
-  } catch {
-    return false;
-  }
-}
-
 function leavePage() {
   saveGame();
   farmSync.flush({ leaving: true });
@@ -1831,6 +1808,7 @@ function update(dt) {
     }
   }
 
+  farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: !inputBlocked(), at: player.position });
   regrowFarm();
   windTime.value = t;
   _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
@@ -1846,7 +1824,7 @@ function update(dt) {
   const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour();
   dayNight.update(dt, {
-    paused: atHome && (inventory.isOpen() || shop.isOpen() || chest.isOpen() || hud.isPaused()),
+    paused: atHome && (inventory.isOpen() || shop.isOpen() || chest.isOpen() || !splash.hidden),
     fastForward,
     focus: player.position,
   });
@@ -1902,14 +1880,5 @@ if (import.meta.env.DEV) {
 
 loadGame();
 splash.show({ from: 'title' });
-if (broughtFarm()) {
-  splash.setStatus('Fetching your farm…');
-  openFarm().then(() => {
-    if (place !== 'title') return;
-    if (!farmSync.ready) return splash.setStatus('Could not reach the game server to fetch your farm. Reload the page to try again.', true);
-    splash.setStatus('');
-    goHome();
-    hud.flash('Your farm is here!');
-  });
-} else openFarm();
+openFarm();
 animate();

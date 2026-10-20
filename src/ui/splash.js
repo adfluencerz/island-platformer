@@ -1,17 +1,22 @@
-// The title screen, and the travel board you open from home: your name, the
-// way to your farm, and the online lobbies - Quick join (the fullest public
-// lobby with room, or a new one), Browse, New lobby, or a code from a friend:
-// a lobby's, or an invitation to help on their farm (8 long, so the two can't
-// be mixed up). A page opened from an invite link (?lobby=CODE or ?help=CODE)
-// shows that invitation first. The farms you help on (friends' farms,
-// server/farms.js), when there are any: visit one. And, behind Move my farm,
-// the way to bring your farm over from another device, with a pairing code
-// from that device's menu, or with the farm's name and PIN when there is no
-// other device to ask (src/net/farm.js).
-import { MAX_PLAYERS, MAX_NAME, MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
+// The game's one menu: the title screen when the page opens, and the menu in
+// game (Esc, or L for Play online). Its main page is the same everywhere but
+// for one part, which says where you are and what the big button does: Go to
+// my farm on the title screen, Resume in game, and Go home when away from
+// home. The rest is on pages:
+// - Play online: Quick join (the fullest public lobby with room, or a new
+//   one), Browse, New lobby, or a code from a friend: a lobby's, or an
+//   invitation to help on their farm (8 long, so the two can't be mixed up).
+//   In a lobby, its code and invite link too.
+// - Friends: the farms you help on (server/farms.js), to visit, and your
+//   farm's helpers, friends who can come and farm on it, invited with a code.
+// - Controls.
+// A page opened from an invite link (?lobby=CODE or ?help=CODE) shows that
+// invitation first. (It began as the title screen, hence its name.)
+import { MAX_PLAYERS, MAX_NAME } from '../../shared/constants.js';
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
-import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode } from '../net/lobby.js';
-import { el, button } from './dom.js';
+import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode, inviteLink, helpLink } from '../net/lobby.js';
+import { el, button, copyText } from './dom.js';
+import { addHelp } from './hud.js';
 
 const NAME_STORE = 'tp.name';
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
@@ -26,94 +31,79 @@ function storedName() {
 
 export class Splash {
   // onPlay({ name, code }): visit a lobby ('' code: quick join). onHome(): go to the farm.
-  // onFarmCode(code): play the farm of another device here (a promise; it fails with why).
-  // onRecover(name, pin): the same, with the farm's name and PIN.
   // onHelping(): the farms we help on, [{ id, name, here }]. onVisitFarm(id, name): go and help there.
   // onInvited(code): the farm an invitation is for, { id, name }. onHelp(code, name): say yes to it.
-  constructor({ onPlay, onHome, onFarmCode, onRecover, onHelping, onVisitFarm, onInvited, onHelp }) {
-    this.onPlay = onPlay;
-    this.onHome = onHome;
-    this.onFarmCode = onFarmCode;
-    this.onRecover = onRecover;
-    Object.assign(this, { onHelping, onVisitFarm, onInvited, onHelp });
+  // onHelpers(): our farm's helpers, [{ id, name }]. onRemoveHelper(id). onInvite(): an invite
+  // code for a helper, { code, expiresIn }.
+  // where(): where we are, { place, visit, session } (Hud.here).
+  constructor(options) {
+    Object.assign(this, options);
+    this.pages = {};
+    this.codeInputs = [];
     const root = (this.root = el('div', 'ui-splash', document.body));
-    const card = el('div', 'ui-card inv-frame', root);
+    const card = (this.card = el('div', 'ui-card inv-frame', root));
     const titleRow = el('div', 'ui-title-row', card);
     el('h1', 'ui-logo', titleRow, 'Island Platformer');
     if (devMode()) el('div', 'ui-dev-badge', titleRow, 'DEV');
-    el('div', 'ui-tagline', card, 'Grow a little farm, then hop online to forage with other farmers.');
 
-    const nameRow = el('label', 'ui-field', card);
-    el('span', '', nameRow, 'Your name');
-    this.nameInput = el('input', 'ui-input', nameRow);
-    this.nameInput.maxLength = MAX_NAME;
-    this.nameInput.placeholder = 'Farmer';
-    this.nameInput.value = storedName();
-    this.nameInput.autocomplete = 'off';
+    // ---- who you are: "Playing as niels", tap to change it ----
+    const who = el('div', 'ui-who', card);
+    this.whoBtn = button('ui-link ui-who-btn', who, '', () => this.editName(true));
+    this.nameInput = el('input', 'ui-input', who);
+    Object.assign(this.nameInput, { maxLength: MAX_NAME, placeholder: 'Your name', value: storedName(), autocomplete: 'off' });
+    this.nameInput.addEventListener('keydown', (e) => e.key === 'Enter' && this.nameInput.blur());
+    this.nameInput.addEventListener('blur', () => this.nameInput.value.trim() && this.editName(false));
+    this.editName(!storedName());
+
+    // ---- the main page: where you are and the way on, then the pages ----
+    const main = this.page('main');
+    const context = el('div', 'ui-context', main);
+    this.contextText = el('div', 'ui-context-text', context);
+    this.mainBtn = button('ui-btn ui-btn-big', context, '', () => (this.from === 'title' ? this.goHome() : this.hide()));
+    this.homeBtn = button('ui-btn ui-btn-ghost', context, 'Go home', () => this.goHome());
+    const nav = (label, page) => button('ui-btn ui-btn-ghost ui-nav', main, label, () => this.open(page));
+    nav('Play online', 'online');
+    nav('Friends', 'friends');
+    nav('Controls', 'controls');
 
     // ---- an invitation (?lobby=CODE) ----
-    this.invite = el('div', 'ui-invite', card);
-    this.inviteText = el('div', '', this.invite);
+    this.invite = this.page('invite');
+    this.inviteText = el('div', 'ui-invite', this.invite);
     const inviteRow = el('div', 'ui-row', this.invite);
     this.inviteJoin = button('ui-btn ui-btn-big', inviteRow, 'Join lobby', () => this.play(this.inviteCode));
     button('ui-btn ui-btn-ghost', inviteRow, 'Not now', () => {
       showCodeInAddress('');
-      this.showPanel('menu');
+      this.showPage('main');
     });
 
     // ---- an invitation to help on a farm (?help=CODE) ----
-    this.helpInvite = el('div', 'ui-invite', card);
-    this.helpText = el('div', '', this.helpInvite);
+    this.helpInvite = this.page('help');
+    this.helpText = el('div', 'ui-invite', this.helpInvite);
     const helpRow = el('div', 'ui-row', this.helpInvite);
     this.helpJoin = button('ui-btn ui-btn-big', helpRow, 'Help out', () => this.help(this.helpCode));
     button('ui-btn ui-btn-ghost', helpRow, 'Not now', () => {
       forgetHelpCode();
-      this.showPanel('menu');
+      this.showPage('main');
     });
 
-    // ---- the menu ----
-    this.menu = el('div', 'ui-menu', card);
-    this.homeBtn = button('ui-btn ui-btn-big', this.menu, '', () => this.goHome());
-
-    el('h2', 'ui-section', this.menu, 'Play online');
-    button('ui-btn', this.menu, 'Quick join', () => this.play(''));
-    const row = el('div', 'ui-row', this.menu);
+    // ---- Play online ----
+    const online = this.page('online', 'Play online');
+    this.lobbyCard = el('div', 'ui-invite', online);
+    this.lobbyText = el('div', '', this.lobbyCard);
+    this.lobbyCopy = button('ui-btn ui-btn-small', this.lobbyCard, 'Invite a friend', () => this.copyLobbyLink());
+    button('ui-btn', online, 'Quick join', () => this.play(''));
+    const row = el('div', 'ui-row', online);
     button('ui-btn', row, 'Browse lobbies', () => this.showBrowse());
-    button('ui-btn', row, 'New lobby', () => this.showPanel('create'));
-    const codeRow = el('form', 'ui-row ui-code-row', this.menu);
-    this.codeInput = el('input', 'ui-input', codeRow);
-    this.codeInput.placeholder = 'Code from a friend';
-    this.codeInput.maxLength = 12;
-    this.codeInput.autocomplete = 'off';
-    button('ui-btn', codeRow, 'Join', null).type = 'submit';
-    codeRow.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const typed = this.codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (typed.length === 8) return this.help(typed); // (an invitation to help on a farm)
-      const code = normalizeCode(typed);
-      if (!code) return this.setStatus('That code doesn’t look right. Codes are 6, 8 or 10 letters and digits.', true);
-      this.play(code);
-    });
-
-    // ---- the farms we help on (when there are any) ----
-    this.helping = el('div', 'ui-menu', this.menu);
-    this.helping.hidden = true;
-    el('h2', 'ui-section', this.helping, 'Friends’ farms');
-    this.helpingList = el('div', 'ui-helper-list', this.helping);
-
-    button('ui-link', this.menu, 'Move my farm', () => this.showPanel('move'));
+    button('ui-btn', row, 'New lobby', () => this.showPage('create'));
+    this.codeForm(online, 'Code from a friend');
 
     // ---- Browse ----
-    this.browse = el('div', 'ui-browse', card);
-    el('h2', '', this.browse, 'Public lobbies');
-    this.list = el('div', 'ui-list', this.browse);
-    const browseRow = el('div', 'ui-row', this.browse);
-    button('ui-btn ui-btn-ghost', browseRow, 'Back', () => this.showPanel('menu'));
-    button('ui-btn', browseRow, 'Refresh', () => this.showBrowse());
+    const browse = this.page('browse', 'Lobbies', 'online');
+    this.list = el('div', 'ui-list', browse);
+    button('ui-btn ui-btn-ghost', browse, 'Refresh', () => this.showBrowse());
 
     // ---- New lobby ----
-    this.create = el('form', 'ui-create', card);
-    el('h2', '', this.create, 'New lobby');
+    this.create = this.page('create', 'New lobby', 'online', 'form');
     const lobbyName = el('label', 'ui-field', this.create);
     el('span', '', lobbyName, 'Lobby name');
     this.lobbyName = el('input', 'ui-input', lobbyName);
@@ -135,75 +125,73 @@ export class Splash {
     this.inviteOnly = el('input', '', priv);
     this.inviteOnly.type = 'checkbox';
     el('span', '', priv, 'Invite only (hidden from Browse)');
-    const createRow = el('div', 'ui-row', this.create);
-    button('ui-btn ui-btn-ghost', createRow, 'Back', () => this.showPanel('menu'));
-    button('ui-btn', createRow, 'Create', null).type = 'submit';
+    button('ui-btn', this.create, 'Create', null).type = 'submit';
     this.create.addEventListener('submit', (e) => {
       e.preventDefault();
       this.makeLobby();
     });
 
-    // ---- your farm, from another device: a code from its menu, or the farm's name and PIN ----
-    this.move = el('div', 'ui-create', card);
-    el('h2', '', this.move, 'Move my farm here');
-    el('div', 'ui-muted', this.move, 'On the device that has your farm, open the menu, pick Other devices, then Get a code.');
-    const pairRow = el('form', 'ui-row ui-code-row', this.move);
-    this.pairInput = el('input', 'ui-input', pairRow);
-    this.pairInput.placeholder = 'Code';
-    this.pairInput.maxLength = 8;
-    this.pairInput.autocomplete = 'off';
-    button('ui-btn', pairRow, 'Move it here', null).type = 'submit';
-    pairRow.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.bringFarm();
-    });
-    el('h2', 'ui-section', this.move, 'No other device?');
-    const recover = el('form', 'ui-create', this.move);
-    el('div', 'ui-muted', recover, 'Use the farm name and PIN you set in the menu.');
-    const farmName = el('label', 'ui-field', recover);
-    el('span', '', farmName, 'Farm name');
-    this.farmName = el('input', 'ui-input', farmName);
-    this.farmName.maxLength = MAX_FARM_NAME;
-    this.farmName.autocomplete = 'off';
-    const pin = el('label', 'ui-field', recover);
-    el('span', '', pin, 'PIN');
-    this.pin = el('input', 'ui-input', pin);
-    Object.assign(this.pin, { type: 'password', inputMode: 'numeric', maxLength: PIN_LENGTH, autocomplete: 'off' });
-    button('ui-btn', recover, 'Move it here', null).type = 'submit';
-    recover.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const name = this.farmName.value.trim();
-      const digits = this.pin.value.trim();
-      if (!name || !new RegExp(`^\\d{${PIN_LENGTH}}$`).test(digits)) return this.setStatus(`Type the farm name and its ${PIN_LENGTH}-digit PIN.`, true);
-      this.bring(() => this.onRecover(name, digits));
-    });
-    button('ui-btn ui-btn-ghost', this.move, 'Back', () => this.showPanel('menu'));
+    // ---- Friends ----
+    const friends = this.page('friends', 'Friends');
+    el('div', 'ui-sub', friends, 'Farms you help on');
+    this.helpingList = el('div', 'ui-helper-list', friends);
+    el('div', 'ui-sub', friends, 'Your helpers');
+    this.helpersBox = el('div', 'ui-menu', friends);
+    el('div', 'ui-sub', friends, 'Got an invite code?');
+    this.codeForm(friends, 'Invite code');
+
+    // ---- Controls ----
+    addHelp(this.page('controls', 'Controls'));
 
     this.status = el('div', 'ui-status', card);
     this.hidden = true;
     root.hidden = true;
-
-    // Esc on the travel board: back to the farm
-    window.addEventListener('keydown', (e) => {
-      if (!this.hidden && this.from === 'home' && e.code === 'Escape') this.goHome();
-    });
   }
 
-  // from: 'title' (the page just opened) or 'home' (travelling from the farm).
-  // message: why we are here, when it was not the player's choice.
-  show({ from = 'title', message = '' } = {}) {
-    this.from = from;
+  // A page of the menu; with a title, it has a Back button to its parent page
+  page(name, title = '', parent = 'main', tag = 'div') {
+    const node = el(tag, 'ui-page', this.card);
+    if (title) {
+      const head = el('div', 'ui-page-head', node);
+      button('ui-btn ui-btn-small ui-btn-ghost', head, '‹ Back', () => this.showPage(parent));
+      el('h2', '', head, title);
+    }
+    this.pages[name] = { node, parent };
+    return node;
+  }
+
+  // A code box: a lobby's code, or an invitation to help on a farm
+  codeForm(parent, placeholder) {
+    const form = el('form', 'ui-row ui-code-row', parent);
+    const input = el('input', 'ui-input', form);
+    Object.assign(input, { placeholder, maxLength: 12, autocomplete: 'off' });
+    button('ui-btn', form, 'Join', null).type = 'submit';
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const typed = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (typed.length === 8) return this.help(typed); // (an invitation to help on a farm)
+      const code = normalizeCode(typed);
+      if (!code) return this.setStatus('That code doesn’t look right. Codes are 6, 8 or 10 letters and digits.', true);
+      this.play(code);
+    });
+    this.codeInputs.push(input);
+  }
+
+  // from: 'title' (the page just opened), or anything else for in game.
+  // page: the page to open on. message: why we are here, when it was not the player's choice.
+  show({ from = 'game', page = 'main', message = '' } = {}) {
+    this.from = from === 'title' ? 'title' : 'game';
     this.hidden = false;
     this.root.hidden = false;
-    document.body.classList.toggle('in-menu', from === 'title');
-    this.homeBtn.textContent = from === 'title' ? 'Go to my farm' : 'Back to my farm (Esc)';
-    this.setStatus(message, !!message);
+    this.root.classList.toggle('in-game', this.from === 'game');
+    document.body.classList.toggle('in-menu', this.from === 'title');
+    this.showContext();
     const help = linkedHelpCode();
-    const code = linkedCode();
-    if (help) this.showHelpInvite(help);
-    else if (code) this.showInvite(code);
-    else this.showPanel('menu');
-    this.showHelping();
+    const code = this.where().place !== 'lobby' && linkedCode(); // (in a lobby, the address has its own code)
+    if (page === 'main' && help) this.showHelpInvite(help);
+    else if (page === 'main' && code) this.showInvite(code);
+    else this.open(page);
+    this.setStatus(message, !!message);
   }
 
   hide() {
@@ -212,18 +200,56 @@ export class Splash {
     document.body.classList.remove('in-menu');
   }
 
-  showPanel(which) {
-    this.invite.hidden = which !== 'invite';
-    this.helpInvite.hidden = which !== 'help';
-    this.menu.hidden = which !== 'menu';
-    this.browse.hidden = which !== 'browse';
-    this.create.hidden = which !== 'create';
-    this.move.hidden = which !== 'move';
+  // Esc: out of a box being typed in, back a page, or (in game) out of the menu
+  escape() {
+    if (this.root.contains(document.activeElement) && document.activeElement.matches('input, select')) document.activeElement.blur();
+    else if (this.current !== 'main') this.showPage(this.pages[this.current].parent);
+    else if (this.from === 'game') this.hide();
+  }
+
+  showPage(name) {
+    for (const [key, { node }] of Object.entries(this.pages)) node.hidden = key !== name;
+    this.current = name;
+    this.card.scrollTop = 0;
+    this.setStatus('');
+  }
+
+  // A page, filled in as it opens
+  open(name) {
+    this.showPage(name);
+    if (name === 'online') this.showLobbyCard();
+    else if (name === 'friends') this.showFriends();
+  }
+
+  // The one part of the main page that changes: where we are, and the way on
+  showContext() {
+    const { place, visit, session } = this.where();
+    const title = this.from === 'title';
+    const text = this.contextText;
+    text.textContent = '';
+    if (title) text.append('Grow a little farm, then hop online to forage with other farmers.');
+    else if (place === 'lobby') text.append('In ', el('b', '', null, session.room.name), '. Everyone else keeps playing.');
+    else if (visit && !visit.mine) text.append('Helping on ', el('b', '', null, visit.name), '.');
+    else if (visit) text.append('On your farm. It keeps going for everyone on it.');
+    else text.append('On your farm. Time waits while the menu is open.');
+    this.mainBtn.textContent = title ? 'Go to my farm' : 'Resume';
+    this.homeBtn.hidden = title || !(place === 'lobby' || (visit && !visit.mine));
   }
 
   setStatus(text, isError = false) {
     this.status.textContent = text;
     this.status.classList.toggle('error', isError);
+  }
+
+  // ---------- Your name ----------
+  editName(on) {
+    this.whoBtn.hidden = on;
+    this.nameInput.hidden = !on;
+    if (on) {
+      if (this.hidden === false) this.nameInput.focus(); // (not as the page opens: no keyboard popping up)
+      return;
+    }
+    this.whoBtn.textContent = `Playing as ${this.name()} ✎`;
   }
 
   name() {
@@ -243,99 +269,28 @@ export class Splash {
     this.onPlay({ name: this.name(), code });
   }
 
-  bringFarm() {
-    const code = this.pairInput.value.trim();
-    if (!code) return this.setStatus('Get a code from the menu on your other device first.', true);
-    this.bring(() => this.onFarmCode(code));
+  // ---------- Play online ----------
+  showLobbyCard() {
+    const { place, session } = this.where();
+    this.lobbyCard.hidden = place !== 'lobby';
+    if (place !== 'lobby') return;
+    this.lobbyText.textContent = '';
+    this.lobbyText.append('You’re in ', el('b', '', null, session.room.name), ` · code ${session.code}`);
   }
 
-  // fetchFarm: the farm's way here (it reloads the page, or fails with why)
-  async bring(fetchFarm) {
-    if (!confirm('Play that farm on this device? The farm here now will be put aside.')) return;
-    this.setStatus('Fetching your farm…');
-    try {
-      await fetchFarm();
-    } catch (e) {
-      this.setStatus(e.message, true);
-    }
-  }
-
-  // ---------- Farms we help on ----------
-  async showHelping() {
-    const list = this.helpingList;
-    list.textContent = '';
-    let farms = [];
-    try {
-      farms = await this.onHelping();
-    } catch {}
-    list.textContent = '';
-    this.helping.hidden = !farms.length;
-    for (const f of farms) {
-      const row = el('div', 'ui-helper', list);
-      el('span', 'ui-player-name', row, f.name);
-      if (f.here) el('span', 'ui-muted', row, `${f.here} there now`);
-      button('ui-btn ui-btn-small', row, 'Visit', () => this.visit(f.id, f.name));
-    }
-  }
-
-  visit(id, name) {
-    this.name(); // (remember it)
-    this.setStatus(`Walking over to ${name}…`);
-    this.onVisitFarm(id, name);
-  }
-
-  async showHelpInvite(code) {
-    this.helpCode = code;
-    this.showPanel('help');
-    this.helpText.textContent = 'You are invited to help on a farm…';
-    this.helpJoin.disabled = false;
-    try {
-      const f = await this.onInvited(code);
-      this.helpText.textContent = '';
-      el('div', 'ui-invite-title', this.helpText, `You are invited to help on “${f.name}”`);
-      el('div', 'ui-muted', this.helpText, 'Come and farm there any time, even while they are away. What you harvest goes in their farm\'s chest.');
-    } catch (e) {
-      this.helpText.textContent = e.status ? e.message : NO_SERVER;
-      this.helpJoin.disabled = true;
-    }
-  }
-
-  // Say yes to an invitation, then off to that farm
-  async help(code) {
-    this.setStatus('Saying yes…');
-    try {
-      const f = await this.onHelp(code, this.name());
-      forgetHelpCode();
-      this.codeInput.value = '';
-      this.showHelping();
-      this.visit(f.id, f.name);
-    } catch (e) {
-      this.setStatus(e.message, true);
-    }
-  }
-
-  async showInvite(code) {
-    this.inviteCode = code;
-    this.showPanel('invite');
-    this.inviteText.textContent = `You are invited to lobby ${code}…`;
-    this.inviteJoin.disabled = false;
-    try {
-      const l = await lobbyInfo(code);
-      this.inviteText.textContent = '';
-      el('div', 'ui-invite-title', this.inviteText, `You are invited to “${l.name}”`);
-      el('div', 'ui-muted', this.inviteText, `${l.players}/${l.max} farmers · code ${l.code}${l.seed ? ` · island ${l.seed}` : ''}`);
-      if (l.full) {
-        this.inviteJoin.disabled = true;
-        this.setStatus('That lobby is full right now.', true);
-      }
-    } catch (e) {
-      this.inviteText.textContent = e.status === 404 ? `Lobby ${code} has closed (or never opened).` : NO_SERVER;
-      this.inviteJoin.disabled = true;
-    }
+  async copyLobbyLink() {
+    const { session } = this.where();
+    if (!session) return;
+    const link = inviteLink(session.code);
+    const ok = await copyText(link);
+    if (!ok) return this.setStatus(`Invite link: ${link}`);
+    this.lobbyCopy.textContent = 'Link copied!';
+    clearTimeout(this.copyTimer);
+    this.copyTimer = setTimeout(() => (this.lobbyCopy.textContent = 'Invite a friend'), 1500);
   }
 
   async showBrowse() {
-    this.showPanel('browse');
+    this.showPage('browse');
     this.list.textContent = 'Looking for lobbies…';
     try {
       const lobbies = await listLobbies();
@@ -372,5 +327,140 @@ export class Splash {
     } catch (e) {
       this.setStatus(e.status ? e.message : NO_SERVER, true);
     }
+  }
+
+  async showInvite(code) {
+    this.inviteCode = code;
+    this.showPage('invite');
+    this.inviteText.textContent = `You are invited to lobby ${code}…`;
+    this.inviteJoin.disabled = false;
+    try {
+      const l = await lobbyInfo(code);
+      this.inviteText.textContent = '';
+      el('div', 'ui-invite-title', this.inviteText, `You are invited to “${l.name}”`);
+      el('div', 'ui-muted', this.inviteText, `${l.players}/${l.max} farmers · code ${l.code}${l.seed ? ` · island ${l.seed}` : ''}`);
+      if (l.full) {
+        this.inviteJoin.disabled = true;
+        this.setStatus('That lobby is full right now.', true);
+      }
+    } catch (e) {
+      this.inviteText.textContent = e.status === 404 ? `Lobby ${code} has closed (or never opened).` : NO_SERVER;
+      this.inviteJoin.disabled = true;
+    }
+  }
+
+  // ---------- Friends ----------
+  showFriends() {
+    this.showHelping();
+    this.showHelpers();
+  }
+
+  // The farms we help on (the Friends page, when it is open)
+  async showHelping() {
+    if (this.hidden || this.current !== 'friends') return;
+    const list = this.helpingList;
+    let farms = [];
+    try {
+      farms = await this.onHelping();
+    } catch {}
+    list.textContent = '';
+    if (!farms.length) el('div', 'ui-muted', list, 'None yet. When a friend invites you, their farm shows up here.');
+    const here = this.where().visit?.id;
+    for (const f of farms) {
+      const row = el('div', 'ui-helper', list);
+      el('span', 'ui-player-name', row, f.name);
+      if (f.id === here) {
+        el('span', 'ui-muted', row, 'You’re here');
+        continue;
+      }
+      if (f.here) el('span', 'ui-muted', row, `${f.here} there now`);
+      button('ui-btn ui-btn-small', row, 'Visit', () => this.visit(f.id, f.name));
+    }
+  }
+
+  visit(id, name) {
+    this.name(); // (remember it)
+    this.setStatus(`Walking over to ${name}…`);
+    this.onVisitFarm(id, name);
+  }
+
+  async showHelpInvite(code) {
+    this.helpCode = code;
+    this.showPage('help');
+    this.helpText.textContent = 'You are invited to help on a farm…';
+    this.helpJoin.disabled = false;
+    try {
+      const f = await this.onInvited(code);
+      this.helpText.textContent = '';
+      el('div', 'ui-invite-title', this.helpText, `You are invited to help on “${f.name}”`);
+      el('div', 'ui-muted', this.helpText, 'Come and farm there any time, even while they are away. What you harvest goes in their farm\'s chest.');
+    } catch (e) {
+      this.helpText.textContent = e.status ? e.message : NO_SERVER;
+      this.helpJoin.disabled = true;
+    }
+  }
+
+  // Say yes to an invitation, then off to that farm
+  async help(code) {
+    this.setStatus('Saying yes…');
+    try {
+      const f = await this.onHelp(code, this.name());
+      forgetHelpCode();
+      for (const input of this.codeInputs) input.value = '';
+      this.visit(f.id, f.name);
+    } catch (e) {
+      this.setStatus(e.message, true);
+    }
+  }
+
+  // Our farm's helpers
+  async showHelpers() {
+    const box = this.helpersBox;
+    box.textContent = 'Asking the server…';
+    let helpers;
+    try {
+      helpers = await this.onHelpers();
+    } catch (e) {
+      box.textContent = e.message;
+      return;
+    }
+    box.textContent = '';
+    el('div', 'ui-muted', box,
+      'Friends you invite can farm here any time, even while you’re away. What they harvest goes in the chest by the plaza, and only you can take it out.');
+    const list = el('div', 'ui-helper-list', box);
+    if (!helpers.length) el('div', 'ui-muted', list, 'No helpers yet.');
+    for (const h of helpers) {
+      const row = el('div', 'ui-helper', list);
+      el('span', 'ui-player-name', row, h.name);
+      const remove = button('ui-btn ui-btn-small ui-btn-ghost', row, 'Remove', async () => {
+        if (!confirm(`Take ${h.name} off your helpers? They can't come to your farm any more.`)) return;
+        remove.disabled = true;
+        try {
+          await this.onRemoveHelper(h.id);
+          this.showHelpers();
+        } catch (e) {
+          remove.disabled = false;
+          this.setStatus(e.message, true);
+        }
+      });
+    }
+    const inviteBox = el('div', 'ui-pair', box);
+    button('ui-btn', box, 'Invite a helper', async () => {
+      inviteBox.textContent = 'Asking the server for a code…';
+      try {
+        const { code, expiresIn } = await this.onInvite();
+        inviteBox.textContent = '';
+        el('div', 'ui-pair-code', inviteBox, `${code.slice(0, 4)}-${code.slice(4)}`);
+        el('div', 'ui-muted', inviteBox,
+          `Send your friend the link, or have them type the code under Friends in their menu. ` +
+          `It works once, within ${Math.round(expiresIn / 3600)} hours.`);
+        const copy = button('ui-btn ui-btn-small', inviteBox, 'Copy invite link', async () => {
+          const ok = await copyText(helpLink(code));
+          copy.textContent = ok ? 'Copied!' : helpLink(code);
+        });
+      } catch (e) {
+        inviteBox.textContent = e.message;
+      }
+    });
   }
 }

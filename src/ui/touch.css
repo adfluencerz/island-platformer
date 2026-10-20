@@ -185,7 +185,7 @@ body.in-menu .tc { display: none; }
 :root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
 
 /* ---------- Menus: kept inside the safe area, scrolled when they don't fit ---------- */
-:root.compact .ui-splash, :root.compact .ui-pause {
+:root.compact .ui-splash {
   padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px);
   box-sizing: border-box;
 }
@@ -196,6 +196,7 @@ body.in-menu .tc { display: none; }
   -webkit-overflow-scrolling: touch;
 }
 :root.compact .ui-logo { font-size: 46px; }
+:root.compact .ui-page-head h2 { font-size: 26px; }
 :root.compact .ui-keys { font-size: 18px; }
 :root.compact .ui-key { font-size: 17px; }
 

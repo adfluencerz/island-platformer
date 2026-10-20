@@ -86,7 +86,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-check input { width: 18px; height: 18px; accent-color: var(--inv-wood); }
 .ui-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--inv-outline); flex: none; }
 
-/* ---------- Title screen ---------- */
+/* ---------- The menu: the title screen, and Esc in game ---------- */
 .ui-splash {
   position: fixed;
   inset: 0;
@@ -95,6 +95,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 30%, rgba(10, 20, 40, 0.45));
   z-index: 30;
 }
+.ui-splash.in-game { background: rgba(0, 0, 0, 0.35); } /* (the game shows through, dimmed) */
 .ui-title-row {
   display: flex;
   align-items: center;
@@ -120,7 +121,29 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   letter-spacing: 0.1em;
   text-shadow: 0 1px 0 var(--inv-outline);
 }
-.ui-tagline { text-align: center; font-size: 21px; margin-bottom: 4px; }
+/* "Playing as niels", or the box to change it */
+.ui-who { display: flex; justify-content: center; margin-top: -2px; }
+.ui-who .ui-link { margin: 0; padding: 2px 8px; font-size: 20px; color: var(--ui-soft); }
+.ui-who .ui-input { flex: 1; text-align: center; }
+/* the one part of the main page that changes: where you are, and the way on */
+.ui-context {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 4px;
+  background: var(--inv-slot-bg);
+  box-shadow: inset 2px 2px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
+}
+.ui-context-text { text-align: center; font-size: 21px; line-height: 1.15; }
+/* a way to a page */
+.ui-nav { position: relative; text-align: left; padding-left: 16px; padding-right: 36px; }
+.ui-nav::after { content: '▸'; position: absolute; right: 14px; }
+/* a page: Back, its title, then what is on it */
+.ui-page-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.ui-page-head .ui-btn { justify-self: start; }
+.ui-card .ui-page-head h2 { margin: 0; font-size: 30px; }
+.ui-page .ui-sub { margin-top: 6px; }
 /* a heading between two thin rules */
 .ui-card .ui-section {
   display: flex;
@@ -131,7 +154,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   color: var(--ui-soft);
 }
 .ui-section::before, .ui-section::after { content: ''; flex: 1; height: 2px; background: var(--inv-slot-shade); opacity: 0.6; }
-.ui-menu, .ui-browse, .ui-create, .ui-invite, .ui-recovery { display: flex; flex-direction: column; gap: 8px; }
+.ui-page, .ui-menu, .ui-invite { display: flex; flex-direction: column; gap: 8px; }
 .ui-code-row .ui-input { flex: 2; text-transform: uppercase; letter-spacing: 0.1em; }
 .ui-code-row .ui-input::placeholder { text-transform: none; letter-spacing: normal; }
 .ui-invite { padding: 10px; border-radius: 4px; background: var(--inv-slot-bg); }
@@ -254,34 +277,12 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   z-index: 25;
 }
 
-/* ---------- Pause ---------- */
-.ui-pause {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  z-index: 20;
-}
-.ui-pause { background: rgba(0, 0, 0, 0.35); z-index: 25; }
-.ui-pair { text-align: center; }
-/* the pause menu's folding sections */
-.ui-fold { position: relative; }
-.ui-fold::after { content: '▸'; position: absolute; right: 14px; }
-.ui-fold.open::after { content: '▾'; }
-.ui-fold-box {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  margin-top: -4px;
-  border-radius: 4px;
-  background: var(--inv-slot-light);
-}
+/* An invite code to send a friend */
+.ui-pair { display: flex; flex-direction: column; gap: 4px; text-align: center; }
 .ui-sub { font-size: 22px; font-weight: 700; }
-.ui-fold-box .ui-sub:not(:first-child) { margin-top: 6px; }
 .ui-pair-code { font-size: 36px; font-weight: 700; letter-spacing: 0.15em; user-select: all; }
 
-/* The farm's helpers (the pause menu), and the farms you help on (the title screen) */
+/* The farm's helpers, and the farms you help on (the menu's Friends page) */
 .ui-helper-list { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 4px; background: var(--inv-slot-bg); }
 .ui-helper { display: flex; align-items: center; gap: 8px; font-size: 21px; }
 

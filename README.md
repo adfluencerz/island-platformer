@@ -32,9 +32,9 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `Space` — jump (only works while grounded)
 - `E` — at home: till / plant / harvest, trade at the merchant's stall, pet an animal (or milk the cow, shear the sheep), let out the animal in hand in her pen, chop a tree with the axe, or mine a rock with the pickaxe; in a lobby: gather (berries, mushrooms), chop a tree with the axe in hand, or mine a rock with the pickaxe (hold to keep swinging)
 - `I` — backpack
-- `L` — visit a lobby (from home)
+- `L` — the menu, on **Play online** (from home)
 - `Enter` — chat (in a lobby)
-- `Esc` — menu (visit a lobby, copy the invite link, head home, play on another device, farm name & PIN, helpers, controls)
+- `Esc` — the menu: the same one as the title screen, with **Resume** (and **Go home** when away), and pages for **Play online**, **Friends** (farms you help on, your helpers) and **Controls**. `Esc` on a page goes back.
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
 - Click the ground — walk there
 - Mouse wheel — zoom in and out (over the hotbar it picks an item)
@@ -45,11 +45,8 @@ On a touch screen the game shows its own controls: a thumbstick (bottom left) to
 Open the address Vite prints for your network (`npm run dev`) on the phone. The built game (`npm run build`, `npm start`) can also be installed as an app ("Add to Home Screen"): it opens full screen, and the farm opens without a connection (only the lobbies need the game server). The app's files are in `public/` (`manifest.webmanifest`, the icons, and `sw.js`, the service worker, which runs in built pages only so Vite's dev server always shows your changes). Browsers only install apps from `https://` or `localhost`.
 
 ## Your farm and online lobbies
-**Your farm** is yours alone: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing. The page plays from a copy in your browser and keeps the game server's copy up to date (every 15 seconds, before you set off for a lobby, and when you close the page), so there are no accounts and you can still carry on from another device:
+**Your farm** is yours alone: the backpack, gold, tilled soil, crops and the time of day are saved as you play. While you're away (in a lobby, or with the page closed) the clock keeps turning and your crops keep growing. The page plays from a copy in your browser and keeps the game server's copy up to date (every 15 seconds, before you set off for a lobby, and when you close the page). There are no accounts yet, so a farm belongs to the browser that made it; playing it on another device, or getting it back after clearing the browser, will come with accounts. (The server still has the pairing code and the farm name & PIN routes, `/api/farms/me/pair` and `/recovery`, but the menu no longer offers them.)
 
-- On the device that has your farm, open the menu (`Esc`) and pick **Play on another device**: you get a code like `K7P-4QM`, good once, for 10 minutes.
-- On the other device, type it under **Your farm from another device** on the title screen. That browser now plays your farm (the farm it had is kept aside as `tp.save.replaced`), and both devices keep it from then on.
-- **No other device to ask** (a cleared browser, a lost phone)? Give your farm a **name and a 6-digit PIN** in the menu (`Esc`, **Farm name & PIN**) while you still have it. Then on any device, pick **No other device? Use your farm's name and PIN** on the title screen. A farm name is one of a kind on the server ("Sunny Acres" and "sunny-acres" are the same farm), so names are no secret: the PIN is. Easy PINs (`111111`, `123456`) are refused, and five wrong PINs in a row lock that farm's recovery for 15 minutes, twice as long each time after (up to a day), from wherever the tries come.
 - The device that opened the farm last is the one playing it. A tab left open on another device is told so the next time it saves, and stops saving: reload it to carry on there.
 - A farm played before the server kept farms is taken up as it is the first time the page reaches the server.
 

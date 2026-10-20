@@ -4,16 +4,11 @@
 // - the prompt over the toolbar (E  Pick berries)
 // - a big word for a rare find
 // - chat (bottom right, lobbies only): Enter to talk
-// - the pause menu (Esc), with the way out to the lobbies (also L), and three
-//   folding sections, one open at a time: the farm's helpers (friends who can
-//   come and farm on it, invited with a code), Other devices (a pairing code
-//   to play the farm on another device, and the farm's name and PIN to get it
-//   back without one), and the controls
+// - the controls list, for the menu's Controls page (splash.js: the menu,
+//   which Esc opens, and L on Play online)
 // On a farm with helpers on it (yours, or one you help on) the place panel
 // lists who is there and chat is open, as in a lobby.
-import { MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
-import { pinProblem } from '../../shared/protocol.js';
-import { inviteLink, helpLink } from '../net/lobby.js';
+import { inviteLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 import { isTouch } from './touch.js';
 
@@ -57,15 +52,12 @@ const CHAT_FADE_MS = 10_000;
 const CHAT_LINES = 40;
 
 export class Hud {
-  // onTravel(): open the lobby board. onHome(): leave the lobby for the farm.
-  // onPair(): a pairing code for another device, { code, expiresIn } (src/net/farm.js).
-  // onRecovery({ name, pin }): name the farm and set its PIN; resolves to the name.
-  // isBlocked(): another screen (the backpack, the lobby board) has the keyboard.
+  // onTravel(): the menu on Play online (L). onHome(): leave the lobby for the farm.
+  // onMenu(): open the menu (Esc). isMenuOpen(). onMenuEscape(): Esc in the menu.
+  // isBlocked(): another screen (the backpack, the menu) has the keyboard.
   // onPrompt(text): the prompt changed ('' : nothing to do here).
-  // onInvite(): an invite code for a helper, { code, expiresIn }. onHelpers():
-  // the farm's helpers, [{ id, name }]. onRemoveHelper(id): resolves to the rest.
-  constructor({ onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt, onInvite, onHelpers, onRemoveHelper }) {
-    Object.assign(this, { onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt, onInvite, onHelpers, onRemoveHelper });
+  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt }) {
+    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt });
     this.place = null; // 'home' | 'lobby' | 'farm' (a farm with helpers) | null (the title screen)
     this.visit = null; // on a farm with helpers: { name, mine }
     this.farmName = '';
@@ -82,7 +74,7 @@ export class Hud {
     this.foldBtn = button('ui-players-title', head, null, () => this.setFolded(!this.folded));
     this.placeName = el('b', '', this.foldBtn);
     this.pingEl = el('span', 'ui-muted ui-ping', this.foldBtn);
-    button('ui-btn ui-btn-small ui-btn-ghost compact-only', head, 'Menu', () => this.setPaused(true));
+    button('ui-btn ui-btn-small ui-btn-ghost compact-only', head, 'Menu', () => this.onMenu());
     const body = el('div', 'ui-players-body', this.panel);
     this.blurb = el('div', 'ui-muted', body);
     this.codeRow = el('div', 'ui-code', body);
@@ -117,61 +109,6 @@ export class Hud {
       this.closeChat();
     });
 
-    // ---- pause menu ----
-    this.pause = el('div', 'ui-pause', root);
-    this.pause.hidden = true;
-    const card = el('div', 'ui-card inv-frame', this.pause);
-    el('h2', '', card, 'Paused');
-    this.pauseNote = el('div', 'ui-muted', card);
-    button('ui-btn ui-btn-big', card, 'Resume', () => this.setPaused(false));
-    this.pauseTravel = button('ui-btn', card, 'Visit a lobby', () => {
-      this.setPaused(false);
-      this.onTravel();
-    });
-    this.pauseCopy = button('ui-btn', card, 'Invite a friend', () => this.copyInvite());
-    this.pauseHome = button('ui-btn ui-btn-ghost', card, 'Go home', () => {
-      this.setPaused(false);
-      this.onHome();
-    });
-
-    // the folding sections
-    this.sections = [];
-    const helpers = this.section(card, 'Helpers', () => this.showHelpers());
-    this.helpersBtn = helpers.btn;
-    this.helpersBox = helpers.box;
-
-    // other devices: a pairing code, and the farm's name and PIN
-    const devices = this.section(card, 'Other devices');
-    this.devicesBtn = devices.btn;
-    el('div', 'ui-sub', devices.box, 'Play on another device');
-    el('div', 'ui-muted', devices.box, 'Get a code, then type it on the other device under “Move my farm”.');
-    button('ui-btn ui-btn-small', devices.box, 'Get a code', () => this.showPairCode());
-    this.pairBox = el('div', 'ui-pair', devices.box);
-    this.pairBox.hidden = true;
-    this.recoveryTitle = el('div', 'ui-sub', devices.box);
-    this.recovery = el('form', 'ui-recovery', devices.box);
-    el('div', 'ui-muted', this.recovery,
-      'With these you can get your farm back on any device, even with no other device to ask. Keep the PIN to yourself.');
-    const nameField = el('label', 'ui-field', this.recovery);
-    el('span', '', nameField, 'Farm name');
-    this.recoveryName = el('input', 'ui-input', nameField);
-    this.recoveryName.maxLength = MAX_FARM_NAME;
-    this.recoveryName.placeholder = 'Sunny Acres';
-    this.recoveryName.autocomplete = 'off';
-    const pinField = el('label', 'ui-field', this.recovery);
-    el('span', '', pinField, `PIN (${PIN_LENGTH} digits)`);
-    this.recoveryPin = el('input', 'ui-input', pinField);
-    Object.assign(this.recoveryPin, { type: 'password', inputMode: 'numeric', maxLength: PIN_LENGTH, autocomplete: 'off' });
-    button('ui-btn', this.recovery, 'Save', null).type = 'submit';
-    this.recoveryStatus = el('div', 'ui-status', this.recovery);
-    this.recovery.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.saveRecovery();
-    });
-    this.setFarmName('');
-
-    addHelp(this.section(card, 'Controls').box);
-
     // Capture phase: runs before the inventory's and the game's own key handlers
     window.addEventListener('keydown', (e) => this.onKey(e), true);
   }
@@ -182,7 +119,6 @@ export class Hud {
     this.session = null;
     this.placeName.textContent = this.farmName || 'My farm';
     this.blurb.textContent = 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.';
-    this.pauseNote.textContent = 'Your farm waits for you.';
   }
 
   // A farm with helpers, ours or a friend's. visit: { name, mine }
@@ -194,7 +130,6 @@ export class Hud {
     this.blurb.textContent = visit.mine
       ? 'Your helpers can farm here any time, you here or not. What anyone harvests goes in the chest by the plaza.'
       : 'Till, plant and harvest with what you brought: the harvest goes in the farm\'s chest, for the farmer.';
-    this.pauseNote.textContent = 'The farm keeps going for everyone on it.';
     this.chatLog.textContent = '';
     this.setConnStatus('');
   }
@@ -208,7 +143,6 @@ export class Hud {
     this.codeText.textContent = `Code ${session.code}`;
     this.islandText.textContent = `Island seed: ${session.seed}`;
     this.blurb.textContent = 'Whoever gets there first takes it. Things grow back, and now and then something rare turns up.';
-    this.pauseNote.textContent = 'Everyone else keeps playing.';
     this.chatLog.textContent = '';
     this.setConnStatus('');
   }
@@ -234,16 +168,14 @@ export class Hud {
     this.list.hidden = !online;
     this.pingEl.hidden = !online;
     this.homeBtn.hidden = !away;
-    this.pauseTravel.hidden = lobby;
-    this.pauseCopy.hidden = !lobby;
-    this.pauseHome.hidden = !away;
-    const friends = place === 'farm' && !visit?.mine; // (a friend's farm: these are about ours)
-    this.helpersBtn.hidden = friends;
-    this.devicesBtn.hidden = friends;
     this.chatBox.hidden = !online;
     this.setPrompt('');
     this.closeChat();
-    this.setPaused(false);
+  }
+
+  // Where we are, for the menu: { place, visit, session }
+  here() {
+    return { place: this.place, visit: this.visit, session: this.session };
   }
 
   // ---------- State from the lobby ----------
@@ -319,132 +251,10 @@ export class Hud {
     this.chatInput.blur();
   }
 
-  // ---------- Menus ----------
-  isPaused() {
-    return !this.pause.hidden;
-  }
-
-  setPaused(on) {
-    this.pause.hidden = !on;
-    if (!on) this.closeSections();
-  }
-
-  // A button in the pause menu that opens a box under it, and closes the
-  // others. onOpen(): fill the box in.
-  section(parent, label, onOpen) {
-    const btn = button('ui-btn ui-btn-ghost ui-fold', parent, label, () => {
-      const open = box.hidden;
-      this.closeSections();
-      box.hidden = !open;
-      btn.classList.toggle('open', open);
-      if (open) onOpen?.();
-    });
-    const box = el('div', 'ui-fold-box', parent);
-    box.hidden = true;
-    this.sections.push({ btn, box });
-    return { btn, box };
-  }
-
-  closeSections() {
-    for (const { btn, box } of this.sections) {
-      box.hidden = true;
-      btn.classList.remove('open');
-    }
-    this.pairBox.hidden = true;
-  }
-
-  // ---------- The farm's helpers ----------
-  async showHelpers() {
-    const box = this.helpersBox;
-    box.textContent = 'Asking the server…';
-    let helpers;
-    try {
-      helpers = await this.onHelpers();
-    } catch (e) {
-      box.textContent = e.message;
-      return;
-    }
-    box.textContent = '';
-    el('div', 'ui-muted', box,
-      'Friends you invite can farm here any time, even while you’re away. What they harvest goes in the chest by the plaza, and only you can take it out.');
-    const list = el('div', 'ui-helper-list', box);
-    if (!helpers.length) el('div', 'ui-muted', list, 'No helpers yet.');
-    for (const h of helpers) {
-      const row = el('div', 'ui-helper', list);
-      el('span', 'ui-player-name', row, h.name);
-      const remove = button('ui-btn ui-btn-small ui-btn-ghost', row, 'Remove', async () => {
-        if (!confirm(`Take ${h.name} off your helpers? They can't come to your farm any more.`)) return;
-        remove.disabled = true;
-        try {
-          await this.onRemoveHelper(h.id);
-          this.showHelpers();
-        } catch (e) {
-          remove.disabled = false;
-          this.chat({ from: 0, text: e.message });
-        }
-      });
-    }
-    const inviteBox = el('div', 'ui-pair', box);
-    button('ui-btn', box, 'Invite a helper', async () => {
-      inviteBox.textContent = 'Asking the server for a code…';
-      try {
-        const { code, expiresIn } = await this.onInvite();
-        inviteBox.textContent = '';
-        el('div', 'ui-pair-code', inviteBox, `${code.slice(0, 4)}-${code.slice(4)}`);
-        el('div', 'ui-muted', inviteBox,
-          `Send your friend the link, or have them type the code on the title screen. ` +
-          `It works once, within ${Math.round(expiresIn / 3600)} hours.`);
-        const copy = button('ui-btn ui-btn-small', inviteBox, 'Copy invite link', async () => {
-          const ok = await copyText(helpLink(code));
-          copy.textContent = ok ? 'Copied!' : helpLink(code);
-        });
-      } catch (e) {
-        inviteBox.textContent = e.message;
-      }
-    });
-  }
-
-  // ---------- The farm's name and PIN ----------
+  // The farm's name, for the place panel
   setFarmName(name) {
     this.farmName = name;
-    this.recoveryTitle.textContent = name ? 'Farm name & PIN' : 'Farm name & PIN (not set yet)';
-    this.recoveryName.value = name;
-    this.recoveryPin.placeholder = name ? 'leave empty to keep it' : '';
     if (this.place === 'home') this.placeName.textContent = name || 'My farm';
-  }
-
-  async saveRecovery() {
-    const name = this.recoveryName.value.trim();
-    const pin = this.recoveryPin.value.trim();
-    const problem = (pin || !this.farmName) && pinProblem(pin);
-    const say = (text, isError) => {
-      this.recoveryStatus.textContent = text;
-      this.recoveryStatus.classList.toggle('error', isError);
-    };
-    if (problem) return say(problem, true);
-    say('Saving…', false);
-    try {
-      this.setFarmName(await this.onRecovery({ name, pin }));
-      this.recoveryPin.value = '';
-      say('Saved. Remember the PIN: nobody can look it up for you.', false);
-    } catch (e) {
-      say(e.message, true);
-    }
-  }
-
-  async showPairCode() {
-    this.pairBox.hidden = false;
-    this.pairBox.textContent = 'Asking the server for a code…';
-    try {
-      const { code, expiresIn } = await this.onPair();
-      this.pairBox.textContent = '';
-      el('div', 'ui-pair-code', this.pairBox, `${code.slice(0, 3)}-${code.slice(3)}`);
-      el('div', 'ui-muted', this.pairBox,
-        `On your other device, pick Move my farm on the title screen and type this code. ` +
-        `It works once, for ${Math.round(expiresIn / 60)} minutes. The farm plays on whichever device opened it last.`);
-    } catch (e) {
-      this.pairBox.textContent = e.message;
-    }
   }
 
   async copyInvite() {
@@ -453,12 +263,7 @@ export class Hud {
     const ok = await copyText(link);
     this.chat({ from: 0, text: ok ? 'Invite link copied. Send it to a friend!' : `Invite link: ${link}` });
     this.copyBtn.textContent = ok ? 'Copied!' : 'Copy invite';
-    this.pauseCopy.textContent = ok ? 'Link copied!' : 'Invite a friend';
-    clearTimeout(this.copyTimer);
-    this.copyTimer = setTimeout(() => {
-      this.copyBtn.textContent = 'Copy invite';
-      this.pauseCopy.textContent = 'Invite a friend';
-    }, 1500);
+    setTimeout(() => (this.copyBtn.textContent = 'Copy invite'), 1500);
   }
 
   onKey(e) {
@@ -470,18 +275,18 @@ export class Hud {
       }
       return; // the input has the keys; the game ignores them (see isTyping)
     }
-    if (e.target.closest?.('input, textarea, select')) {
-      if (e.code === 'Escape' && this.pause.contains(e.target)) this.setPaused(false);
+    if (this.isMenuOpen()) {
+      // The menu has the keys: Esc steps back in it, and nothing reaches the
+      // backpack or the toolbar behind it (but its own boxes get what is typed)
+      if (e.code === 'Escape') this.onMenuEscape();
+      if (!e.target.closest?.('input, textarea, select')) e.stopPropagation();
       return;
     }
+    if (e.target.closest?.('input, textarea, select')) return;
     if (this.isBlocked()) return;
     if (e.code === 'Escape') {
       e.stopPropagation();
-      this.setPaused(!this.isPaused());
-      return;
-    }
-    if (this.isPaused()) {
-      e.stopPropagation(); // (no backpack or toolbar keys behind the menu)
+      this.onMenu();
       return;
     }
     if (e.code === 'Enter' && (this.place === 'lobby' || this.place === 'farm')) {
