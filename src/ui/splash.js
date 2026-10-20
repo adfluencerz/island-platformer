@@ -350,12 +350,15 @@ export class Splash {
       const lobbies = await listLobbies();
       this.list.textContent = '';
       if (!lobbies.length) el('div', 'ui-muted', this.list, 'No public lobbies right now. Open one, or Quick join.');
-      for (const l of lobbies.sort((a, b) => b.players - a.players)) {
-        const row = el('div', 'ui-game', this.list);
+      // the busy ones first, the fullest on top; then the quiet ones (nobody there), as the server has them
+      const order = (l) => (l.quiet ? -1 : l.players);
+      for (const l of lobbies.sort((a, b) => order(b) - order(a))) {
+        const row = el('div', 'ui-game' + (l.quiet ? ' quiet' : ''), this.list);
         const info = el('div', 'ui-game-info', row);
         el('b', '', info, l.name);
         const rare = l.rare ? ` · ${l.rare} rare find${l.rare === 1 ? '' : 's'} about` : '';
-        el('span', 'ui-muted', info, `${l.players}/${l.max} farmers · island ${l.seed}${rare}`);
+        const who = l.quiet ? 'nobody there right now' : `${l.players}/${l.max} farmers`;
+        el('span', 'ui-muted', info, `${who} · island ${l.seed}${rare}`);
         const join = button('ui-btn ui-btn-small', row, l.full ? 'Full' : 'Join', () => this.play(l.code));
         join.disabled = l.full;
       }

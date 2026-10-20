@@ -83,7 +83,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
-- An empty lobby goes dormant after 90 seconds: it drops off the lobby list, but its link keeps working for a week. Whoever comes back by its code finds the island as it was left, with whatever grew back in the meantime.
+- An empty lobby goes dormant after 90 seconds: it stops running, but its link keeps working for a week, and it stays on the lobby list as a quiet lobby (nobody there right now), below the busy ones (the 20 left most recently; invite-only ones stay unlisted). Whoever comes back finds the island as it was left, with whatever grew back in the meantime.
 
 ### Island seeds
 Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-31`: the seed decides the coastline, where the pond, meadow, woods, terraces and toadstools are, the trails between them, where the berry bushes, mushrooms and treasures are, and the island's season (spring, autumn or cherry blossom). The same seed always grows the same island, so a new lobby on a seed you liked is that island again.

@@ -325,7 +325,12 @@ await test('an empty lobby goes dormant, wakes by its code, and is let go after 
   room.emptySince -= 91_000;
   lobby.reap();
   assert.equal(lobby.rooms.size, 0);
-  assert.equal(lobby.list().length, 0, 'not listed while dormant');
+  assert.deepEqual(lobby.list().map((l) => [l.code, l.quiet, l.players]), [[room.code, true, 0]], 'listed as quiet while dormant');
+  const hidden = lobby.make({ name: 'Secret', inviteOnly: true });
+  hidden.emptySince -= 91_000;
+  lobby.reap();
+  assert.equal(lobby.list().length, 1, 'an invite-only one stays unlisted, dormant too');
+  lobby.dormant.delete(hidden.code);
   assert.equal(room.timer, null, 'stopped');
   const woke = lobby.find(room.code);
   assert.ok(woke && woke !== room);

@@ -10,9 +10,12 @@
 // Public lobbies are listed (Browse) and are where Quick join puts you;
 // invite-only ones are reached only by their link. An empty lobby goes dormant
 // after IDLE_MS (long enough for a reload, or for whoever made it to share the
-// link before they join): it stops running and is no longer listed, but is
-// kept for DORMANT_MS, and joining by its code (or looking at its invite card)
-// wakes it up as it was, with whatever regrew in the meantime.
+// link before they join): it stops running, but is kept for DORMANT_MS, and
+// joining by its code (or from the list, or looking at its invite card)
+// wakes it up as it was, with whatever regrew in the meantime. Browse lists
+// the most recent QUIET_LISTED public dormant ones too, after the busy ones,
+// as quiet lobbies with nobody there, so there is somewhere to go back to
+// even when nobody else is about.
 //
 // Given a store (server/store.js), the lobbies, running and dormant, are saved
 // every few seconds when something has changed (and by flush(), when the
@@ -32,6 +35,7 @@ const IDLE_MS = 90_000;
 const MAX_GAMES = 200;
 const DORMANT_MS = 7 * 24 * 3600_000;
 const MAX_DORMANT = 1000; // (past this the longest-dormant ones go)
+const QUIET_LISTED = 20; // dormant public lobbies Browse shows, the most recently left first
 const RESTART_HOLD_MS = 60_000;
 const SAVE_EVERY = 2000;
 // Per address: a few lobbies in a row, then one a minute
@@ -143,8 +147,17 @@ export class Lobby {
     return best ?? this.make({ name: 'Open meadow' });
   }
 
+  // The public lobbies: the running ones, then the quiet (dormant) ones
   list() {
-    return [...this.rooms.values()].filter((r) => !r.inviteOnly).map((r) => r.info());
+    const running = [...this.rooms.values()].filter((r) => !r.inviteOnly).map((r) => r.info());
+    const quiet = [];
+    for (const [code, { room, since }] of [...this.dormant].reverse()) {
+      if (quiet.length >= QUIET_LISTED) break;
+      if (room.inviteOnly) continue;
+      const max = room.maxPlayers || MAX_PLAYERS;
+      quiet.push({ code, name: room.name, seed: room.seed, players: 0, max, full: false, inviteOnly: false, rare: 0, quiet: true, since });
+    }
+    return [...running, ...quiet];
   }
 
   allowCreate(address) {
