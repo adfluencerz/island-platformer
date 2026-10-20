@@ -33,6 +33,10 @@ import { Farms, MAX_SAVE } from './farms.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
 
 const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || undefined; // 127.0.0.1 behind a proxy (deploy/), every address otherwise
+// Behind a proxy (Caddy, see deploy/) every request comes from it: TRUST_PROXY=1
+// takes the visitor's address from the X-Forwarded-For it adds instead
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const DIST = resolve(fileURLToPath(new URL('../dist', import.meta.url)));
 const MAX_BODY = 4096;
 const MAX_MSGS_PER_SEC = 120; // a client sends ~20 states a second plus the odd action
@@ -44,6 +48,12 @@ const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)
 const farms = new Farms({ dir: DATA === 'off' ? null : join(dirname(resolve(DATA)), 'farms') });
 
 // ---------- HTTP ----------
+// The visitor's address, for the limits on opening lobbies and farms
+function addressOf(req) {
+  const forwarded = TRUST_PROXY && String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim();
+  return forwarded || req.socket.remoteAddress;
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -123,7 +133,7 @@ const server = createServer(async (req, res) => {
     } catch {
       return json(res, 400, { error: 'bad request' });
     }
-    const made = lobby.make(body, req.socket.remoteAddress);
+    const made = lobby.make(body, addressOf(req));
     if (made.error) return json(res, made.status, { error: made.error });
     return json(res, 200, made.info());
   }
@@ -156,7 +166,7 @@ async function farmApi(req, res, path) {
   } catch {
     return json(res, 413, { error: 'That is too big for a farm.' });
   }
-  const address = req.socket.remoteAddress;
+  const address = addressOf(req);
   let out;
   if (route === 'POST /api/farms') out = farms.create(body?.save, session, address);
   else if (route === 'POST /api/farms/pair') out = farms.claim(body?.code, address);
@@ -230,7 +240,7 @@ function attach(ws, room) {
   ws.on('error', () => {});
 }
 
-server.listen(PORT, () => console.log(`game server on http://localhost:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`game server on http://${HOST ?? 'localhost'}:${PORT}`));
 
 // Ctrl+C, or `node --watch` restarting us: keep the lobbies as they are now
 for (const signal of ['SIGINT', 'SIGTERM']) {

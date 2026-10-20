@@ -1,0 +1,79 @@
+# Every push and pull request is tested and built; a push to main is then
+# deployed to the droplet (set up with deploy/setup-droplet.sh).
+#
+# Repository settings it needs:
+#   variable DEPLOY_HOST         the droplet's domain, e.g. 203-0-113-7.sslip.io
+#   secret   DEPLOY_SSH_KEY      the private half of the deploy key
+#   secret   DEPLOY_KNOWN_HOSTS  the droplet's host key (ssh-keyscan <DEPLOY_HOST>)
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: deploy # one at a time, and never cancelled halfway
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_HOST }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Set up SSH
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Copy the game to the droplet
+        run: |
+          rsync -az --delete --exclude node_modules \
+            dist server shared package.json package-lock.json \
+            deploy@${{ vars.DEPLOY_HOST }}:/opt/island/
+
+      # Players in a lobby drop for a moment and the page reconnects them;
+      # the server saves the lobbies as it stops.
+      - name: Install and restart
+        run: |
+          ssh deploy@${{ vars.DEPLOY_HOST }} \
+            'cd /opt/island && npm ci --omit=dev --ignore-scripts --no-audit --no-fund && sudo systemctl restart island'
+
+      - name: Check it is up
+        run: |
+          for i in $(seq 15); do
+            curl -fsS https://${{ vars.DEPLOY_HOST }}/api/lobbies > /dev/null && exit 0
+            sleep 2
+          done
+          echo "The game did not come back up: ssh in and look at journalctl -u island" >&2
+          exit 1
