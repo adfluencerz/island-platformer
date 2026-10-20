@@ -16,7 +16,7 @@ import { foliageMat } from './world.js';
 export const STALL = { x: 5.5, z: 6.5 };
 const COUNTER = { w: 3, h: 1, d: 0.8, z: 0.3 }; // local to the stall
 const FRONT = COUNTER.z + COUNTER.d / 2; // the counter's front face
-const TRADE_SPOT = { x: STALL.x, z: STALL.z + FRONT + 0.8 }; // where a customer stands
+export const TRADE_SPOT = { x: STALL.x, z: STALL.z + FRONT + 0.8 }; // where a customer stands
 export const TRADE_REACH = 1.9;
 const WATCH_RANGE = 7; // the merchant turns to look at you inside this
 
@@ -83,6 +83,7 @@ function basket(parent, x, z, fill) {
 // ctx: from world.js's buildWorld (the farm's set pieces)
 export function buildStall({ root, addCollider }) {
   const stall = new THREE.Group();
+  stall.name = 'stall'; // (tapping it walks you over to trade, see main.js)
   stall.position.set(STALL.x, 0, STALL.z);
   root.add(stall);
 

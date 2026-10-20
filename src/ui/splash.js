@@ -9,7 +9,7 @@ import { MAX_PLAYERS, MAX_NAME, MAX_FARM_NAME, PIN_LENGTH } from '../../shared/c
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
 import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode } from '../net/lobby.js';
 import { el, button } from './dom.js';
-import { CONTROLS } from './hud.js';
+import { addHelp } from './hud.js';
 
 const NAME_STORE = 'tp.name';
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
@@ -79,7 +79,7 @@ export class Splash {
 
     // ---- your farm, from another device ----
     el('h2', 'ui-section', this.menu, 'Your farm from another device');
-    el('div', 'ui-muted', this.menu, 'Get a code from the menu (Esc) on the device that has your farm.');
+    el('div', 'ui-muted', this.menu, 'Get a code from the menu on the device that has your farm.');
     const pairRow = el('form', 'ui-row ui-code-row', this.menu);
     this.pairInput = el('input', 'ui-input', pairRow);
     this.pairInput.placeholder = 'Farm code';
@@ -157,7 +157,7 @@ export class Splash {
     });
 
     this.status = el('div', 'ui-status', card);
-    el('div', 'ui-help', card, CONTROLS);
+    addHelp(card);
     this.hidden = true;
     root.hidden = true;
 

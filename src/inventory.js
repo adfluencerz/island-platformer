@@ -128,7 +128,8 @@ export function createInventory({ onOpenChange } = {}) {
   iconImg(trashEl).src = TRASH_ICON;
 
   const hintEl = el('div', 'inv-hint', windowEl);
-  hintEl.textContent = 'Click: pick up / place · Right click: take one (Shift: half) · Shift+click: move to/from toolbar';
+  el('span', 'mouse-only', hintEl).textContent = 'Click: pick up / place · Right click: take one (Shift: half) · Shift+click: move to/from toolbar';
+  el('span', 'touch-only', hintEl).textContent = 'Tap: pick up / place · The top row is your toolbar';
 
   const heldEl = el('div', 'inv-held', document.body);
   const heldImg = iconImg(heldEl);

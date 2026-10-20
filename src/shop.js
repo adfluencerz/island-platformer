@@ -89,8 +89,9 @@ export function createShop({ inventory, onOpenChange }) {
   const fundsEl = el('div', 'shop-funds', footerEl);
   coinImg(fundsEl);
   const fundsText = el('span', '', fundsEl);
-  el('div', 'inv-hint shop-hint', footerEl,
-    'Click a seed: buy one (Shift: five) · Click your items: sell the stack · Right click: sell one');
+  const hintEl = el('div', 'inv-hint shop-hint', footerEl);
+  el('span', 'mouse-only', hintEl, 'Click a seed: buy one (Shift: five) · Click your items: sell the stack · Right click: sell one');
+  el('span', 'touch-only', hintEl, 'Tap a seed: buy one · Tap your items: sell the stack');
 
   const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
   tooltipEl.hidden = true;

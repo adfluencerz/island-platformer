@@ -1,0 +1,254 @@
+/* Touch screens (html.touch, see touch.js): the on-screen controls, and the
+   HUD and menus laid out for thumbs and kept clear of the notch and the home
+   indicator. Nothing here applies with a mouse and keyboard. */
+
+/* Text and buttons meant for one or the other */
+:root:not(.touch) .touch-only, :root.touch .mouse-only { display: none !important; }
+
+:root.touch {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --inv-slot: 36px;
+  --hotbar-h: calc(var(--inv-slot) + 20px); /* one row of slots and the frame's padding */
+  --hotbar-b: calc(var(--safe-b) + 8px);
+  --controls-b: var(--hotbar-b); /* the stick and the buttons sit beside the toolbar */
+  --stick: 112px;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+/* Upright: a toolbar of 6 × 2 big slots, with the stick and the buttons above it */
+@media (orientation: portrait) {
+  :root.touch {
+    --inv-slot: min(48px, calc((100vw - 56px) / 6));
+    --hotbar-h: calc(var(--inv-slot) * 2 + 23px);
+    --controls-b: calc(var(--hotbar-b) + var(--hotbar-h) + 14px);
+    --stick: 120px;
+  }
+}
+:root.touch body { user-select: none; -webkit-user-select: none; }
+:root.touch input { user-select: text; -webkit-user-select: text; }
+
+/* ---------- The controls ---------- */
+.tc[hidden], .tc [hidden] { display: none !important; }
+:root:not(.touch) .tc { display: none; }
+body.in-menu .tc { display: none; }
+.tc { font-family: var(--inv-font); }
+.tc-stick, .tc-btn { touch-action: none; }
+
+.tc-stick {
+  position: fixed;
+  left: calc(var(--safe-l) + 18px);
+  bottom: var(--controls-b);
+  width: var(--stick);
+  height: var(--stick);
+  border-radius: 50%;
+  background: rgba(255, 211, 143, 0.28);
+  border: 3px solid rgba(61, 26, 4, 0.55);
+  box-shadow: inset 0 0 0 4px rgba(255, 230, 184, 0.35);
+  z-index: 12;
+}
+.tc-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: var(--inv-wood);
+  border: 3px solid var(--inv-outline);
+  box-shadow: inset 0 4px 0 var(--inv-wood-light), inset 0 -4px 0 #a3530c, 0 3px 0 rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+.tc-stick:not(.down) .tc-knob { transition: transform 0.12s ease-out; }
+
+.tc-pad {
+  position: fixed;
+  right: calc(var(--safe-r) + 14px);
+  bottom: var(--controls-b);
+  width: 150px;
+  height: 140px;
+  z-index: 12;
+  pointer-events: none; /* (taps between the buttons go to the world) */
+}
+.tc-btn {
+  position: absolute;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 3px solid var(--inv-outline);
+  border-radius: 50%;
+  background: var(--inv-wood);
+  color: #fff;
+  font: 700 22px var(--inv-font);
+  text-shadow: 0 2px 0 var(--inv-outline);
+  box-shadow: inset 0 4px 0 var(--inv-wood-light), inset 0 -4px 0 #a3530c, 0 3px 0 rgba(0, 0, 0, 0.3);
+  opacity: 0.92;
+}
+.tc-btn.down { transform: translateY(2px); box-shadow: inset 0 4px 0 #a3530c, 0 1px 0 rgba(0, 0, 0, 0.3); }
+.tc-use { right: 0; bottom: 0; width: 78px; height: 78px; font-size: 27px; }
+.tc-use.ready { background: #4f9e3c; box-shadow: inset 0 4px 0 #7ed957, inset 0 -4px 0 #2f6b25, 0 0 0 4px rgba(255, 230, 120, 0.8); }
+.tc-jump { right: 86px; bottom: 0; width: 60px; height: 60px; }
+.tc-small {
+  width: 50px;
+  height: 50px;
+  font-size: 19px;
+  background: var(--inv-paper-dark);
+  color: var(--inv-ink);
+  text-shadow: none;
+  box-shadow: inset 0 3px 0 var(--inv-slot-light), inset 0 -3px 0 var(--inv-slot-shade), 0 3px 0 rgba(0, 0, 0, 0.3);
+}
+.tc-bag { right: 14px; bottom: 88px; }
+.tc-chat { right: 92px; bottom: 70px; }
+
+/* Hold the clock to fast-forward (at home) */
+:root.touch .dn-clock { pointer-events: auto; touch-action: none; }
+:root.touch .dn-clock.down { transform: translateY(2px); }
+
+/* ---------- The HUD around them ---------- */
+:root.touch .inv-hotbar {
+  bottom: var(--hotbar-b);
+  padding: 10px;
+  gap: 3px;
+}
+@media (orientation: portrait) {
+  :root.touch .inv-hotbar { display: grid; grid-template-columns: repeat(6, var(--inv-slot)); }
+  :root.touch .inv-hotbar[hidden] { display: none !important; }
+}
+:root.touch .inv-key { display: none; } /* (the number keys) */
+:root.touch .inv-count { font-size: calc(var(--inv-slot) * 0.42); }
+:root.touch .inv-slot:hover { background: var(--inv-slot-bg); }
+:root.touch .inv-slot:hover .inv-icon { transform: none; }
+
+/* The clock and the gold, top right; smaller */
+:root.touch .dn-clock {
+  top: calc(var(--safe-t) + 10px);
+  right: calc(var(--safe-r) + 10px);
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+}
+:root.touch .dn-dial { width: 44px; height: 25px; }
+:root.touch .dn-text { min-width: 74px; }
+:root.touch .dn-day { font-size: 17px; }
+:root.touch .dn-time { font-size: 24px; }
+:root.touch .inv-funds {
+  top: calc(var(--safe-t) + 74px);
+  right: calc(var(--safe-r) + 10px);
+  padding: 6px 8px;
+}
+:root.touch .inv-funds .inv-icon { width: 20px; height: 20px; margin-right: 4px; }
+:root.touch .inv-digit { width: 12px; height: 20px; font-size: 21px; }
+
+/* The place panel, top left: just what you need, with a Menu button for Esc */
+:root.touch .ui-players {
+  top: calc(var(--safe-t) + 10px);
+  left: calc(var(--safe-l) + 10px);
+  width: auto;
+  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 200px);
+  min-width: 150px;
+  padding: 10px 12px;
+  gap: 5px;
+  font-size: 19px;
+  max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); /* (clear of the chat) */
+  overflow-y: auto;
+}
+:root.touch .ui-players .ui-btn-small { font-size: 18px; padding: 6px 10px; }
+:root.touch .ui-players > .ui-muted:not(.ui-ping) { display: none; } /* (the blurb, the seed) */
+:root.touch .ui-code { flex-wrap: wrap; font-size: 18px; }
+:root.touch .ui-player { font-size: 18px; }
+:root.touch .ui-found { font-size: 15px; }
+
+/* What there is to do here: over the Use button */
+:root.touch .ui-prompt {
+  left: auto;
+  right: calc(var(--safe-r) + 14px);
+  bottom: calc(var(--controls-b) + 150px);
+  transform: none;
+  font-size: 21px;
+  white-space: nowrap;
+}
+
+/* Pickup notices, over the stick */
+:root.touch .inv-toasts {
+  left: calc(var(--safe-l) + 10px);
+  bottom: calc(var(--controls-b) + var(--stick) + 14px);
+}
+:root.touch .inv-toast { font-size: 20px; padding: 5px 10px 5px 8px; }
+:root.touch .inv-toast .inv-icon { width: 22px; height: 22px; }
+
+/* Chat, over the notices and the prompt */
+:root.touch .ui-chat {
+  left: calc(var(--safe-l) + 10px);
+  right: auto;
+  bottom: calc(var(--controls-b) + 196px);
+  width: min(320px, calc(100vw - var(--safe-l) - var(--safe-r) - 20px));
+}
+:root.touch .ui-chat-line { font-size: 18px; }
+:root.touch .ui-chat-log { max-height: 140px; }
+
+:root.touch .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
+:root.touch .ui-big { font-size: clamp(40px, 12vw, 80px); }
+
+/* ---------- Menus: kept inside the safe area, scrolled when they don't fit ---------- */
+:root.touch .ui-splash, :root.touch .ui-pause {
+  padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px);
+  box-sizing: border-box;
+}
+:root.touch .ui-card {
+  width: min(440px, 100%);
+  max-height: 100%;
+  padding: 18px 18px;
+  -webkit-overflow-scrolling: touch;
+}
+:root.touch .ui-logo { font-size: 46px; }
+:root.touch .ui-help { font-size: 17px; }
+
+:root.touch .inv-menu {
+  place-items: start center;
+  overflow-y: auto;
+  padding: calc(var(--safe-t) + 52px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 12px);
+  box-sizing: border-box;
+}
+:root.touch .inv-window { margin: auto 0; padding: 18px 14px 14px; max-width: 100%; }
+:root.touch .inv-footer { flex-wrap: wrap; gap: 8px; }
+:root.touch .inv-stats { font-size: 20px; }
+:root.touch .inv-hint { font-size: 17px; }
+:root.touch .inv-tooltip { max-width: 220px; padding: 8px 12px; }
+:root.touch .inv-tt-name { font-size: 23px; }
+:root.touch .inv-tt-desc { font-size: 18px; }
+
+/* The merchant's shop */
+:root.touch .shop-window { width: auto; margin-top: 0; }
+:root.touch .shop-say { font-size: 20px; margin-bottom: 8px; }
+:root.touch .shop-heading { font-size: 21px; margin: 8px 0 4px; }
+:root.touch .shop-item { font-size: 19px; gap: 6px; padding: 6px 8px 6px 6px; }
+:root.touch .shop-item .inv-icon { width: 28px; height: 28px; }
+:root.touch .shop-funds { font-size: 22px; }
+:root.touch .shop-hint { text-align: left; }
+
+@media (orientation: portrait) {
+  :root.touch .inv-grid { grid-template-columns: repeat(6, var(--inv-slot)); }
+}
+@media (orientation: portrait) and (max-width: 380px) {
+  :root.touch .shop-stock { grid-template-columns: 1fr; }
+}
+
+/* Lying down: the panels at the top are short on room */
+@media (orientation: landscape) {
+  :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
+  :root.touch .ui-prompt { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--hotbar-b) + var(--hotbar-h) + 12px); }
+  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 10px); top: calc(var(--safe-t) + 116px); bottom: auto; width: min(300px, 36vw); }
+  :root.touch .ui-chat-log { max-height: 96px; }
+  :root.touch .inv-toasts { bottom: calc(var(--controls-b) + var(--stick) + 10px); }
+  :root.touch .inv-menu { padding-top: calc(var(--safe-t) + 46px); }
+  /* the buttons stacked up beside the toolbar rather than along it */
+  :root.touch { --inv-slot: 34px; }
+  .tc-jump { right: 9px; bottom: 88px; }
+  .tc-bag { right: 84px; bottom: 104px; }
+  .tc-chat { right: 84px; bottom: 44px; }
+}

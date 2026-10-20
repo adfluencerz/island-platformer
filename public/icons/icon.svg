@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The app icon: a sprouting turnip on a little island, in the game's wood-and-parchment colours.
+       Everything that matters sits inside the middle 80%, so it survives a maskable crop. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7cc8ec"/>
+      <stop offset="1" stop-color="#bfe7f7"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <circle cx="380" cy="138" r="46" fill="#ffd84a" stroke="#e0841a" stroke-width="8"/>
+  <!-- sea and island -->
+  <rect y="382" width="512" height="130" fill="#2f8fbf"/>
+  <path d="M40 400 Q256 330 472 400 L472 420 Q256 470 40 420 Z" fill="#e9d29a"/>
+  <path d="M70 392 Q256 300 442 392 Q256 420 70 392 Z" fill="#6cbf4a" stroke="#3d1a04" stroke-width="8" stroke-linejoin="round"/>
+  <!-- the turnip: purple shoulders, white below -->
+  <clipPath id="bulb"><path id="bulb-shape" d="M256 198 C196 198 168 250 178 298 C188 344 230 372 256 392 C282 372 324 344 334 298 C344 250 316 198 256 198 Z"/></clipPath>
+  <use href="#bulb-shape" fill="#f2eef5"/>
+  <path clip-path="url(#bulb)" d="M150 190 H362 V268 C320 290 290 262 256 280 C222 262 192 290 150 268 Z" fill="#b8257a"/>
+  <path clip-path="url(#bulb)" d="M170 236 C200 214 240 210 262 214" fill="none" stroke="#e05aa8" stroke-width="10" stroke-linecap="round"/>
+  <use href="#bulb-shape" fill="none" stroke="#3d1a04" stroke-width="10" stroke-linejoin="round"/>
+  <!-- leaves -->
+  <path d="M252 206 C232 160 196 132 150 132 C160 178 200 206 252 206 Z" fill="#4f9e3c" stroke="#3d1a04" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M260 206 C280 156 318 124 366 124 C356 174 314 206 260 206 Z" fill="#7ed957" stroke="#3d1a04" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M256 208 C250 168 256 132 274 100 C292 140 282 180 256 208 Z" fill="#5fb046" stroke="#3d1a04" stroke-width="8" stroke-linejoin="round"/>
+</svg>

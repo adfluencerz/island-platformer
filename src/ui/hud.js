@@ -10,10 +10,21 @@ import { MAX_FARM_NAME, PIN_LENGTH } from '../../shared/constants.js';
 import { pinProblem } from '../../shared/protocol.js';
 import { inviteLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
+import { isTouch } from './touch.js';
 
-export const CONTROLS =
+const CONTROLS =
   'WASD move · Space jump · 1–= or scroll pick an item · E till / plant / harvest or trade at the stall at home, gather or chop trees (axe) in lobbies · ' +
-  'I backpack · L visit a lobby · Enter chat · Esc menu · hold T to fast-forward time at home';
+  'I backpack · L visit a lobby · Enter chat · Esc menu · hold T to fast-forward time at home · click the ground to walk there';
+const TOUCH_CONTROLS =
+  'Stick: walk · Tap the ground to walk there and till, plant or harvest it with what you hold · ' +
+  'Tap the stall to trade, a bush or mushrooms to gather, a tree to chop it (axe) · Use: the same where you stand · ' +
+  'Bag: backpack · hold the clock to fast-forward time at home';
+
+// The controls, for the keyboard or for a touch screen (touch.js shows the one in use)
+export function addHelp(parent) {
+  el('div', 'ui-help mouse-only', parent, CONTROLS);
+  el('div', 'ui-help touch-only', parent, TOUCH_CONTROLS);
+}
 
 const CHAT_FADE_MS = 10_000;
 const CHAT_LINES = 40;
@@ -23,8 +34,9 @@ export class Hud {
   // onPair(): a pairing code for another device, { code, expiresIn } (src/net/farm.js).
   // onRecovery({ name, pin }): name the farm and set its PIN; resolves to the name.
   // isBlocked(): another screen (the backpack, the lobby board) has the keyboard.
-  constructor({ onTravel, onHome, onChat, onPair, onRecovery, isBlocked }) {
-    Object.assign(this, { onTravel, onHome, onChat, onPair, onRecovery, isBlocked });
+  // onPrompt(text): the prompt changed ('' : nothing to do here).
+  constructor({ onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt }) {
+    Object.assign(this, { onTravel, onHome, onChat, onPair, onRecovery, isBlocked, onPrompt });
     this.place = null; // 'home' | 'lobby' | null (the title screen)
     this.farmName = '';
     this.session = null;
@@ -46,7 +58,8 @@ export class Hud {
     this.list = el('div', 'ui-player-list', panel);
     this.travelBtn = button('ui-btn ui-btn-small', panel, 'Visit a lobby (L)', () => this.onTravel());
     this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', panel, 'Head home', () => this.onHome());
-    el('div', 'ui-muted ui-small', panel, 'Esc: menu & controls');
+    el('div', 'ui-muted ui-small mouse-only', panel, 'Esc: menu & controls');
+    button('ui-btn ui-btn-small ui-btn-ghost touch-only', panel, 'Menu', () => this.setPaused(true));
 
     this.prompt = el('div', 'ui-prompt', root);
     this.prompt.hidden = true;
@@ -117,7 +130,7 @@ export class Hud {
       this.saveRecovery();
     });
     this.setFarmName('');
-    el('div', 'ui-help', card, CONTROLS);
+    addHelp(card);
 
     // Capture phase: runs before the inventory's and the game's own key handlers
     window.addEventListener('keydown', (e) => this.onKey(e), true);
@@ -188,10 +201,13 @@ export class Hud {
     this.status.textContent = text;
   }
 
+  // text: 'E  Pick berries' (on a touch screen, the Use button is the E)
   setPrompt(text) {
+    if (isTouch()) text = text.replace(/^E {2}/, '');
     if (this.prompt.textContent === text) return;
     this.prompt.textContent = text;
     this.prompt.hidden = !text;
+    this.onPrompt?.(text);
   }
 
   // a big word in the middle of the screen that drifts up and fades

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
-import { createMerchant, inReach as atStall } from './merchant.js';
+import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
@@ -10,6 +10,7 @@ import { showCodeInAddress } from './net/lobby.js';
 import { FarmSync } from './net/farm.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
+import { TouchControls } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
@@ -52,6 +53,19 @@ const CAM_OFFSET = new THREE.Vector3(
 const CAM_FOLLOW_XZ = 6; // higher = snappier horizontal follow
 const CAM_FOLLOW_Y = 3; // vertical follow is gentler
 const camTarget = new THREE.Vector3(); // point the camera looks at, set once the player exists
+
+// On a screen taller than it is wide (a phone held upright) the view is
+// narrow, so the camera pulls back to show more of the island to either side:
+// partway toward the width a square screen shows, at most CAM_MAX_ZOOM.
+const CAM_MAX_ZOOM = 1.6;
+const camOffset = new THREE.Vector3();
+function fitCamera() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  const zoom = Math.min(Math.sqrt(Math.max(1, 1 / camera.aspect)), CAM_MAX_ZOOM);
+  camOffset.copy(CAM_OFFSET).multiplyScalar(zoom);
+}
+fitCamera();
 
 // ---------- Lighting ----------
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444466, 1.0);
@@ -421,9 +435,12 @@ function updateChopping() {
     }
   }
   if (keys.has('KeyE') && inventory.selectedId() === 'axe') swingAxe(); // holding E keeps chopping
+  // a tree tapped with the axe in hand: chop on until it falls (or the farmer walks off)
+  if (chopping && (inventory.selectedId() !== 'axe' || treeInReach() !== chopping || !swingAxe())) chopping = null;
 }
 
 function resetChopping() {
+  chopping = null;
   Object.assign(chop, { id: -1, hits: 0, swingAt: -1 });
   chop.pending.clear();
 }
@@ -478,7 +495,7 @@ function updateCamera(dt) {
   camTarget.z += (player.position.z - camTarget.z) * kXZ;
   camTarget.y += (camGroundY - camTarget.y) * damp(CAM_FOLLOW_Y, dt);
 
-  camera.position.copy(camTarget).add(CAM_OFFSET);
+  camera.position.copy(camTarget).add(camOffset);
   camera.lookAt(camTarget);
 }
 updateCamera(0);
@@ -506,10 +523,12 @@ function updateMenuCamera(t) {
 // The keys drive the farmer only while nothing else has the keyboard: the
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
+let jumpPressed = false; // (a press shorter than a frame still jumps)
 const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || hud.isTyping() || hud.isPaused();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
+  if (e.code === 'Space') jumpPressed = true;
   if (e.code === 'KeyE' && !e.repeat) useAction();
 });
 
@@ -533,6 +552,11 @@ function useAction() {
     shop.open();
     return;
   }
+  farmHere();
+}
+
+// Harvest the ripe crop underfoot, else till or plant with what is in hand
+function farmHere() {
   if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return;
   const { x, z } = player.position;
   if (harvestAt(x, z)) return;
@@ -555,8 +579,7 @@ function useAction() {
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+  fitCamera();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -564,6 +587,12 @@ window.addEventListener('resize', () => {
 const GRAVITY = -28;
 const MOVE_SPEED = 7;
 const JUMP_SPEED = 10;
+
+function jump() {
+  player.velocity.y = JUMP_SPEED;
+  player.onGround = false;
+  anim.squash = -0.2; // stretch on takeoff
+}
 
 // ---------- Collision helpers ----------
 // Very simple AABB-vs-capsule (treated as a box) resolution, axis by axis.
@@ -608,6 +637,159 @@ function resolveCollisions(prevY, wasOnGround) {
   }
 }
 
+// ---------- Tapping the world ----------
+// Tap (or click) somewhere and the farmer walks there, then does what that
+// place is for: at home, harvest the ripe crop tapped, farm a tile next to
+// you (till or plant it with what is in hand: a tile further off is just
+// somewhere to go) or trade at the stall; in a lobby, gather from the bush or
+// mushrooms tapped, or chop the tree tapped with the axe in hand, until it
+// falls. The stick or the keys take over at once.
+const TAP_MS = 600; // a press longer than this, or that moves further, is not a tap
+const TAP_PX = 14;
+const ARRIVE = 0.1; // how close to the middle of a tile counts as there
+const FARM_REACH = 2.2; // tapping a tile within this farms it
+const STUCK_TIME = 0.3; // seconds without getting closer: hop, and if that does no good, stop
+let walk = null; // { kind: 'tile' | 'stall' | 'spot' | 'tree', x, y, z, farm, spot, tree, best, stuck }
+let chopping = null; // the tree a tap is chopping
+
+const raycaster = new THREE.Raycaster();
+const _ndc = new THREE.Vector2();
+const _hit = new THREE.Vector3();
+
+// The tile marker: a square outline on the tile being walked to
+const marker = new THREE.Mesh(
+  new THREE.RingGeometry(0.56, 0.67, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false })
+);
+marker.visible = false;
+scene.add(marker);
+
+const presses = new Map(); // pointerId -> where and when it went down
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'mouse' || e.button === 0) presses.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
+});
+canvas.addEventListener('pointercancel', (e) => presses.delete(e.pointerId));
+canvas.addEventListener('pointerup', (e) => {
+  const press = presses.get(e.pointerId);
+  presses.delete(e.pointerId);
+  if (!press || e.timeStamp - press.t > TAP_MS || Math.hypot(e.clientX - press.x, e.clientY - press.y) > TAP_PX) return;
+  if (place !== 'title' && !inputBlocked()) tapAt(e.clientX, e.clientY);
+});
+
+function tapAt(x, y) {
+  _ndc.set((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  stopWalking();
+  const target = tappedThing() ?? tappedGround();
+  if (!target) return;
+  walk = { best: Infinity, stuck: 0, hopped: false, ...target };
+  if (walk.kind === 'tile') {
+    marker.position.set(walk.x, walk.y + 0.08, walk.z);
+    marker.visible = true;
+  }
+}
+
+// A bush, mushrooms or a tree in a lobby; the merchant or the stall at home
+function tappedThing() {
+  const things = new Map(); // object -> what tapping it means
+  if (place === 'lobby') {
+    for (const spot of spots.values()) if (spot.use === 'gather') things.set(spot.view.group, { kind: 'spot', spot, x: spot.x, z: spot.z });
+    for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
+  } else {
+    const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
+    things.set(merchant.root, stall);
+    things.set(world.root.getObjectByName('stall'), stall);
+  }
+  const hits = raycaster.intersectObjects([...things.keys()].filter(Boolean), true);
+  for (let obj = hits[0]?.object; obj; obj = obj.parent) if (things.has(obj)) return things.get(obj);
+  return null;
+}
+
+// The ground (or the platform) tapped. At home, the middle of its tile.
+function tappedGround() {
+  const trunks = new Set(world.trees.map((tree) => tree.collider));
+  let best = null;
+  let bestD = Infinity;
+  for (const box of world.platforms) {
+    if (trunks.has(box) || !raycaster.ray.intersectBox(box, _hit)) continue;
+    const d = _hit.distanceToSquared(raycaster.ray.origin);
+    if (d < bestD) {
+      bestD = d;
+      best = { x: _hit.x, y: box.max.y, z: _hit.z };
+    }
+  }
+  if (!best) return null;
+  if (place === 'lobby') return { kind: 'ground', ...best };
+  const [gx, gz] = tileKeyFor(best.x, best.z).split(',').map(Number);
+  const tile = { kind: 'tile', x: gx * TILE_SIZE, y: best.y, z: gz * TILE_SIZE };
+  const crop = crops.get(tileKeyFor(tile.x, tile.z));
+  tile.farm = crop?.ripe || Math.hypot(tile.x - player.position.x, tile.z - player.position.z) < FARM_REACH;
+  return tile;
+}
+
+function stopWalking() {
+  walk = null;
+  chopping = null;
+  marker.visible = false;
+}
+
+// Are we there? (what counts as there depends on what was tapped)
+function arrived(d) {
+  switch (walk.kind) {
+    case 'stall': return atStall(player.position);
+    case 'spot': return d < GATHER_REACH * 0.8 && Math.abs(player.position.y - GROUND_STAND_Y - walk.spot.y) < 1.2;
+    case 'tree': return treeInReach() === walk.tree;
+    default: return d < ARRIVE;
+  }
+}
+
+// Then do what the tap was for
+function arrive() {
+  const { kind, farm, spot, tree } = walk;
+  stopWalking();
+  if (kind === 'stall') shop.open();
+  else if (kind === 'tile' && farm) farmHere();
+  else if (kind === 'spot' && spot.item && !spot.pending) {
+    takeSpot(spot);
+    anim.squash = 0.15;
+  } else if (kind === 'tree') {
+    if (inventory.selectedId() !== 'axe') inventory.notify('Take the axe in hand to chop');
+    else if (swingAxe()) chopping = tree;
+  }
+}
+
+// Which way to walk this frame for a tap ({0, 0}: not walking), slowing down
+// at the end so as not to overshoot. Hops once when something is in the way
+// (a ledge, a step up onto a platform).
+function steer(dt) {
+  const none = { x: 0, z: 0 };
+  if (!walk) return none;
+  const dx = walk.x - player.position.x;
+  const dz = walk.z - player.position.z;
+  const d = Math.hypot(dx, dz);
+  if (arrived(d)) {
+    arrive();
+    return none;
+  }
+  if (d < walk.best - 0.02) {
+    walk.best = d;
+    walk.stuck = 0;
+    walk.hopped = false;
+  } else if ((walk.stuck += dt) > STUCK_TIME) {
+    if (walk.hopped || !player.onGround) {
+      // As far as we get: a tile is still farmed if we are standing on it
+      if (walk.kind === 'tile' && tileKeyFor(player.position.x, player.position.z) === tileKeyFor(walk.x, walk.z)) arrive();
+      else stopWalking();
+      return none;
+    }
+    jump();
+    walk.hopped = true;
+    walk.stuck = 0;
+  }
+  const k = Math.min(1, d / (MOVE_SPEED * dt)) / d;
+  return { x: dx * k, z: dz * k };
+}
+
 // ---------- Places: the title screen, home, an online lobby ----------
 // Home is your own farm, all in this page. A lobby is an online place
 // (shared/room.js on the game server) where farmers drop in to gather what
@@ -621,6 +803,7 @@ let farmOnScreen = false; // the home farm's soil and crops are in the scene
 const LOBBY_DAWN = 9; // a lobby's day starts mid-morning, in good light
 
 const remotes = new Remotes(scene);
+const touch = new TouchControls(); // (only shown on a touch screen)
 const hud = new Hud({
   onTravel: () => splash.show({ from: 'home' }),
   onHome: () => goHome(),
@@ -628,6 +811,7 @@ const hud = new Hud({
   onPair: () => farmSync.pairCode(),
   onRecovery: ({ name, pin }) => farmSync.setRecovery(name, pin),
   isBlocked: () => inventory.isOpen() || shop.isOpen() || !splash.hidden,
+  onPrompt: (text) => touch.setReady(!!text),
 });
 // (after the HUD: its key handler goes first, see shop.js)
 const shop = createShop({
@@ -642,6 +826,7 @@ const splash = new Splash({
 });
 
 function putDown({ x, y, z }) {
+  stopWalking();
   player.position.set(x, y, z);
   player.velocity.set(0, 0, 0);
   snapCamera();
@@ -664,6 +849,7 @@ function goHome() {
   }
   splash.hide();
   hud.showHome();
+  touch.setPlace('home');
   if (from !== 'home') putDown(arrival());
 }
 
@@ -713,6 +899,7 @@ function joinLobby({ name, code }) {
     showCodeInAddress(m.code);
     splash.hide();
     hud.showLobby(session, myId);
+    touch.setPlace('lobby');
     hud.setRoster(m.roster);
     if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
   });
@@ -956,19 +1143,22 @@ function update(dt) {
   if (keys.has('KeyS') || keys.has('ArrowDown')) moveZ += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) moveX -= 1;
   if (keys.has('KeyD') || keys.has('ArrowRight')) moveX += 1;
+  if (!inputBlocked()) {
+    const stick = touch.direction(); // (part way over: a slower walk)
+    moveX += stick.x;
+    moveZ += stick.z;
+  }
+  if (moveX || moveZ || inputBlocked()) stopWalking(); // the stick or the keys take over from a tap
+  else ({ x: moveX, z: moveZ } = steer(dt));
 
   const moveVec = new THREE.Vector3(moveX, 0, moveZ);
   const moving = moveVec.lengthSq() > 0;
-  if (moving) moveVec.normalize().multiplyScalar(MOVE_SPEED);
+  if (moving) moveVec.multiplyScalar((MOVE_SPEED * Math.min(moveVec.length(), 1)) / moveVec.length());
   player.velocity.x = moveVec.x;
   player.velocity.z = moveVec.z;
 
-  // Jump
-  if (keys.has('Space') && player.onGround) {
-    player.velocity.y = JUMP_SPEED;
-    player.onGround = false;
-    anim.squash = -0.2; // stretch on takeoff
-  }
+  if ((keys.has('Space') || jumpPressed) && player.onGround && !inputBlocked()) jump();
+  jumpPressed = false;
 
   // Gravity
   player.velocity.y += GRAVITY * dt;
@@ -1038,9 +1228,15 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
+// Built pages: installable, and the farm opens without a connection (public/sw.js).
+// (Not under Vite's dev server, where a cached page would hide every change.)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, saveGame, get place() { return place; }, get net() { return net; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, saveGame, camera, get place() { return place; }, get net() { return net; }, get world() { return world; } };
 }
 
 loadGame();
