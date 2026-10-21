@@ -14,11 +14,17 @@ import { ITEMS } from './items.js';
 //
 // The relic and the chests are the lobby's spots: main.js draws them (with
 // skyChestView and relicBeam, below) and asks the lobby for them.
+//
+// An isle between the camera and a farmer down under it (on its stair, or
+// on the ground) fades, as trees do (updateSkyFade), so the steps behind it
+// can be seen; the steps themselves never fade.
 
-let drawn = null; // what is drawn now: { island, root, addCollider, isles: [{ group, colliders, moving, style }] }
+let drawn = null; // what is drawn now: { island, root, addCollider, isles: [{ group, stair, colliders, moving, style, materials, fade, depth }] }
 
 // island: islandFor(seed), with its `sky`. root, addCollider: the world's (world.js buildWorld)
 export function buildSkyIsles(island, { root, addCollider }) {
+  drawn = null;
+  if (!island.sky) return null; // (an island from before generation 10)
   const isles = island.sky.map((isle, n) => drawIsle({ island, root, addCollider }, isle, n, isle.style));
   drawn = { island, root, addCollider, isles };
   return (t) => {
@@ -80,8 +86,14 @@ function drawIsle({ island, root, addCollider }, isle, n, styleIndex) {
   }
 
   // ---------- The stair ----------
+  // (a group of its own, beside the isle's, so it stays when the isle fades)
+  const stair = new THREE.Group();
+  stair.position.copy(group.position);
+  root.add(stair);
+  const sk = kit(stair, solids, moving);
+  sk.mats = m;
   isle.steps.forEach(([x, z, w, d, top], i) => {
-    drawStep(style, k.sub(x - isle.x, top - isle.top, z - isle.z), w, d, i);
+    drawStep(style, sk.sub(x - isle.x, top - isle.top, z - isle.z), w, d, i);
     collide({ x, y: top - 0.25, z, w, h: 0.5, d });
   });
 
@@ -131,7 +143,49 @@ function drawIsle({ island, root, addCollider }, isle, n, styleIndex) {
     v.set(x, y, z).applyMatrix4(g.matrixWorld).applyMatrix4(toRoot);
     collide({ x: v.x, y: v.y, z: v.z, w, h, d });
   }
-  return { group, colliders, moving, style: styleIndex };
+  // materials of its own, so it can fade without fading anything else
+  const own = new Map();
+  group.traverse((obj) => {
+    if (!obj.isMesh) return;
+    if (!own.has(obj.material)) own.set(obj.material, obj.material.clone());
+    obj.material = own.get(obj.material);
+  });
+  const materials = [...own.values()].map((mat) => ({ mat, opacity: mat.opacity, transparent: mat.transparent }));
+  return { group, stair, colliders, moving, style: styleIndex, materials, fade: 1, depth };
+}
+
+// Fade the isles that hide eye (a point on the farmer) from the camera: an
+// isle the farmer is below, which the line from eye to the camera goes
+// through. dt: seconds since the last frame.
+const FADED = 0.2;
+export function updateSkyFade(dt, eye, camera) {
+  if (!drawn) return;
+  const k = 1 - Math.exp(-8 * dt);
+  const cam = camera.position;
+  drawn.isles.forEach((view, n) => {
+    const isle = drawn.island.sky[n];
+    let hides = false;
+    if (eye.y < isle.top - 0.2) {
+      for (let i = 1; i <= 24 && !hides; i++) {
+        const s = i / 24;
+        const y = eye.y + (cam.y - eye.y) * s;
+        hides = y > isle.top - view.depth - 1 && y < isle.top + 6 && onIsle(isle, eye.x + (cam.x - eye.x) * s, eye.z + (cam.z - eye.z) * s, 0.5);
+      }
+    }
+    view.fade += ((hides ? FADED : 1) - view.fade) * k;
+    const see = view.fade < 0.99;
+    for (const entry of view.materials) {
+      const { mat } = entry;
+      mat.opacity = entry.opacity * view.fade;
+      const transparent = see || entry.transparent;
+      if (mat.transparent !== transparent) {
+        // (another shader: three.js has to compile it again)
+        mat.transparent = transparent;
+        mat.depthWrite = !see;
+        mat.needsUpdate = true;
+      }
+    }
+  });
 }
 
 // The rock under an isle: rings narrowing down to a point, a little rough,
@@ -229,7 +283,7 @@ export function restyleNearest(x, z) {
   });
   if (n < 0) return null;
   const old = isles[n];
-  root.remove(old.group);
+  root.remove(old.group, old.stair);
   for (const box of old.colliders) {
     box.min.y = box.max.y = box.center.y = -1e4; // (out of the way)
   }

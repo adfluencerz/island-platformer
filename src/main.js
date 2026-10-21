@@ -33,7 +33,7 @@ import { islandFor } from '../shared/worldgen.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createDevTools } from './devtools.js';
-import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot } from './skyisles.js';
+import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
 
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
@@ -2888,6 +2888,7 @@ function update(dt) {
   windTime.value = t;
   _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
   world.updateTreeFade(dt, _chest, camera);
+  if (place === 'lobby') updateSkyFade(dt, _chest, camera); // (and sky isles over us: src/skyisles.js)
   world.update(t);
   water.position.y = WATER_Y + Math.sin(t * 0.8) * 0.03;
 

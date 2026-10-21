@@ -453,7 +453,7 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
   }
 
   // Generation 10: the sky isles overhead (src/skyisles.js)
-  const sky = island.sky ? buildSkyIsles(island, { root, addCollider }) : null;
+  const sky = buildSkyIsles(island, { root, addCollider });
 
   // the lily pads drift a little (and on the sky isles, what turns turns)
   return (t) => {
