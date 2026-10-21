@@ -364,7 +364,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -379,6 +379,7 @@ const reedGeo = new THREE.CylinderGeometry(0.015, 0.03, 0.9, 5).translate(0, 0.4
 const spikeGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.2, 7).translate(0, 0.85, 0);
 const spikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 const bellMat = new THREE.MeshStandardMaterial({ color: 0x9a6fc0, roughness: 0.5 });
+const blueBellMat = new THREE.MeshStandardMaterial({ color: 0x4f6fd0, roughness: 0.5 });
 // A golden glint over a spot with something rare on it
 const glintGeo = new THREE.OctahedronGeometry(0.13, 0);
 const glintMat = new THREE.MeshStandardMaterial({ color: 0xffe14d, emissive: 0xffc400, emissiveIntensity: 1 });
@@ -419,6 +420,22 @@ function makeSpotView(spot) {
       reed.rotation.set(Math.sin(a) * 0.12, 0, -Math.cos(a) * 0.12);
       reed.scale.setScalar(0.85 + (i % 3) * 0.15);
       content.add(reed);
+    }
+  } else if (spot.kind === 'bluebell') {
+    // A cluster of green stems, each nodding with blue bells
+    content = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const a = i * 2.4;
+      const stem = new THREE.Group();
+      stem.add(new THREE.Mesh(sprigGeo, sprigMat));
+      for (let b = 0; b < 2; b++) {
+        const bell = new THREE.Mesh(bellGeo, blueBellMat);
+        bell.position.set(0.05 * (b ? 1 : -1), 0.38 - b * 0.07, 0);
+        stem.add(bell);
+      }
+      stem.position.set(Math.cos(a) * 0.2, 0, Math.sin(a) * 0.2);
+      stem.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25);
+      content.add(stem);
     }
   } else if (spot.kind === 'heather') {
     // A low clump of purple sprigs

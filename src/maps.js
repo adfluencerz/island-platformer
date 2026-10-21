@@ -136,13 +136,15 @@ export function wildMap(island) {
       pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
       heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
+      glen: { color: 0x3f6b4a, jitter: 0.04, top: [0.006, 0.02], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glen']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
       meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, hue: theme.hue },
       heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
+      glen: { tufts: 2.2, lushTufts: 1.6, flowerLush: 4, flowerChance: 0.6, light: [0.26, 0.36], hue: [0.58, 0.64] },
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
     },
     flowerColors: theme.flowers,
@@ -177,6 +179,10 @@ export function wildMap(island) {
       if (island.marsh) {
         scatter(6, 2.4, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 5 (the bluebell glen): after the marsh's, again
+      if (island.glen) {
+        scatter(5, 2.4, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -189,6 +195,13 @@ const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
 const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
+// bluebells in the glen (generation 5): a thin stem and a nodding blue bell, and mossy stumps
+const glenStemGeo = new THREE.CylinderGeometry(0.012, 0.02, 1, 5);
+const glenBellGeo = new THREE.ConeGeometry(0.06, 0.12, 6);
+const glenStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const glenBellMat = new THREE.MeshStandardMaterial({ color: 0x4f6fd0, roughness: 0.5 });
+const stumpGeo = new THREE.CylinderGeometry(0.3, 0.38, 0.4, 8);
+const stumpMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2e, roughness: 0.95 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
 // dots, a brown cep, violet, and golden
 const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4ecff], [0xe9a92a, 0xfffbe8]].map(([cap, dots]) => ({
@@ -317,6 +330,25 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
         stalk.rotation.set(tilt[0], 0, tilt[1]);
         if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
       }
+    });
+  }
+
+  // Generation 5: bluebells thick on the glen, and a few old stumps among them
+  // (after everything else drew from rng); you walk through the flowers
+  if (island.glen) {
+    scatter(34, 1, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0, n = 2 + Math.floor(rng() * 3); i < n; i++) {
+        const h = rand(0.25, 0.5);
+        const px = x + rand(-0.25, 0.25);
+        const pz = z + rand(-0.25, 0.25);
+        addDecor(glenStemGeo, glenStemMat, px, h / 2, pz, 1, h, 1, root);
+        addDecor(glenBellGeo, glenBellMat, px, h, pz, 1, 1, 1, root).rotation.x = Math.PI;
+      }
+    });
+    scatter(4, 3, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.6) && distToPaths(x, z, island.trails) > 1.4, (x, z) => {
+      const k = rand(0.8, 1.3);
+      addDecor(stumpGeo, stumpMat, x, 0.2 * k, z, k, k, k, root);
+      addCollider({ x, y: 0.2 * k, z, w: 0.6 * k, h: 0.4 * k, d: 0.6 * k });
     });
   }
 
