@@ -6,9 +6,8 @@
 //
 // An online place keeps a Giants (shared/room.js, server/farmroom.js) and says
 // how its giant is doing after every swing; a farm played alone keeps its own
-// on the page (src/main.js). Neither knows where the trees and rocks stand: a
-// page says how many there are (the same on every page), and a giant is one of
-// those numbers.
+// on the page (src/main.js). A giant is one of the place's trees or rocks, by
+// its number (shared/wilds.js: the server's list, the same on every page).
 import { GIANT, TREE, ROCK, STURDY_HITS, GROUND_STAND_Y, woodFor, stoneFor, mostWood, mostStone } from './level.js';
 import { finite } from './protocol.js';
 
@@ -50,7 +49,7 @@ export class Giants {
     this.counts = { tree: 0, rock: 0 }; // how many trees and rocks there are (0: not known yet)
   }
 
-  // How many trees and rocks there are, as a page says (the first to say, if it makes sense)
+  // How many trees and rocks there are (shared/wilds.js; set once)
   setCounts(trees, rocks) {
     const ok = (n) => Number.isInteger(n) && n > 0 && n <= MOST;
     if (!this.counts.tree && ok(trees)) this.counts.tree = trees;

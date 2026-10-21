@@ -10,12 +10,11 @@ export const C = {
   JOIN: 'join', // { v, name, key, back, color, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name and color are the ones that count; name, color: as the page has them)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
   TAKE: 'take', // { id, key? }: gathered (or walked into) what is on spot id (key: true, an old key opens a sky_vault, and is used up)
-  CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
-  MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
+  CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale; the room goes by its own, shared/wilds.js)
+  MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: as for CHOP)
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
   PICKUP: 'pickup', // { id }: walked into drop id
-  COUNT: 'count', // { trees, rocks, print (where they stand: islandPrint() in src/main.js) }: how many there are where we are (the page knows; a giant is one of them: shared/giants.js)
-  HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: its own scale; tool: the item in hand)
+  HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
@@ -33,7 +32,7 @@ export const C = {
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, giants, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, resumed } (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id

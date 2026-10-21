@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { createFarmer, damp } from './character.js';
 import { foliageMat } from './world.js';
+import { STALL } from '../shared/farmland.js';
+
+export { STALL };
 
 // ---------- The merchant's stall ----------
 // A market stall on the home farm, just east of the plaza: a counter with
@@ -13,7 +16,6 @@ import { foliageMat } from './world.js';
 // island); the merchant is added by main.js, since they look at the player.
 // Everything faces +Z, toward the camera, so you trade from the south side.
 
-export const STALL = { x: 5.5, z: 6.5 };
 const COUNTER = { w: 3, h: 1, d: 0.8, z: 0.3 }; // local to the stall
 const FRONT = COUNTER.z + COUNTER.d / 2; // the counter's front face
 export const TRADE_SPOT = { x: STALL.x, z: STALL.z + FRONT + 0.8 }; // where a customer stands

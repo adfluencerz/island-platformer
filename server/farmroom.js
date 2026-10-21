@@ -35,6 +35,8 @@ import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS, devToolsOn } from '../shared/constants.js';
 import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
+import { wildsFromWire, standsAt } from '../shared/wilds.js';
+import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
@@ -48,12 +50,14 @@ const SOIL_EVERY = 1000; // ms between looks at the bare soil
 // (as in a lobby: shared/room.js)
 const CHOP_REACH = 2.6;
 const CHOP_EVERY = 1000; // ms
-const MAX_TREES = 2000;
 const MINE_REACH = 2.6;
 const MINE_EVERY = 900; // ms
-const MAX_ROCKS = 2000;
 const ITEM_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const KEY_RE = /^-?\d{1,3},-?\d{1,3}$/;
+// where the farm's trees and rocks stand (shared/wilds.js), the same on every farm and every page
+const WILDS = wildsFromWire(HOME_WILDS);
+const MAX_TREES = WILDS.trees.length;
+const MAX_ROCKS = WILDS.rocks.length;
 
 export class FarmRoom extends Place {
   // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
@@ -103,6 +107,7 @@ export class FarmRoom extends Place {
     this.treeSites = siteMap(saved?.treeSites, MAX_TREES);
     this.rockSites = siteMap(saved?.rockSites, MAX_ROCKS);
     this.giants = Giants.fromSave(saved?.giants, this.rand); // (shared/giants.js)
+    this.giants.setCounts(MAX_TREES, MAX_ROCKS);
     // the rest of the farm is the animals', as the owner's page saved them
     // (and the chest the page keeps when it plays the farm alone: the owner's
     // page puts what is in it into this one when it comes)
@@ -258,7 +263,8 @@ export class FarmRoom extends Place {
         // (as in a lobby: the page says where the tree stands, the room checks the chopper is by it)
         const { id, x, z } = msg;
         const now = Date.now();
-        const ok = Number.isInteger(id) && id >= 0 && id < MAX_TREES && finite(x, z) &&
+        const tree = Number.isInteger(id) ? WILDS.trees[id] : null;
+        const ok = tree && finite(x, z) && standsAt(tree, x, z) &&
           !this.felled.has(id) && !this.giants.is('tree', id) && now - (p.chopAt ?? 0) >= CHOP_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= CHOP_REACH && Math.abs(p.y - GROUND_STAND_Y) < 2;
         if (!ok) return this.send(p, { t: S.CHOP_DENY, id });
@@ -267,15 +273,16 @@ export class FarmRoom extends Place {
         this.felled.set(id, at);
         p.chopAt = now;
         this.changed = true;
-        this.broadcast({ t: S.FELLED, id, by: p.id, count: woodFor(msg.size, this.rand), at });
+        this.broadcast({ t: S.FELLED, id, by: p.id, count: woodFor(tree.scale, this.rand), at });
         break;
       }
       case C.MINE: {
         // (the same for a rock)
         const { id, x, z } = msg;
         const now = Date.now();
-        const size = Math.min(ROCK.size[1], Number.isFinite(msg.size) ? msg.size : 0);
-        const ok = Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && finite(x, z) &&
+        const rock = Number.isInteger(id) ? WILDS.rocks[id] : null;
+        const size = rock?.size ?? 0;
+        const ok = rock && finite(x, z) && standsAt(rock, x, z) &&
           !this.mined.has(id) && !this.giants.is('rock', id) && now - (p.mineAt ?? 0) >= MINE_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= MINE_REACH + size * 1.5 && Math.abs(p.y - GROUND_STAND_Y) < 2;
         if (!ok) return this.send(p, { t: S.MINE_DENY, id });
@@ -284,13 +291,9 @@ export class FarmRoom extends Place {
         this.mined.set(id, at);
         p.mineAt = now;
         this.changed = true;
-        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(msg.size, this.rand), at });
+        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(size, this.rand), at });
         break;
       }
-      case C.COUNT:
-        this.giants.setCounts(msg.trees, msg.rocks);
-        this.checkIsland(p, msg);
-        break;
       case C.DEV_GIANT: {
         // (developer tools: shared/constants.js DEV_TOOLS)
         const { kind, id } = msg;
@@ -302,7 +305,9 @@ export class FarmRoom extends Place {
       }
       case C.HIT: {
         // (as in a lobby: shared/room.js)
-        const hit = giantSwing(this.giants, p, msg);
+        const thing = (msg.kind === 'tree' ? WILDS.trees : msg.kind === 'rock' ? WILDS.rocks : [])[msg.id];
+        if (!thing || !finite(msg.x, msg.z) || !standsAt(thing, msg.x, msg.z)) return;
+        const hit = giantSwing(this.giants, p, { ...msg, size: thing.scale ?? thing.size });
         if (!hit) return;
         const { kind, id } = hit;
         this.changed = true;

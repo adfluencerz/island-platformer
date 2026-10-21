@@ -3,6 +3,9 @@ import { damp } from './character.js';
 import { foliageMat } from './world.js';
 import { ITEMS } from './items.js';
 import { ANIMALS, LAY_HOURS, EGGS_PER_HEN } from '../shared/balance.js'; // (what they give, and how often)
+import { YARD, PASTURE } from '../shared/farmland.js';
+
+export { YARD, PASTURE };
 
 // ---------- Animals: hens, cows and sheep ----------
 // Two pens on the home farm. West of the plaza, a fenced yard with a coop for
@@ -41,7 +44,6 @@ const nextMorning = (hours) => (Math.floor((hours - WAKE_AT) / 24) + 1) * 24 + W
 const FENCE_H = 0.8;
 const rectOf = ({ x, z, w, d }) => ({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
 
-export const YARD = { x: -9, z: 6, w: 8, d: 6 };
 const Y = rectOf(YARD);
 const COOP = { x: -10.6, z: 3.85, w: 2.4, d: 1.5, floor: 0.4 }; // against the north fence
 const COOP_FRONT = COOP.z + COOP.d / 2;
@@ -50,7 +52,6 @@ const DOOR = { x: COOP.x, z: RAMP_END + 0.15 }; // where a hen waits at the foot
 const NEST = { x: -8.6, z: 4.1 }; // straw beside the coop
 const TROUGH = { x: -6.3, z: 3.75 };
 
-export const PASTURE = { x: -8.5, z: 15, w: 11, d: 8 };
 const P = rectOf(PASTURE);
 const HAY = [[P.minX + 1.3, P.minZ + 0.75], [P.minX + 2.45, P.minZ + 0.7]];
 const WATER = { x: P.maxX - 2.2, z: P.minZ + 0.6 };
