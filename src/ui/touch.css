@@ -205,6 +205,8 @@ body.in-menu .tc { display: none; }
   font-size: 19px;
 }
 :root.compact .ui-build-text .ui-muted { font-size: 16px; }
+/* ...stopping short of the Bag, Build and Chat buttons (a column of 50px buttons on the right; in landscape, a row of three) */
+:root.touch .ui-build { right: calc(var(--safe-r) + 70px); }
 
 :root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
 :root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
@@ -305,4 +307,5 @@ body.in-menu .tc { display: none; }
   .tc-jump { right: 3px; bottom: 88px; }
   /* Bag, Build and Chat in a row under the coin counter (no room for a column over Jump) */
   .tc-side { flex-direction: row-reverse; }
+  :root.touch .ui-build { right: calc(var(--safe-r) + 190px); }
 }
