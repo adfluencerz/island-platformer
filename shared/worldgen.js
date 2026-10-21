@@ -21,6 +21,7 @@
 // Generation 2 added the heath. Generation 3 grows islands twice as wide, with
 // several climbs of terraces and rings of toadstools, more woods and trails
 // out to them all (NARROW and WIDE below). Generation 4 added the reed marsh.
+// Generation 5 added the shell dunes: a sandy rise by the shore, with seashells.
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
@@ -28,9 +29,10 @@ export const WILD_HALF = 34; // tiles reach this far from the middle, on both ax
 const WIDE_HALF = 68; // and from generation 3 on: twice as wide
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
-export const CURRENT_GEN = 4;
+export const CURRENT_GEN = 5;
 export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
 export const MARSH_RADIUS = [5, 7]; // the reed marsh's size (gen 4, on islands twice as wide)
+export const DUNES_RADIUS = [4.5, 6.5]; // the shell dunes' size (gen 5, on islands twice as wide)
 
 // Which generation of the world a seed grows: "...-v2" is 2, any other seed 1
 export function genOf(seed) {
@@ -107,6 +109,7 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   meadow: { x, z, r }, trails: [polylines], stones: [angles round the spawn]
 //   heath: { x, z, r } | undefined: a heather moor (generation 2 and up)
 //   marsh: { x, z, r } | undefined: a reed marsh with cattails (generation 4 and up)
+//   dunes: { x, z, r } | undefined: sandy dunes by the shore with seashells (generation 5 and up)
 //   spots: [[kind, x, y, z], ...]: a spot's id is its index
 function finishIsland(desc) {
   const { coast, pond } = desc;
@@ -131,8 +134,8 @@ function finishIsland(desc) {
     tops.find((t) => Math.abs(x - t.x) < t.w / 2 + margin && Math.abs(z - t.z) < t.d / 2 + margin) ?? null;
   // what the ground is at (x, z): null (the sea), 'pond', 'sand', 'stone' (the
   // stone circle), 'path', 'meadow', 'heath' (the moor), 'marsh' (the reeds),
-  // 'moss' (the woods) or 'grass'
-  const { spawn, meadow, trails, heath, marsh } = desc;
+  // 'dune' (the shell dunes), 'moss' (the woods) or 'grass'
+  const { spawn, meadow, trails, heath, marsh, dunes } = desc;
   const groundAt = (x, z) => {
     if (!isLand(x, z)) return null;
     if (inPond(x, z)) return 'pond';
@@ -148,6 +151,10 @@ function finishIsland(desc) {
     if (marsh) {
       const m = Math.atan2(z - marsh.z, x - marsh.x);
       if (Math.hypot(x - marsh.x, z - marsh.z) < marsh.r + Math.sin(m * 4 + 2) * 1.1) return 'marsh';
+    }
+    if (dunes) {
+      const d = Math.atan2(z - dunes.z, x - dunes.x);
+      if (Math.hypot(x - dunes.x, z - dunes.z) < dunes.r + Math.sin(d * 5 + 3) * 0.9) return 'dune';
     }
     if (woodsAt(x, z) > 0) return 'moss';
     return 'grass';
@@ -246,6 +253,7 @@ const STEP_RISE = 1.2;
 const SPOT_COUNTS = { meadow: 4, trail: 3, bush: 7, mushroom: 7 };
 const HEATHER_SPOTS = 5; // (gen 2)
 const CATTAIL_SPOTS = 5; // (gen 4)
+const SEASHELL_SPOTS = 5; // (gen 5)
 // How big an island grows and how much is on it: up to generation 2 as it
 // always did; from generation 3 on twice as wide, with more of everything
 // (several climbs and rings of toadstools, more woods, trails out to them all)
@@ -654,7 +662,13 @@ function growIsland(seed, attempt) {
     marsh = growMarsh(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath: heath?.area, grow: size.heath });
     for (const spot of marsh?.spots ?? []) spots.push(spot);
   }
-  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }) });
+  // Generation 5 comes last of all
+  let dunes;
+  if (genOf(seed) >= 5) {
+    dunes = growDunes(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath: heath?.area, marsh: marsh?.area, grow: size.heath });
+    for (const spot of dunes?.spots ?? []) spots.push(spot);
+  }
+  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(dunes && { dunes: dunes.area }) });
   return checkIsland(island).length ? null : island;
 }
 
@@ -728,6 +742,45 @@ function growMarsh(seed, attempt, { draft, spots, shoreDist, groundOk, inland, t
     const z = round1(area.z + Math.sin(a) * d);
     if (!groundOk(x, z) || distToPaths(x, z, draft.trails) < 1.3 || found.some(([, ox, , oz]) => Math.hypot(x - ox, z - oz) < 2.4)) continue;
     found.push(['cattail', x, 0, z]);
+    taken.push([x, z]);
+  }
+  if (found.length < 3) return null;
+  return { area, spots: found };
+}
+
+// ---------- Generation 5: the shell dunes ----------
+// A sandy rise near the shore, with seashells to pick among the dune grass.
+// Streams of its own ('dunes', 'seashell'), so it never moves anything else.
+// An island with no room for one goes without.
+function growDunes(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath, marsh, grow = 1 }) {
+  const h = mulberry32(hashSeed(`${seed}/${attempt}/dunes`));
+  const rand = (min, max) => min + h() * (max - min);
+  const r = round1(rand(...DUNES_RADIUS) * grow);
+  const rocks = [...draft.terraces.map(([x, z, w, d]) => ({ x, z, size: Math.max(w, d) })), ...draft.toadstools.map(([x, z, s]) => ({ x, z, size: s }))];
+  let area = null;
+  for (let n = 0; n < 300 && !area; n++) {
+    const { x, z } = inland(rand(0, Math.PI * 2), rand(0.6, 0.9));
+    const rx = round1(x);
+    const rz = round1(z);
+    if (shoreDist(rx, rz) < r * 0.5 + 2.5) continue;
+    if (Math.hypot(rx - pond.x, rz - pond.z) < pond.r + r + 1.5) continue;
+    if (Math.hypot(rx - meadow.x, rz - meadow.z) < meadow.r + r + 1) continue;
+    if (Math.hypot(rx - spawn.x, rz - spawn.z) < r + STONE_CIRCLE + 3) continue;
+    if (heath && Math.hypot(rx - heath.x, rz - heath.z) < heath.r + r + 1.5) continue;
+    if (marsh && Math.hypot(rx - marsh.x, rz - marsh.z) < marsh.r + r + 1.5) continue;
+    if (rocks.some((t) => Math.hypot(rx - t.x, rz - t.z) < r + t.size / 2 + 2)) continue;
+    area = { x: rx, z: rz, r };
+  }
+  if (!area) return null;
+  const q = mulberry32(hashSeed(`${seed}/${attempt}/seashell`));
+  const found = [];
+  for (let n = 0, want = Math.round(SEASHELL_SPOTS * grow); n < 400 && found.length < want; n++) {
+    const a = q() * Math.PI * 2;
+    const d = Math.sqrt(q()) * (area.r - 1.4);
+    const x = round1(area.x + Math.cos(a) * d);
+    const z = round1(area.z + Math.sin(a) * d);
+    if (!groundOk(x, z) || distToPaths(x, z, draft.trails) < 1.3 || found.some(([, ox, , oz]) => Math.hypot(x - ox, z - oz) < 2.4)) continue;
+    found.push(['seashell', x, 0, z]);
     taken.push([x, z]);
   }
   if (found.length < 3) return null;

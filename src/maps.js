@@ -136,14 +136,16 @@ export function wildMap(island) {
       pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
       heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
+      dune: { color: 0xd9c188, jitter: 0.03, top: [0.006, 0.02] },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'dune']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
       meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, hue: theme.hue },
       heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
+      dune: { tufts: 1.2, lushTufts: 0.6, flowerLush: -2, flowerChance: 0, light: [0.5, 0.6], hue: [0.12, 0.16] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -177,6 +179,10 @@ export function wildMap(island) {
       if (island.marsh) {
         scatter(6, 2.4, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 5 (the shell dunes): last of all
+      if (island.dunes) {
+        scatter(5, 2.4, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -189,6 +195,12 @@ const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
 const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
+// dune grass (generation 5): a pale, narrow plume
+const plumeGeo = new THREE.ConeGeometry(0.07, 1, 5).translate(0, 0.5, 0);
+const plumeMat = new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 });
+const driftGeo = new THREE.CylinderGeometry(0.13, 0.15, 1, 7).rotateZ(Math.PI / 2); // driftwood, 1 long (scaled to its length)
+const driftMat = foliageMat(0xb8a58a);
+const driftEndMat = foliageMat(0xd9cdb4);
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
 // dots, a brown cep, violet, and golden
 const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4ecff], [0xe9a92a, 0xfffbe8]].map(([cap, dots]) => ({
@@ -317,6 +329,28 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
         stalk.rotation.set(tilt[0], 0, tilt[1]);
         if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
       }
+    });
+  }
+
+  // Generation 5: tufts of pale dune grass, leaning in the wind, and driftwood
+  // on the dunes (after everything else drew from rng); you walk through the grass
+  if (island.dunes) {
+    scatter(30, 1.2, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0, n = 3 + Math.floor(rng() * 3); i < n; i++) {
+        const h = rand(0.5, 1.1);
+        const blade = addDecor(plumeGeo, plumeMat, x + rand(-0.25, 0.25), 0, z + rand(-0.25, 0.25), 1, h, 1, root);
+        blade.rotation.set(rand(-0.15, 0.15), 0, rand(0.1, 0.3));
+      }
+    });
+    scatter(3, 6, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 1) && distToPaths(x, z, island.trails) > 1.5, (x, z) => {
+      const len = rand(1.2, 2);
+      const log = new THREE.Mesh(driftGeo, [driftMat, driftEndMat, driftEndMat]);
+      log.rotation.y = rand(0, Math.PI);
+      log.scale.x = len;
+      log.position.set(x, 0.14, z);
+      log.castShadow = true;
+      log.receiveShadow = true;
+      root.add(log);
     });
   }
 
