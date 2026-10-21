@@ -5,7 +5,7 @@ import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
 import { buildSkyIsles } from './skyisles.js';
-import { homeGround, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR } from '../shared/farmland.js';
+import { homeGround, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR, PEN_RECTS } from '../shared/farmland.js';
 import { WILD_DECOR, HOME_DECOR, wildKeepClear } from '../shared/wilds.js';
 
 // ---------- Maps ----------
@@ -43,9 +43,17 @@ export const HOME = {
     buildPens(ctx);
   },
   decorate({ scatter, addBush, isOpenGround }) {
-    scatter(40, 2, (x, z) => isOpenGround(x, z, 0.8), addBush);
+    scatter(40, 2, (x, z) => isOpenGround(x, z, 0.8) && !inBiggestPen(x, z, 0.8), addBush);
   },
 };
+
+// (where the pens' fences go out to at their last level: no bushes there)
+function inBiggestPen(x, z, margin) {
+  return Object.values(PEN_RECTS).some((levels) => {
+    const r = levels[levels.length - 1];
+    return Math.abs(x - r.x) < r.w / 2 + margin && Math.abs(z - r.z) < r.d / 2 + margin;
+  });
+}
 
 // ---------- The wild islands: one per online lobby ----------
 // Bigger and wilder than a farm (from generation 3 on, twice as wide again),

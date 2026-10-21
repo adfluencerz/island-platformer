@@ -6,7 +6,7 @@ import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
 import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
-import { createAnimals, inPen, ANIMAL_KINDS } from './animals.js';
+import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './animals.js';
 import { createBuildings } from './build.js';
 import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
@@ -23,7 +23,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
-import { STARTER_KIT, GIANT, UNMADE, unmake } from '../shared/balance.js';
+import { STARTER_KIT, GIANT, UNMADE, unmake, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
@@ -207,8 +207,11 @@ const inventory = createInventory({
 
 // The tool in hand, by what it does ('hoe', 'axe' or 'pickaxe': plain or sturdy), or null
 const holding = () => ITEMS[inventory.selectedId()]?.tool ?? null;
-// Swings to fell a tree or break a rock with the tool in hand (a sturdy one takes fewer)
+// Swings to fell a tree or break a rock with the tool in hand (a better one takes fewer)
 const swingsWith = (base) => ITEMS[inventory.selectedId()]?.hits ?? base;
+// The more a tree we felled or a rock we broke (m: FELLED or MINED) gives
+// with the tool in hand, a golden one (not a giant: that is shared out)
+const extraFrom = (tool, m) => (m.by === myId && !m.shares && holding() === tool ? ITEMS[inventory.selectedId()].extra ?? 0 : 0);
 
 // ---------- The merchant ----------
 // Behind the stall on the farm (merchant.js): E at the counter opens the shop
@@ -741,7 +744,7 @@ function treeFelled(m) {
   if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
   // it falls away from whoever felled it
   world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
-  const got = myShare(m);
+  const got = myShare(m) + extraFrom('axe', m);
   if (got) inventory.add('wood', got);
   if (m.shares) giantDown('tree', m.id, got, 'wood');
 }
@@ -841,7 +844,7 @@ function rockMined(m) {
   mine.pending.delete(m.id);
   if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
   world.breakRock(m.id);
-  const got = myShare(m);
+  const got = myShare(m) + extraFrom('pickaxe', m);
   if (got) inventory.add('stone', got);
   if (m.shares) giantDown('rock', m.id, got, 'stone');
 }
@@ -1265,16 +1268,19 @@ function tendAnimal(animal) {
 // (in the house, just its field)
 const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
 
-// The tiles the hoe in hand tills from x, z: a wide hoe the tiles either side
-// too, across the way the farmer faces (where there is room)
+// The tiles the hoe in hand tills from x, z: a better hoe more round it,
+// `tills` [across, ahead] of the way the farmer faces (where there is room)
 function hoeTiles(x, z) {
-  const across = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing)) ? [0, 1] : [1, 0];
-  const sides = ITEMS[inventory.selectedId()]?.wide ? [-1, 1] : [];
-  const tiles = [[x, z]];
-  for (const k of sides) {
-    const tx = x + across[0] * k * TILE_SIZE;
-    const tz = z + across[1] * k * TILE_SIZE;
-    if (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz)) tiles.push([tx, tz]);
+  const sideways = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing));
+  const across = sideways ? [0, 1] : [1, 0];
+  const ahead = sideways ? [Math.sign(Math.sin(anim.facing)), 0] : [0, Math.sign(Math.cos(anim.facing))];
+  const [wide, deep] = ITEMS[inventory.selectedId()]?.tills ?? [1, 1];
+  const span = (n) => Array.from({ length: n }, (_, i) => i - Math.floor(n / 2));
+  const tiles = [];
+  for (const j of span(deep)) for (const k of span(wide)) {
+    const tx = x + (across[0] * k + ahead[0] * j) * TILE_SIZE;
+    const tz = z + (across[1] * k + ahead[1] * j) * TILE_SIZE;
+    if (!(k || j) || (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz))) tiles.push([tx, tz]);
   }
   return tiles;
 }
@@ -2151,7 +2157,61 @@ function pourOwnChest(theirs) {
 
 // The workbench (workbench.js): built in build mode, and E next to one opens it
 const BENCH_REACH = 1.7; // from its middle
-const workbench = createWorkbench({ inventory, onOpenChange: (open) => (open ? keys.clear() : saveGame()) });
+const workbench = createWorkbench({
+  inventory,
+  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  upgrades: { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade },
+});
+
+// ---------- The farm's upgrades ----------
+// Bought at the workbench (workbench.js), and saved with the farm (`levels`):
+// the workbench's level, and the hen yard's and the pasture's
+// (PEN_LEVELS, BENCH_LEVELS in shared/balance.js). On a farm with helpers
+// they go to the room with the animals (ANIMALS), and come with the farm
+// (FARM) to whoever arrives.
+const FIRST_LEVELS = { workbench: 1, yard: 1, pasture: 1 };
+const LEVELS_OF = { workbench: BENCH_LEVELS, yard: PEN_LEVELS.yard, pasture: PEN_LEVELS.pasture };
+let farmLevels = { ...FIRST_LEVELS };
+
+// The farm's levels as saved (missing or odd: the first). The animals are let
+// out again after, by whoever calls this, if the pens changed.
+function useLevels(saved) {
+  farmLevels = Object.fromEntries(Object.entries(FIRST_LEVELS).map(([id, first]) => {
+    const level = Math.floor(saved?.[id]);
+    return [id, level >= 1 && level <= LEVELS_OF[id].length ? level : first];
+  }));
+  setPenLevels(farmLevels);
+  buildings.setBenchLevel(farmLevels.workbench);
+}
+
+// Why the farm can't have the next level of id right now ('': it can, what it costs aside)
+function upgradeProblem(id) {
+  if (visiting()) return 'Only the farmer can upgrade their farm';
+  if (id === 'workbench') return '';
+  // a bigger pen: nothing built or farmed where its fence goes out to
+  const [now, next] = [penRect(id, farmLevels[id]), penRect(id, farmLevels[id] + 1)];
+  const within = (r, x, z) => x > r.minX - 0.55 && x < r.maxX + 0.55 && z > r.minZ - 0.55 && z < r.maxZ + 0.55;
+  for (let gx = Math.floor(next.minX - 1); gx <= Math.ceil(next.maxX + 1); gx++) {
+    for (let gz = Math.floor(next.minZ - 1); gz <= Math.ceil(next.maxZ + 1); gz++) {
+      const [x, z] = [gx * TILE_SIZE, gz * TILE_SIZE];
+      if (!within(next, x, z) || within(now, x, z)) continue;
+      const key = tileKeyFor(x, z);
+      const piece = buildings.get(key);
+      const where = id === 'yard' ? 'the bigger yard' : 'the bigger pasture';
+      if (piece) return `Take down the ${PIECES[piece].name.toLowerCase()} where ${where} goes first`;
+      if (farmTiles.has(key)) return `There's farmed soil where ${where} goes: let it go back to grass first`;
+    }
+  }
+  return '';
+}
+
+function upgrade(id) {
+  if (upgradeProblem(id)) return;
+  const animalsNow = animals.capture();
+  useLevels({ ...farmLevels, [id]: farmLevels[id] + 1 });
+  if (id !== 'workbench') animals.restore(animalsNow, farmHours()); // (out in the bigger pen)
+  saveGame();
+}
 let chestCollider = null;
 // on: is it there. collider: does it need one of its own (not built as a piece)
 function showChest(on, collider = on) {
@@ -2506,6 +2566,7 @@ function showRoomFarm(m) {
   for (const [key, cropId, at] of m.crops) {
     if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
   }
+  useLevels(m.animals?.levels);
   animals.restore(Object.keys(m.animals ?? {}).length ? m.animals : null, farmHours());
 }
 
@@ -2687,7 +2748,7 @@ function sendState(dt, conn = net) {
 // is brought up to date, and one from a newer version of the game is left
 // alone: nothing is saved until the page is reloaded with that version.
 const SAVE_STORE = 'tp.save';
-const SAVE_VERSION = 7; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs; v5: cows and sheep; v6: the pickaxe; v7: building
+const SAVE_VERSION = 8; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs; v5: cows and sheep; v6: the pickaxe; v7: building; v8: the farm's upgrades
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
 let saving = true; // (false: the save is from a newer version of the game, or the farm is open on another device)
 const farmSync = new FarmSync({
@@ -2716,6 +2777,7 @@ function captureFarm() {
     rockSites: [...farmRockSites],
     giants: farmGiants.toSave(),
     chest: { ...ownChest }, // (on a farm with helpers, what didn't fit in the room's)
+    levels: { ...farmLevels }, // (its upgrades)
     ...animals.capture(), // hens, cows, sheep, eggs
   };
 }
@@ -2724,6 +2786,7 @@ function captureFarm() {
 function showFarm(farm) {
   resetFarm();
   ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
+  useLevels(farm?.levels);
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
@@ -2752,7 +2815,7 @@ function currentSave() {
 function saveGame() {
   if (!saving) return;
   // (on our farm with its helpers: the animals are ours to keep, the rest is the room's)
-  if (farmVisit?.mine) farmNet?.send({ t: C.ANIMALS, state: animals.capture() });
+  if (farmVisit?.mine) farmNet?.send({ t: C.ANIMALS, state: { ...animals.capture(), levels: { ...farmLevels } } });
   const save = currentSave();
   try {
     localStorage.setItem(SAVE_STORE, JSON.stringify(save));
@@ -3002,7 +3065,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, dayNight, saveGame, camera, farmSync, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, dayNight, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();
