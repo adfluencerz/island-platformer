@@ -96,7 +96,7 @@ body.in-menu .tc { display: none; }
 .tc-btn.down { transform: translateY(2px); box-shadow: inset 0 4px 0 #a3530c, 0 1px 0 rgba(0, 0, 0, 0.3); }
 .tc-use { right: 0; bottom: 0; width: 78px; height: 78px; font-size: 27px; }
 .tc-use.ready { background: #4f9e3c; box-shadow: inset 0 4px 0 #7ed957, inset 0 -4px 0 #2f6b25, 0 0 0 4px rgba(255, 230, 120, 0.8); }
-.tc-jump { right: 86px; bottom: 0; width: 60px; height: 60px; }
+.tc-jump { right: 86px; bottom: 0; width: 72px; height: 72px; font-size: 26px; }
 .tc-small {
   width: 50px;
   height: 50px;
@@ -107,7 +107,7 @@ body.in-menu .tc { display: none; }
   box-shadow: inset 0 3px 0 var(--inv-slot-light), inset 0 -3px 0 var(--inv-slot-shade), 0 3px 0 rgba(0, 0, 0, 0.3);
 }
 .tc-bag { right: 14px; bottom: 88px; }
-.tc-chat { right: 92px; bottom: 70px; }
+.tc-chat { right: 97px; bottom: 82px; }
 
 /* Hold the clock to fast-forward (at home) */
 :root.touch .dn-clock { pointer-events: auto; touch-action: none; }
@@ -287,7 +287,7 @@ body.in-menu .tc { display: none; }
   :root.touch .inv-menu { padding-top: calc(var(--safe-t) + 46px); }
   /* the buttons stacked up beside the toolbar rather than along it */
   :root.touch { --inv-slot: 34px; }
-  .tc-jump { right: 9px; bottom: 88px; }
+  .tc-jump { right: 3px; bottom: 88px; }
   .tc-bag { right: 84px; bottom: 104px; }
   .tc-chat { right: 84px; bottom: 44px; }
 }
