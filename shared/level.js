@@ -168,6 +168,8 @@ export const PIECES = {
   lamp_post: { name: 'Lamp post', solid: true },
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
+  // a relic from a sky isle on a pedestal, to show it off (`relic`: one of those)
+  ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
 };
 for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
 export const MAX_PIECES = 2000; // on one farm

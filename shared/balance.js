@@ -17,6 +17,11 @@
 export const DAY_LENGTH_SECONDS = 1440; // a whole game day, in real seconds
 export const SOIL_BARE_HOURS = [1.5, 2.5]; // game hours until tilled soil left empty goes back to grass
 
+// The relics, one on each style of sky isle (shared/skyisles.js): rare finds,
+// sold, or put on show on the farm (each is its own decoration: BUILD_COSTS)
+const RELICS = ['cloud_feather', 'brass_cog', 'sky_crystal', 'jade_blossom', 'glowing_spore', 'sea_glass_lens', 'fallen_star', 'royal_honeycomb', 'golden_apple',
+  'snow_globe', 'jade_teacup', 'silver_bell', 'ancient_acorn', 'desert_rose', 'moon_pearl', 'pocket_watch', 'golden_horseshoe', 'crystal_ball'];
+
 // ---------- Money ----------
 // The merchant at the farm stall: `price` is what they ask for one (no price:
 // they don't sell it), `sell` what they pay for one (no sell: they won't buy it).
@@ -43,9 +48,7 @@ export const SHOP = {
   fern: { sell: 40 },
   seashell: { sell: 40 },
   gem: { sell: 200 },
-  // the relics, one on each style of sky isle (shared/skyisles.js)
-  ...Object.fromEntries(['cloud_feather', 'brass_cog', 'sky_crystal', 'jade_blossom', 'glowing_spore', 'sea_glass_lens', 'fallen_star', 'royal_honeycomb', 'golden_apple',
-    'snow_globe', 'jade_teacup', 'silver_bell', 'ancient_acorn', 'desert_rose', 'moon_pearl', 'pocket_watch', 'golden_horseshoe', 'crystal_ball'].map((relic) => [relic, { sell: 400 }])),
+  ...Object.fromEntries(RELICS.map((relic) => [relic, { sell: 400 }])), // (the sky isles' relics)
   wood: { sell: 6 },
   stone: { sell: 4 },
   // animals, and what they give
@@ -223,6 +226,7 @@ export const BUILD_COSTS = {
   farm_chest: { wood: 8, stone: 2 },
   house: { wood: 500, stone: 200 },
   lamp_post: { lamp_post: 1 },
+  ...Object.fromEntries(RELICS.map((relic) => [relic, { [relic]: 1 }])), // (a relic on its pedestal: the relic itself)
   garden_bench: { garden_bench: 1 },
   planter: { planter: 1 },
 };

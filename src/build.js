@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PIECES, pieceTiles } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
 import { chestModel, CHEST_W } from './chest.js';
+import { createItemMesh } from './itemmesh.js';
 
 // ---------- What is built on the farm ----------
 // Fences (wood, picket, wattle, log and split rail), box hedges, gates, arches and
@@ -11,7 +12,7 @@ import { chestModel, CHEST_W } from './chest.js';
 // log towers, stone blocks, mossy or not, and pillars), wells, stone
 // lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water
 // troughs, stone benches, sundials, wheelbarrows, torches, log fences,
-// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, the workbench and what it makes for the farm, and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, the workbench and what it makes for the farm, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -93,6 +94,7 @@ const GLOWS = {
   stone_lantern: [0, 1.03, 0],
   house: [0, 0, 0], // (set below: the lamp over the door)
   torch: [0, 1.5, 0],
+  ...Object.fromEntries(Object.keys(PIECES).filter((id) => PIECES[id].relic).map((id) => [id, [0, 1.2, 0]])), // (a relic)
 };
 const FLICKERS = new Set(['torch']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
@@ -1110,6 +1112,18 @@ function model(id, gx, gz, joined) {
     solids.push({ x: 0, y: 0.4, z: 0, w: CHEST_W, h: 0.8, d: 0.7 });
   } else if (id === 'house') {
     house(g, solids);
+  } else if (PIECES[id]?.relic) {
+    // A relic from a sky isle, floating over a little pedestal (it turns: setNight)
+    part(g, box, MATS.stone, 0, 0.06, 0, 0.7, 0.12, 0.7);
+    part(g, box, MATS.stoneLight, 0, 0.42, 0, 0.42, 0.6, 0.42);
+    part(g, box, MATS.stone, 0, 0.76, 0, 0.6, 0.08, 0.6);
+    const relic = createItemMesh(id);
+    relic.name = 'relic';
+    relic.position.y = 1.25;
+    relic.scale.setScalar(1.15);
+    relic.castShadow = true;
+    g.add(relic);
+    solids.push({ x: 0, y: 0.4, z: 0, w: 0.6, h: 0.8, d: 0.6 });
   } else if (id === 'planter') {
     part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
     part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
@@ -1135,6 +1149,7 @@ export function createBuildings(world) {
   const covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
 
   const glows = new Map(); // key -> { at: where a light-giving piece's flame is, in the world, flicker, flame }
+  const relics = new Map(); // key -> the relic floating over its pedestal (it turns)
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
     const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
     light.castShadow = false;
@@ -1148,6 +1163,7 @@ export function createBuildings(world) {
   function undraw(piece) {
     world.root.remove(piece.group);
     glows.delete(piece.key);
+    relics.delete(piece.key);
     for (const c of piece.colliders) world.platforms.splice(world.platforms.indexOf(c), 1);
     piece.group = null;
     piece.colliders = [];
@@ -1165,6 +1181,8 @@ export function createBuildings(world) {
     world.root.add(group);
     piece.group = group;
     piece.key = key;
+    const relic = group.getObjectByName('relic');
+    if (relic) relics.set(key, relic);
     const flame = GLOWS[piece.id];
     if (flame) {
       glows.set(key, {
@@ -1280,6 +1298,11 @@ export function createBuildings(world) {
       // the torches' flames dance a little, day and night
       for (const glow of glows.values()) {
         if (glow.flame) glow.flame.scale.y = 0.32 * (1 + 0.12 * Math.sin(t * 9 + glow.seed) + 0.06 * Math.sin(t * 23 + glow.seed * 3));
+      }
+      // the relics turn slowly and bob over their pedestals
+      for (const relic of relics.values()) {
+        relic.rotation.y = t * 0.8 + relic.parent.position.x;
+        relic.position.y = 1.25 + Math.sin(t * 1.6 + relic.parent.position.z) * 0.06;
       }
       const nearest = night > 0.01 && focus
         ? [...glows.values()].sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
