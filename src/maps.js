@@ -137,8 +137,9 @@ export function wildMap(island) {
       heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
       glade: { color: 0x5f8a6a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+      field: { color: 0x9a9a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
@@ -146,6 +147,7 @@ export function wildMap(island) {
       heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
       glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44] },
+      field: { tufts: 2.8, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.3, light: [0.34, 0.44], hue: [0.14, 0.2] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -183,6 +185,10 @@ export function wildMap(island) {
       if (island.glade) {
         scatter(4, 2.6, (x, z) => tileAt(x, z) === 'glade' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 6 (the sunflower field): after the glade's
+      if (island.field) {
+        scatter(3, 2.6, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -197,6 +203,12 @@ const gladeStemGeo = new THREE.CylinderGeometry(0.012, 0.018, 0.4, 4);
 const gladeBellGeo = new THREE.SphereGeometry(0.04, 6, 5);
 const gladeStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
 const gladeBellMat = new THREE.MeshStandardMaterial({ color: 0x5a6fd8, roughness: 0.5 });
+const fieldStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1, 5);
+const fieldHeadGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.04, 10).rotateX(Math.PI / 2);
+const fieldHeartGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 8).rotateX(Math.PI / 2);
+const fieldStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const fieldHeadMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5 });
+const fieldHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 });
 const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
@@ -342,6 +354,20 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
         stem.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
         for (let b = 0; b < 3; b++) addDecor(gladeBellGeo, gladeBellMat, px + (b - 1) * 0.03, (0.3 + b * 0.04) * h + 0.1, pz, 1, 1.3, 1, root);
       }
+    });
+  }
+
+  // Generation 6: sunflowers, tall stems nodding a yellow head, thick in the field
+  // (after everything else drew from rng); you walk through them
+  if (island.field) {
+    scatter(30, 1.1, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      const h = rand(1.1, 1.6);
+      const px = x + rand(-0.3, 0.3);
+      const pz = z + rand(-0.3, 0.3);
+      addDecor(fieldStemGeo, fieldStemMat, px, h / 2, pz, 1, h, 1, root);
+      const head = addDecor(fieldHeadGeo, fieldHeadMat, px, h, pz + 0.02, 1, 1, 1, root);
+      head.rotation.set(rand(-0.2, 0.1), rand(-0.6, 0.6), 0);
+      addDecor(fieldHeartGeo, fieldHeartMat, px, h, pz + 0.05, 1, 1, 1, root).rotation.copy(head.rotation);
     });
   }
 

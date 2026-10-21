@@ -90,16 +90,18 @@ await test('old seeds (generation 1) grow exactly the islands they always did', 
 // Generations 2 and 3 are as settled as generation 1 now: pinned the same way.
 const LATER_SEEDS = {
   2: { 'mossy-cove-7-v2': 119939977, 'dewy-glade-31-v2': 2076144126, 'sunny-knoll-5-v2': 4173192289, 'golden-fen-0-v2': 1296267364, 'quiet-ridge-88-v2': 2011619196, 'willow-isle-12-v2': 4045709457, 'pebble-nook-64-v2': 869828886, 'honey-grove-3-v2': 2547208232 },
+  5: {"mossy-cove-7-v5":450326002,"dewy-glade-31-v5":3459739216,"sunny-knoll-5-v5":3901735779,"golden-fen-0-v5":2353024595,"quiet-ridge-88-v5":3223947397,"willow-isle-12-v5":3675653226,"pebble-nook-64-v5":2655493373,"honey-grove-3-v5":803211333},
   4: {"mossy-cove-7-v4":1587304027,"dewy-glade-31-v4":2535534902,"sunny-knoll-5-v4":4282641216,"golden-fen-0-v4":2506278968,"quiet-ridge-88-v4":1283944460,"willow-isle-12-v4":2433746912,"pebble-nook-64-v4":2936599587,"honey-grove-3-v4":3566523821},
   3: { 'mossy-cove-7-v3': 2325607642, 'dewy-glade-31-v3': 395772194, 'sunny-knoll-5-v3': 1431089034, 'golden-fen-0-v3': 572641172, 'quiet-ridge-88-v3': 2526362288, 'willow-isle-12-v3': 1353456352, 'pebble-nook-64-v3': 3529699339, 'honey-grove-3-v3': 2551931431 },
 };
-await test('generation 2, 3 and 4 seeds grow exactly the islands they did, with nothing newer', () => {
+await test('generation 2 to 5 seeds grow exactly the islands they did, with nothing newer', () => {
   for (const [gen, seeds] of Object.entries(LATER_SEEDS)) {
     for (const [seed, print] of Object.entries(seeds)) {
       assert.equal(genOf(seed), Number(gen), seed);
       assert.equal(fingerprint(seed), print, `the island of "${seed}" changed`);
       if (Number(gen) < 4) assert.ok(!islandFor(seed).marsh && !islandFor(seed).spots.some(([k]) => k === 'cattail'), `"${seed}" grew generation 4 things`);
-      assert.ok(!islandFor(seed).glade && !islandFor(seed).spots.some(([k]) => k === 'bluebell'), `"${seed}" grew generation 5 things`);
+      if (Number(gen) < 5) assert.ok(!islandFor(seed).glade && !islandFor(seed).spots.some(([k]) => k === 'bluebell'), `"${seed}" grew generation 5 things`);
+      assert.ok(!islandFor(seed).field && !islandFor(seed).spots.some(([k]) => k === 'sunflower'), `"${seed}" grew generation 6 things`);
     }
   }
 });
@@ -140,6 +142,24 @@ await test('generation 5 islands are generation 4 islands with a bluebell glade'
   assert.ok(glades >= 45, `most gen 5 islands have a glade (${glades} of 60)`);
 });
 
+await test('generation 6 islands are generation 5 islands with a sunflower field', () => {
+  assert.equal(genOf('dewy-glade-31-v6'), 6);
+  let fields = 0;
+  for (let i = 0; i < 60; i++) {
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v6');
+    const island = islandFor(seed);
+    assert.deepEqual(checkIsland(island), [], seed);
+    assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
+    if (island.field) {
+      fields++;
+      const heads = island.spots.filter(([k]) => k === 'sunflower');
+      assert.ok(heads.length >= 3, seed);
+      assert.ok(heads.every(([, x, , z]) => island.groundAt(x, z) === 'field'), `${seed}: sunflowers grow in the field`);
+    }
+  }
+  assert.ok(fields >= 45, `most gen 6 islands have a field (${fields} of 60)`);
+});
+
 await test('new seeds carry their generation, and grow what it added', () => {
   assert.equal(genOf('dewy-glade-31-v2'), 2);
   assert.equal(genOf('dewy-glade-31-v25'), 1);
@@ -175,7 +195,7 @@ await test('generation 3 islands: twice as wide, with climbs, rings of toadstool
     assert.ok(new Set(island.terraces.map((step) => step[5])).size >= 2, `${seed}: more than one climb`);
     assert.ok(new Set(island.toadstools.map((cap) => cap[4])).size >= 2, `${seed}: more than one ring of toadstools`);
     assert.ok(island.spots.length >= 50, `${seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell')) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower')) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
     // every wood has a trail into it
     for (const [x, z, r] of island.woods) assert.ok(distToPaths(x, z, island.trails) < r, `${seed}: no trail to the wood at ${x}, ${z}`);
   }
@@ -186,7 +206,7 @@ await test('every seed grows a sound island: spots on land, reachable, not insid
     const island = islandFor(randomSeed(mulberry32(i)).replace(/-v\d$/, '') + i);
     assert.deepEqual(checkIsland(island), [], `seed ${island.seed}`);
     assert.ok(island.spots.length >= 25, `seed ${island.seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
   }
 });
 

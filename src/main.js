@@ -367,7 +367,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -382,6 +382,10 @@ const reedGeo = new THREE.CylinderGeometry(0.015, 0.03, 0.9, 5).translate(0, 0.4
 const spikeGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.2, 7).translate(0, 0.85, 0);
 const spikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 const bluebellMat = new THREE.MeshStandardMaterial({ color: 0x4a62d0, roughness: 0.5 });
+const sunflowerPetalMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5 });
+const sunflowerHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 });
+const sunflowerPetalGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.02, 10).rotateX(Math.PI / 2);
+const sunflowerHeartGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 8).rotateX(Math.PI / 2);
 const bellMat = new THREE.MeshStandardMaterial({ color: 0x9a6fc0, roughness: 0.5 });
 // A golden glint over a spot with something rare on it
 const glintGeo = new THREE.OctahedronGeometry(0.13, 0);
@@ -438,6 +442,25 @@ function makeSpotView(spot) {
       }
       stem.position.set(Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22);
       stem.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25);
+      content.add(stem);
+    }
+  } else if (spot.kind === 'sunflower') {
+    // A few tall stems, each nodding a yellow head with a brown heart
+    content = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const a = i * 2.1;
+      const stem = new THREE.Group();
+      const pole = new THREE.Mesh(reedGeo, sprigMat);
+      pole.scale.y = 0.9 + i * 0.1;
+      stem.add(pole);
+      const top = 0.9 * (0.9 + i * 0.1);
+      const petals = new THREE.Mesh(sunflowerPetalGeo, sunflowerPetalMat);
+      petals.position.set(0, top, 0.02);
+      const heart = new THREE.Mesh(sunflowerHeartGeo, sunflowerHeartMat);
+      heart.position.set(0, top, 0.04);
+      stem.add(petals, heart);
+      stem.position.set(Math.cos(a) * 0.2, 0, Math.sin(a) * 0.2);
+      stem.rotation.y = a;
       content.add(stem);
     }
   } else if (spot.kind === 'heather') {
