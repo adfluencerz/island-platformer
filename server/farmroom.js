@@ -32,7 +32,7 @@
 import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS } from '../shared/constants.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, keptClear, chestHasRoom, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
@@ -56,7 +56,7 @@ export class FarmRoom extends Place {
   // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
   // { id, owner }, or null for someone who isn't the owner or a helper.
   constructor({ farm, admit, log = () => {} }) {
-    super({ code: farm.id, name: farmTitle(farm), worldLimit: FARM_HALF + 40, log });
+    super({ code: farm.id, name: farmTitle(farm), worldLimit: Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w) + 40, log }); // (the house's room is out past the sea)
     this.farmId = farm.id;
     this.admit = admit;
     const saved = farm.save?.farm ?? null;
@@ -84,9 +84,11 @@ export class FarmRoom extends Place {
         this.crops.set(key, { crop, plantedAt: savedHours - age / SECONDS_PER_HOUR });
       }
     }
-    this.built = new Map(); // key -> piece (PIECES)
+    this.built = new Map(); // key -> piece (PIECES), on the tile it was built on
+    this.covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
     for (const [key, piece] of saved?.built ?? []) {
-      if (KEY_RE.test(key) && PIECES[piece] && !this.tilled.has(key) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece))) this.built.set(key, piece);
+      const free = KEY_RE.test(key) && PIECES[piece] && pieceTiles(piece, key).every((k) => KEY_RE.test(k) && !this.tilled.has(k) && !this.covered.has(k));
+      if (free && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece))) this.put(key, piece);
     }
     const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
     this.felled = comingBack(saved?.felled, MAX_TREES); // tree id -> when it grows back (ms)
@@ -174,7 +176,7 @@ export class FarmRoom extends Place {
     switch (msg?.t) {
       case C.TILL: {
         const { key } = msg;
-        if (!onFarm(key) || this.tilled.has(key) || this.built.has(key) || !this.near(p, key)) return this.deny(p, 'till', key);
+        if (!this.farmable(key) || this.tilled.has(key) || this.covered.has(key) || !this.near(p, key)) return this.deny(p, 'till', key);
         this.tilled.set(key, { since: this.hours(), life: this.soilLife() });
         this.changed = true;
         this.broadcast({ t: S.TILLED, key, by: p.id });
@@ -182,7 +184,7 @@ export class FarmRoom extends Place {
       }
       case C.PLANT: {
         const { key, crop } = msg;
-        if (!onFarm(key) || !CROP_GROW_TIME[crop] || !this.tilled.has(key) || this.crops.has(key) || !this.near(p, key)) {
+        if (!this.farmable(key) || !CROP_GROW_TIME[crop] || !this.tilled.has(key) || this.crops.has(key) || !this.near(p, key)) {
           return this.deny(p, 'plant', key, CROP_GROW_TIME[crop] ? crop : undefined);
         }
         const at = round3(this.hours());
@@ -193,7 +195,7 @@ export class FarmRoom extends Place {
       }
       case C.HARVEST: {
         const { key } = msg;
-        const c = onFarm(key) && this.crops.get(key);
+        const c = this.farmable(key) && this.crops.get(key);
         const age = c && (this.hours() - c.plantedAt) * SECONDS_PER_HOUR;
         if (!c || age < CROP_GROW_TIME[c.crop] - RIPE_SLACK || !this.near(p, key)) return this.deny(p, 'harvest', key);
         const item = CROP_PRODUCE[c.crop];
@@ -214,26 +216,29 @@ export class FarmRoom extends Place {
         // chest, when the owner builds: msg.chest, { item: count })
         const { key, piece } = msg;
         const fromChest = Object.hasOwn(PIECES, piece) ? this.chestShare(p, piece, msg.chest) : null;
-        const ok = onFarm(key) && fromChest && !this.built.has(key) && !this.tilled.has(key) &&
-          !keptClear(...key.split(',').map(Number)) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece)) && this.near(p, key);
+        const tiles = Object.hasOwn(PIECES, piece) ? pieceTiles(piece, key) : [];
+        const free = (k) => onFarm(k) && !this.covered.has(k) && !this.tilled.has(k) && !keptClear(...k.split(',').map(Number));
+        const ok = onFarm(key) && fromChest && tiles.every(free) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece)) && this.near(p, key);
         if (!ok) return this.deny(p, 'build', key, undefined, Object.hasOwn(PIECES, piece) ? piece : undefined);
         for (const [item, n] of fromChest) {
           this.chest[item] -= n;
           if (!this.chest[item]) delete this.chest[item];
         }
-        this.built.set(key, piece);
+        this.put(key, piece);
         this.changed = true;
         this.broadcast({ t: S.BUILT, key, piece, by: p.id });
         if (fromChest.length) this.broadcast({ t: S.CHEST, items: this.chest });
         break;
       }
       case C.UNBUILD: {
+        // (key: any tile the piece stands on, next to the one taking it down)
         const { key } = msg;
-        const piece = onFarm(key) && this.built.get(key);
+        const at = onFarm(key) && this.covered.get(key);
+        const piece = at && this.built.get(at);
         if (!piece || !this.near(p, key)) return this.deny(p, 'unbuild', key);
-        this.built.delete(key);
+        this.unput(at);
         this.changed = true;
-        this.broadcast({ t: S.UNBUILT, key, piece, by: p.id });
+        this.broadcast({ t: S.UNBUILT, key: at, piece, by: p.id });
         break;
       }
       case C.CHOP: {
@@ -346,6 +351,24 @@ export class FarmRoom extends Place {
     const share = Object.entries(asked);
     const fits = ([item, n]) => Object.hasOwn(cost, item) && Number.isInteger(n) && n >= 1 && n <= cost[item] && this.chest[item] >= n;
     return share.every(fits) ? share : null;
+  }
+
+  // A piece built on tile key, on every tile it stands on (and taken down again)
+  put(key, piece) {
+    this.built.set(key, piece);
+    for (const k of pieceTiles(piece, key)) this.covered.set(k, key);
+  }
+
+  unput(key) {
+    for (const k of pieceTiles(this.built.get(key), key)) this.covered.delete(k);
+    this.built.delete(key);
+  }
+
+  // A tile that is farmed: on the farm's island, or in the house's field while there is a house
+  farmable(key) {
+    if (onFarm(key)) return true;
+    if (typeof key !== 'string' || !KEY_RE.test(key) || !this.has('house')) return false;
+    return inHouseField(...key.split(',').map(Number));
   }
 
   // is a `piece` built on the farm? (there is only `one` of some)

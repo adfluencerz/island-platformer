@@ -8,6 +8,7 @@ import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS } from './animals.js';
 import { createBuildings } from './build.js';
+import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
@@ -20,7 +21,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom, pieceTiles, inHouseField } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -183,7 +184,7 @@ scene.add(water);
 const inventory = createInventory({
   onOpenChange: (open) => open && keys.clear(),
   onBuild: (piece) => startBuilding(piece),
-  buildProblem: () => (place === 'home' ? '' : 'You build on a farm: head home first.'),
+  buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
 });
@@ -969,6 +970,8 @@ function useAction() {
     return;
   }
   if (building) return buildHere();
+  if (houseDoorInReach()) return goInside();
+  if (houseRoom.exitInReach(player.position)) return goOutside();
   if (chest.inReach(player.position)) return chest.open();
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return workbench.open();
   if (atStall(player.position)) {
@@ -999,6 +1002,12 @@ function farmHere() {
     inventory.notify('That\'s the animals\' pen: farm outside the fence');
     return;
   }
+  // (in the house, just its field)
+  const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
+  if (offField(x, z) && (holding() === 'hoe' || ITEMS[held]?.plants)) {
+    inventory.notify('Farm in the field: the earth on the left');
+    return;
+  }
   if (holding() === 'hoe' && buildings.get(tileKeyFor(x, z))) {
     inventory.notify('Something is built here: take it down to till');
   } else if (holding() === 'hoe') {
@@ -1008,7 +1017,7 @@ function farmHere() {
     for (const k of [0, ...sides]) {
       const tx = x + across[0] * k * TILE_SIZE;
       const tz = z + across[1] * k * TILE_SIZE;
-      if (k && (buildings.get(tileKeyFor(tx, tz)) || inPen(tx, tz))) continue;
+      if (k && (buildings.get(tileKeyFor(tx, tz)) || inPen(tx, tz) || offField(tx, tz))) continue;
       if (tillTileAt(tx, tz) && farmNet) {
         pendingTills.add(tileKeyFor(tx, tz));
         farmNet.send({ t: C.TILL, key: tileKeyFor(tx, tz) });
@@ -1249,6 +1258,12 @@ function tappedThing() {
   } else {
     const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
     if (chest.shown()) things.set(chest.root, { kind: 'chest', x: chest.at().x, z: chest.at().z + 0.9 });
+    const house = buildings.find('house');
+    if (house) {
+      const door = houseDoorAt(house);
+      things.set(buildings.groupOf(house), { kind: 'door', x: door.x, z: door.z + 0.6 });
+    }
+    things.set(houseRoom.door, { kind: 'exit', ...houseRoom.entry() });
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
     for (const animal of animals.list()) if (animal.root.visible) things.set(animal.root, { kind: 'animal', animal, x: animal.pos.x, z: animal.pos.z });
@@ -1295,6 +1310,8 @@ function arrived(d) {
   switch (walk.kind) {
     case 'stall': return atStall(player.position);
     case 'chest': return chest.inReach(player.position);
+    case 'door': return houseDoorInReach();
+    case 'exit': return houseRoom.exitInReach(player.position);
     case 'spot': return d < GATHER_REACH * 0.8 && Math.abs(player.position.y - GROUND_STAND_Y - walk.spot.y) < 1.2;
     case 'tree': return treeInReach() === walk.tree;
     case 'rock': return rockInReach() === walk.rock;
@@ -1315,6 +1332,8 @@ function arrive() {
   } else if (kind === 'workbench') workbench.open();
   else if (kind === 'stall') shop.open();
   else if (kind === 'chest') chest.open();
+  else if (kind === 'door') goInside();
+  else if (kind === 'exit') goOutside();
   else if (kind === 'animal') tendAnimal(animal);
   else if (kind === 'farmer') bop();
   else if (kind === 'tile' && farm) farmHere();
@@ -1403,6 +1422,40 @@ function steer(dt) {
 // down gives back what it cost. Esc or Done ends it. On a farm with helpers
 // the room says yes (BUILT) or no (FARM_DENY: it goes, and the cost comes back).
 const buildings = createBuildings(worlds.home);
+
+// ---------- The house ----------
+// Built in build mode (the house piece, one to a farm, 5 tiles by 4). E at
+// its door (or a tap on it) goes inside: a room of its own (house.js), with a
+// field to farm, out past the sea on the farm's world; E at the door in there
+// comes back out, in front of the house.
+const houseRoom = createHouseRoom(worlds.home);
+const DOOR_REACH = 1.3;
+// the middle of the house's door, on its front (the house built on tile key)
+const houseDoorAt = (key) => {
+  const [x, z] = keyXZ(key);
+  return { x, z: z + 0.4 * TILE_SIZE };
+};
+function houseDoorInReach() {
+  const key = place === 'home' && buildings.find('house');
+  if (!key || player.position.y > 2.2) return false;
+  const door = houseDoorAt(key);
+  return Math.hypot(player.position.x - door.x, player.position.z - (door.z + 0.6)) < DOOR_REACH;
+}
+
+function goInside() {
+  const { x, z } = houseRoom.entry();
+  putDown({ x, y: GROUND_STAND_Y, z });
+  anim.facing = Math.PI; // (into the room)
+}
+
+// In front of the house's door (or, if it was taken down meanwhile, the plaza)
+function goOutside() {
+  const key = buildings.find('house');
+  if (!key) return putDown(arrival());
+  const door = houseDoorAt(key);
+  putDown({ x: door.x, y: GROUND_STAND_Y, z: door.z + 0.9 });
+  anim.facing = 0; // (toward the camera)
+}
 const BUILD_REACH = 2.4; // a tile this close is built on from where you stand (the farm's room allows 2.6)
 const FARM_EDGE = 27; // tiles out to here (the farm's room allows 28)
 let building = null; // build mode: a PIECES id, or 'remove'
@@ -1468,19 +1521,33 @@ function blockedTile(x, z) {
 // Why the piece in hand can't go on (or come off) tile key ('': it can)
 function buildProblemAt(key) {
   if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return 'Stand on the ground to build';
-  const [x, z] = keyXZ(key);
-  const [gx, gz] = key.split(',').map(Number);
+  if (houseRoom.inside(player.position)) return 'Build outside the house';
   if (!inBuildReach(key)) return onOwnTile(key) ? 'Step off it first' : 'Too far: click it to walk over';
   if (building === 'remove') {
     const piece = buildings.get(key);
-    if (!piece || pendingUnbuilds.has(key)) return 'Nothing to take down there';
+    if (!piece || pendingUnbuilds.has(buildings.anchor(key))) return 'Nothing to take down there';
     if (piece === 'farm_chest' && !farmVisit && Object.keys(ownChest).length) return 'Empty the chest first';
     if (!Object.entries(PIECES[piece].cost).every(([item, n]) => inventory.canAdd(item, n))) return 'No room in the backpack for what it gives back';
     return '';
   }
   const piece = PIECES[building];
-  if (buildings.get(key)) return 'Something is built there';
   if (piece.one && buildings.find(building)) return `The farm has a ${piece.name.toLowerCase()}: take it down to move it`;
+  // (every tile it would stand on: a house has 20)
+  for (const k of pieceTiles(building, key)) {
+    const problem = tileProblem(k, piece);
+    if (problem) return problem;
+  }
+  if (buildings.size() >= MAX_PIECES) return 'The farm can\'t hold any more';
+  const short = Object.entries(piece.cost).find(([item, n]) => buildStock(item) < n);
+  if (short) return ITEMS[short[0]].piece ? `Make a ${ITEMS[short[0]].name.toLowerCase()} at a workbench first` : `Not enough ${ITEMS[short[0]].name.toLowerCase()}`;
+  return '';
+}
+
+// Why `piece` can't stand on tile key ('': it can)
+function tileProblem(key, piece) {
+  const [x, z] = keyXZ(key);
+  const [gx, gz] = key.split(',').map(Number);
+  if (buildings.get(key)) return 'Something is built there';
   if (farmTiles.has(key)) return 'That soil is tilled';
   if (Math.max(Math.abs(gx), Math.abs(gz)) > FARM_EDGE) return 'Too close to the water';
   if (keptClear(gx, gz)) return 'Keep that spot clear for farmers arriving';
@@ -1489,9 +1556,6 @@ function buildProblemAt(key) {
   if (blockedTile(x, z)) return 'Something is in the way';
   const standing = piece.solid && standingAt(x, z);
   if (standing) return standing === 'you' ? 'Step back a little first' : 'Someone is standing there';
-  if (buildings.size() >= MAX_PIECES) return 'The farm can\'t hold any more';
-  const short = Object.entries(piece.cost).find(([item, n]) => buildStock(item) < n);
-  if (short) return ITEMS[short[0]].piece ? `Make a ${ITEMS[short[0]].name.toLowerCase()} at a workbench first` : `Not enough ${ITEMS[short[0]].name.toLowerCase()}`;
   return '';
 }
 
@@ -1508,8 +1572,8 @@ function buildAt(key, { quiet = false } = {}) {
   builtKey = key;
   if (building === 'remove') {
     if (farmNet) {
-      pendingUnbuilds.add(key);
-      farmNet.send({ t: C.UNBUILD, key });
+      pendingUnbuilds.add(buildings.anchor(key)); // (a house: by the tile it was built on, whichever of its tiles this is)
+      farmNet.send({ t: C.UNBUILD, key }); // (the room says which piece that was)
     } else {
       giveBack(buildings.remove(key));
       placeChest();
@@ -1891,7 +1955,7 @@ async function joinFarm(id) {
       giveBack(buildings.remove(m.key), carried); // (it wasn't built after all: the chest's share never left it)
       placeChest();
     } else if (m.op === 'unbuild') {
-      pendingUnbuilds.delete(m.key);
+      pendingUnbuilds.delete(buildings.anchor(m.key) ?? m.key);
     }
   });
   on(S.FELLED, (m) => {
@@ -2425,6 +2489,8 @@ function update(dt) {
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
   buildings.setNight(dayNight.night());
+  houseRoom.setNight(dayNight.night());
+  houseRoom.update(t, player.position);
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
@@ -2441,6 +2507,8 @@ function update(dt) {
 function homePrompt() {
   if (menuOpen()) return '';
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
+  if (houseDoorInReach()) return 'E  Go inside';
+  if (houseRoom.exitInReach(player.position)) return 'E  Go outside';
   if (chest.inReach(player.position)) return 'E  Open the farm chest';
   if (atStall(player.position)) return 'E  Trade with the merchant';
   const held = inventory.selectedId();
