@@ -1176,6 +1176,8 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.deepEqual(a.save.farm.hens, [[1, 1, 1, 1]]);
   assert.deepEqual(a.chest, { turnip: 1, flax: 1 });
   assert.equal(a.roomRev, 1);
+  // lamp posts and benches made at the workbench before they were built from wood and stone come back as what they cost
+  assert.deepEqual(new FarmRoom({ farm: { ...a, chest: { wood: 1, lamp_post: 2, garden_bench: 1 } }, admit: () => null }).chest, { wood: 13, stone: 4 });
   // a save from a page that didn't have that farm keeps the room's farm, but its backpack counts
   farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: { gold: 77 } }, { live: false, roomRev: 0 });
   assert.deepEqual(a.save.farm.tilled.map(([key]) => key).sort(), ['3,3', '4,3']);

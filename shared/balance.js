@@ -168,7 +168,7 @@ export const FARM_FINDS = {
 
 // ---------- Building ----------
 // What each piece costs to build (it all goes back when it is taken down).
-// The decorations cost the one made at the workbench (see RECIPES).
+// The flower planter costs the one made at the workbench (see RECIPES).
 export const BUILD_COSTS = {
   wood_fence: { wood: 2 },
   stone_wall: { stone: 3 },
@@ -225,9 +225,9 @@ export const BUILD_COSTS = {
   workbench: { wood: 10, stone: 5 },
   farm_chest: { wood: 8, stone: 2 },
   house: { wood: 500, stone: 200 },
-  lamp_post: { lamp_post: 1 },
+  lamp_post: { wood: 3, stone: 2 },
   ...Object.fromEntries(RELICS.map((relic) => [relic, { [relic]: 1 }])), // (a relic on its pedestal: the relic itself)
-  garden_bench: { garden_bench: 1 },
+  garden_bench: { wood: 6 },
   planter: { planter: 1 },
 };
 
@@ -235,8 +235,6 @@ export const BUILD_COSTS = {
 // What can be made, in the order it is listed. `needs`: items used up (a
 // tool among them is swapped for the one made, in its slot).
 export const RECIPES = [
-  { makes: 'lamp_post', needs: { wood: 3, stone: 2 } },
-  { makes: 'garden_bench', needs: { wood: 6 } },
   { makes: 'planter', needs: { stone: 4, wood: 1 } },
   { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
   { makes: 'sturdy_pickaxe', needs: { pickaxe: 1, wood: 8, stone: 12 } },
@@ -244,6 +242,19 @@ export const RECIPES = [
   { makes: 'wooden_sword', needs: { wood: 8 } },
   { makes: 'mallet', needs: { wood: 4, stone: 6 } },
 ];
+
+// Made at the workbench once, built straight from wood and stone now: what
+// one is worth, for a backpack or a chest that still has some
+export const UNMADE = { lamp_post: { wood: 3, stone: 2 }, garden_bench: { wood: 6 } };
+
+// items ({ item: count }), with any of those turned back into what they cost
+export function unmake(items) {
+  const out = {};
+  for (const [item, n] of Object.entries(items ?? {})) {
+    for (const [what, k] of Object.entries(UNMADE[item] ?? { [item]: 1 })) out[what] = (out[what] ?? 0) + k * n;
+  }
+  return out;
+}
 
 // ---------- Bopping (lobbies) ----------
 // With one in hand, E bops the farmer in front within `reach`: knocked back

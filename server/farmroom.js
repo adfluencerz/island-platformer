@@ -38,6 +38,7 @@ import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
+import { unmake } from '../shared/balance.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
@@ -113,7 +114,7 @@ export class FarmRoom extends Place {
     // page puts what is in it into this one when it comes)
     const { savedAt, hours, tilled, crops, built, felled, mined, treeSites, rockSites, giants, chest, ...animals } = saved ?? {};
     this.animals = animals;
-    this.chest = { ...(farm.chest ?? {}) };
+    this.chest = unmake(farm.chest); // (a lamp post or bench made at the workbench, back in wood and stone)
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
     this.clockSentAt = now;
     this.soilAt = now;

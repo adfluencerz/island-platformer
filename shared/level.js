@@ -172,6 +172,20 @@ export const PIECES = {
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
 };
 for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
+
+// The Build tab's groups, in order, and each piece's `group`: fences, walls
+// and what joins them (gates, arches, arbors, hedges); paths, walked on;
+// blocks, climbed; the buildings, that do something; the decorations; the relics
+export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics'];
+const BUILDINGS = new Set(['workbench', 'farm_chest', 'house', 'stone_well']);
+for (const [id, piece] of Object.entries(PIECES)) {
+  piece.group = piece.relic ? 'Relics'
+    : BUILDINGS.has(id) ? 'Buildings'
+    : piece.joins ? 'Fences & walls'
+    : piece.block ? 'Blocks'
+    : !piece.solid ? 'Paths'
+    : 'Decor';
+}
 export const MAX_PIECES = 2000; // on one farm
 // How many of piece id a farm may have, with this many helpers: one of the
 // `one` pieces, one more house for each helper, as many as it likes of the rest

@@ -23,7 +23,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
-import { STARTER_KIT, GIANT } from '../shared/balance.js';
+import { STARTER_KIT, GIANT, UNMADE, unmake } from '../shared/balance.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
@@ -2689,7 +2689,7 @@ function captureFarm() {
 // (a farm from before there were animals gets the ones a new farm comes with)
 function showFarm(farm) {
   resetFarm();
-  ownChest = Object.fromEntries(Object.entries(farm?.chest ?? {}).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
+  ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
@@ -2748,7 +2748,12 @@ function useSave(save) {
     hud.setConnStatus('This farm was saved by a newer version of the game. Reload the page to play it: nothing is saved until then.');
     return false;
   }
+  // (a lamp post or bench made at the workbench before they were built
+  // straight from wood and stone comes back as what it cost)
+  const unmade = {};
+  for (const slot of save.backpack?.slots ?? []) if (slot && UNMADE[slot.id]) unmade[slot.id] = (unmade[slot.id] ?? 0) + Math.max(1, slot.count | 0);
   inventory.restore(save.backpack ?? {});
+  for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
   homeFarm = save.farm ?? null;
   if (save.v < 2) gift('flax_seeds', 5);
   if (save.v < 3) gift('axe', 1);
