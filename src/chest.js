@@ -39,24 +39,25 @@ function box(parent, material, w, h, d, x, y, z) {
   return m;
 }
 
-// The chest, standing at the origin (build mode's see-through one is this too)
-export function chestModel() {
+// The chest, standing at the origin (build mode's see-through one is this too;
+// a sky isle's locked one has its own materials: src/skyisles.js)
+export function chestModel({ wood = woodMat, top = lidMat, band = bandMat } = {}) {
   const root = new THREE.Group();
   root.name = 'chest';
-  box(root, woodMat, CHEST_W, 0.55, 0.7, 0, 0.275, 0);
+  box(root, wood, CHEST_W, 0.55, 0.7, 0, 0.275, 0);
   // the lid, a little rounded: a box with a half-cylinder on top
   const lid = new THREE.Group();
   lid.position.set(0, 0.55, -0.35); // hinged at the back
   root.add(lid);
-  box(lid, lidMat, 1.12, 0.12, 0.72, 0, 0.06, 0.35);
-  const dome = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 1.12, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), lidMat);
+  box(lid, top, 1.12, 0.12, 0.72, 0, 0.06, 0.35);
+  const dome = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 1.12, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), top);
   dome.scale.set(1, 0.45, 1);
   dome.position.set(0, 0.12, 0.35);
   dome.castShadow = true;
   lid.add(dome);
   for (const x of [-0.38, 0.38]) {
-    box(root, bandMat, 0.08, 0.57, 0.72, x, 0.275, 0);
-    box(lid, bandMat, 0.08, 0.14, 0.74, x, 0.06, 0.35);
+    box(root, band, 0.08, 0.57, 0.72, x, 0.275, 0);
+    box(lid, band, 0.08, 0.14, 0.74, x, 0.06, 0.35);
   }
   box(root, latchMat, 0.14, 0.16, 0.05, 0, 0.5, 0.37);
   return { root, lid };

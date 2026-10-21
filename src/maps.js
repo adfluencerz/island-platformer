@@ -4,6 +4,7 @@ import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from './world.js';
 import { STALL, buildStall } from './merchant.js';
 import { YARD, PASTURE, buildPens } from './animals.js';
+import { buildSkyIsles } from './skyisles.js';
 
 // ---------- Maps ----------
 // What the worlds look like (built by world.js): your farm, and the wild
@@ -165,6 +166,8 @@ export function wildMap(island) {
     keepClear: [
       ...island.spots.map(([, x, , z]) => [x, z, 1]),
       [island.spawn.x, island.spawn.z, STONE_CIRCLE + 0.8],
+      // (generation 10: nothing grows up into a sky isle or its stair)
+      ...(island.sky ?? []).flatMap((isle) => [[isle.x, isle.z, isle.r + 1.5], ...isle.steps.map(([x, z, w, d]) => [x, z, Math.max(w, d) / 2 + 1.2])]),
     ],
     build: (ctx) => buildWildPieces(island, ctx),
     growBackAnywhere: true, // (a tree from the full forest may grow back out on the grass: world.js)
@@ -449,11 +452,15 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
     });
   }
 
-  // the lily pads drift a little
+  // Generation 10: the sky isles overhead (src/skyisles.js)
+  const sky = buildSkyIsles(island, { root, addCollider });
+
+  // the lily pads drift a little (and on the sky isles, what turns turns)
   return (t) => {
     pads.forEach((pad, i) => {
       pad.position.y = -0.1 + Math.sin(t * 1.3 + i) * 0.012;
       pad.rotation.y += Math.sin(t * 0.4 + i) * 0.0008;
     });
+    sky?.(t);
   };
 }

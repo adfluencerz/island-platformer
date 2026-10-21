@@ -8,8 +8,11 @@ import { devToolsOn } from '../shared/constants.js';
 // you, on the farm or in a lobby. Who gets them is DEV_TOOLS in
 // shared/constants.js (for now everyone; later only a game run locally).
 //
-// onGiant(kind): grow a giant 'tree' or 'rock' (main.js)
-export function createDevTools({ onGiant }) {
+// onGiant(kind): grow a giant 'tree' or 'rock' (main.js). In a lobby with
+// sky isles: onSkyFoot() goes to the foot of the nearest one's stair,
+// onSkyStyle() draws the nearest one in the next style (to look them over),
+// onKey() gives you an old key (for the locked chests up there).
+export function createDevTools({ onGiant, onSkyFoot, onSkyStyle, onKey }) {
   if (!devToolsOn(import.meta.env.DEV)) return;
   const panel = el('div', 'inv-frame', document.body);
   Object.assign(panel.style, {
@@ -21,6 +24,10 @@ export function createDevTools({ onGiant }) {
   el('div', 'ui-muted ui-small', panel, 'Grows the nearest one into a giant');
   button('ui-btn ui-btn-small', panel, 'Giant tree', () => onGiant('tree'));
   button('ui-btn ui-btn-small', panel, 'Giant rock', () => onGiant('rock'));
+  el('div', 'ui-muted ui-small', panel, 'Sky isles (in a lobby)');
+  button('ui-btn ui-btn-small', panel, 'Go to a stair', () => onSkyFoot());
+  button('ui-btn ui-btn-small', panel, 'Next style', () => onSkyStyle());
+  button('ui-btn ui-btn-small', panel, 'An old key', () => onKey());
   el('div', 'ui-muted ui-small', panel, '` to close');
 
   window.addEventListener('keydown', (e) => {
