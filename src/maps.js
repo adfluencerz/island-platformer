@@ -138,8 +138,9 @@ export function wildMap(island) {
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
       glade: { color: 0x5f8a6a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       field: { color: 0x9a9a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+      patch: { color: 0x8a7a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
@@ -148,6 +149,7 @@ export function wildMap(island) {
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
       glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44] },
       field: { tufts: 2.8, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.3, light: [0.34, 0.44], hue: [0.14, 0.2] },
+      patch: { tufts: 2.2, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.2, light: [0.3, 0.4], hue: [0.1, 0.16] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -190,6 +192,10 @@ export function wildMap(island) {
       if (island.field) {
         scatter(3, 2.6, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 7 (the pumpkin patch): after the field's
+      if (island.patch) {
+        scatter(3, 2.6, (x, z) => tileAt(x, z) === 'patch' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -204,6 +210,10 @@ const gladeStemGeo = new THREE.CylinderGeometry(0.012, 0.018, 0.4, 4);
 const gladeBellGeo = new THREE.SphereGeometry(0.04, 6, 5);
 const gladeStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
 const gladeBellMat = new THREE.MeshStandardMaterial({ color: 0x5a6fd8, roughness: 0.5 });
+const patchVineGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.5, 4).rotateZ(Math.PI / 2);
+const patchPumpkinGeo = new THREE.SphereGeometry(0.22, 8, 6);
+const patchVineMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 });
+const patchPumpkinMat = new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 });
 const fieldStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1, 5);
 const fieldHeadGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.04, 10).rotateX(Math.PI / 2);
 const fieldHeartGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 8).rotateX(Math.PI / 2);
@@ -369,6 +379,18 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
       const head = addDecor(fieldHeadGeo, fieldHeadMat, px, h, pz + 0.02, 1, 1, 1, root);
       head.rotation.set(rand(-0.2, 0.1), rand(-0.6, 0.6), 0);
       addDecor(fieldHeartGeo, fieldHeartMat, px, h, pz + 0.05, 1, 1, 1, root).rotation.copy(head.rotation);
+    });
+  }
+
+  // Generation 7: pumpkins on their vines, scattered over the patch (after
+  // everything else drew from rng); they sit low, so you walk around them
+  if (island.patch) {
+    scatter(12, 1.6, (x, z) => tileAt(x, z) === 'patch' && isOpenGround(x, z, 0.4) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      const s = rand(0.7, 1.2);
+      const px = x + rand(-0.3, 0.3);
+      const pz = z + rand(-0.3, 0.3);
+      addDecor(patchPumpkinGeo, patchPumpkinMat, px, 0.16 * s, pz, s, 0.75 * s, s, root);
+      addDecor(patchVineGeo, patchVineMat, px, 0.04, pz, 1.4, 1, 1, root).rotation.y = rand(0, Math.PI);
     });
   }
 
