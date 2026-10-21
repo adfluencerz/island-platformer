@@ -21,6 +21,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   padding: 22px 24px;
   width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px); /* (the screen less the browser's bars) */
   overflow-y: auto;
   box-sizing: border-box;
 }

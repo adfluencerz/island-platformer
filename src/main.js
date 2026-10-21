@@ -14,7 +14,7 @@ import { showCodeInAddress } from './net/lobby.js';
 import { FarmSync } from './net/farm.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
-import { TouchControls } from './ui/touch.js';
+import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
@@ -28,7 +28,10 @@ import { islandFor } from '../shared/worldgen.js';
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// A phone draws fewer pixels (and a smaller shadow map, below): on its small
+// screen it looks the same, and it runs cooler and lasts longer
+const PHONE = isTouch();
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -101,7 +104,8 @@ sun.castShadow = true;
 // them sharp. The box reaches further north, up the screen, than south.
 const SUN_REACH = 26;
 const SUN_AHEAD = 8;
-sun.shadow.mapSize.set(2048, 2048);
+const SHADOW_MAP = PHONE ? 1024 : 2048;
+sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
 sun.shadow.camera.left = -SUN_REACH;
 sun.shadow.camera.right = SUN_REACH;
 sun.shadow.camera.top = SUN_REACH;
@@ -122,7 +126,7 @@ function reachSun(zoom) {
 }
 const _sunOffset = new THREE.Vector3();
 function followSun(focus, ahead = SUN_AHEAD) {
-  const step = ((sunReach * 2) / 2048) * 4;
+  const step = ((sunReach * 2) / SHADOW_MAP) * 4;
   const snap = (n) => Math.round(n / step) * step;
   _sunOffset.subVectors(sun.position, sun.target.position); // (the day/night cycle sets its direction)
   sun.target.position.set(snap(focus.x), 0, snap(focus.z - ahead));
@@ -864,6 +868,25 @@ window.addEventListener('resize', () => {
   fitCamera();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// A phone can take the GPU back from a page in the background (Safari often
+// does, after a while in another app). three.js picks up again if the browser
+// gives it back; if it doesn't soon after the page is in view, start afresh
+// (the farm is saved) rather than show a frozen screen.
+let contextLost = false;
+let lostInView = 0; // seconds in view since, without it back
+canvas.addEventListener('webglcontextlost', () => (contextLost = true));
+canvas.addEventListener('webglcontextrestored', () => {
+  contextLost = false;
+  lostInView = 0;
+});
+setInterval(() => {
+  if (!contextLost || document.hidden) return;
+  if (++lostInView >= 3) {
+    leavePage();
+    location.reload();
+  }
+}, 1000);
 
 // ---------- Physics constants ----------
 const GRAVITY = -28;

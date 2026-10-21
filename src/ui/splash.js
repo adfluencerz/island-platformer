@@ -29,6 +29,20 @@ function storedName() {
   }
 }
 
+const HOME_TIP_STORE = 'tp.homeTip';
+
+// Safari on an iPhone or iPad (an iPad says it's a Mac, with a touch screen),
+// not opened from the home screen already, and the tip not put away before
+function homeScreenTip() {
+  const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  if (!apple || navigator.standalone || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) return false;
+  try {
+    return !localStorage.getItem(HOME_TIP_STORE);
+  } catch {
+    return true;
+  }
+}
+
 export class Splash {
   // onPlay({ name, code }): visit a lobby ('' code: quick join). onHome(): go to the farm.
   // onHelping(): the farms we help on, [{ id, name, here }]. onVisitFarm(id, name): go and help there.
@@ -45,6 +59,19 @@ export class Splash {
     const titleRow = el('div', 'ui-title-row', card);
     el('h1', 'ui-logo', titleRow, 'Island Platformer');
     if (devMode()) el('div', 'ui-dev-badge', titleRow, 'DEV');
+
+    // On an iPhone or iPad, the game from the home screen has the whole screen,
+    // with none of the browser's bars: say how, once
+    if (homeScreenTip()) {
+      const tip = el('div', 'ui-invite', card);
+      el('div', '', tip, 'For the whole screen: in the Share menu, choose Add to Home Screen, and play from there.');
+      button('ui-btn ui-btn-small ui-btn-ghost', tip, 'Got it', () => {
+        tip.remove();
+        try {
+          localStorage.setItem(HOME_TIP_STORE, '1');
+        } catch {}
+      });
+    }
 
     // ---- who you are: "Playing as niels", tap to change it ----
     const who = el('div', 'ui-who', card);

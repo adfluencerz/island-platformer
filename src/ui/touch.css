@@ -161,6 +161,7 @@ body.in-menu .tc { display: none; }
   gap: 5px;
   font-size: 19px;
   max-height: calc(100vh - var(--safe-t) - 150px);
+  max-height: calc(100dvh - var(--safe-t) - 150px);
   overflow-y: auto;
 }
 :root.compact .ui-players .ui-btn-small { font-size: 18px; padding: 6px 10px; }
@@ -224,7 +225,7 @@ body.in-menu .tc { display: none; }
 :root.compact .shop-hint { text-align: left; }
 
 /* ---------- Touch: the HUD around the controls ---------- */
-:root.touch .ui-players { max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); } /* (clear of the chat) */
+:root.touch .ui-players { max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); max-height: calc(100dvh - var(--safe-t) - var(--controls-b) - 360px); } /* (clear of the chat) */
 
 /* What there is to do here: over the Use button */
 :root.touch .ui-prompt {
@@ -253,6 +254,9 @@ body.in-menu .tc { display: none; }
 }
 :root.touch .ui-chat-line { font-size: 18px; }
 :root.touch .ui-chat-log { max-height: 140px; }
+/* Typing, with the keyboard up (touch.js): just above the keyboard, upright or lying down */
+:root.touch.kb .ui-chat.open { top: auto; bottom: calc(var(--kb) + 8px); }
+:root.touch.kb .ui-chat.open .ui-chat-log { max-height: 96px; }
 
 @media (orientation: portrait) {
   :root.touch .inv-grid { grid-template-columns: repeat(6, var(--inv-slot)); }
@@ -263,7 +267,7 @@ body.in-menu .tc { display: none; }
 
 /* Lying down: the panels at the top are short on room */
 @media (orientation: landscape) {
-  :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
+  :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); max-height: calc(100dvh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
   :root.touch .ui-prompt { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--hotbar-b) + var(--hotbar-h) + 12px); }
   :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 10px); top: calc(var(--safe-t) + 116px); bottom: auto; width: min(300px, 36vw); }
   :root.touch .ui-chat-log { max-height: 96px; }

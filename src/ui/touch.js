@@ -33,6 +33,28 @@ fit();
 for (const type of ['gesturestart', 'gesturechange', 'gestureend'])
   document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 
+// The on-screen keyboard covers the bottom of the page without resizing it:
+// --kb is how much of it it covers, so the chat being typed in can sit just
+// above it (html.kb while it is up). Safari also scrolls the page to show the
+// field typed in, and doesn't scroll it back: that's done here when typing ends.
+const view = window.visualViewport;
+if (view) {
+  const keyboard = () => {
+    const covered = Math.max(0, html.clientHeight - view.height - view.offsetTop);
+    html.style.setProperty('--kb', `${Math.round(covered)}px`);
+    html.classList.toggle('kb', covered > 80);
+  };
+  view.addEventListener('resize', keyboard);
+  view.addEventListener('scroll', keyboard);
+}
+addEventListener('focusout', () => setTimeout(() => {
+  if (!(document.activeElement instanceof HTMLInputElement)) window.scrollTo(0, 0);
+}, 50));
+
+// A tap of feedback in the hand, on a touch screen that can (Android phones;
+// Safari can't): the buttons, and things picked up
+export const buzz = (ms) => isTouch() && navigator.vibrate?.(ms);
+
 const STICK_RADIUS = 46; // px the knob travels from the middle
 const DEAD_ZONE = 0.18;
 
@@ -55,6 +77,7 @@ function holdButton(node, code) {
     pointer = e.pointerId;
     node.setPointerCapture(e.pointerId);
     node.classList.add('down');
+    buzz(8);
     key('keydown', code);
   });
   node.addEventListener('pointerup', up);
