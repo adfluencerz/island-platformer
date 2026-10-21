@@ -84,7 +84,8 @@ function iconImg(parent) {
 // onBuild(piece): a piece picked in the Build tab (a PIECES id, or 'remove').
 // buildProblem(): why there is no building here ('' : there is).
 // building(): the piece build mode has now (null: not building).
-export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null } = {}) {
+// inChest(item): how many the farm's chest has to build with too.
+export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null, inChest = () => 0 } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
@@ -192,17 +193,18 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
 
   // ---------- The Build tab ----------
   const have = (id) => slots.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
+  const toBuild = (id) => have(id) + inChest(id); // (what the backpack is short of comes out of the chest)
   const costText = (cost) => Object.entries(cost).map(([id, n]) => `${n} ${ITEMS[id].name.toLowerCase()}`).join(', ');
 
   function renderBuild() {
     buildEl.textContent = '';
     const problem = buildProblem();
     const note = el('div', 'inv-build-note', buildEl);
-    note.textContent = problem || 'Pick something to build. E puts it where the see-through one is (the tile you point at, or in front of you), or click or tap a tile. Taking a piece down gives back what it cost.';
+    note.textContent = problem || 'Pick something to build. E puts it where the see-through one is (the tile you point at, or in front of you), or click or tap a tile. What your backpack is short of comes out of your farm\'s chest. Taking a piece down gives back what it cost.';
     const cards = el('div', 'inv-build-cards', buildEl);
     for (const id of [...Object.keys(PIECES), 'remove']) {
       const def = PIECES[id];
-      const short = def ? Object.entries(def.cost).find(([item, n]) => have(item) < n) : null;
+      const short = def ? Object.entries(def.cost).find(([item, n]) => toBuild(item) < n) : null;
       const made = ITEMS[id]?.piece === id; // (a decoration, made at the workbench)
       const card = el('button', 'inv-build-card' + (building() === id ? ' on' : ''), cards);
       card.type = 'button';
@@ -211,9 +213,9 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
       el('b', '', card).textContent = def ? def.name : 'Take down';
       const sub = el('span', 'inv-build-cost' + (short ? ' short' : ''), card);
       if (!def) sub.textContent = 'and get it back';
-      else if (made) sub.textContent = short ? 'Make one at a workbench' : `${have(id)} in your backpack`;
+      else if (made) sub.textContent = short ? 'Make one at a workbench' : inChest(id) ? `${toBuild(id)} in backpack and chest` : `${have(id)} in your backpack`;
       else sub.textContent = costText(def.cost);
-      if (short && !made) card.title = `Not enough ${ITEMS[short[0]].name.toLowerCase()}: you have ${have(short[0])}`;
+      if (short && !made) card.title = `Not enough ${ITEMS[short[0]].name.toLowerCase()}: you have ${toBuild(short[0])}`;
       card.addEventListener('click', () => {
         setOpen(false);
         if (!open) onBuild?.(id);

@@ -210,13 +210,21 @@ export class FarmRoom extends Place {
         break;
       }
       case C.BUILD: {
+        // (paid from the builder's backpack; what it was short of, from the
+        // chest, when the owner builds: msg.chest, { item: count })
         const { key, piece } = msg;
-        const ok = onFarm(key) && Object.hasOwn(PIECES, piece) && !this.built.has(key) && !this.tilled.has(key) &&
+        const fromChest = Object.hasOwn(PIECES, piece) ? this.chestShare(p, piece, msg.chest) : null;
+        const ok = onFarm(key) && fromChest && !this.built.has(key) && !this.tilled.has(key) &&
           !keptClear(...key.split(',').map(Number)) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece)) && this.near(p, key);
         if (!ok) return this.deny(p, 'build', key, undefined, Object.hasOwn(PIECES, piece) ? piece : undefined);
+        for (const [item, n] of fromChest) {
+          this.chest[item] -= n;
+          if (!this.chest[item]) delete this.chest[item];
+        }
         this.built.set(key, piece);
         this.changed = true;
         this.broadcast({ t: S.BUILT, key, piece, by: p.id });
+        if (fromChest.length) this.broadcast({ t: S.CHEST, items: this.chest });
         break;
       }
       case C.UNBUILD: {
@@ -326,6 +334,18 @@ export class FarmRoom extends Place {
 
   canStore(item, count) {
     return chestHasRoom(this.chest, item, count);
+  }
+
+  // What of a piece's cost p's page asks to take out of the chest
+  // ([[item, count]]), or null if it can't: only the owner takes things out,
+  // only what the piece costs, and only what is there
+  chestShare(p, piece, asked) {
+    if (asked === undefined) return [];
+    if (!p.owner || !asked || typeof asked !== 'object' || Array.isArray(asked)) return null;
+    const cost = PIECES[piece].cost;
+    const share = Object.entries(asked);
+    const fits = ([item, n]) => Object.hasOwn(cost, item) && Number.isInteger(n) && n >= 1 && n <= cost[item] && this.chest[item] >= n;
+    return share.every(fits) ? share : null;
   }
 
   // is a `piece` built on the farm? (there is only `one` of some)

@@ -819,6 +819,22 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.equal(ann.conn.last(S.FARM_DENY).op, 'build', 'the plaza\'s middle stays clear');
   room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], built: [] } });
   assert.equal(room.built.size, 1, 'the animals can\'t take it down');
+  // what the builder's backpack is short of comes out of the chest: the owner's only, only what it costs, only what is there
+  room.message(bo.p, { t: C.CHEST_PUT, item: 'wood', count: 3 });
+  room.message(bo.p, { t: C.BUILD, key: '5,3', piece: 'wood_fence', chest: { wood: 2 } });
+  assert.deepEqual([bo.conn.last(S.FARM_DENY).op, bo.conn.last(S.FARM_DENY).key], ['build', '5,3'], 'a helper builds from their own backpack');
+  for (const asked of [{ wood: 3 }, { stone: 1 }, { wood: 1.5 }, [2], 'wood']) {
+    room.message(ann.p, { t: C.BUILD, key: '2,5', piece: 'wood_fence', chest: asked });
+    assert.equal(ann.conn.last(S.FARM_DENY).key, '2,5', JSON.stringify(asked));
+  }
+  room.message(ann.p, { t: C.BUILD, key: '2,5', piece: 'wood_fence', chest: { wood: 2 } });
+  assert.deepEqual(bo.conn.last(S.BUILT), { t: S.BUILT, key: '2,5', piece: 'wood_fence', by: ann.p.id });
+  assert.equal(bo.conn.last(S.CHEST).items.wood, 1);
+  room.message(ann.p, { t: C.BUILD, key: '2,6', piece: 'wood_fence', chest: { wood: 2 } });
+  assert.equal(ann.conn.last(S.FARM_DENY).key, '2,6', 'not what isn\'t there');
+  assert.ok(!room.built.has('2,6'));
+  room.message(ann.p, { t: C.UNBUILD, key: '2,5' });
+  room.message(ann.p, { t: C.CHEST_TAKE, item: 'wood', count: 1 });
   // the farm's rocks: broken by whoever is next to one (the stone is theirs); the room keeps when it comes back
   room.message(bo.p, { t: C.MINE, id: 3, x: 5, z: 3, size: 0.3 });
   const mined = ann.conn.last(S.MINED);
