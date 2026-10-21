@@ -364,7 +364,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -375,6 +375,9 @@ const capMat = new THREE.MeshStandardMaterial({ color: 0xd8452f, roughness: 0.6 
 const sprigGeo = new THREE.ConeGeometry(0.05, 0.42, 5).translate(0, 0.21, 0);
 const bellGeo = new THREE.SphereGeometry(0.07, 6, 5);
 const sprigMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 });
+const reedGeo = new THREE.CylinderGeometry(0.015, 0.03, 0.9, 5).translate(0, 0.45, 0);
+const spikeGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.2, 7).translate(0, 0.85, 0);
+const spikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 const bellMat = new THREE.MeshStandardMaterial({ color: 0x9a6fc0, roughness: 0.5 });
 // A golden glint over a spot with something rare on it
 const glintGeo = new THREE.OctahedronGeometry(0.13, 0);
@@ -404,6 +407,18 @@ function makeSpotView(spot) {
       shroom.position.set(x, 0, z);
       shroom.scale.setScalar(k);
       content.add(shroom);
+    }
+  } else if (spot.kind === 'cattail') {
+    // A stand of tall reeds, each with a brown velvet head
+    content = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const a = i * 2.4;
+      const reed = new THREE.Group();
+      reed.add(new THREE.Mesh(reedGeo, sprigMat), new THREE.Mesh(spikeGeo, spikeMat));
+      reed.position.set(Math.cos(a) * 0.25, 0, Math.sin(a) * 0.25);
+      reed.rotation.set(Math.sin(a) * 0.12, 0, -Math.cos(a) * 0.12);
+      reed.scale.setScalar(0.85 + (i % 3) * 0.15);
+      content.add(reed);
     }
   } else if (spot.kind === 'heather') {
     // A low clump of purple sprigs
