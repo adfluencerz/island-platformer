@@ -1898,6 +1898,27 @@ export const PIECE_ICONS = {
       '...oooooooooo...',
     ],
   },
+  torch: {
+    palette: { ...WOOD, k: '#c9a64e', r: '#e0702a', y: '#ffc23a', Y: '#fff3b0' },
+    sprite: [
+      '.......oo.......',
+      '......oro.......',
+      '.....orryo......',
+      '.....oryYro.....',
+      '....orYYYyo.....',
+      '....oryYYro.....',
+      '.....oyyro......',
+      '....ookkkoo.....',
+      '....okdkdko.....',
+      '.....okkko......',
+      '......oWwo......',
+      '......oWwo......',
+      '......oWwo......',
+      '......oWdo......',
+      '......oWdo......',
+      '......oooo......',
+    ],
+  },
   workbench: {
     palette: { ...WOOD, i: '#5d6470', I: '#a9b3c1' },
     sprite: [

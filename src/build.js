@@ -10,7 +10,7 @@ import { chestModel, CHEST_W } from './chest.js';
 // log piles, barrels and barrel stacks, straw bales and stacks, scaffolds,
 // log towers, stone blocks, mossy or not, and pillars), wells, stone
 // lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water
-// troughs, stone benches, sundials, wheelbarrows, the workbench and what it makes for the farm, and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// troughs, stone benches, sundials, wheelbarrows, torches, the workbench and what it makes for the farm, and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -38,6 +38,8 @@ const MATS = {
   benchTop: mat(0xc28a52),
   iron: mat(0x5d6470, { roughness: 0.5, metalness: 0.4 }),
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
+  flame: mat(0xffb03a, { emissive: 0xff8a1a, emissiveIntensity: 0.6 }), // (a torch's: burning day and night)
+  flameCore: mat(0xfff0a0, { emissive: 0xffd060, emissiveIntensity: 0.8 }),
   soil: mat(0x5b3a1e),
   leaf: mat(0x4f9e3c),
   moss: mat(0x6f9a3e),
@@ -87,7 +89,9 @@ const GLOWS = {
   lamp_post: [0, 1.92, 0],
   stone_lantern: [0, 1.03, 0],
   house: [0, 0, 0], // (set below: the lamp over the door)
+  torch: [0, 1.5, 0],
 };
+const FLICKERS = new Set(['torch']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
 const GLOW_REACH = 9;
 
@@ -800,6 +804,17 @@ function model(id, gx, gz, joined) {
       g.add(bird);
     }
     solids.push({ x: 0, y: 0.45, z: 0, w: 0.5, h: 0.9, d: 0.5 });
+  } else if (id === 'torch') {
+    // a garden torch: a stick in the ground, a head of bound straw on top,
+    // and a flame in it
+    part(g, shaft, MATS.post, 0, 0.62, 0, 0.09, 1.24, 0.09);
+    part(g, shaft, MATS.straw, 0, 1.28, 0, 0.18, 0.16, 0.18);
+    part(g, shaft, MATS.twine, 0, 1.25, 0, 0.19, 0.04, 0.19).castShadow = false;
+    const flame = part(g, tip, MATS.flame, 0, 1.5, 0, 0.2, 0.32, 0.2);
+    flame.castShadow = false;
+    flame.name = 'flame';
+    part(g, tip, MATS.flameCore, 0, 1.46, 0, 0.1, 0.18, 0.1).castShadow = false;
+    solids.push({ x: 0, y: 0.7, z: 0, w: 0.2, h: 1.4, d: 0.2 });
   } else if (id === 'signpost') {
     // a post with two arrow boards, pointing off one way and back the other,
     // at a slightly different slant on every tile
@@ -976,7 +991,7 @@ export function createBuildings(world) {
   const pieces = new Map(); // key -> { id, group, colliders }
   const covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
 
-  const glows = new Map(); // key -> where a light-giving piece's flame is, in the world
+  const glows = new Map(); // key -> { at: where a light-giving piece's flame is, in the world, flicker, flame }
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
     const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
     light.castShadow = false;
@@ -1008,7 +1023,14 @@ export function createBuildings(world) {
     piece.group = group;
     piece.key = key;
     const flame = GLOWS[piece.id];
-    if (flame) glows.set(key, new THREE.Vector3(x + flame[0], flame[1], z + flame[2]));
+    if (flame) {
+      glows.set(key, {
+        at: new THREE.Vector3(x + flame[0], flame[1], z + flame[2]),
+        flicker: FLICKERS.has(piece.id),
+        flame: group.getObjectByName('flame'),
+        seed: hash(gx, gz) * 10,
+      });
+    }
     piece.colliders = solids.map((s) => {
       const c = {
         center: new THREE.Vector3(x + s.x, s.y, z + s.z),
@@ -1107,15 +1129,24 @@ export function createBuildings(world) {
     setNight(night, focus) {
       MATS.lantern.emissiveIntensity = night * 1.6;
       MATS.window.emissiveIntensity = night * 1.2;
+      const t = performance.now() / 1000;
+      MATS.flame.emissiveIntensity = 0.6 + night * 1.2;
+      MATS.flameCore.emissiveIntensity = 0.8 + night * 1.4;
+      // the torches' flames dance a little, day and night
+      for (const glow of glows.values()) {
+        if (glow.flame) glow.flame.scale.y = 0.32 * (1 + 0.12 * Math.sin(t * 9 + glow.seed) + 0.06 * Math.sin(t * 23 + glow.seed * 3));
+      }
       const nearest = night > 0.01 && focus
-        ? [...glows.values()].sort((a, b) => a.distanceToSquared(focus) - b.distanceToSquared(focus))
+        ? [...glows.values()].sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
         : [];
       glowLights.forEach((light, i) => {
         // (spare ones stay on, just dark: switching a light off and on makes
         // three.js rebuild its shaders, a hitch every dusk)
-        const at = nearest[i];
-        light.intensity = at ? night * 6 : 0;
-        if (at) light.position.copy(at);
+        const glow = nearest[i];
+        if (!glow) return void (light.intensity = 0);
+        const flicker = glow.flicker ? 0.85 + 0.1 * Math.sin(t * 11 + glow.seed) + 0.05 * Math.sin(t * 27 + glow.seed * 2) : 1;
+        light.intensity = night * 6 * flicker;
+        light.position.copy(glow.at);
       });
     },
 

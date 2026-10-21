@@ -9,7 +9,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
+- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -89,6 +89,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **stone bench** (4 stone), a slab on two blocks; moss grows on some.
 - A **sundial** (4 stone), a brass dial on a stone pedestal, its gnomon pointing north.
 - A **wheelbarrow** (3 wood, 1 stone), set down at a slant, with stones, logs or earth in it.
+- A **torch** (1 wood, 1 flax), a flame on a stick: it burns day and night and lights up what is around it after dark, flickering.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
   - decorations, put down from the Build tab like the rest: a **lamp post** (3 wood, 2 stone) that lights up at night, a **garden bench** (6 wood) and a **flower planter** (4 stone, 1 wood);
   - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;

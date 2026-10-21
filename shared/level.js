@@ -153,6 +153,7 @@ export const PIECES = {
   sundial: { name: 'Sundial', solid: true },
   wheelbarrow: { name: 'Wheelbarrow', solid: true },
   barrel_stack: { name: 'Barrel stack', solid: true, block: 1.8 },
+  torch: { name: 'Torch', solid: true },
   workbench: { name: 'Workbench', solid: true },
   farm_chest: { name: 'Farm chest', solid: true, one: true },
   house: { name: 'House', solid: true, one: true, size: [5, 4] },

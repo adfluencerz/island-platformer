@@ -179,6 +179,7 @@ export const BUILD_COSTS = {
   sundial: { stone: 4 },
   wheelbarrow: { wood: 3, stone: 1 },
   barrel_stack: { wood: 8 },
+  torch: { wood: 1, flax: 1 },
   workbench: { wood: 10, stone: 5 },
   farm_chest: { wood: 8, stone: 2 },
   house: { wood: 500, stone: 200 },
