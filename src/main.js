@@ -185,6 +185,7 @@ const inventory = createInventory({
   onBuild: (piece) => startBuilding(piece),
   buildProblem: () => (place === 'home' ? '' : 'You build on a farm: head home first.'),
   building: () => building,
+  inChest: (item) => chestStock()[item] ?? 0,
 });
 
 // The tool in hand, by what it does ('hoe', 'axe' or 'pickaxe': plain or sturdy), or null
@@ -1408,7 +1409,7 @@ let building = null; // build mode: a PIECES id, or 'remove'
 let builtKey = null; // the tile E last built on (holding E builds on each new one)
 let mouseAt = null; // where the mouse is over the screen, while build mode aims with it
 let buildShown = ''; // (what the build bar says, so it is only set when it changes)
-const pendingBuilds = new Set(); // tiles we built on that the farm's room hasn't said yes to yet
+const pendingBuilds = new Map(); // tiles we built on that the farm's room hasn't said yes to yet -> what came out of the backpack for it
 const pendingUnbuilds = new Set(); // and pieces we asked it to take down
 
 function startBuilding(piece) {
@@ -1489,7 +1490,7 @@ function buildProblemAt(key) {
   const standing = piece.solid && standingAt(x, z);
   if (standing) return standing === 'you' ? 'Step back a little first' : 'Someone is standing there';
   if (buildings.size() >= MAX_PIECES) return 'The farm can\'t hold any more';
-  const short = Object.entries(piece.cost).find(([item, n]) => inventory.count(item) < n);
+  const short = Object.entries(piece.cost).find(([item, n]) => buildStock(item) < n);
   if (short) return ITEMS[short[0]].piece ? `Make a ${ITEMS[short[0]].name.toLowerCase()} at a workbench first` : `Not enough ${ITEMS[short[0]].name.toLowerCase()}`;
   return '';
 }
@@ -1515,22 +1516,41 @@ function buildAt(key, { quiet = false } = {}) {
     }
     return true;
   }
-  for (const [item, n] of Object.entries(PIECES[building].cost)) inventory.remove(item, n);
+  // (out of the backpack first; what it is short of, out of the chest)
+  const carried = {};
+  const fromChest = {};
+  for (const [item, n] of Object.entries(PIECES[building].cost)) {
+    carried[item] = Math.min(n, inventory.count(item));
+    if (carried[item]) inventory.remove(item, carried[item]);
+    if (n > carried[item]) fromChest[item] = n - carried[item];
+  }
+  if (!farmNet) {
+    for (const [item, n] of Object.entries(fromChest)) {
+      ownChest[item] -= n;
+      if (!ownChest[item]) delete ownChest[item];
+    }
+  }
   buildings.place(key, building);
   placeChest();
   if (farmNet) {
-    pendingBuilds.add(key);
-    farmNet.send({ t: C.BUILD, key, piece: building });
+    // (the room takes the chest's share, and says what is left in it)
+    pendingBuilds.set(key, carried);
+    farmNet.send({ t: C.BUILD, key, piece: building, ...(Object.keys(fromChest).length && { chest: fromChest }) });
   }
   return true;
 }
 
 const buildHere = () => buildAt(buildTarget());
 
-// What a piece cost, back into the backpack
-function giveBack(piece) {
-  for (const [item, n] of Object.entries(PIECES[piece]?.cost ?? {})) gift(item, n);
+// What a piece cost, back into the backpack (paid: just what came out of it)
+function giveBack(piece, paid = PIECES[piece]?.cost ?? {}) {
+  for (const [item, n] of Object.entries(paid)) if (n) gift(item, n);
 }
+
+// What there is to build with besides the backpack: our own chest, or on our
+// farm with helpers the room's (only its owner takes things out of it)
+const chestStock = () => (farmNet ? (farmVisit?.mine ? roomChest : {}) : ownChest);
+const buildStock = (item) => inventory.count(item) + (chestStock()[item] ?? 0);
 
 // A tap in build mode: build on the tile tapped, walking over first if it is far
 function tapToBuild() {
@@ -1563,7 +1583,10 @@ function updateBuilding() {
   const piece = PIECES[building];
   const what = piece ? `Building: ${piece.name}` : 'Taking down';
   const note = problem || (piece
-    ? Object.entries(piece.cost).map(([item, n]) => `${n} ${ITEMS[item].name.toLowerCase()} (you have ${inventory.count(item)})`).join(' · ')
+    ? Object.entries(piece.cost).map(([item, n]) => {
+      const stored = chestStock()[item] ?? 0;
+      return `${n} ${ITEMS[item].name.toLowerCase()} (you have ${inventory.count(item)}${stored ? `, ${stored} in the chest` : ''})`;
+    }).join(' · ')
     : 'Gives back what it cost');
   if (buildShown !== what + note) {
     buildShown = what + note;
@@ -1638,6 +1661,7 @@ const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (it
 // the room's; on our own farm without them, ours (ownChest, kept in the
 // farm's save). It is a thing to bump into while it is there.
 let ownChest = {}; // item -> count
+let roomChest = {}; // what the room's chest has, as it last said
 const chest = createChest({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()),
@@ -1797,6 +1821,7 @@ async function joinFarm(id) {
     farmOnScreen = m.mine;
     if (m.mine) farmSync.handedToRoom();
     chest.setOwner(m.mine, m.farm.owner);
+    roomChest = m.chest;
     chest.setItems(m.chest);
     placeChest();
     if (m.mine) pourOwnChest(m.chest);
@@ -1860,8 +1885,10 @@ async function joinFarm(id) {
     } else if (m.op === 'harvest' && crop) {
       crop.pending = false;
       crop.view.group.visible = true;
-    } else if (m.op === 'build' && pendingBuilds.delete(m.key)) {
-      giveBack(buildings.remove(m.key)); // (it wasn't built after all)
+    } else if (m.op === 'build' && pendingBuilds.has(m.key)) {
+      const carried = pendingBuilds.get(m.key);
+      pendingBuilds.delete(m.key);
+      giveBack(buildings.remove(m.key), carried); // (it wasn't built after all: the chest's share never left it)
       placeChest();
     } else if (m.op === 'unbuild') {
       pendingUnbuilds.delete(m.key);
@@ -1885,7 +1912,10 @@ async function joinFarm(id) {
     world.regrowRock(m.id);
   });
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id));
-  on(S.CHEST, (m) => chest.setItems(m.items));
+  on(S.CHEST, (m) => {
+    roomChest = m.items;
+    chest.setItems(m.items);
+  });
   on(S.CHEST_GOT, (m) => {
     // (no room for it after all: back in the chest)
     if (!inventory.add(m.item, m.count)) farmNet.send({ t: C.CHEST_PUT, item: m.item, count: m.count });
