@@ -21,6 +21,9 @@ import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { homeWildsSource } from './wilds.js';
+import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
+import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
+import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
 
 // spot kinds only later generations grow (2 and up)
 const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS]);
@@ -1215,6 +1218,103 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.equal(bo.conn.closed, CLOSE.NOT_HELPER);
   assert.equal(room.players.size, 1);
   room.close();
+});
+
+// ---------- Cards and the arcade ----------
+console.log('cards and the arcade');
+await test('poker hands are told apart and ranked, and the best five of seven found', () => {
+  const name = (cards) => evaluate(cards.split(' ')).name;
+  assert.equal(name('As Ks Qs Js Ts'), 'Straight flush');
+  assert.equal(name('9c 9d 9h 9s 2c'), 'Four of a kind');
+  assert.equal(name('3c 3d 3h 7s 7c'), 'Full house');
+  assert.equal(name('2h 7h 9h Jh Kh'), 'Flush');
+  assert.equal(name('Ac 2d 3h 4s 5c'), 'Straight', 'the wheel');
+  assert.equal(name('Qc Kd Ah 2s 3c'), 'High card', 'no wrapping round');
+  assert.equal(name('5c 5d 5h'), 'Three of a kind');
+  assert.equal(name('8c 8d 4h 4s'), 'Two pair');
+  assert.equal(name('Jc Jd'), 'Pair');
+  assert.deepEqual(evaluate(['Kc', '4d', '9h']).scoring, ['Kc'], 'a high card scores the highest');
+  assert.deepEqual(evaluate(['Jc', '3d', 'Jd', '9s']).scoring, ['Jc', 'Jd']);
+  const v = (cards) => evaluate(cards.split(' ')).value;
+  assert.ok(v('Ac Ad 2h 3s 4c') > v('Kc Kd Qh Js 9c'), 'aces beat kings');
+  assert.ok(v('Ac Ad 9h 3s 4c') > v('Ah As 8h 7s 6c'), 'then the kicker');
+  assert.ok(v('6c 7d 8h 9s Tc') > v('Ac 2d 3h 4s 5c'), 'the wheel is the lowest straight');
+  assert.equal(v('Ac Ad 9h 3s 4c'), v('Ah As 9c 3d 4h'), 'a split pot');
+  const best = bestHand('2c 2d 7h 8h 9h Th Jh'.split(' '));
+  assert.equal(best.name, 'Straight flush');
+  assert.deepEqual(new Set(best.cards), new Set(['7h', '8h', '9h', 'Th', 'Jh']));
+  const deck = shuffle(newDeck(), mulberry32(5));
+  assert.equal(new Set(deck).size, 52);
+});
+
+await test('the arcade: coinflip doubles or loses, blackjack settles by the rules', () => {
+  assert.deepEqual(coinflip(40, 'heads', () => 0.1), { side: 'heads', won: true, payout: 80 });
+  assert.deepEqual(coinflip(40, 'heads', () => 0.9), { side: 'tails', won: false, payout: 0 });
+  assert.deepEqual(handTotal(['As', '6d']), { total: 17, soft: true });
+  assert.deepEqual(handTotal(['As', '6d', '9c']), { total: 16, soft: false });
+  // a hand dealt from a stacked shoe: the dealer's cards come off second and fourth
+  const deal = (cards) => {
+    const rand = mulberry32(1);
+    const game = blackjackDeal(10, rand);
+    game.shoe = [...cards].reverse();
+    Object.assign(game, { player: [], dealer: [], over: false, result: '', payout: 0 });
+    game.player.push(game.shoe.pop());
+    game.dealer.push(game.shoe.pop());
+    game.player.push(game.shoe.pop());
+    game.dealer.push(game.shoe.pop());
+    return game;
+  };
+  let g = blackjackStand(deal(['Ts', '9d', '9c', '8h']));
+  assert.equal(g.result, 'win');
+  assert.equal(g.payout, 20);
+  g = blackjackHit(deal(['Ts', '9d', '6c', '8h', 'Kd']));
+  assert.equal(g.result, 'bust');
+  assert.equal(g.payout, 0);
+  g = blackjackDouble(deal(['5s', '9d', '6c', '7h', 'Td', 'Th']));
+  assert.ok(g.doubled && g.over);
+  assert.equal(g.stake, 20);
+  assert.equal(g.result, 'dealer bust', '21 against the dealer\'s 9 + 7 + 10');
+  assert.equal(g.payout, 40);
+  g = blackjackStand(deal(['Ts', '9d', '7c', '9h']));
+  assert.equal(g.result, 'lose');
+  g = blackjackStand(deal(['Ts', '9d', '7c', '8h']));
+  assert.equal(g.result, 'push');
+  assert.equal(g.payout, 10);
+  // a natural ends the hand as it is dealt
+  let n = 0;
+  for (let seed = 1; seed < 400 && !n; seed++) {
+    const game = blackjackDeal(10, mulberry32(seed));
+    if (game.result === 'blackjack') n = game.payout;
+  }
+  assert.equal(n, 25, 'a blackjack pays 3 to 2');
+});
+
+await test('Lucky Hand: jokers, plays and swaps, and the payout tiers', () => {
+  assert.deepEqual(luckyScore(['Kc', 'Kd']), { cat: 1, name: 'Pair', chips: 30, mult: 2, total: 60, scoring: ['Kc', 'Kd'] });
+  // 10 + 10 + 10 chips, 2 mult; +8 mult with a pair; +3 for a scoring heart; x2 needs three of a kind
+  assert.equal(luckyScore(['Kh', 'Kd', '3c'], ['twin_turnips', 'rosy_heart', 'scarecrow']).total, 30 * 13);
+  assert.equal(luckyScore(['Kh', 'Kd', 'Kc'], ['scarecrow', 'golden_goose']).total, (30 + 30) * 3 * 3);
+  assert.equal(luckyScore(['2h', '3h', '4h', '5h', '6h'], ['garden_path', 'bouquet']).total, (100 + 20) * (8 + 22));
+  for (const id of Object.keys(LUCKY_JOKERS)) assert.ok(jokerText(id).length > 10, id);
+  const game = luckyStart(100, mulberry32(9));
+  assert.equal(game.hand.length, LUCKY.hand);
+  assert.equal(game.offer.length, LUCKY.offer);
+  luckyPlay(game, [0]);
+  assert.equal(game.plays, LUCKY.plays, 'a joker first');
+  luckyPick(game, game.offer[0]);
+  luckyDiscard(game, [0, 1, 2]);
+  assert.equal(game.discards, LUCKY.discards - 1);
+  assert.equal(game.hand.length, LUCKY.hand);
+  luckyPlay(game, [0, 1]);
+  assert.equal(game.offer.length, LUCKY.offer, 'and a second after the first hand');
+  luckyPick(game, game.offer[1]);
+  assert.equal(game.jokers.length, 2);
+  while (!game.over) luckyPlay(game, [0, 1, 2, 3, 4]);
+  assert.equal(game.offer.length, 0, 'no more than two');
+  assert.equal(game.payout, Math.floor(100 * luckyPays(game.score)));
+  assert.equal(luckyPays(0), 0);
+  assert.equal(luckyPays(LUCKY.tiers[1][0]), LUCKY.tiers[1][1]);
+  assert.equal(luckyPays(1e9), LUCKY.tiers.at(-1)[1]);
 });
 
 // ---------- The server, over sockets ----------

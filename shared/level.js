@@ -163,6 +163,7 @@ export const PIECES = {
   stone_cairn: { name: 'Stone cairn', solid: true },
   clothesline: { name: 'Clothesline', solid: true },
   workbench: { name: 'Workbench', solid: true },
+  arcade: { name: 'Arcade', solid: true, one: true }, // (games for gold: src/arcade.js)
   farm_chest: { name: 'Farm chest', solid: true, one: true },
   house: { name: 'House', solid: true, perHelper: true, size: [5, 4] }, // (one, and one more for each helper: mostPieces)
   lamp_post: { name: 'Lamp post', solid: true },
@@ -177,7 +178,7 @@ for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?
 // and what joins them (gates, arches, arbors, hedges); paths, walked on;
 // blocks, climbed; the buildings, that do something; the decorations; the relics
 export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics'];
-const BUILDINGS = new Set(['workbench', 'farm_chest', 'house', 'stone_well']);
+const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
     : BUILDINGS.has(id) ? 'Buildings'
