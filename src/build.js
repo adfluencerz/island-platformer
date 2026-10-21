@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { PIECES } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
+import { chestModel, CHEST_W } from './chest.js';
 
 // ---------- What is built on the farm ----------
 // Fences, gates, arches, walls (stone, low stone and palisades), paths,
 // blocks to climb (steps, crates, log piles, barrels, straw bales and stacks,
 // scaffolds, log towers, stone blocks and pillars), the workbench and what it
-// makes for the farm (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// makes for the farm, and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -344,6 +345,10 @@ function model(id, gx, gz, joined) {
       part(g, box, MATS.post, x, 0.4, -0.14, 0.07, 0.8, 0.07);
     }
     solids.push({ x: 0, y: 0.25, z: 0, w: 0.92, h: 0.5, d: 0.4 });
+  } else if (id === 'farm_chest') {
+    // just where it is in the way: the chest itself is chest.js's, which
+    // main.js stands on this tile (it opens, and keeps what is in it)
+    solids.push({ x: 0, y: 0.4, z: 0, w: CHEST_W, h: 0.8, d: 0.7 });
   } else if (id === 'planter') {
     part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
     part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
@@ -417,6 +422,11 @@ export function createBuildings(world) {
 
   return {
     get: (key) => pieces.get(key)?.id ?? null,
+    // the tile a piece of kind `id` is built on (the first, for one there is only one of), or null
+    find(id) {
+      for (const [key, piece] of pieces) if (piece.id === id) return key;
+      return null;
+    },
     list: () => [...pieces].map(([key, p]) => [key, p.id]),
     size: () => pieces.size,
 
@@ -476,10 +486,16 @@ export function createBuildings(world) {
       }
       const [gx, gz] = gridOf(key);
       if (!ghost || ghost.id !== id || ghost.key !== key) {
-        if (ghost) world.root.remove(ghost.group);
+        if (ghost) {
+          world.root.remove(ghost.group);
+          // (the chest's shapes are its own, not shared like the pieces')
+          if (ghost.id === 'farm_chest') ghost.group.traverse((obj) => obj.isMesh && obj !== ghostEdge && obj.geometry.dispose());
+        }
         const group = id === 'remove' || !PIECES[id]
           ? new THREE.Group()
-          : model(id, gx, gz, PIECES[id].joins ? joinedAt(gx, gz) : []).group;
+          : id === 'farm_chest'
+            ? chestModel().root
+            : model(id, gx, gz, PIECES[id].joins ? joinedAt(gx, gz) : []).group;
         group.traverse((obj) => {
           if (!obj.isMesh) return;
           obj.material = ghostMat;

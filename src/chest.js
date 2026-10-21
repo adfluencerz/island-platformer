@@ -7,18 +7,22 @@ import { el, button } from './ui/dom.js';
 import { FARM_CHEST } from '../shared/level.js';
 
 // ---------- The farm's chest ----------
-// On a farm with helpers (server/farmroom.js), what anyone harvests goes in
-// here. It stands on the grass by the plaza, and E next to it (or a tap) opens
-// it: everyone sees what is in it and can put things in from their backpack;
-// only the farm's owner takes things out. The chest's contents are the
+// Built in build mode (the farm_chest piece, one to a farm), it stands where
+// it was put; on a farm with helpers there is one on the grass by the plaza
+// till then (main.js says where, moveTo). E next to it (or a tap) opens it.
+// On a farm with helpers (server/farmroom.js) what anyone harvests goes in
+// here: everyone sees what is in it and can put things in from their
+// backpack; only the farm's owner takes things out. Its contents are the
 // room's: this window asks (onPut, onTake) and draws what the room says
-// (setItems).
+// (setItems). On a farm without helpers it is the farmer's own, to keep
+// things in (main.js keeps what is in it, in the farm's save).
 //
 //   click a backpack slot     put the stack in (right click: one)
 //   click something in it     take it out, the owner only (right click: one)
 //   E / Esc / ×               close
 
 const REACH = 1.6; // from the chest's middle
+export const CHEST_W = 1.1;
 
 // ---------- The chest itself ----------
 const woodMat = foliageMat(0x9c5a2c);
@@ -35,11 +39,11 @@ function box(parent, material, w, h, d, x, y, z) {
   return m;
 }
 
-function buildModel() {
+// The chest, standing at the origin (build mode's see-through one is this too)
+export function chestModel() {
   const root = new THREE.Group();
   root.name = 'chest';
-  root.position.set(FARM_CHEST.x, 0, FARM_CHEST.z);
-  box(root, woodMat, 1.1, 0.55, 0.7, 0, 0.275, 0);
+  box(root, woodMat, CHEST_W, 0.55, 0.7, 0, 0.275, 0);
   // the lid, a little rounded: a box with a half-cylinder on top
   const lid = new THREE.Group();
   lid.position.set(0, 0.55, -0.35); // hinged at the back
@@ -62,11 +66,13 @@ function buildModel() {
 // onPut(item, count): into the chest (already out of the backpack).
 // onTake(item, count): ask for it out of the chest (the owner).
 export function createChest({ inventory, onOpenChange, onPut, onTake }) {
-  const { root, lid } = buildModel();
+  const { root, lid } = chestModel();
+  root.position.set(FARM_CHEST.x, 0, FARM_CHEST.z);
   root.visible = false;
   let open = false;
   let mine = false;
   let owner = '';
+  let shared = true; // (false: a farm without helpers, the farmer's own chest)
   let items = {}; // item -> count, as the room says
   let lidOpen = 0;
 
@@ -102,7 +108,9 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
   const keeps = (id) => ITEMS[id]?.category !== 'Tool'; // (your tools stay with you)
 
   function render() {
-    noteEl.textContent = mine
+    noteEl.textContent = !shared
+      ? 'Keep things here: put them in from your backpack, take them out any time.'
+      : mine
       ? 'What your helpers harvest lands here. Take out what you like.'
       : `What anyone harvests lands here. ${owner || 'The farmer'} takes things out; you can put things in.`;
     mouseHint.textContent = mine
@@ -214,24 +222,31 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
       if (!on) setOpen(false);
     },
     shown: () => root.visible,
-    // mine: our own farm (we take things out). ownerName: whose it is, for the words
-    setOwner(isMine, ownerName = '') {
+    // mine: our own farm (we take things out). ownerName: whose it is, for the
+    // words. withHelpers: false on a farm without helpers
+    setOwner(isMine, ownerName = '', withHelpers = true) {
       mine = isMine;
       owner = ownerName;
+      shared = withHelpers;
       if (open) render();
     },
+    // where it stands (x, z: the middle of it)
+    moveTo(x, z) {
+      root.position.set(x, 0, z);
+    },
+    at: () => root.position,
     setItems(next) {
       items = { ...next };
       if (open) render();
     },
     refresh: () => open && render(), // (the backpack changed)
-    inReach: (pos) => root.visible && pos.y < 2.2 && Math.hypot(pos.x - FARM_CHEST.x, pos.z - FARM_CHEST.z) < REACH,
+    inReach: (pos) => root.visible && pos.y < 2.2 && Math.hypot(pos.x - root.position.x, pos.z - root.position.z) < REACH,
     // the lid lifts while it is open
     update(dt) {
       lidOpen += ((open ? 1 : 0) - lidOpen) * Math.min(1, dt * 10);
       lid.rotation.x = -lidOpen * 1.1;
     },
     // where it stands, for a collider: { x, y, z, w, h, d }
-    box: { x: FARM_CHEST.x, y: 0.4, z: FARM_CHEST.z, w: 1.1, h: 0.8, d: 0.7 },
+    box: () => ({ x: root.position.x, y: 0.4, z: root.position.z, w: CHEST_W, h: 0.8, d: 0.7 }),
   };
 }
