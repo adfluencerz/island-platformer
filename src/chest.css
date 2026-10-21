@@ -17,6 +17,16 @@
   font-size: 24px;
   font-weight: 700;
 }
+/* A heading with its button beside it */
+.chest-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 6px;
+}
+.chest-bar .chest-heading { margin: 0; }
+.chest-bar .inv-button { flex: none; }
 
 /* What is in the chest: slots that wrap, as many as there are kinds of thing */
 .chest-items {

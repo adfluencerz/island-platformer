@@ -284,6 +284,9 @@ body.in-menu .tc { display: none; }
 
 @media (orientation: portrait) {
   :root.touch .inv-grid { grid-template-columns: repeat(6, var(--inv-slot)); }
+  /* the chest's words and buttons as wide as its six columns of slots, so it fits the screen */
+  :root.touch .chest-window > * { max-width: calc(var(--inv-slot) * 6 + 30px); }
+  :root.touch .chest-bar { flex-wrap: wrap; gap: 6px 12px; }
 }
 @media (orientation: portrait) and (max-width: 380px) {
   :root.touch .shop-stock { grid-template-columns: 1fr; }
