@@ -52,6 +52,7 @@ const MINE_EVERY = 900; // ms: the fewest between two broken rocks (breaking one
 const MAX_DROPS = 60;
 const round2 = (v) => Math.round(v * 100) / 100;
 const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
+const KEY_KINDS = new Set(['meadow', 'ledge', 'sky']); // where a lobby's one sure key can go (Room.hideKey)
 
 export class Room extends Place {
   // seed: the island's (shared/worldgen.js). rand: () => [0, 1), for the loot
@@ -68,6 +69,7 @@ export class Room extends Place {
     // Every spot starts out full
     // (a chest up on a sky isle has a bundle of things in it: shared/level.js rollSpot)
     this.spots = this.island.spots.map(([kind, x, y, z], id) => ({ id, kind, x, y, z, ...rollSpot(this.island, kind, x, z, rand), regrowAt: 0 }));
+    this.hideKey();
     this.felled = new Map(); // tree id -> when it grows back (ms)
     this.mined = new Map(); // rock id -> when a new one surfaces (ms)
     // how often each tree and rock grew back (so which of its places it is in: shared/level.js nextSite)
@@ -78,6 +80,19 @@ export class Room extends Place {
     this.giants = new Giants(rand); // (shared/giants.js)
     this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
+  }
+
+  // Every lobby has at least one old key somewhere. If none was rolled, one
+  // goes on a meadow, ledge or sky spot (they can turn one up, so a save keeps
+  // it: fromSave), never on golden seeds, and never in a chest's bundle (those
+  // aren't saved).
+  hideKey() {
+    if (this.spots.some((s) => s.item === 'key' || s.bundle?.some(([item]) => item === 'key'))) return;
+    const can = this.spots.filter((s) => KEY_KINDS.has(s.kind));
+    const plain = can.filter((s) => !RARE[s.item]);
+    const spots = plain.length ? plain : can;
+    if (!spots.length) return;
+    Object.assign(spots[Math.floor(this.rand() * spots.length)], { item: 'key', count: 1 });
   }
 
   // ---------- Who is here ----------
