@@ -88,12 +88,19 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // the fences and walls beside them); paths are walked on. `cost` comes out of
 // the backpack, and goes back in when the piece is taken down: wood and
 // stone, or for the decorations, one made at the workbench (src/workbench.js).
+// Blocks (`block`: its height) are solid boxes a farmer can stand on: a step
+// is walked up onto, anything taller takes a jump. A gate `joins` the fences
+// beside it like a fence, but is walked through.
 // A farm with helpers keeps its pieces in its room (server/farmroom.js), like its soil.
 export const PIECES = {
   wood_fence: { name: 'Wood fence', cost: { wood: 2 }, solid: true, joins: true },
   stone_wall: { name: 'Stone wall', cost: { stone: 3 }, solid: true, joins: true },
   wood_path: { name: 'Wood path', cost: { wood: 1 } },
   stone_path: { name: 'Stone path', cost: { stone: 1 } },
+  wood_gate: { name: 'Wood gate', cost: { wood: 3 }, joins: true },
+  wood_crate: { name: 'Wood crate', cost: { wood: 3 }, solid: true, block: 0.9 },
+  stone_step: { name: 'Stone step', cost: { stone: 2 }, solid: true, block: 0.45 },
+  stone_block: { name: 'Stone block', cost: { stone: 4 }, solid: true, block: 1 },
   workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
   lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
   garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },
