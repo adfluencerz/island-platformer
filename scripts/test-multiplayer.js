@@ -89,13 +89,15 @@ await test('old seeds (generation 1) grow exactly the islands they always did', 
 
 // Generations 2 and 3 are as settled as generation 1 now: pinned the same way.
 const LATER_SEEDS = {
+  8: {"mossy-cove-7-v8":2495688328,"dewy-glade-31-v8":1583329832,"sunny-knoll-5-v8":186462849,"golden-fen-0-v8":2840815162,"quiet-ridge-88-v8":901564798,"willow-isle-12-v8":3187697367,"pebble-nook-64-v8":1809298910,"honey-grove-3-v8":596487143},
+  7: {"mossy-cove-7-v7":861000100,"dewy-glade-31-v7":2645773252,"sunny-knoll-5-v7":3262897498,"golden-fen-0-v7":2913660827,"quiet-ridge-88-v7":1012903713,"willow-isle-12-v7":142691819,"pebble-nook-64-v7":2979833659,"honey-grove-3-v7":702780834},
   2: { 'mossy-cove-7-v2': 119939977, 'dewy-glade-31-v2': 2076144126, 'sunny-knoll-5-v2': 4173192289, 'golden-fen-0-v2': 1296267364, 'quiet-ridge-88-v2': 2011619196, 'willow-isle-12-v2': 4045709457, 'pebble-nook-64-v2': 869828886, 'honey-grove-3-v2': 2547208232 },
   6: {"mossy-cove-7-v6":3096900676,"dewy-glade-31-v6":2629822513,"sunny-knoll-5-v6":163208784,"golden-fen-0-v6":1784216000,"quiet-ridge-88-v6":2185361121,"willow-isle-12-v6":3551543839,"pebble-nook-64-v6":755167583,"honey-grove-3-v6":164978941},
   5: {"mossy-cove-7-v5":450326002,"dewy-glade-31-v5":3459739216,"sunny-knoll-5-v5":3901735779,"golden-fen-0-v5":2353024595,"quiet-ridge-88-v5":3223947397,"willow-isle-12-v5":3675653226,"pebble-nook-64-v5":2655493373,"honey-grove-3-v5":803211333},
   4: {"mossy-cove-7-v4":1587304027,"dewy-glade-31-v4":2535534902,"sunny-knoll-5-v4":4282641216,"golden-fen-0-v4":2506278968,"quiet-ridge-88-v4":1283944460,"willow-isle-12-v4":2433746912,"pebble-nook-64-v4":2936599587,"honey-grove-3-v4":3566523821},
   3: { 'mossy-cove-7-v3': 2325607642, 'dewy-glade-31-v3': 395772194, 'sunny-knoll-5-v3': 1431089034, 'golden-fen-0-v3': 572641172, 'quiet-ridge-88-v3': 2526362288, 'willow-isle-12-v3': 1353456352, 'pebble-nook-64-v3': 3529699339, 'honey-grove-3-v3': 2551931431 },
 };
-await test('generation 2 to 6 seeds grow exactly the islands they did, with nothing newer', () => {
+await test('generation 2 to 8 seeds grow exactly the islands they did, with nothing newer', () => {
   for (const [gen, seeds] of Object.entries(LATER_SEEDS)) {
     for (const [seed, print] of Object.entries(seeds)) {
       assert.equal(genOf(seed), Number(gen), seed);
@@ -103,7 +105,9 @@ await test('generation 2 to 6 seeds grow exactly the islands they did, with noth
       if (Number(gen) < 4) assert.ok(!islandFor(seed).marsh && !islandFor(seed).spots.some(([k]) => k === 'cattail'), `"${seed}" grew generation 4 things`);
       if (Number(gen) < 5) assert.ok(!islandFor(seed).glade && !islandFor(seed).spots.some(([k]) => k === 'bluebell'), `"${seed}" grew generation 5 things`);
       if (Number(gen) < 6) assert.ok(!islandFor(seed).field && !islandFor(seed).spots.some(([k]) => k === 'sunflower'), `"${seed}" grew generation 6 things`);
-      assert.ok(!islandFor(seed).patch && !islandFor(seed).spots.some(([k]) => k === 'pumpkin'), `"${seed}" grew generation 7 things`);
+      if (Number(gen) < 7) assert.ok(!islandFor(seed).patch && !islandFor(seed).spots.some(([k]) => k === 'pumpkin'), `"${seed}" grew generation 7 things`);
+      if (Number(gen) < 8) assert.ok(!islandFor(seed).glen && !islandFor(seed).spots.some(([k]) => k === 'fern'), `"${seed}" grew generation 8 things`);
+      assert.ok(!islandFor(seed).dunes && !islandFor(seed).spots.some(([k]) => k === 'seashell'), `"${seed}" grew generation 9 things`);
     }
   }
 });
@@ -180,6 +184,28 @@ await test('generation 7 islands are generation 6 islands with a pumpkin patch',
   assert.ok(patches >= 45, `most gen 7 islands have a patch (${patches} of 60)`);
 });
 
+// Generations 8 and 9: a fern glen, then shell dunes, on most islands
+for (const [gen, name, area, kind, ground] of [[8, 'a fern glen', 'glen', 'fern', 'glen'], [9, 'shell dunes', 'dunes', 'seashell', 'dune']]) {
+  await test(`generation ${gen} islands are generation ${gen - 1} islands with ${name}`, () => {
+    assert.equal(genOf(`dewy-glade-31-v${gen}`), gen);
+    let found = 0;
+    for (let i = 0; i < 60; i++) {
+      const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, `-v${gen}`);
+      const island = islandFor(seed);
+      assert.deepEqual(checkIsland(island), [], seed);
+      assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
+      if (gen === 8) assert.ok(!island.dunes, `${seed}: no generation 9 things`);
+      if (island[area]) {
+        found++;
+        const spots = island.spots.filter(([k]) => k === kind);
+        assert.ok(spots.length >= 3, seed);
+        assert.ok(spots.every(([, x, , z]) => island.groundAt(x, z) === ground), `${seed}: the ${kind} spots are in the ${area}`);
+      }
+    }
+    assert.ok(found >= 45, `most gen ${gen} islands have ${name} (${found} of 60)`);
+  });
+}
+
 await test('new seeds carry their generation, and grow what it added', () => {
   assert.equal(genOf('dewy-glade-31-v2'), 2);
   assert.equal(genOf('dewy-glade-31-v25'), 1);
@@ -215,7 +241,7 @@ await test('generation 3 islands: twice as wide, with climbs, rings of toadstool
     assert.ok(new Set(island.terraces.map((step) => step[5])).size >= 2, `${seed}: more than one climb`);
     assert.ok(new Set(island.toadstools.map((cap) => cap[4])).size >= 2, `${seed}: more than one ring of toadstools`);
     assert.ok(island.spots.length >= 50, `${seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower' && k !== 'pumpkin')) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower' && k !== 'pumpkin' && k !== 'fern' && k !== 'seashell')) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
     // every wood has a trail into it
     for (const [x, z, r] of island.woods) assert.ok(distToPaths(x, z, island.trails) < r, `${seed}: no trail to the wood at ${x}, ${z}`);
   }
@@ -226,7 +252,7 @@ await test('every seed grows a sound island: spots on land, reachable, not insid
     const island = islandFor(randomSeed(mulberry32(i)).replace(/-v\d$/, '') + i);
     assert.deepEqual(checkIsland(island), [], `seed ${island.seed}`);
     assert.ok(island.spots.length >= 25, `seed ${island.seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower' && k !== 'pumpkin')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower' && k !== 'pumpkin' && k !== 'fern' && k !== 'seashell')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
   }
 });
 
@@ -858,7 +884,7 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
   assert.deepEqual(ann.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,3', piece: 'wood_fence', by: bo.p.id });
   // gates, arches, arbors, low walls, rail and picket fences, hedges, palisades, cobbles, gravel, stepping stones, wells, lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, wattle fences, troughs, stone benches, sundials, wheelbarrows and the blocks to climb on are pieces too
-  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar', 'low_stone_wall', 'wood_palisade', 'wood_barrel', 'straw_bale', 'straw_stack', 'log_tower', 'stone_arch', 'cobble_path', 'rail_fence', 'wood_arbor', 'gravel_path', 'mossy_stone_block', 'stone_well', 'box_hedge', 'stepping_stones', 'tree_stump', 'crate_stack', 'stone_lantern', 'scarecrow', 'picket_fence', 'grain_sacks', 'hay_cart', 'beehive', 'birdbath', 'signpost', 'wattle_fence', 'water_trough', 'stone_bench', 'sundial', 'wheelbarrow', 'barrel_stack']) {
+  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar', 'low_stone_wall', 'wood_palisade', 'wood_barrel', 'straw_bale', 'straw_stack', 'log_tower', 'stone_arch', 'cobble_path', 'rail_fence', 'wood_arbor', 'gravel_path', 'mossy_stone_block', 'stone_well', 'box_hedge', 'stepping_stones', 'tree_stump', 'crate_stack', 'stone_lantern', 'scarecrow', 'picket_fence', 'grain_sacks', 'hay_cart', 'beehive', 'birdbath', 'signpost', 'wattle_fence', 'water_trough', 'stone_bench', 'sundial', 'wheelbarrow', 'barrel_stack', 'straw_step']) {
     room.message(bo.p, { t: C.BUILD, key: '5,3', piece });
     assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,3', piece, by: bo.p.id });
     room.message(bo.p, { t: C.UNBUILD, key: '5,3' });

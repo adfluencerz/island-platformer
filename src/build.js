@@ -565,6 +565,16 @@ function model(id, gx, gz, joined) {
         const a = i * 1.9 + r * 6;
         part(g, box, MATS.strawDark, Math.cos(a) * 0.3, h + 0.01, Math.sin(a) * 0.3, 0.26, 0.015, 0.03).rotation.y = a;
       }
+    } else if (id === 'straw_step') {
+      // half a bale, lying low, with its twine round it and a few loose straws
+      const r = hash(gx, gz);
+      part(g, box, MATS.straw, 0, h / 2, 0, w, h, w);
+      part(g, box, MATS.strawDark, 0, 0.04, 0, w + 0.02, 0.08, w + 0.02).castShadow = false;
+      for (const z of [-0.24, 0.24]) part(g, box, MATS.twine, 0, h / 2, z, w + 0.02, h + 0.02, 0.04).castShadow = false;
+      for (let i = 0; i < 4; i++) {
+        const a = i * 2.3 + r * 6;
+        part(g, box, MATS.strawDark, Math.cos(a) * 0.28, h + 0.01, Math.sin(a) * 0.28, 0.24, 0.015, 0.03).rotation.y = a;
+      }
     } else if (id === 'straw_stack') {
       // bales lying three high, each course turned across the one below,
       // with the twine showing on every one

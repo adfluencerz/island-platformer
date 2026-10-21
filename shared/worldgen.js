@@ -22,7 +22,8 @@
 // several climbs of terraces and rings of toadstools, more woods and trails
 // out to them all (NARROW and WIDE below). Generation 4 added the reed marsh.
 // Generation 5 added the bluebell glade. Generation 6 added the sunflower field.
-// Generation 7 added the pumpkin patch.
+// Generation 7 added the pumpkin patch. Generation 8 added the fern glen.
+// Generation 9 added the shell dunes.
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
@@ -30,11 +31,13 @@ export const WILD_HALF = 34; // tiles reach this far from the middle, on both ax
 const WIDE_HALF = 68; // and from generation 3 on: twice as wide
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
-export const CURRENT_GEN = 7;
+export const CURRENT_GEN = 9;
 export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
 export const GLADE_RADIUS = [4.5, 6.5]; // the bluebell glade's size (gen 5, on islands twice as wide)
 export const FIELD_RADIUS = [5, 7]; // the sunflower field's size (gen 6, on islands twice as wide)
 export const PATCH_RADIUS = [4.5, 6.5]; // the pumpkin patch's size (gen 7, on islands twice as wide)
+export const GLEN_RADIUS = [4.5, 6.5]; // the fern glen's size (gen 8, on islands twice as wide)
+export const DUNES_RADIUS = [4.5, 6.5]; // the shell dunes' size (gen 9, on islands twice as wide)
 export const MARSH_RADIUS = [5, 7]; // the reed marsh's size (gen 4, on islands twice as wide)
 
 // Which generation of the world a seed grows: "...-v2" is 2, any other seed 1
@@ -115,6 +118,8 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   glade: { x, z, r } | undefined: a bluebell glade (generation 5 and up)
 //   field: { x, z, r } | undefined: a sunflower field (generation 6 and up)
 //   patch: { x, z, r } | undefined: a pumpkin patch (generation 7 and up)
+//   glen: { x, z, r } | undefined: a fern glen (generation 8 and up)
+//   dunes: { x, z, r } | undefined: shell dunes by the shore (generation 9 and up)
 //   spots: [[kind, x, y, z], ...]: a spot's id is its index
 function finishIsland(desc) {
   const { coast, pond } = desc;
@@ -139,8 +144,9 @@ function finishIsland(desc) {
     tops.find((t) => Math.abs(x - t.x) < t.w / 2 + margin && Math.abs(z - t.z) < t.d / 2 + margin) ?? null;
   // what the ground is at (x, z): null (the sea), 'pond', 'sand', 'stone' (the
   // stone circle), 'path', 'meadow', 'heath' (the moor), 'marsh' (the reeds),
-  // 'glade' (the bluebells), 'field' (the sunflowers), 'patch' (the pumpkins), 'moss' (the woods) or 'grass'
-  const { spawn, meadow, trails, heath, marsh, glade, field, patch } = desc;
+  // 'glade' (the bluebells), 'field' (the sunflowers), 'patch' (the pumpkins),
+  // 'glen' (the ferns), 'dune' (the shell dunes), 'moss' (the woods) or 'grass'
+  const { spawn, meadow, trails, heath, marsh, glade, field, patch, glen, dunes } = desc;
   const groundAt = (x, z) => {
     if (!isLand(x, z)) return null;
     if (inPond(x, z)) return 'pond';
@@ -168,6 +174,14 @@ function finishIsland(desc) {
     if (patch) {
       const p = Math.atan2(z - patch.z, x - patch.x);
       if (Math.hypot(x - patch.x, z - patch.z) < patch.r + Math.sin(p * 4 + 2) * 0.8) return 'patch';
+    }
+    if (glen) {
+      const g = Math.atan2(z - glen.z, x - glen.x);
+      if (Math.hypot(x - glen.x, z - glen.z) < glen.r + Math.sin(g * 5 + 3) * 1) return 'glen';
+    }
+    if (dunes) {
+      const d = Math.atan2(z - dunes.z, x - dunes.x);
+      if (Math.hypot(x - dunes.x, z - dunes.z) < dunes.r + Math.sin(d * 5 + 3) * 0.9) return 'dune';
     }
     if (woodsAt(x, z) > 0) return 'moss';
     return 'grass';
@@ -269,6 +283,8 @@ const CATTAIL_SPOTS = 5; // (gen 4)
 const BLUEBELL_SPOTS = 5; // (gen 5)
 const SUNFLOWER_SPOTS = 5; // (gen 6)
 const PUMPKIN_SPOTS = 5; // (gen 7)
+const FERN_SPOTS = 5; // (gen 8)
+const SEASHELL_SPOTS = 5; // (gen 9)
 // How big an island grows and how much is on it: up to generation 2 as it
 // always did; from generation 3 on twice as wide, with more of everything
 // (several climbs and rings of toadstools, more woods, trails out to them all)
@@ -695,7 +711,19 @@ function growIsland(seed, attempt) {
     patch = growPatch(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath: heath?.area, marsh: marsh?.area, glade: glade?.area, field: field?.area, grow: size.heath });
     for (const spot of patch?.spots ?? []) spots.push(spot);
   }
-  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }), ...(patch && { patch: patch.area }) });
+  // Generations 8 and 9 come after generation 7's, for the same reason
+  const others = [heath?.area, marsh?.area, glade?.area, field?.area, patch?.area];
+  let glen;
+  if (genOf(seed) >= 8) {
+    glen = growGlen(seed, attempt, { draft, shoreDist, groundOk, inland, taken, pond, meadow, spawn, others, grow: size.heath });
+    for (const spot of glen?.spots ?? []) spots.push(spot);
+  }
+  let dunes;
+  if (genOf(seed) >= 9) {
+    dunes = growDunes(seed, attempt, { draft, shoreDist, groundOk, inland, taken, pond, meadow, spawn, others: [...others, glen?.area], grow: size.heath });
+    for (const spot of dunes?.spots ?? []) spots.push(spot);
+  }
+  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }), ...(patch && { patch: patch.area }), ...(glen && { glen: glen.area }), ...(dunes && { dunes: dunes.area }) });
   return checkIsland(island).length ? null : island;
 }
 
@@ -894,6 +922,55 @@ function growPatch(seed, attempt, { draft, spots, shoreDist, groundOk, inland, t
   if (found.length < 3) return null;
   return { area, spots: found };
 }
+
+// ---------- Generations 8 and 9: the fern glen and the shell dunes ----------
+// A round place of its own kind on the island (where: `near`, how far out
+// from the middle, 0..1), clear of the pond, the meadow, the arrival stones,
+// the terraces and toadstools and the `others` (the heath, the marsh...), with
+// a few spots of `kind` in it. Streams of its own (`name`, `kind`), so it
+// never moves anything else. An island with no room for one goes without.
+function growPlace(seed, attempt, { name, kind, radius, near, shore, edge, want, draft, shoreDist, groundOk, inland, taken, pond, meadow, spawn, others, grow = 1 }) {
+  const h = mulberry32(hashSeed(`${seed}/${attempt}/${name}`));
+  const rand = (min, max) => min + h() * (max - min);
+  const r = round1(rand(...radius) * grow);
+  const rocks = [...draft.terraces.map(([x, z, w, d]) => ({ x, z, size: Math.max(w, d) })), ...draft.toadstools.map(([x, z, s]) => ({ x, z, size: s }))];
+  let area = null;
+  for (let n = 0; n < 300 && !area; n++) {
+    const { x, z } = inland(rand(0, Math.PI * 2), rand(...near));
+    const rx = round1(x);
+    const rz = round1(z);
+    if (shoreDist(rx, rz) < r * shore + 2.5) continue;
+    if (Math.hypot(rx - pond.x, rz - pond.z) < pond.r + r + 1.5) continue;
+    if (Math.hypot(rx - meadow.x, rz - meadow.z) < meadow.r + r + 1) continue;
+    if (Math.hypot(rx - spawn.x, rz - spawn.z) < r + STONE_CIRCLE + 3) continue;
+    if (others.some((o) => o && Math.hypot(rx - o.x, rz - o.z) < o.r + r + 1.5)) continue;
+    if (rocks.some((t) => Math.hypot(rx - t.x, rz - t.z) < r + t.size / 2 + 2)) continue;
+    area = { x: rx, z: rz, r };
+  }
+  if (!area) return null;
+  const q = mulberry32(hashSeed(`${seed}/${attempt}/${kind}`));
+  const found = [];
+  for (let n = 0, most = Math.round(want * grow); n < 400 && found.length < most; n++) {
+    const a = q() * Math.PI * 2;
+    const d = Math.sqrt(q()) * (area.r - edge);
+    const x = round1(area.x + Math.cos(a) * d);
+    const z = round1(area.z + Math.sin(a) * d);
+    if (!groundOk(x, z) || distToPaths(x, z, draft.trails) < 1.3 || found.some(([, ox, , oz]) => Math.hypot(x - ox, z - oz) < 2.4)) continue;
+    found.push([kind, x, 0, z]);
+    taken.push([x, z]);
+  }
+  if (found.length < 3) return null;
+  return { area, spots: found };
+}
+
+// Generation 8: a shady hollow of tall ferns, with fronds to pick
+const growGlen = (seed, attempt, opts) =>
+  growPlace(seed, attempt, { ...opts, name: 'glen', kind: 'fern', radius: GLEN_RADIUS, near: [0.25, 0.85], shore: 0.7, edge: 1.6, want: FERN_SPOTS });
+
+// Generation 9: a pale sandy rise out toward the shore, with dune grass,
+// driftwood and seashells to collect
+const growDunes = (seed, attempt, opts) =>
+  growPlace(seed, attempt, { ...opts, name: 'dunes', kind: 'seashell', radius: DUNES_RADIUS, near: [0.6, 0.9], shore: 0.5, edge: 1.4, want: SEASHELL_SPOTS });
 
 const round1 = (v) => Math.round(v * 10) / 10;
 const round2 = (v) => Math.round(v * 100) / 100;

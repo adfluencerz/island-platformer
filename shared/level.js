@@ -125,6 +125,7 @@ export const PIECES = {
   low_stone_wall: { name: 'Low stone wall', solid: true, joins: true },
   wood_palisade: { name: 'Wood palisade', solid: true, joins: true },
   wood_barrel: { name: 'Wood barrel', solid: true, block: 1 },
+  straw_step: { name: 'Straw step', solid: true, block: 0.45 },
   straw_bale: { name: 'Straw bale', solid: true, block: 0.9 },
   straw_stack: { name: 'Straw stack', solid: true, block: 1.35 },
   log_tower: { name: 'Log tower', solid: true, block: 1.8 },

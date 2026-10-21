@@ -40,6 +40,8 @@ export const SHOP = {
   cattail: { sell: 35 },
   bluebell: { sell: 40 },
   pumpkin: { sell: 50 },
+  fern: { sell: 40 },
+  seashell: { sell: 40 },
   gem: { sell: 200 },
   wood: { sell: 6 },
   stone: { sell: 4 },
@@ -103,6 +105,8 @@ export const LOBBY_SPOTS = {
   bluebell: { regrow: [30, 45], loot: [['bluebell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 5)
   sunflower: { regrow: [30, 45], loot: [['sunflower', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 6)
   pumpkin: { regrow: [30, 45], loot: [['pumpkin', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 7)
+  fern: { regrow: [30, 45], loot: [['fern', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 8)
+  seashell: { regrow: [30, 45], loot: [['seashell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 9)
   meadow: {
     regrow: [30, 50],
     loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.02, 1, 1]],
@@ -151,6 +155,7 @@ export const BUILD_COSTS = {
   low_stone_wall: { stone: 2 },
   wood_palisade: { wood: 4 },
   wood_barrel: { wood: 4 },
+  straw_step: { flax: 2 },
   straw_bale: { flax: 3 },
   straw_stack: { flax: 6 },
   log_tower: { wood: 8 },

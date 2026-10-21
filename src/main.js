@@ -375,7 +375,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins', fern: 'Pick ferns', seashell: 'Collect shells' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -393,6 +393,10 @@ const bluebellMat = new THREE.MeshStandardMaterial({ color: 0x4a62d0, roughness:
 const pumpkinMat = new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 });
 const pumpkinGeo = new THREE.SphereGeometry(0.2, 8, 6).scale(1, 0.8, 1);
 const pumpkinStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 0.1, 5);
+const frondGeo = new THREE.ConeGeometry(0.07, 0.7, 4).translate(0, 0.35, 0);
+const frondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 });
+const shellGeo = new THREE.SphereGeometry(0.14, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.6, 0.8);
+const shellMats = [0xf0d9c0, 0xf2a7b0, 0xfff1e2].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.4 }));
 const sunflowerPetalMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5 });
 const sunflowerHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 });
 const sunflowerPetalGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.02, 10).rotateX(Math.PI / 2);
@@ -454,6 +458,27 @@ function makeSpotView(spot) {
       stem.position.set(Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22);
       stem.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25);
       content.add(stem);
+    }
+  } else if (spot.kind === 'fern') {
+    // A rosette of leaning fronds
+    content = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+      const a = i * 2.4;
+      const frond = new THREE.Mesh(frondGeo, frondMat);
+      frond.rotation.set(Math.sin(a) * 0.55, 0, -Math.cos(a) * 0.55);
+      frond.scale.set(1, 0.8 + (i % 3) * 0.15, 1);
+      content.add(frond);
+    }
+  } else if (spot.kind === 'seashell') {
+    // A few shells half sunk in the sand
+    content = new THREE.Group();
+    for (let i = 0; i < 5; i++) {
+      const a = i * 2.4;
+      const shell = new THREE.Mesh(shellGeo, shellMats[i % 3]);
+      shell.position.set(Math.cos(a) * 0.3, 0.02, Math.sin(a) * 0.3);
+      shell.rotation.y = a * 3;
+      shell.scale.multiplyScalar(0.8 + (i % 3) * 0.25);
+      content.add(shell);
     }
   } else if (spot.kind === 'pumpkin') {
     // A couple of round orange pumpkins with little green stems

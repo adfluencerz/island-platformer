@@ -139,8 +139,10 @@ export function wildMap(island) {
       glade: { color: 0x5f8a6a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       field: { color: 0x9a9a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       patch: { color: 0x8a7a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+      glen: { color: 0x3d6b3a, jitter: 0.04, top: [0.006, 0.02], lush: true },
+      dune: { color: 0xd9c188, jitter: 0.03, top: [0.006, 0.02] },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch', 'glen', 'dune']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
@@ -150,6 +152,8 @@ export function wildMap(island) {
       glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44] },
       field: { tufts: 2.8, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.3, light: [0.34, 0.44], hue: [0.14, 0.2] },
       patch: { tufts: 2.2, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.2, light: [0.3, 0.4], hue: [0.1, 0.16] },
+      glen: { tufts: 3.2, lushTufts: 1.8, flowerLush: -2, flowerChance: 0, light: [0.22, 0.32], hue: [0.3, 0.36] },
+      dune: { tufts: 1.2, lushTufts: 0.6, flowerLush: -2, flowerChance: 0, light: [0.5, 0.6], hue: [0.12, 0.16] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -196,6 +200,13 @@ export function wildMap(island) {
       if (island.patch) {
         scatter(3, 2.6, (x, z) => tileAt(x, z) === 'patch' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 8 (the fern glen), then 9 (the shell dunes): after the patch's
+      if (island.glen) {
+        scatter(6, 2.4, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.8]));
+      }
+      if (island.dunes) {
+        scatter(5, 2.4, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -214,6 +225,15 @@ const patchVineGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.5, 4).rotateZ(Mat
 const patchPumpkinGeo = new THREE.SphereGeometry(0.22, 8, 6);
 const patchVineMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 });
 const patchPumpkinMat = new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 });
+// fern fronds in the glen (generation 8): a leaning blade, a few to a clump
+const glenFrondGeo = new THREE.ConeGeometry(0.09, 1, 4).translate(0, 0.5, 0);
+const glenFrondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 });
+// dune grass (generation 9): a pale, narrow plume; and driftwood, 1 long (scaled to its length)
+const plumeGeo = new THREE.ConeGeometry(0.07, 1, 5).translate(0, 0.5, 0);
+const plumeMat = new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 });
+const driftGeo = new THREE.CylinderGeometry(0.13, 0.15, 1, 7).rotateZ(Math.PI / 2);
+const driftMat = foliageMat(0xb8a58a);
+const driftEndMat = foliageMat(0xd9cdb4);
 const fieldStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1, 5);
 const fieldHeadGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.04, 10).rotateX(Math.PI / 2);
 const fieldHeartGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 8).rotateX(Math.PI / 2);
@@ -391,6 +411,41 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
       const pz = z + rand(-0.3, 0.3);
       addDecor(patchPumpkinGeo, patchPumpkinMat, px, 0.16 * s, pz, s, 0.75 * s, s, root);
       addDecor(patchVineGeo, patchVineMat, px, 0.04, pz, 1.4, 1, 1, root).rotation.y = rand(0, Math.PI);
+    });
+  }
+
+  // Generation 8: fern fronds, thick in the glen (after everything else drew
+  // from rng); you walk through them
+  if (island.glen) {
+    scatter(40, 1.1, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0, n = 3 + Math.floor(rng() * 3); i < n; i++) {
+        const h = rand(0.5, 1.1);
+        const a = rand(0, Math.PI * 2);
+        const frond = addDecor(glenFrondGeo, glenFrondMat, x + Math.cos(a) * 0.15, 0, z + Math.sin(a) * 0.15, 1, h, 1, root);
+        frond.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
+      }
+    });
+  }
+
+  // Generation 9: tufts of pale dune grass, leaning in the wind, and driftwood
+  // on the dunes (after everything else drew from rng); you walk through the grass
+  if (island.dunes) {
+    scatter(30, 1.2, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0, n = 3 + Math.floor(rng() * 3); i < n; i++) {
+        const h = rand(0.5, 1.1);
+        const blade = addDecor(plumeGeo, plumeMat, x + rand(-0.25, 0.25), 0, z + rand(-0.25, 0.25), 1, h, 1, root);
+        blade.rotation.set(rand(-0.15, 0.15), 0, rand(0.1, 0.3));
+      }
+    });
+    scatter(3, 6, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 1) && distToPaths(x, z, island.trails) > 1.5, (x, z) => {
+      const len = rand(1.2, 2);
+      const log = new THREE.Mesh(driftGeo, [driftMat, driftEndMat, driftEndMat]);
+      log.rotation.y = rand(0, Math.PI);
+      log.scale.x = len;
+      log.position.set(x, 0.14, z);
+      log.castShadow = true;
+      log.receiveShadow = true;
+      root.add(log);
     });
   }
 
