@@ -4,7 +4,8 @@
 // grow from seeds in shared/worldgen.js. What the worlds look like is the
 // client's business (src/maps.js, src/world.js). The numbers that balance
 // the game (times, costs, what things give) are in shared/balance.js.
-import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST } from './balance.js';
+import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS } from './balance.js';
+import { SKY_STYLES, relicAt } from './skyisles.js';
 export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, STURDY_HITS } from './balance.js';
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
@@ -29,7 +30,7 @@ export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', 
 // is rolled each time the spot regrows, so a spot is a little different every
 // time.
 // (regrow and loot: LOBBY_SPOTS, shared/balance.js)
-const TOUCHED = new Set(['meadow', 'ledge']); // (the rest are gathered)
+const TOUCHED = new Set(['meadow', 'ledge', 'sky', 'relic']); // (the rest are gathered)
 export const SPOT_KINDS = Object.fromEntries(Object.entries(LOBBY_SPOTS).map(([kind, spot]) => [kind, { use: TOUCHED.has(kind) ? 'touch' : 'gather', ...spot }]));
 
 // ---------- Trees ----------
@@ -216,11 +217,35 @@ export function keptClear(gx, gz) {
 export const RARE = {
   golden_seeds: 'Golden seeds',
   key: 'An old key',
+  ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, found])), // (the sky isles' relics)
 };
 
 // Roll a spot's loot: [item, count]. rand: () => [0, 1)
-export function rollLoot(kind, rand = Math.random) {
-  const { loot } = SPOT_KINDS[kind];
+export const rollLoot = (kind, rand = Math.random) => pick(SPOT_KINDS[kind].loot, rand);
+
+// What a lobby's spot starts out with: { item, count }, and for a chest up on
+// a sky isle its `bundle` ([[item, count], ...]; its item is 'chest'). A relic
+// is the one its isle's style has. island: islandFor(seed). rand: () => [0, 1)
+export function rollSpot(island, kind, x, z, rand = Math.random) {
+  if (kind === 'relic') return { item: relicAt(island, x, z), count: 1 };
+  if (SKY_CHESTS[kind]) return { item: 'chest', count: 1, bundle: rollChest(kind, rand) };
+  const [item, count] = rollLoot(kind, rand);
+  return { item, count };
+}
+
+// What is in a chest of this kind (SKY_CHESTS): [[item, count], ...]
+export function rollChest(kind, rand = Math.random) {
+  const { rolls: [lo, hi], loot } = SKY_CHESTS[kind];
+  const got = new Map();
+  for (let n = lo + Math.floor(rand() * (hi - lo + 1)); n > 0; n--) {
+    const [item, count] = pick(loot, rand);
+    got.set(item, (got.get(item) ?? 0) + count);
+  }
+  return [...got];
+}
+
+// One of loot ([item, weight, min, max], ...) by weight: [item, count]
+function pick(loot, rand) {
   let r = rand() * loot.reduce((sum, [, w]) => sum + w, 0);
   for (const [item, w, min, max] of loot) {
     r -= w;

@@ -38,6 +38,7 @@ export const CATEGORIES = {
   Material: '#7a4a22',
   Mineral: '#7b3fb0',
   'Key Item': '#b8257a',
+  Relic: '#2f7fa8',
   Currency: '#a86e00',
 };
 const CATEGORY_ORDER = Object.keys(CATEGORIES);

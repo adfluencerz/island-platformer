@@ -38,7 +38,7 @@
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, devToolsOn } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { SPOT_KINDS, RARE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollLoot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
+import { SPOT_KINDS, RARE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 
@@ -64,10 +64,8 @@ export class Room extends Place {
     this.seed = island.seed;
     this.inviteOnly = inviteOnly;
     // Every spot starts out full
-    this.spots = this.island.spots.map(([kind, x, y, z], id) => {
-      const [item, count] = rollLoot(kind, rand);
-      return { id, kind, x, y, z, item, count, regrowAt: 0 };
-    });
+    // (a chest up on a sky isle has a bundle of things in it: shared/level.js rollSpot)
+    this.spots = this.island.spots.map(([kind, x, y, z], id) => ({ id, kind, x, y, z, ...rollSpot(this.island, kind, x, z, rand), regrowAt: 0 }));
     this.felled = new Map(); // tree id -> when it grows back (ms)
     this.mined = new Map(); // rock id -> when a new one surfaces (ms)
     // how often each tree and rock grew back (so which of its places it is in: shared/level.js nextSite)
@@ -148,22 +146,26 @@ export class Room extends Place {
     switch (msg?.t) {
       case C.TAKE: {
         const spot = this.spots[msg.id];
-        if (!spot?.item || !this.inReach(p, spot)) {
+        // (the locked chest on a sky isle takes an old key, out of the page's backpack as on a farm)
+        if (!spot?.item || !this.inReach(p, spot) || (spot.kind === 'sky_vault' && msg.key !== true)) {
           this.send(p, { t: S.DENY, id: msg.id });
           return;
         }
-        const { item, count } = spot;
+        const { item, count, bundle } = spot;
         spot.item = null; // (for good)
         spot.count = 0;
         p.finds++;
-        this.gathered(p, item, count);
-        if (RARE[item]) {
-          p.rares++;
-          this.say(`${p.name} found ${RARE[item].toLowerCase()}!`);
+        for (const [it, n] of bundle ?? [[item, count]]) {
+          this.gathered(p, it, n);
+          if (RARE[it]) {
+            p.rares++;
+            this.say(`${p.name} found ${RARE[it].toLowerCase()}!`);
+          }
         }
+        if (spot.kind === 'sky_vault') this.say(`${p.name} unlocked a chest up on a sky isle!`);
         this.rosterDirty = true;
         this.changed = true;
-        this.broadcast({ t: S.TAKEN, id: spot.id, by: p.id, item, count });
+        this.broadcast({ t: S.TAKEN, id: spot.id, by: p.id, item, count, ...(bundle && { items: bundle }) });
         break;
       }
       case C.CHOP: {

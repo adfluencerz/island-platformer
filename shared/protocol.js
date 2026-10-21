@@ -9,7 +9,7 @@ import { PIN_LENGTH, MAX_NAME } from './constants.js';
 export const C = {
   JOIN: 'join', // { v, name, key, back, color, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name and color are the ones that count; name, color: as the page has them)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
-  TAKE: 'take', // { id }: gathered (or walked into) what is on spot id
+  TAKE: 'take', // { id, key? }: gathered (or walked into) what is on spot id (key: true, an old key opens a sky_vault, and is used up)
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
   MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
@@ -37,7 +37,7 @@ export const S = {
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
-  TAKEN: 'taken', // { id, by, item, count }: spot id was emptied by player `by`
+  TAKEN: 'taken', // { id, by, item, count, items? }: spot id was emptied by player `by` (items: a sky isle chest's [[item, count], ...]; its item is 'chest')
   DENY: 'deny', // { id }: that did not count (someone got there first, or too far)
   FELLED: 'felled', // { id, by, count, at, shares }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms; shares: a giant's, [[player id, count]], each player's wood)
   REGROWN: 'regrown', // { id, n }: tree id has grown back, in its place n (shared/level.js nextSite)
@@ -88,6 +88,7 @@ export const PS = {
   GO: 'go', // { party, code }: off to lobby code
   GONE: 'gone', // { party }: that invitation is over for us (it lapsed, or another tab answered it)
   CALLED_OFF: 'calledOff', // { party, why }: the party was called off
+  FRIENDS: 'friends', // {}: our friends changed (one came online, went off, moved, asked, said yes, or unfriended): ask for them again
 };
 
 // spots in WELCOME: [[id, kind, x, y, z, item, count], ...] (item null: nothing there right now)

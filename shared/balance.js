@@ -43,6 +43,9 @@ export const SHOP = {
   fern: { sell: 40 },
   seashell: { sell: 40 },
   gem: { sell: 200 },
+  // the relics, one on each style of sky isle (shared/skyisles.js)
+  ...Object.fromEntries(['cloud_feather', 'brass_cog', 'sky_crystal', 'jade_blossom', 'glowing_spore', 'sea_glass_lens', 'fallen_star', 'royal_honeycomb', 'golden_apple',
+    'snow_globe', 'jade_teacup', 'silver_bell', 'ancient_acorn', 'desert_rose', 'moon_pearl', 'pocket_watch', 'golden_horseshoe', 'crystal_ball'].map((relic) => [relic, { sell: 400 }])),
   wood: { sell: 6 },
   stone: { sell: 4 },
   // animals, and what they give
@@ -111,10 +114,35 @@ export const LOBBY_SPOTS = {
     regrow: [30, 50],
     loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.02, 1, 1]],
   },
+  // up on the sky isles (generation 10): finds lying about, and on the steps up
+  sky: {
+    regrow: [40, 60],
+    loot: [['coin', 0.5, 2, 4], ['gem', 0.22, 1, 1], ['sunflower_seeds', 0.12, 2, 3], ['carrot_seeds', 0.1, 2, 4], ['golden_seeds', 0.05, 1, 1], ['key', 0.05, 1, 1]],
+  },
+  // (the relic and the chests up there: what is on them is rolled their own way, SKY_CHESTS)
+  relic: { regrow: [0, 0], loot: [] },
+  sky_chest: { regrow: [0, 0], loot: [] },
+  sky_vault: { regrow: [0, 0], loot: [] },
   ledge: {
     regrow: [40, 60],
     loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.04, 1, 1]],
   },
+};
+
+// ---------- Sky isles (generation 10) ----------
+// Landmasses floating over a lobby's island, each up its own stair of floating
+// steps (shared/skyisles.js). `count`: how many an island has. `radius`, `top`:
+// how wide each is and how high up. `firstStep`: how high the lowest step is;
+// `rise`: about how much higher each next one is (a jump reaches ~1.8);
+// `stepSize`: how wide a step is. `finds`: sky spots lying about on each.
+export const SKY_ISLES = { count: [1, 3], radius: [5, 7.5], top: [9, 15], firstStep: [0.9, 1.2], rise: 1.15, stepSize: [1.6, 2], finds: [2, 3] };
+// The chests up there: a sky_chest whoever gets to first opens, and a locked
+// sky_vault an old key opens (the key is used up). `rolls`: how many things
+// are in one, each from `loot` ([item, weight, min, max], as for the spots;
+// the same thing twice is one stack).
+export const SKY_CHESTS = {
+  sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.03, 1, 1]] },
+  sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5]] },
 };
 
 // ---------- Finds on the farm ----------

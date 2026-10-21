@@ -33,6 +33,7 @@ import { islandFor } from '../shared/worldgen.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createDevTools } from './devtools.js';
+import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot } from './skyisles.js';
 
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
@@ -377,7 +378,8 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins', fern: 'Pick ferns', seashell: 'Collect shells' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins', fern: 'Pick ferns', seashell: 'Collect shells', sky_chest: 'Open the chest', sky_vault: 'Unlock the chest' };
+const CHEST_ROOM = 3; // free backpack slots a sky isle's chest asks for, since what is in it is a surprise
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -530,8 +532,11 @@ function makeSpotView(spot) {
       sprig.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3);
       content.add(sprig);
     }
+  } else if (SKY_CHEST_KINDS.has(spot.kind)) {
+    content = skyChestView(spot); // (up on a sky isle: it stays once it is emptied, its lid open)
   } else {
     content = createItemMesh('coin'); // (a treasure: the item itself, made solid, itemmesh.js)
+    if (spot.kind === 'relic') content.add(relicBeam(spot.item)); // (a sky isle's: seen from far off)
   }
   group.add(content);
   const glint = new THREE.Mesh(glintGeo, glintMat);
@@ -545,7 +550,8 @@ function makeSpotView(spot) {
 function showSpot(spot) {
   const { content, glint } = spot.view;
   const has = !!spot.item && !spot.pending;
-  content.visible = has;
+  content.visible = has || !!content.userData.stays;
+  content.userData.open?.(!has);
   glint.visible = has && !!RARE[spot.item];
   if (spot.use === 'touch' && spot.item) {
     content.geometry = itemGeometry(spot.item);
@@ -575,14 +581,30 @@ function clearSpots() {
 // instant; TAKEN (into the backpack) or DENY (it comes back) settles it.
 function takeSpot(spot) {
   if (!spot.item || spot.pending || performance.now() < spot.retryAt) return;
-  if (!inventory.canAdd(spot.item, spot.count)) {
-    inventory.add(spot.item, spot.count); // (says "Inventory full")
+  const vault = spot.kind === 'sky_vault';
+  if (vault && !inventory.count('key')) {
+    inventory.notify("It's locked. An old key might fit");
+    spot.retryAt = performance.now() + 1000;
+    return;
+  }
+  if (spot.item === 'chest' ? inventory.serialize().slots.filter((slot) => !slot).length < CHEST_ROOM : !inventory.canAdd(spot.item, spot.count)) {
+    if (spot.item === 'chest') inventory.notify('Make some room in your backpack first');
+    else inventory.add(spot.item, spot.count); // (says "Inventory full")
     spot.retryAt = performance.now() + 1000;
     return;
   }
   spot.pending = true;
   showSpot(spot);
-  net?.send({ t: C.TAKE, id: spot.id });
+  net?.send({ t: C.TAKE, id: spot.id, ...(vault && { key: true }) }); // (the key is used up once it has opened it: TAKEN)
+}
+
+// We opened a chest up on a sky isle: what was in it into the backpack (the
+// locked one took an old key)
+function openedChest(spot, items) {
+  if (spot?.kind === 'sky_vault') inventory.remove('key', 1);
+  for (const [item, count] of items) inventory.add(item, count);
+  const rare = items.find(([item]) => RARE[item]);
+  hud.flash(rare ? `${RARE[rare[0]]}!` : spot?.kind === 'sky_vault' ? 'Unlocked!' : 'Treasure!');
 }
 
 // the bush or mushrooms within reach with something on them, nearest first
@@ -622,6 +644,7 @@ function updateSpots(dt, t) {
   if (target && !resting(player.position)) hud.setPrompt(`E  Bop ${lobbyNames.get(target.id) ?? 'them'}`);
   else if (tree) hud.setPrompt(chopPrompt(tree));
   else if (rock) hud.setPrompt(minePrompt(rock));
+  else if (near?.kind === 'sky_vault' && !inventory.count('key')) hud.setPrompt('Locked: an old key would open it');
   else hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
 }
 
@@ -920,7 +943,19 @@ function devGiant(kind) {
   worlds.home.makeGiant(kind, best.id);
   inventory.notify(`A giant ${kind} has grown on the farm!`);
 }
-createDevTools({ onGiant: devGiant });
+// ...and on a lobby's sky isles (generation 10): hop to the foot of the
+// nearest one's stair, or draw the nearest one in the next style
+function devSkyFoot() {
+  const foot = place === 'lobby' ? stairFoot(player.position.x, player.position.z) : null;
+  if (!foot) return inventory.notify('No sky isles here');
+  player.position.set(foot.x, GROUND_STAND_Y + 0.5, foot.z);
+  player.velocity.set(0, 0, 0);
+}
+function devSkyStyle() {
+  const name = place === 'lobby' ? restyleNearest(player.position.x, player.position.z) : null;
+  inventory.notify(name ? `Now a ${name.toLowerCase()}` : 'No sky isles here');
+}
+createDevTools({ onGiant: devGiant, onSkyFoot: devSkyFoot, onSkyStyle: devSkyStyle, onKey: () => inventory.add('key', 1) });
 
 // Each morning, on a farm played alone: maybe a giant
 function rollFarmGiants() {
@@ -2143,6 +2178,7 @@ const presence = new PresenceLink({
   auth: () => (farmSync.account() ? farmSync.auth() : null),
   onMessage: (m) => {
     if (m.t === PS.INVITED) invites.show(m);
+    else if (m.t === PS.FRIENDS) splash.friendsChanged();
     else if (m.t === PS.GONE) invites.gone(m.party);
     else if (m.t === PS.PARTY) splash.partyStatus(m);
     else if (m.t === PS.CALLED_OFF) {
@@ -2533,7 +2569,8 @@ function joinLobby({ name, code }) {
       Object.assign(spot, { item: null, count: 0, pending: false });
       showSpot(spot);
     }
-    if (m.by === myId) {
+    if (m.by === myId && m.items) openedChest(spot, m.items);
+    else if (m.by === myId) {
       inventory.add(m.item, m.count);
       if (RARE[m.item]) hud.flash(`${RARE[m.item]}!`);
     }

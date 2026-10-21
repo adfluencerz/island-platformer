@@ -1,4 +1,5 @@
 import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
+import { RELICS } from './relics.js';
 
 // ---------- Item catalog ----------
 // Shared by the world (pickup meshes use `color`) and the inventory UI.
@@ -988,6 +989,9 @@ ITEMS.planter = {
     '................',
   ],
 };
+
+// The sky isles' relics (src/relics.js)
+Object.assign(ITEMS, RELICS);
 
 // What things cost and are worth (shared/balance.js)
 for (const [id, { price, sell }] of Object.entries(SHOP)) {
