@@ -1,5 +1,7 @@
 import './inventory.css';
-import { ITEMS, spriteURL } from './items.js';
+import { ITEMS, PIECE_ICONS, spriteURL } from './items.js';
+import { PIECES } from '../shared/level.js';
+import { buzz } from './ui/touch.js';
 
 // ---------- Slot-based inventory (Stardew Valley style) ----------
 // 3 rows x 12 slots. The first row doubles as the always-visible toolbar; the
@@ -10,6 +12,10 @@ import { ITEMS, spriteURL } from './items.js';
 //   right click       take one (shift: take half), or drop one into a slot
 //   shift + click     move a stack between the toolbar and the backpack
 //   trash slot        destroy the carried stack (tools refuse)
+//
+// Its Build tab (or B) picks a piece to build on the farm, or taking pieces
+// down: build mode (src/build.js, main.js) pays with the wood and stone in
+// the backpack.
 
 export const COLS = 12;
 const ROWS = 3;
@@ -28,6 +34,7 @@ export const CATEGORIES = {
   Produce: '#c25a12',
   Forage: '#9a1b33',
   Animal: '#b5651d',
+  Decor: '#3f7f9a',
   Material: '#7a4a22',
   Mineral: '#7b3fb0',
   'Key Item': '#b8257a',
@@ -74,13 +81,17 @@ function iconImg(parent) {
   return img;
 }
 
-export function createInventory({ onOpenChange } = {}) {
+// onBuild(piece): a piece picked in the Build tab (a PIECES id, or 'remove').
+// buildProblem(): why there is no building here ('' : there is).
+// building(): the piece build mode has now (null: not building).
+export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
   let open = false;
   let held = null; // stack carried on the cursor while the menu is open
   let lastFullNotice = 0;
+  let tab = 'pack'; // 'pack' | 'build'
 
   // ---------- DOM ----------
   function makeSlot(parent, index, label) {
@@ -108,18 +119,25 @@ export function createInventory({ onOpenChange } = {}) {
   const menuEl = el('div', 'inv-menu', document.body);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame', menuEl);
-  el('div', 'inv-tab inv-frame', windowEl).textContent = 'Backpack';
+  const tabsEl = el('div', 'inv-tabs', windowEl);
+  const packTab = el('button', 'inv-tab inv-frame', tabsEl);
+  packTab.textContent = 'Backpack';
+  const buildTab = el('button', 'inv-tab inv-frame', tabsEl);
+  buildTab.textContent = 'Build';
+  buildTab.title = 'Build on the farm (B)';
+  const packEl = el('div', 'inv-pack', windowEl);
+  const buildEl = el('div', 'inv-build', windowEl);
   const closeBtn = el('button', 'inv-close', windowEl);
   closeBtn.textContent = '×';
   closeBtn.title = 'Close (I / Esc)';
 
-  const gridEl = el('div', 'inv-grid', windowEl);
+  const gridEl = el('div', 'inv-grid', packEl);
   const gridViews = ALL.map((i) => {
     if (i === COLS) el('div', 'inv-divider', gridEl); // gap between toolbar row and backpack
     return makeSlot(gridEl, i);
   });
 
-  const footerEl = el('div', 'inv-footer', windowEl);
+  const footerEl = el('div', 'inv-footer', packEl);
   const statsEl = el('div', 'inv-stats', footerEl);
   const organizeBtn = el('button', 'inv-button', footerEl);
   organizeBtn.textContent = 'Organize';
@@ -128,7 +146,7 @@ export function createInventory({ onOpenChange } = {}) {
   trashEl.title = 'Trash';
   iconImg(trashEl).src = TRASH_ICON;
 
-  const hintEl = el('div', 'inv-hint', windowEl);
+  const hintEl = el('div', 'inv-hint', packEl);
   el('span', 'mouse-only', hintEl).textContent = 'Click: pick up / place · Right click: take one (Shift: half) · Shift+click: move to/from toolbar';
   el('span', 'touch-only', hintEl).textContent = 'Tap: pick up / place · The top row is your toolbar';
 
@@ -159,11 +177,54 @@ export function createInventory({ onOpenChange } = {}) {
     const used = slots.filter(Boolean).length;
     statsEl.innerHTML = `<span>Current funds: <b>${gold.toLocaleString()}g</b></span><span>Slots used: <b>${used}/${slots.length}</b></span>`;
 
+    packTab.classList.toggle('on', tab === 'pack');
+    buildTab.classList.toggle('on', tab === 'build');
+    packEl.hidden = tab !== 'pack';
+    buildEl.hidden = tab !== 'build';
+    if (open && tab === 'build') renderBuild();
+
     heldEl.hidden = !held;
     if (held) {
       heldImg.src = spriteURL(ITEMS[held.id]);
       heldCount.textContent = held.count > 1 ? held.count : '';
     }
+  }
+
+  // ---------- The Build tab ----------
+  const have = (id) => slots.reduce((n, s) => n + (s?.id === id ? s.count : 0), 0);
+  const costText = (cost) => Object.entries(cost).map(([id, n]) => `${n} ${ITEMS[id].name.toLowerCase()}`).join(', ');
+
+  function renderBuild() {
+    buildEl.textContent = '';
+    const problem = buildProblem();
+    const note = el('div', 'inv-build-note', buildEl);
+    note.textContent = problem || 'Pick something to build. E puts it where the see-through one is (the tile you point at, or in front of you), or click or tap a tile. Taking a piece down gives back what it cost.';
+    const cards = el('div', 'inv-build-cards', buildEl);
+    for (const id of [...Object.keys(PIECES), 'remove']) {
+      const def = PIECES[id];
+      const short = def ? Object.entries(def.cost).find(([item, n]) => have(item) < n) : null;
+      const made = ITEMS[id]?.piece === id; // (a decoration, made at the workbench)
+      const card = el('button', 'inv-build-card' + (building() === id ? ' on' : ''), cards);
+      card.type = 'button';
+      card.disabled = !!problem || !!short;
+      iconImg(card).src = spriteURL(PIECE_ICONS[id] ?? ITEMS[id]);
+      el('b', '', card).textContent = def ? def.name : 'Take down';
+      const sub = el('span', 'inv-build-cost' + (short ? ' short' : ''), card);
+      if (!def) sub.textContent = 'and get it back';
+      else if (made) sub.textContent = short ? 'Make one at a workbench' : `${have(id)} in your backpack`;
+      else sub.textContent = costText(def.cost);
+      if (short && !made) card.title = `Not enough ${ITEMS[short[0]].name.toLowerCase()}: you have ${have(short[0])}`;
+      card.addEventListener('click', () => {
+        setOpen(false);
+        if (!open) onBuild?.(id);
+      });
+    }
+  }
+
+  function setTab(next) {
+    if (next !== tab && held && !putBack()) return;
+    tab = next;
+    render();
   }
 
   function showTooltip(stack, x, y) {
@@ -261,7 +322,10 @@ export function createInventory({ onOpenChange } = {}) {
       return false;
     }
     insert({ id, count }, ALL);
-    if (!quiet) toast(id, spriteURL(def), (n) => `${def.name} ×${n}`, count);
+    if (!quiet) {
+      toast(id, spriteURL(def), (n) => `${def.name} ×${n}`, count);
+      buzz(15);
+    }
     render();
     return true;
   }
@@ -269,6 +333,7 @@ export function createInventory({ onOpenChange } = {}) {
   function earn(amount) {
     gold += amount;
     toast('gold', spriteURL(ITEMS.coin), (n) => `+${n}g`, amount);
+    buzz(15);
     fundsEl.classList.remove('bump');
     void fundsEl.offsetWidth;
     fundsEl.classList.add('bump');
@@ -279,6 +344,30 @@ export function createInventory({ onOpenChange } = {}) {
   function spend(amount) {
     if (gold < amount) return false;
     gold -= amount;
+    render();
+    return true;
+  }
+
+  // How many of an item the backpack has
+  const count = (id) => have(id);
+
+  // Use up `n` of an item from anywhere in the backpack (the backpack rows
+  // first, then the toolbar, last slots first). All or nothing.
+  function remove(id, n) {
+    if (have(id) < n) return false;
+    for (const i of [...BACKPACK, ...HOTBAR].reverse()) {
+      if (!n) break;
+      if (slots[i]?.id === id) n -= takeFrom(i, Math.min(n, slots[i].count)).count;
+    }
+    render();
+    return true;
+  }
+
+  // Swap a tool for the one made from it, in the same slot (the workbench)
+  function upgrade(from, to) {
+    const i = slots.findIndex((s) => s?.id === from);
+    if (i < 0) return false;
+    slots[i] = { id: to, count: 1 };
     render();
     return true;
   }
@@ -371,18 +460,22 @@ export function createInventory({ onOpenChange } = {}) {
   }
 
   // ---------- Open / close ----------
+  // Put the carried stack back (before closing, or leaving the tab); it always
+  // came from here, but if a split somehow can't fit, keep it rather than lose it.
+  function putBack() {
+    if (!held) return true;
+    if (insert(held, ALL)) {
+      toast('noroom', null, () => 'No room to put that back', 0);
+      render();
+      return false;
+    }
+    held = null;
+    return true;
+  }
+
   function setOpen(next) {
     if (next === open) return;
-    if (!next && held) {
-      // Put the carried stack back before closing; it always came from here,
-      // but if a split somehow can't fit, keep the menu open rather than lose it.
-      if (insert(held, ALL)) {
-        toast('noroom', null, () => 'No room to put that back', 0);
-        render();
-        return;
-      }
-      held = null;
-    }
+    if (!next && !putBack()) return;
     open = next;
     menuEl.hidden = !open;
     hotbarEl.hidden = open;
@@ -400,6 +493,13 @@ export function createInventory({ onOpenChange } = {}) {
   window.addEventListener('keydown', (e) => {
     if (e.target.closest?.('input, textarea, select')) return; // typing a name or a chat line
     if (e.code === 'KeyI' && !e.repeat) setOpen(!open);
+    else if (e.code === 'KeyB' && !e.repeat) {
+      if (open && tab === 'build') setOpen(false);
+      else {
+        setTab('build');
+        setOpen(true);
+      }
+    }
     else if (e.code === 'Escape') setOpen(false);
     else if (!open && HOTBAR_KEYS.includes(e.code)) select(HOTBAR_KEYS.indexOf(e.code));
   });
@@ -434,6 +534,8 @@ export function createInventory({ onOpenChange } = {}) {
     render();
   });
   closeBtn.addEventListener('click', () => setOpen(false));
+  packTab.addEventListener('click', () => setTab('pack'));
+  buildTab.addEventListener('click', () => setTab('build'));
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
 
   window.addEventListener('pointermove', (e) => {
@@ -479,6 +581,9 @@ export function createInventory({ onOpenChange } = {}) {
   return {
     add,
     canAdd,
+    count,
+    remove,
+    upgrade,
     earn,
     spend,
     take,

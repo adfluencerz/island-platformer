@@ -13,7 +13,7 @@ import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, woodFor, stoneFor, mostStone } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, woodFor, stoneFor, mostStone } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32 } from '../shared/worldgen.js';
 
 let passed = 0;
@@ -210,6 +210,63 @@ await test('rocks: broken by whoever finishes first, next to it, not too fast; a
   room.update(Date.now() + ROCK.regrow[1] * 1000 + 100);
   assert.equal(b.conn.last(S.RESURFACED)?.id, 4);
   assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, []);
+});
+
+await test('bopping: the farmer in front, in reach, knocked back; what they gathered drops, for anyone to pick up', () => {
+  const room = new Room({ code: 'TEST15' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const { x: sx, z: sz } = room.island.spawn;
+  const at = (who, x, z, yaw = 0) => room.message(who.p, { t: C.STATE, x: sx + x, y: 0.8, z: sz + z, yaw, f: 1 });
+  at(a, 8, 0, 0); // facing +z
+  at(b, 8, 1.2);
+  b.p.bag = { wood: 3, golden_seeds: 1 };
+  room.message(a.p, { t: C.BOP, weapon: 'spoon', yaw: 0 });
+  assert.equal(b.conn.last(S.BOPPED), undefined, 'not a weapon');
+  room.message(a.p, { t: C.BOP, weapon: 'wooden_sword', yaw: Math.PI });
+  assert.equal(b.conn.last(S.BOPPED), undefined, 'facing the other way');
+  a.p.bopAt = 0;
+  room.message(a.p, { t: C.BOP, weapon: 'wooden_sword', yaw: 0 });
+  const bop = b.conn.last(S.BOPPED);
+  assert.deepEqual([bop.by, bop.id, bop.dz, bop.drop], [a.p.id, b.p.id, 1, ['wood', 1]]);
+  assert.equal(b.p.bag.wood, 2);
+  const drop = a.conn.last(S.DROP);
+  assert.deepEqual([drop.item, drop.count], ['wood', 1]);
+  room.message(a.p, { t: C.BOP, weapon: 'wooden_sword', yaw: 0 });
+  assert.equal(b.conn.all(S.BOPPED).length, 1, 'not again so soon');
+  // the drop: too far for A, B walks into it and gets it back (to be knocked loose again)
+  at(a, 12, 0);
+  room.message(a.p, { t: C.PICKUP, id: drop.id });
+  assert.equal(a.conn.last(S.DROP_DENY).id, drop.id);
+  room.message(b.p, { t: C.PICKUP, id: drop.id });
+  assert.deepEqual([a.conn.last(S.PICKED).by, b.p.bag.wood], [b.p.id, 3]);
+  room.message(a.p, { t: C.PICKUP, id: drop.id });
+  assert.equal(a.conn.all(S.DROP_DENY).length, 2, 'gone');
+  // rare finds stay put; the stone circle is for resting
+  at(a, 8, 0);
+  b.p.bag = { golden_seeds: 1 };
+  b.p.boppedAt = 0;
+  a.p.bopAt = 0;
+  room.message(a.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
+  assert.equal(b.conn.last(S.BOPPED).drop, null);
+  at(a, 0, 0);
+  at(b, 0, 1.2);
+  b.p.boppedAt = 0;
+  a.p.bopAt = 0;
+  room.message(a.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
+  assert.equal(b.conn.all(S.BOPPED).length, 2, 'nobody is bopped by the spawn');
+  // drops fade, and a newcomer sees the ones still about
+  at(a, 8, 0);
+  at(b, 8, 1.2);
+  b.p.bag = { stone: 5 };
+  b.p.boppedAt = 0;
+  a.p.bopAt = 0;
+  room.message(a.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
+  assert.deepEqual(b.conn.last(S.BOPPED).drop, ['stone', 2]);
+  assert.equal(join(room, 'C').conn.last(S.WELCOME).drops.length, 1);
+  room.update(Date.now() + DROP_MS + 100);
+  assert.equal(a.conn.last(S.PICKED).by, 0);
+  assert.equal(room.drops.size, 0);
 });
 
 await test('bigger rocks give more stone, within the sizes rocks come in', () => {
@@ -625,12 +682,31 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.deepEqual(room.animals.hens, [[0, 1, 2, 9]]);
   room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], tilled: ['0,0'] } });
   assert.deepEqual(Object.keys(room.animals), ['hens']);
+  // building: next to you, not on soil, a piece, nothing there yet; whoever is close takes it down
+  room.message(bo.p, { t: C.BUILD, key: '5,3', piece: 'wood_fence' });
+  assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,3', piece: 'wood_fence', by: bo.p.id });
+  for (const [key, piece] of [['5,3', 'stone_wall'], ['4,3', 'wood_path'], ['5,4', 'castle'], ['9,9', 'wood_path'], ['5,2', 'constructor']]) {
+    room.message(bo.p, { t: C.BUILD, key, piece });
+    assert.equal(bo.conn.last(S.FARM_DENY).op, 'build', `${piece} on ${key}`);
+  }
+  assert.equal(bo.conn.last(S.FARM_DENY).piece, undefined, 'only pieces there are come back');
+  room.message(bo.p, { t: C.TILL, key: '5,3' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'till', 'no tilling under a fence');
+  room.message(ann.p, { t: C.UNBUILD, key: '5,3' });
+  assert.equal(ann.conn.last(S.FARM_DENY).op, 'unbuild', 'too far');
+  room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
+  assert.deepEqual(ann.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,3', piece: 'wood_fence', by: bo.p.id });
+  room.message(bo.p, { t: C.BUILD, key: '5,4', piece: 'stone_path' });
+  room.message(ann.p, { t: C.STATE, x: 0, y: 0.8, z: 5, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.BUILD, key: '0,4', piece: 'stone_path' });
+  assert.equal(ann.conn.last(S.FARM_DENY).op, 'build', 'the plaza\'s middle stays clear');
+  room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], built: [] } });
+  assert.equal(room.built.size, 1, 'the animals can\'t take it down');
   // the farm's rocks: broken by whoever is next to one (the stone is theirs); the room keeps when it comes back
   room.message(bo.p, { t: C.MINE, id: 3, x: 5, z: 3, size: 0.3 });
   const mined = ann.conn.last(S.MINED);
   assert.deepEqual([mined.id, mined.by], [3, bo.p.id]);
   assert.ok(mined.count >= 1 && mined.at > Date.now());
-  room.message(ann.p, { t: C.STATE, x: 0, y: 0.8, z: 5, yaw: 0, f: 1 });
   room.message(ann.p, { t: C.MINE, id: 4, x: 5, z: 3, size: 0.3 });
   assert.equal(ann.conn.last(S.MINE_DENY)?.id, 4, 'too far');
   // ...and its trees, the same way (Bo's rock was a moment ago: chopping isn't mining)
@@ -644,12 +720,14 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.ok(room.mined.has(3) && room.felled.has(7), 'the animals can\'t bring them back');
   // written into the owner's save, the chest beside it
   rooms.write(room);
+  assert.deepEqual(a.save.farm.built, [['5,4', 'stone_path']]);
   assert.deepEqual([a.save.farm.felled, a.save.farm.mined], [[[7, felled.at]], [[3, mined.at]]]);
   const reopened = new FarmRoom({ farm: a, admit: () => null });
   assert.ok(reopened.felled.has(7) && reopened.mined.has(3), 'still down when the farm opens again');
   room.tickPlace(Math.max(felled.at, mined.at) + 1);
   assert.deepEqual([bo.conn.last(S.REGROWN)?.id, bo.conn.last(S.RESURFACED)?.id], [7, 3]);
   assert.equal(room.felled.size + room.mined.size, 0);
+  assert.deepEqual(rooms.farms.get(a.id) && new FarmRoom({ farm: a, admit: () => null }).built.get('5,4'), 'stone_path', 'and back from it');
   assert.deepEqual(a.save.farm.tilled.map(([key]) => key).sort(), ['3,3', '4,3']);
   assert.deepEqual(a.save.farm.hens, [[1, 1, 1, 1]]);
   assert.deepEqual(a.chest, { turnip: 1, flax: 1 });

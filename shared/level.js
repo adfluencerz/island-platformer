@@ -81,6 +81,46 @@ export function stoneFor(size, rand = Math.random) {
 // The most a rock of this size can give (room to keep in the backpack)
 export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockSize(size)) / ROCK.per));
 
+// ---------- Building ----------
+// What can be built on a farm in build mode (src/build.js draws them): one
+// piece to a tile. `solid` ones are in the way (fences and walls join up with
+// the fences and walls beside them); paths are walked on. `cost` comes out of
+// the backpack, and goes back in when the piece is taken down: wood and
+// stone, or for the decorations, one made at the workbench (src/workbench.js).
+// A farm with helpers keeps its pieces in its room (server/farmroom.js), like its soil.
+export const PIECES = {
+  wood_fence: { name: 'Wood fence', cost: { wood: 2 }, solid: true, joins: true },
+  stone_wall: { name: 'Stone wall', cost: { stone: 3 }, solid: true, joins: true },
+  wood_path: { name: 'Wood path', cost: { wood: 1 } },
+  stone_path: { name: 'Stone path', cost: { stone: 1 } },
+  workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
+  lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
+  garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },
+  planter: { name: 'Flower planter', cost: { planter: 1 }, solid: true },
+};
+export const MAX_PIECES = 2000; // on one farm
+
+// Tiles kept clear of building: where farmers arrive, and the farm's chest
+export function keptClear(gx, gz) {
+  return Math.hypot(gx - SPAWN.x, gz - SPAWN.z) < 1.6 || Math.hypot(gx - FARM_CHEST.x, gz - FARM_CHEST.z) < 1.1;
+}
+
+// ---------- Bopping (lobbies) ----------
+// Made at the workbench (src/workbench.js): with one in hand, E in a lobby
+// swings it, and the farmer in front of you, within `reach`, gets bopped:
+// knocked back (at `knock`), and they drop up to `drops` of something they
+// gathered on this visit, for anyone to pick up (never a rare find, nor
+// gold). Nobody gets hurt. `every`: ms between swings that count. A farmer
+// who was just bopped can't be again for BOP_GRACE ms, and the stone circle
+// where farmers arrive (within SAFE_CIRCLE of it) is for resting.
+export const WEAPONS = {
+  wooden_sword: { reach: 1.9, knock: 7, every: 700, drops: 1 },
+  mallet: { reach: 2, knock: 11, every: 1100, drops: 2 },
+};
+export const BOP_GRACE = 2500;
+export const SAFE_CIRCLE = 3.5;
+export const DROP_MS = 45_000; // a drop nobody picks up fades after this
+
 // Finds rare enough that the whole lobby hears when one turns up
 export const RARE = {
   golden_seeds: 'Golden seeds',

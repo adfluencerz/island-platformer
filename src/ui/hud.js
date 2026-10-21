@@ -2,6 +2,7 @@
 // - the place panel (top left): where you are; in a lobby, its code and
 //   invite link, who is here and what they have found
 // - the prompt over the toolbar (E  Pick berries)
+// - in build mode, what is being built, and a Done button
 // - a big word for a rare find
 // - chat (bottom right, lobbies only): Enter to talk
 // - the controls list, for the menu's Controls page (splash.js: the menu,
@@ -20,18 +21,21 @@ const CONTROLS = [
   ['1 – =', 'Pick an item (or scroll over the bar)'],
   ['Scroll', 'Zoom'],
   ['I', 'Backpack'],
+  ['B', 'Build on your farm'],
   ['L', 'Visit a lobby'],
   ['Enter', 'Chat'],
   ['Hold T', 'Speed up time at home'],
   ['Esc', 'Menu'],
+  ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
 ];
 const TOUCH_CONTROLS = [
   ['Stick', 'Walk (or tap the ground)'],
   ['Tap', 'Till, plant, harvest, gather, chop, mine, or trade at the stall'],
   ['Use', 'The same, where you stand'],
-  ['Bag', 'Backpack'],
+  ['Bag', 'Backpack, and its Build tab'],
   ['Pinch', 'Zoom'],
   ['Hold clock', 'Speed up time at home'],
+  ['Tap farmer', 'With a sword or mallet in a lobby: bop them'],
 ];
 
 function keyList(parent, className, rows) {
@@ -56,8 +60,9 @@ export class Hud {
   // onMenu(): open the menu (Esc). isMenuOpen(). onMenuEscape(): Esc in the menu.
   // isBlocked(): another screen (the backpack, the menu) has the keyboard.
   // onPrompt(text): the prompt changed ('' : nothing to do here).
-  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt }) {
-    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt });
+  // onStopBuilding(): out of build mode (Done, or Esc while building).
+  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding }) {
+    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding });
     this.place = null; // 'home' | 'lobby' | 'farm' (a farm with helpers) | null (the title screen)
     this.visit = null; // on a farm with helpers: { name, mine }
     this.farmName = '';
@@ -88,6 +93,14 @@ export class Hud {
 
     this.prompt = el('div', 'ui-prompt', root);
     this.prompt.hidden = true;
+
+    // ---- build mode ----
+    this.buildBar = el('div', 'ui-build inv-frame', root);
+    const buildText = el('div', 'ui-build-text', this.buildBar);
+    this.buildWhat = el('b', '', buildText);
+    this.buildNote = el('span', 'ui-muted', buildText);
+    button('ui-btn ui-btn-small', this.buildBar, 'Done', () => this.onStopBuilding());
+    this.buildBar.hidden = true;
     this.big = el('div', 'ui-big', root);
     this.big.hidden = true;
     this.status = el('div', 'ui-conn', root);
@@ -210,6 +223,14 @@ export class Hud {
     this.onPrompt?.(text);
   }
 
+  // Build mode: what is being built (null: not building), and a note (what
+  // it costs, or why not here)
+  setBuilding(what, note = '') {
+    this.buildBar.hidden = !what;
+    this.buildWhat.textContent = what ?? '';
+    this.buildNote.textContent = note;
+  }
+
   // a big word in the middle of the screen that drifts up and fades
   flash(text) {
     this.big.textContent = text;
@@ -286,7 +307,8 @@ export class Hud {
     if (this.isBlocked()) return;
     if (e.code === 'Escape') {
       e.stopPropagation();
-      this.onMenu();
+      if (!this.buildBar.hidden) this.onStopBuilding();
+      else this.onMenu();
       return;
     }
     if (e.code === 'Enter' && (this.place === 'lobby' || this.place === 'farm')) {

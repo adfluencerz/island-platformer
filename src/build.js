@@ -1,0 +1,278 @@
+import * as THREE from 'three';
+import { PIECES } from '../shared/level.js';
+import { TILE_SIZE } from './world.js';
+
+// ---------- What is built on the farm ----------
+// Fences, walls, paths, the workbench and what it makes for the farm (PIECES
+// in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// up with the fences and walls beside it, and gives the solid ones colliders
+// in the world's platforms. main.js has build mode: where pieces may go,
+// paying for them, and keeping them (in the farm's save, or its room).
+
+const FENCE_H = 1.05; // a hop clears a fence...
+const WALL_H = 2; // ...not a wall
+
+const mat = (color, extra) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true, ...extra });
+const MATS = {
+  post: mat(0x9a6a3a),
+  rail: mat(0xb8834d),
+  plankA: mat(0xb07a45),
+  plankB: mat(0x9a6a3a),
+  stone: mat(0x9c9a92),
+  stoneDark: mat(0x7d7b74),
+  stoneLight: mat(0xb9b7ae),
+  benchTop: mat(0xc28a52),
+  iron: mat(0x5d6470, { roughness: 0.5, metalness: 0.4 }),
+  lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
+  soil: mat(0x5b3a1e),
+  leaf: mat(0x4f9e3c),
+  petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
+};
+const ball = new THREE.IcosahedronGeometry(0.5, 0);
+const box = new THREE.BoxGeometry(1, 1, 1);
+const flag = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+const keyOf = (gx, gz) => `${gx},${gz}`;
+const gridOf = (key) => key.split(',').map(Number);
+// a cheap, steady number from a tile, so a stone path keeps its look
+const hash = (gx, gz) => {
+  let h = Math.imul(gx * 73856093 ^ gz * 19349663, 0x9e3779b1);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+};
+
+function part(group, geo, material, x, y, z, sx, sy, sz) {
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.set(x, y, z);
+  mesh.scale.set(sx, sy, sz);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  return mesh;
+}
+
+// A piece's model, at the middle of its tile. joined: the directions
+// ([dx, dz]) its fence or wall runs on to a neighbour. Returns the group and
+// its colliders' boxes ({ x, y, z, w, h, d }, relative to the tile).
+function model(id, gx, gz, joined) {
+  const g = new THREE.Group();
+  const solids = [];
+  if (id === 'wood_fence') {
+    part(g, box, MATS.post, 0, FENCE_H / 2, 0, 0.18, FENCE_H, 0.18);
+    part(g, box, MATS.post, 0, FENCE_H + 0.03, 0, 0.24, 0.06, 0.24);
+    solids.push({ x: 0, y: FENCE_H / 2, z: 0, w: 0.3, h: FENCE_H, d: 0.3 });
+    for (const [dx, dz] of joined) {
+      for (const y of [0.42, 0.8]) {
+        part(g, box, MATS.rail, dx * 0.25, y, dz * 0.25, dx ? 0.5 : 0.07, 0.1, dz ? 0.5 : 0.07);
+      }
+      solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.2, h: FENCE_H, d: dz ? 0.5 : 0.2 });
+    }
+  } else if (id === 'stone_wall') {
+    part(g, box, MATS.stone, 0, WALL_H / 2, 0, 0.56, WALL_H, 0.56);
+    part(g, box, MATS.stoneLight, 0, WALL_H + 0.05, 0, 0.64, 0.1, 0.64);
+    part(g, box, MATS.stoneDark, 0, 0.12, 0, 0.62, 0.24, 0.62);
+    solids.push({ x: 0, y: WALL_H / 2, z: 0, w: 0.56, h: WALL_H, d: 0.56 });
+    for (const [dx, dz] of joined) {
+      const run = (w) => [dx ? 0.5 : w, dz ? 0.5 : w];
+      const [w, d] = run(0.46);
+      part(g, box, MATS.stone, dx * 0.25, WALL_H * 0.45, dz * 0.25, w, WALL_H * 0.9, d);
+      const [cw, cd] = run(0.54);
+      part(g, box, MATS.stoneLight, dx * 0.25, WALL_H * 0.9 + 0.05, dz * 0.25, cw, 0.1, cd);
+      // a course of darker stones along the bottom, and one halfway
+      const [bw, bd] = run(0.5);
+      part(g, box, MATS.stoneDark, dx * 0.25, 0.12, dz * 0.25, bw, 0.24, bd);
+      part(g, box, MATS.stoneDark, dx * 0.25, WALL_H * 0.48, dz * 0.25, bw, 0.08, bd);
+      solids.push({ x: dx * 0.25, y: WALL_H / 2, z: dz * 0.25, w, h: WALL_H, d });
+    }
+  } else if (id === 'wood_path') {
+    // three planks, along whichever way suits the tile, with a gap between
+    const across = hash(gx, gz) < 0.5;
+    [-0.31, 0, 0.31].forEach((o, i) => {
+      const plank = part(g, box, i % 2 ? MATS.plankB : MATS.plankA, across ? o : 0, 0.035, across ? 0 : o, across ? 0.28 : 0.94, 0.05, across ? 0.94 : 0.28);
+      plank.castShadow = false;
+    });
+  } else if (id === 'stone_path') {
+    // a few flat stones, laid a little differently on every tile
+    const r = hash(gx, gz);
+    const stones = [[-0.22, -0.22, 0.42], [0.24, -0.2, 0.38], [-0.2, 0.24, 0.38], [0.22, 0.23, 0.44]];
+    stones.forEach(([x, z, s], i) => {
+      const k = s * (0.95 + ((r * (i + 3) * 7) % 0.2));
+      const stone = part(g, flag, i % 2 ? MATS.stone : MATS.stoneLight, x, 0.03, z, k, 0.05, k);
+      stone.rotation.y = r * 6 + i;
+      stone.castShadow = false;
+    });
+  } else if (id === 'workbench') {
+    part(g, box, MATS.benchTop, 0, 0.82, 0, 0.96, 0.1, 0.62);
+    for (const [x, z] of [[-0.4, -0.24], [0.4, -0.24], [-0.4, 0.24], [0.4, 0.24]]) part(g, box, MATS.post, x, 0.39, z, 0.1, 0.78, 0.1);
+    part(g, box, MATS.plankB, 0, 0.22, 0, 0.84, 0.05, 0.52); // the shelf
+    part(g, box, MATS.stoneLight, -0.2, 0.3, 0.02, 0.3, 0.12, 0.22); // a block of stone on it
+    part(g, box, MATS.iron, 0.3, 0.93, -0.16, 0.16, 0.12, 0.12); // a vise
+    part(g, box, MATS.post, -0.18, 0.9, 0.1, 0.36, 0.05, 0.05); // a mallet
+    part(g, box, MATS.iron, -0.02, 0.92, 0.1, 0.1, 0.1, 0.14);
+    solids.push({ x: 0, y: 0.45, z: 0, w: 0.96, h: 0.9, d: 0.62 });
+  } else if (id === 'lamp_post') {
+    part(g, box, MATS.iron, 0, 0.08, 0, 0.36, 0.16, 0.36);
+    part(g, box, MATS.iron, 0, 1.05, 0, 0.1, 2, 0.1);
+    part(g, box, MATS.iron, 0, 2.1, 0, 0.4, 0.06, 0.4);
+    part(g, box, MATS.lantern, 0, 1.92, 0, 0.28, 0.3, 0.28).castShadow = false;
+    part(g, box, MATS.iron, 0, 2.17, 0, 0.18, 0.08, 0.18);
+    solids.push({ x: 0, y: 1.1, z: 0, w: 0.3, h: 2.2, d: 0.3 });
+  } else if (id === 'garden_bench') {
+    part(g, box, MATS.benchTop, 0, 0.42, 0.04, 0.92, 0.07, 0.36); // the seat, facing the camera
+    part(g, box, MATS.rail, 0, 0.7, -0.14, 0.92, 0.2, 0.05); // the back
+    for (const x of [-0.4, 0.4]) {
+      part(g, box, MATS.post, x, 0.2, 0.16, 0.07, 0.4, 0.07);
+      part(g, box, MATS.post, x, 0.4, -0.14, 0.07, 0.8, 0.07);
+    }
+    solids.push({ x: 0, y: 0.25, z: 0, w: 0.92, h: 0.5, d: 0.4 });
+  } else if (id === 'planter') {
+    part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
+    part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
+    part(g, box, MATS.soil, 0, 0.47, 0, 0.7, 0.04, 0.7);
+    const r = hash(gx, gz);
+    for (let i = 0; i < 7; i++) {
+      const a = i * 2.4 + r * 6;
+      const d = i ? 0.2 + (i % 2) * 0.08 : 0;
+      const x = Math.cos(a) * d;
+      const z = Math.sin(a) * d;
+      const h = 0.18 + ((r * 10 + i) % 3) * 0.05;
+      part(g, box, MATS.leaf, x, 0.49 + h / 2, z, 0.03, h, 0.03);
+      part(g, ball, MATS.petals[(i + Math.floor(r * 4)) % 4], x, 0.5 + h, z, 0.12, 0.08, 0.12);
+    }
+    solids.push({ x: 0, y: 0.25, z: 0, w: 0.8, h: 0.5, d: 0.8 });
+  }
+  return { group: g, solids };
+}
+
+// world: the world the pieces are on (world.js buildWorld)
+export function createBuildings(world) {
+  const pieces = new Map(); // key -> { id, group, colliders }
+
+  const joins = (gx, gz) => PIECES[pieces.get(keyOf(gx, gz))?.id]?.joins;
+  const joinedAt = (gx, gz) => DIRS.filter(([dx, dz]) => joins(gx + dx, gz + dz));
+
+  function undraw(piece) {
+    world.root.remove(piece.group);
+    for (const c of piece.colliders) world.platforms.splice(world.platforms.indexOf(c), 1);
+    piece.group = null;
+    piece.colliders = [];
+  }
+
+  function draw(key) {
+    const piece = pieces.get(key);
+    if (!piece) return;
+    if (piece.group) undraw(piece);
+    const [gx, gz] = gridOf(key);
+    const { group, solids } = model(piece.id, gx, gz, PIECES[piece.id].joins ? joinedAt(gx, gz) : []);
+    const x = gx * TILE_SIZE;
+    const z = gz * TILE_SIZE;
+    group.position.set(x, 0, z);
+    world.root.add(group);
+    piece.group = group;
+    piece.colliders = solids.map((s) => {
+      const c = {
+        center: new THREE.Vector3(x + s.x, s.y, z + s.z),
+        min: new THREE.Vector3(x + s.x - s.w / 2, s.y - s.h / 2, z + s.z - s.d / 2),
+        max: new THREE.Vector3(x + s.x + s.w / 2, s.y + s.h / 2, z + s.z + s.d / 2),
+        piece: true,
+      };
+      world.platforms.push(c);
+      return c;
+    });
+  }
+
+  // fences and walls around a tile, joined up afresh
+  function redrawAround(key) {
+    const [gx, gz] = gridOf(key);
+    for (const [dx, dz] of DIRS) if (joins(gx + dx, gz + dz)) draw(keyOf(gx + dx, gz + dz));
+  }
+
+  // ---------- The see-through piece build mode shows where it would go ----------
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x8cff7a, transparent: true, opacity: 0.45, depthWrite: false });
+  const ghostEdge = new THREE.Mesh(
+    new THREE.RingGeometry(0.62, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
+    ghostMat
+  );
+  ghostEdge.position.y = 0.09;
+  let ghost = null; // { group, id, key }
+
+  return {
+    get: (key) => pieces.get(key)?.id ?? null,
+    list: () => [...pieces].map(([key, p]) => [key, p.id]),
+    size: () => pieces.size,
+
+    // false: something is built there already, or no such piece
+    place(key, id) {
+      if (pieces.has(key) || !PIECES[id]) return false;
+      pieces.set(key, { id, group: null, colliders: [] });
+      draw(key);
+      if (PIECES[id].joins) redrawAround(key);
+      world.clearFoliageOnTile(key);
+      return true;
+    },
+
+    // the piece that was there (or null)
+    remove(key) {
+      const piece = pieces.get(key);
+      if (!piece) return null;
+      undraw(piece);
+      pieces.delete(key);
+      if (PIECES[piece.id].joins) redrawAround(key);
+      world.restoreFoliage(key);
+      return piece.id;
+    },
+
+    clear() {
+      for (const piece of pieces.values()) undraw(piece);
+      pieces.clear();
+    },
+
+    // The nearest piece of kind `id` whose tile is within `reach` of pos (its key, or null)
+    nearest(id, pos, reach) {
+      let best = null;
+      let bestD = reach;
+      for (const [key, piece] of pieces) {
+        if (piece.id !== id) continue;
+        const [gx, gz] = gridOf(key);
+        const d = Math.hypot(gx * TILE_SIZE - pos.x, gz * TILE_SIZE - pos.z);
+        if (d <= bestD) {
+          bestD = d;
+          best = key;
+        }
+      }
+      return best;
+    },
+
+    // night: 0 by day, 1 at night (the lamp posts' glow)
+    setNight(night) {
+      MATS.lantern.emissiveIntensity = night * 1.6;
+    },
+
+    // Show where `id` would go on tile key (null: nowhere), green or red
+    // (ok). id 'remove': just the tile's outline.
+    preview(key, id, ok) {
+      if (!key) {
+        if (ghost) ghost.group.visible = false;
+        return;
+      }
+      const [gx, gz] = gridOf(key);
+      if (!ghost || ghost.id !== id || ghost.key !== key) {
+        if (ghost) world.root.remove(ghost.group);
+        const group = id === 'remove' || !PIECES[id]
+          ? new THREE.Group()
+          : model(id, gx, gz, PIECES[id].joins ? joinedAt(gx, gz) : []).group;
+        group.traverse((obj) => {
+          if (!obj.isMesh) return;
+          obj.material = ghostMat;
+          obj.castShadow = false;
+        });
+        group.add(ghostEdge);
+        group.position.set(gx * TILE_SIZE, 0.01, gz * TILE_SIZE);
+        world.root.add(group);
+        ghost = { group, id, key };
+      }
+      ghost.group.visible = true;
+      ghostMat.color.set(ok ? 0x8cff7a : 0xff6b5a);
+    },
+  };
+}

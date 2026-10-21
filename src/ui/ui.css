@@ -229,6 +229,24 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-player-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-found { font-size: 18px; color: var(--ui-soft); }
 
+/* ---------- Build mode: top middle, between the place panel and the clock ---------- */
+.ui-build {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 16px;
+  max-width: min(460px, calc(100vw - 540px));
+  z-index: 10;
+}
+.ui-build-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.05; }
+.ui-build-text b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ui-build-text .ui-muted { font-size: 18px; }
+.ui-build .ui-btn { flex: none; }
+
 /* ---------- Prompt over the toolbar, the word for a rare find ---------- */
 .ui-prompt {
   position: fixed;

@@ -169,6 +169,24 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     pick.add(point);
   }
 
+  // For bopping in lobbies, held and swung like the tools: a wooden sword
+  // (a blade, a crossguard, a grip), and a mallet with a padded stone head
+  const sword = new THREE.Group();
+  const swordMat = mat(0xd9a066);
+  sword.add(part(new THREE.BoxGeometry(0.05, 0.62, 0.11), swordMat, 0, 0.5, 0));
+  sword.add(part(new THREE.BoxGeometry(0.07, 0.05, 0.3), handleMat, 0, 0.18, 0));
+  sword.add(part(new THREE.CylinderGeometry(0.03, 0.03, 0.2, 6), handleMat, 0, 0.06, 0));
+  const mallet = new THREE.Group();
+  mallet.add(part(new THREE.CylinderGeometry(0.035, 0.04, 0.75, 6), handleMat, 0, 0.25, 0));
+  mallet.add(part(new THREE.BoxGeometry(0.2, 0.2, 0.32), mat(0x9c9a92), 0, 0.64, 0));
+  for (const side of [-1, 1]) mallet.add(part(new THREE.BoxGeometry(0.22, 0.22, 0.05), mat(0xe8c98f), 0, 0.64, side * 0.17)); // (the padding)
+  for (const g of [sword, mallet]) {
+    g.position.copy(rightArm.end.position);
+    g.rotation.x = HOE_REST_ANGLE;
+    g.visible = false;
+    rightArm.pivot.add(g);
+  }
+
   root.traverse((obj) => {
     if (obj.isMesh) obj.castShadow = true;
   });
@@ -217,6 +235,8 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     hoe.rotation.x = HOE_REST_ANGLE;
     axe.rotation.x = HOE_REST_ANGLE;
     pick.rotation.x = HOE_REST_ANGLE;
+    sword.rotation.x = HOE_REST_ANGLE;
+    mallet.rotation.x = HOE_REST_ANGLE;
     if (anim.swing >= 0) {
       anim.swing += dt / HOE_SWING_TIME;
       if (anim.swing >= 1) {
@@ -227,6 +247,8 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
         hoe.rotation.x = hoeAngle;
         axe.rotation.x = hoeAngle;
         pick.rotation.x = hoeAngle;
+        sword.rotation.x = hoeAngle;
+        mallet.rotation.x = hoeAngle;
       }
     }
 
@@ -248,6 +270,8 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     hoe,
     axe,
     pick,
+    sword,
+    mallet,
     anim,
     animate,
     swing() {

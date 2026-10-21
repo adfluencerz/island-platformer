@@ -182,6 +182,18 @@ body.in-menu .tc { display: none; }
 :root.compact .ui-player { font-size: 18px; }
 :root.compact .ui-found { font-size: 15px; }
 
+/* Build mode: under the clock and the gold, across the screen */
+:root.compact .ui-build {
+  top: calc(var(--safe-t) + 122px);
+  left: calc(var(--safe-l) + 10px);
+  right: calc(var(--safe-r) + 10px);
+  transform: none;
+  max-width: none;
+  justify-content: space-between;
+  font-size: 19px;
+}
+:root.compact .ui-build-text .ui-muted { font-size: 16px; }
+
 :root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
 :root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
 

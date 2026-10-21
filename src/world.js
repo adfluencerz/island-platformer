@@ -453,12 +453,14 @@ export function buildWorld(map) {
     root.add(stems, heads);
   }
 
-  // Tilling hides a tile's foliage (scaled to nothing); its matrices are kept
-  // in hiddenFoliage so the ground can grow back (restoreFoliage).
-  const hiddenFoliage = [];
+  // Tilling (or building) hides a tile's foliage (scaled to nothing); its
+  // matrices are kept in hiddenFoliage so the ground can grow back
+  // (restoreFoliage(), or restoreFoliage(key) for one tile).
+  let hiddenFoliage = [];
   function clearFoliageOnTile(key) {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (const entry of foliageByTile.get(key) || []) {
+      entry.key = key;
       entry.matrix = new THREE.Matrix4();
       entry.mesh.getMatrixAt(entry.index, entry.matrix);
       entry.mesh.setMatrixAt(entry.index, zero);
@@ -468,15 +470,16 @@ export function buildWorld(map) {
     foliageByTile.delete(key);
   }
 
-  function restoreFoliage() {
-    for (const entry of hiddenFoliage) {
+  function restoreFoliage(key = null) {
+    const back = key === null ? hiddenFoliage : hiddenFoliage.filter((entry) => entry.key === key);
+    for (const entry of back) {
       entry.mesh.setMatrixAt(entry.index, entry.matrix);
       entry.mesh.instanceMatrix.needsUpdate = true;
       // (tracked again so it can be tilled away again)
       const e = new THREE.Vector3().setFromMatrixPosition(entry.matrix);
       trackFoliage(e.x, e.z, entry.mesh, entry.index);
     }
-    hiddenFoliage.length = 0;
+    hiddenFoliage = key === null ? [] : hiddenFoliage.filter((entry) => entry.key !== key);
   }
 
   // ---------- Trees, bushes, rocks ----------

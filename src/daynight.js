@@ -241,5 +241,6 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     hour: () => hour,
     day: () => day,
     isNight: () => nightAmount(hour) > 0.5,
+    night: () => nightAmount(hour), // 0 by day, 1 at night
   };
 }

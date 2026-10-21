@@ -8,6 +8,10 @@
 // `plants` names the crop (see crops.js) a seed grows into.
 // `price` is what the merchant at the farm stall asks for it (only seeds have
 // one); `sell` is what the merchant pays for one. No `sell`: not for sale.
+// `tool` says what a tool does (the sturdy ones from the workbench do the
+// same as the plain ones, better: `hits` swings fell a tree or break a rock,
+// a `wide` hoe tills three tiles at once). `piece`: a thing made at the
+// workbench to be put down on the farm in build mode (PIECES, shared/level.js).
 
 // Seed packets share one drawing; only the picture on the front changes color.
 // c/C/d = crop color / highlight / shade, g = leaves.
@@ -35,6 +39,7 @@ export const ITEMS = {
   hoe: {
     name: 'Hoe',
     category: 'Tool',
+    tool: 'hoe',
     description: 'Breaks up bare ground so it can be planted. Use with E.',
     maxStack: 1,
     trashable: false,
@@ -62,6 +67,7 @@ export const ITEMS = {
   axe: {
     name: 'Axe',
     category: 'Tool',
+    tool: 'axe',
     description: 'Fells trees out on the wild islands for wood. Swing with E (or hold it).',
     maxStack: 1,
     trashable: false,
@@ -89,6 +95,7 @@ export const ITEMS = {
   pickaxe: {
     name: 'Pickaxe',
     category: 'Tool',
+    tool: 'pickaxe',
     description: 'Breaks up rocks out on the wild islands for stone. Swing with E (or hold it).',
     maxStack: 1,
     trashable: false,
@@ -647,6 +654,173 @@ ITEMS.golden_turnip = {
   sprite: [...ITEMS.turnip.sprite],
 };
 
+// ---------- Made at the workbench (src/workbench.js) ----------
+// The sturdy tools: the plain ones' drawings with blue steel heads
+const STEEL = { m: '#2f4a6b', M: '#5b84b1', L: '#a8c8ec' };
+ITEMS.wide_hoe = {
+  ...ITEMS.hoe,
+  name: 'Wide hoe',
+  description: 'A broad blade that tills three tiles side by side in one go. Use with E.',
+  wide: true,
+  palette: { ...ITEMS.hoe.palette, ...STEEL },
+  sprite: [...ITEMS.hoe.sprite],
+};
+ITEMS.sturdy_axe = {
+  ...ITEMS.axe,
+  name: 'Sturdy axe',
+  description: 'Fells a tree in two swings. Swing with E (or hold it).',
+  hits: 2,
+  palette: { ...ITEMS.axe.palette, ...STEEL },
+  sprite: [...ITEMS.axe.sprite],
+};
+ITEMS.sturdy_pickaxe = {
+  ...ITEMS.pickaxe,
+  name: 'Sturdy pickaxe',
+  description: 'Breaks a rock in two swings. Swing with E (or hold it).',
+  hits: 2,
+  palette: { ...ITEMS.pickaxe.palette, ...STEEL },
+  sprite: [...ITEMS.pickaxe.sprite],
+};
+
+// For bopping other farmers in lobbies (WEAPONS in shared/level.js): a bop
+// knocks them back and shakes loose a little of what they gathered there.
+// Nobody gets hurt.
+ITEMS.wooden_sword = {
+  name: 'Wooden sword',
+  category: 'Tool',
+  description: 'For bopping other farmers in a lobby: they stumble back and drop a bit of what they gathered. Swing with E. Not in the stone circle.',
+  maxStack: 1,
+  color: 0xd9a066,
+  palette: { o: '#3b2412', W: '#f2cc8f', w: '#d9a066', d: '#7a4f28', h: '#9a6a3a' },
+  sprite: [
+    '................',
+    '.............oo.',
+    '............oWWo',
+    '...........oWwo.',
+    '..........oWwo..',
+    '.........oWwo...',
+    '........oWwo....',
+    '.......oWwo.....',
+    '..o...oWwo......',
+    '..oo.oWwo.......',
+    '...oodwo........',
+    '....odo.........',
+    '...ohoddo.......',
+    '..oho..oo.......',
+    '.oho............',
+    '.oo.............',
+  ],
+};
+ITEMS.mallet = {
+  name: 'Mallet',
+  category: 'Tool',
+  description: 'A stone head, well padded. Bops harder and shakes more loose than the sword, but slower. Swing with E in a lobby.',
+  maxStack: 1,
+  color: 0x9c9a92,
+  palette: { o: '#3b2412', W: '#d99b57', w: '#b0743a', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', P: '#e8c98f' },
+  sprite: [
+    '................',
+    '........ooooooo.',
+    '.......oPLLLLMPo',
+    '.......oPLMMMMPo',
+    '.......oPMMMMdPo',
+    '.......oPMMdddPo',
+    '........ooWwooo.',
+    '.......oWwo.....',
+    '......oWwo......',
+    '.....oWwo.......',
+    '....oWwo........',
+    '...oWwo.........',
+    '..oWwo..........',
+    '.oWwo...........',
+    '.ooo............',
+    '................',
+  ],
+};
+
+// Things for the farm: put down in build mode (the Build tab)
+ITEMS.lamp_post = {
+  name: 'Lamp post',
+  category: 'Decor',
+  description: 'Lights up by itself when the sun goes down. Put it down from the Build tab.',
+  maxStack: 20,
+  piece: 'lamp_post',
+  color: 0x5d6470,
+  palette: { o: '#2a2a30', i: '#4a4f58', I: '#7d8591', y: '#ffd166', Y: '#fff3b0' },
+  sprite: [
+    '................',
+    '......oooo......',
+    '.....oIIIIo.....',
+    '....oiyYYyio....',
+    '....oiYYYYio....',
+    '....oiyYYyio....',
+    '.....oiiiio.....',
+    '......oIio......',
+    '......oIio......',
+    '......oIio......',
+    '......oIio......',
+    '......oIio......',
+    '......oIio......',
+    '.....oiIIio.....',
+    '....oiiiiiio....',
+    '....oooooooo....',
+  ],
+};
+ITEMS.garden_bench = {
+  name: 'Garden bench',
+  category: 'Decor',
+  description: 'Somewhere to sit and watch the crops grow. Put it down from the Build tab.',
+  maxStack: 20,
+  piece: 'garden_bench',
+  color: 0xb0743a,
+  palette: { o: '#3b2412', W: '#d99b57', d: '#9a6a3a' },
+  sprite: [
+    '................',
+    '................',
+    '................',
+    '................',
+    '..oooooooooooo..',
+    '..oWWWWWWWWWWo..',
+    '..oddddddddddo..',
+    '..oooooooooooo..',
+    '..odo......odo..',
+    'oooooooooooooooo',
+    'oWWWWWWWWWWWWWWo',
+    'oddddddddddddddo',
+    'oooooooooooooooo',
+    '.odo........odo.',
+    '.odo........odo.',
+    '.ooo........ooo.',
+  ],
+};
+ITEMS.planter = {
+  name: 'Flower planter',
+  category: 'Decor',
+  description: 'A stone box of flowers that never need watering. Put it down from the Build tab.',
+  maxStack: 20,
+  piece: 'planter',
+  color: 0x9c9a92,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#4f9e3c', G: '#2f6b25', r: '#e0475b', y: '#ffd84a', Y: '#fff6b0' },
+  sprite: [
+    '................',
+    '................',
+    '...r....y...r...',
+    '..rYr..yYy.rYr..',
+    '...rg...g..gr...',
+    '....g.g.g.g.g...',
+    '...gGgGgGgGgGg..',
+    '.oooooooooooooo.',
+    '.oLLLLLLLLLLLLo.',
+    '.oMMMMMMMMMMMMo.',
+    '.oMMMMMMMMMMMMo.',
+    '.oMMMMMMMMMMMMo.',
+    '.oddddddddddddo.',
+    '.oooooooooooooo.',
+    '................',
+    '................',
+  ],
+};
+
 // Render a sprite to a data URL once and reuse it for every <img>. Keyed by the
 // item, since items may share a drawing with different palettes.
 const urlCache = new WeakMap();
@@ -668,3 +842,137 @@ export function spriteURL(def) {
   urlCache.set(def, url);
   return url;
 }
+
+// Icons for build mode's pieces (PIECES in shared/level.js), and for taking
+// one down. They are not items: building pays with wood and stone straight
+// from the backpack.
+const WOOD = { o: '#3b2412', W: '#d99b57', w: '#b0743a', d: '#7a4f28' };
+const STONE = { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66' };
+export const PIECE_ICONS = {
+  wood_fence: {
+    palette: WOOD,
+    sprite: [
+      '................',
+      '...oo......oo...',
+      '..oWdo....oWdo..',
+      '..oWdo....oWdo..',
+      'ooooooooooooooo.',
+      'oWWWWWWWWWWWWWo.',
+      'odddddddddddddo.',
+      'ooooooooooooooo.',
+      '..oWdo....oWdo..',
+      'ooooooooooooooo.',
+      'oWWWWWWWWWWWWWo.',
+      'odddddddddddddo.',
+      'ooooooooooooooo.',
+      '..oWdo....oWdo..',
+      '..oooo....oooo..',
+      '................',
+    ],
+  },
+  stone_wall: {
+    palette: STONE,
+    sprite: [
+      '................',
+      '................',
+      '.oooooooooooooo.',
+      '.oLLLLLdLLLLLLo.',
+      '.oMMMMMdMMMMMMo.',
+      '.oddddddddddddo.',
+      '.oLLLdLLLLLdLLo.',
+      '.oMMMdMMMMMdMMo.',
+      '.oddddddddddddo.',
+      '.oLLLLLdLLLLLLo.',
+      '.oMMMMMdMMMMMMo.',
+      '.oddddddddddddo.',
+      '.oLLLdLLLLLdLLo.',
+      '.oMMMdMMMMMdMMo.',
+      '.oooooooooooooo.',
+      '................',
+    ],
+  },
+  wood_path: {
+    palette: WOOD,
+    sprite: [
+      '................',
+      '.oooooooooooooo.',
+      '.oWWWoWWWWoWWWo.',
+      '.oWwwoWwwwoWwwo.',
+      '.oWwwoWwwwoWwwo.',
+      '.oWwwoWwdwoWwwo.',
+      '.oWdwoWwwwoWwwo.',
+      '.oWwwoWwwwoWwdo.',
+      '.oWwwoWwwwoWwwo.',
+      '.oWwwoWdwwoWwwo.',
+      '.oWwwoWwwwoWwwo.',
+      '.oWwdoWwwwoWwwo.',
+      '.oWwwoWwwwoWwwo.',
+      '.odddoddddodddo.',
+      '.oooooooooooooo.',
+      '................',
+    ],
+  },
+  stone_path: {
+    palette: STONE,
+    sprite: [
+      '................',
+      '..ooooo..oooo...',
+      '.oLLLLMo.oLLMo..',
+      '.oLMMMMo.oMMMo..',
+      '.oMMMMdo.oMMdo..',
+      '..ooooo..oooo...',
+      '...oooo.ooooo...',
+      '..oLLMo.oLLLMo..',
+      '..oMMdo.oMMMMo..',
+      '...oooo.oMMMdo..',
+      '..ooooo..oooo...',
+      '.oLLLMMo.ooooo..',
+      '.oLMMMMo.oLLMo..',
+      '.oMMMMdo.oMMdo..',
+      '..ooooo..oooo...',
+      '................',
+    ],
+  },
+  workbench: {
+    palette: { ...WOOD, i: '#5d6470', I: '#a9b3c1' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '..........oooo..',
+      '...oooooo.oIio..',
+      '...oWWWWo.oiio..',
+      'oooooooooooooooo',
+      'oWWWWWWWWWWWWWWo',
+      'owwwwwwwwwwwwwwo',
+      'oooooooooooooooo',
+      '.odo........odo.',
+      '.oddooooooooddo.',
+      '.odWWWWWWWWWWdo.',
+      '.oddooooooooddo.',
+      '.odo........odo.',
+      '.ooo........ooo.',
+    ],
+  },
+  remove: {
+    palette: { ...WOOD, L: '#d6d4cc', M: '#a9a79f', D: '#6c6b66' },
+    sprite: [
+      '................',
+      '..ooooooooo.....',
+      '.oLLLLLLLLMo....',
+      '.oMMMMMMMMDo....',
+      '..ooooWwoooo....',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oWwo.......',
+      '.....oddo.......',
+      '.....oooo.......',
+      '................',
+    ],
+  },
+};

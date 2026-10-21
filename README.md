@@ -9,6 +9,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
+- Building on the farm with wood and stone: fences, walls, paths and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -32,14 +33,15 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `Space` — jump (only works while grounded)
 - `E` — at home: till / plant / harvest, trade at the merchant's stall, pet an animal (or milk the cow, shear the sheep), let out the animal in hand in her pen, chop a tree with the axe, or mine a rock with the pickaxe; in a lobby: gather (berries, mushrooms), chop a tree with the axe in hand, or mine a rock with the pickaxe (hold to keep swinging)
 - `I` — backpack
+- `B` — build (the backpack's Build tab): fences, walls, paths, the workbench and what it makes
 - `L` — the menu, on **Play online** (from home)
 - `Enter` — chat (in a lobby)
 - `Esc` — the menu: the same one as the title screen, with **Resume** (and **Go home** when away), and pages for **Play online**, **Friends** (farms you help on, your helpers) and **Controls**. `Esc` on a page goes back.
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
-- Click the ground — walk there
+- Click the ground — walk there (in build mode: build there)
 - Mouse wheel — zoom in and out (over the hotbar it picks an item)
 
-On a touch screen the game shows its own controls: a thumbstick (bottom left) to walk, and **Use** (`E`), **Jump**, **Bag** (the backpack) and, in a lobby, **Chat** (bottom right). Tap the ground to walk there (at home, a ripe crop is harvested, and a tile next to you is tilled or planted with what you hold), tap the stall to trade, a bush or mushrooms to gather, or a tree to chop it with the axe in hand. Pinch with two fingers to zoom in and out. Hold the clock to fast-forward time at home. **Menu** (the `Esc` menu) is in the place panel.
+On a touch screen the game shows its own controls: a thumbstick (bottom left) to walk, and **Use** (`E`), **Jump**, **Bag** (the backpack) and, in a lobby, **Chat** (bottom right). Tap the ground to walk there (at home, a ripe crop is harvested, and a tile next to you is tilled or planted with what you hold), tap the stall to trade, a bush or mushrooms to gather, or a tree to chop it with the axe in hand. Pinch with two fingers to zoom in and out. Hold the clock to fast-forward time at home. **Menu** (the `Esc` menu) is in the place panel. To build, open **Bag** and its **Build** tab; then **Use** builds in front of you, a tap builds on the tile tapped, and **Done** ends it. With a sword or a mallet in hand in a lobby, tap another farmer to go and bop them.
 
 ## Playing on a phone
 Open the address Vite prints for your network (`npm run dev`) on the phone. The built game (`npm run build`, `npm start`) can also be installed as an app ("Add to Home Screen"): it opens full screen, and the farm opens without a connection (only the lobbies need the game server). The app's files are in `public/` (`manifest.webmanifest`, the icons, and `sw.js`, the service worker, which runs in built pages only so Vite's dev server always shows your changes). Browsers only install apps from `https://` or `localhost`.
@@ -63,6 +65,17 @@ What they give comes on the farm's clock, so it keeps coming while you're away:
 
 The animals and eggs are saved with the farm (`src/animals.js`).
 
+**Building.** Wood and stone from the lobbies build things on your farm. Open the backpack's **Build** tab (`B`) and pick a piece: a see-through one shows where it goes (red where it can't), on the tile you point at with the mouse or the one in front of you. `E` puts it down (hold `E` and walk to lay a path), and so does a click or a tap on a tile (the farmer walks over first if it's far). **Done** or `Esc` ends build mode.
+
+- **Wood fence** (2 wood) and **stone wall** (3 stone) join up with the fences and walls beside them. A fence can be hopped over; a wall can't.
+- **Wood path** (1 wood) and **stone path** (1 stone) are walked on.
+- A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
+  - decorations, put down from the Build tab like the rest: a **lamp post** (3 wood, 2 stone) that lights up at night, a **garden bench** (6 wood) and a **flower planter** (4 stone, 1 wood);
+  - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
+  - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below).
+- **Take down** (in the Build tab) takes a piece away and gives back what it cost.
+- Nothing goes on tilled soil, in the animals' pens, by the stall's counter, where farmers arrive on the plaza, or on someone standing there. What's built is saved with the farm, and on a farm with helpers everyone can build (each pays from their own backpack) and the farm's room keeps it, like the soil (`PIECES` in `shared/level.js`, `src/build.js`).
+
 **Helpers: farming together.** Friends can help on your farm, any time, even while you're away. Open the menu (`Esc`), pick **Helpers** and **Invite a helper**: you get a code like `K7P4-QM2X` and a link (good once, for a day). Your friend opens the link (or types the code under **Farms you help on** on the title screen) and is one of your helpers from then on: the farm is on their title screen, to **Visit** whenever they like. The same menu lists your helpers, with **Remove** to take someone off (they're sent home if they're there).
 
 - Everyone tills, plants and harvests as at home, with their own tools and seeds. What anyone harvests goes in the **farm chest**, which stands on the grass by the plaza on a farm with helpers: everyone can see what's in it and put things in from their backpack, and only you take things out (`E` at the chest, or tap it).
@@ -78,6 +91,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - Every rock can be broken up for **stone**: with the pickaxe in hand, press (or hold) `E` next to a rock. Three swings break it for everyone and give stone to whoever finished it: one or two from an ordinary rock, one from a pebble, up to 6 from the boulders at the foot of the terraces; a new rock surfaces 1½–2½ minutes later. The merchant buys stone. The farm's own trees and rocks are chopped and mined the same way, and grow back the same way too (even while you're out; with helpers on the farm, the wood or stone goes to whoever got it). A farm from before the pickaxe gets one the first time it loads.
 - Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it. Each spot grows back 25–60 seconds later with a fresh roll of what's on it.
 - Now and then something rare turns up (golden seeds, an old key) with a golden glint over it, and the whole lobby hears about it in chat. Golden seeds grow a golden turnip at home.
+- **Bopping**: with a wooden sword or a mallet (made at a workbench) in hand, `E` bops the nearest farmer in reach (or tap them to go and bop them). They stumble back and drop a little of what they gathered on this visit, one thing with the sword, two with the mallet, for anyone to walk into: never a rare find or gold. Nobody gets hurt. A farmer just bopped can't be again for a few seconds, and nobody bops or is bopped in the stone circle where you arrive (`WEAPONS` in `shared/level.js`).
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
@@ -125,6 +139,8 @@ island-platformer/
 │   ├── merchant.js      # the merchant's stall on the farm, and the merchant behind it
 │   ├── shop.js          # the merchant's shop window: buy seeds and animals, sell from the backpack
 │   ├── chest.js         # the farm chest on a farm with helpers, and its window
+│   ├── build.js         # what is built on the farm: fences, walls, paths, the workbench, decorations
+│   ├── workbench.js     # the workbench's window: decorations, sturdy tools, the sword and the mallet
 │   ├── animals.js       # the hen yard and the pasture, the hens, cows and sheep, eggs
 │   ├── remotes.js       # other players: interpolation, name tags
 │   ├── net/

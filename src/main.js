@@ -7,6 +7,8 @@ import { createShop } from './shop.js';
 import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS } from './animals.js';
+import { createBuildings } from './build.js';
+import { createWorkbench } from './workbench.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
@@ -18,7 +20,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -178,7 +180,17 @@ scene.add(water);
 // Toolbar + backpack UI (see inventory.js). Opening the backpack pauses
 // player input, so drop any keys that were held at that moment. The backpack
 // goes everywhere with you, and is saved with the farm (see Saving).
-const inventory = createInventory({ onOpenChange: (open) => open && keys.clear() });
+const inventory = createInventory({
+  onOpenChange: (open) => open && keys.clear(),
+  onBuild: (piece) => startBuilding(piece),
+  buildProblem: () => (place === 'home' ? '' : 'You build on a farm: head home first.'),
+  building: () => building,
+});
+
+// The tool in hand, by what it does ('hoe', 'axe' or 'pickaxe': plain or sturdy), or null
+const holding = () => ITEMS[inventory.selectedId()]?.tool ?? null;
+// Swings to fell a tree or break a rock with the tool in hand (a sturdy one takes fewer)
+const swingsWith = (base) => ITEMS[inventory.selectedId()]?.hits ?? base;
 
 // ---------- The merchant ----------
 // Behind the stall on the farm (merchant.js): E at the counter opens the shop
@@ -303,6 +315,7 @@ function harvestAt(x, z) {
 // saved farm is put back)
 function resetFarm() {
   for (const key of [...crops.keys()]) removeCrop(key);
+  buildings.clear();
   for (const mesh of farmTiles.values()) scene.remove(mesh);
   farmTiles.clear();
   worlds.home.restoreFoliage();
@@ -473,17 +486,19 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
-  const tree = inventory.selectedId() === 'axe' ? treeInReach() : null;
-  const rock = inventory.selectedId() === 'pickaxe' ? rockInReach() : null;
+  const tree = holding() === 'axe' ? treeInReach() : null;
+  const rock = holding() === 'pickaxe' ? rockInReach() : null;
   const near = gatherSpotInReach();
-  if (tree) hud.setPrompt(chopPrompt(tree));
+  const target = bopTarget();
+  if (target && !resting(player.position)) hud.setPrompt(`E  Bop ${lobbyNames.get(target.id) ?? 'them'}`);
+  else if (tree) hud.setPrompt(chopPrompt(tree));
   else if (rock) hud.setPrompt(minePrompt(rock));
   else hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
 }
 
 // ---------- Chopping trees ----------
 // With the axe in hand, E next to a tree swings at it (hold E to keep
-// swinging). Each swing shakes it; the last of TREE.hits asks the lobby,
+// swinging). Each swing shakes it; the last of TREE.hits (fewer with a sturdy axe) asks the lobby,
 // which says who felled it (FELLED: down for everyone, wood to whoever, more
 // from a bigger tree) and
 // when it has grown back (REGROWN). Trees are named by their number in the
@@ -494,7 +509,7 @@ const SWING_GAP = 0.15; // seconds between swings, so everyone else sees each on
 const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
 
-const chopPrompt = (tree) => `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${TREE.hits}` : ' (hold to keep going)'}`;
+const chopPrompt = (tree) => `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`;
 
 // the standing tree within reach, nearest first
 function treeInReach() {
@@ -538,7 +553,7 @@ function updateChopping() {
     const tree = world.trees[chop.id];
     if (tree?.state === 'up' && !chop.pending.has(tree.id)) {
       world.shakeTree(tree.id, player.position);
-      if (++chop.hits >= TREE.hits) {
+      if (++chop.hits >= swingsWith(TREE.hits)) {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -548,9 +563,9 @@ function updateChopping() {
       }
     }
   }
-  if (keys.has('KeyE') && inventory.selectedId() === 'axe') swingAxe(); // holding E keeps chopping
+  if (keys.has('KeyE') && holding() === 'axe') swingAxe(); // holding E keeps chopping
   // a tree tapped with the axe in hand: chop on until it falls (or the farmer walks off)
-  if (chopping && (inventory.selectedId() !== 'axe' || treeInReach() !== chopping || !swingAxe())) chopping = null;
+  if (chopping && (holding() !== 'axe' || treeInReach() !== chopping || !swingAxe())) chopping = null;
 }
 
 function resetChopping() {
@@ -579,7 +594,7 @@ const comeBackAt = ([lo, hi]) => Math.round(Date.now() + (lo + Math.random() * (
 
 // ---------- Mining rocks ----------
 // With the pickaxe in hand, E next to a rock swings at it (hold E to keep
-// swinging). Each swing jolts it; the last of ROCK.hits asks the lobby, which
+// swinging). Each swing jolts it; the last of ROCK.hits (fewer with a sturdy pickaxe) asks the lobby, which
 // says who broke it (MINED: gone for everyone, stone to whoever, more from a
 // bigger rock) and when a new one has surfaced (RESURFACED). Rocks are named
 // by their number in the island's list (world.js), the same on every page.
@@ -590,7 +605,7 @@ const MINE_REACH = 1.3; // from the rock's edge, as it is drawn
 const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
 
-const minePrompt = (rock) => `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${ROCK.hits}` : ' (hold to keep going)'}`;
+const minePrompt = (rock) => `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`;
 
 // the whole rock within reach, nearest first
 function rockInReach() {
@@ -634,7 +649,7 @@ function updateMining() {
     const rock = world.rocks[mine.id];
     if (rock?.state === 'up' && !mine.pending.has(rock.id)) {
       world.shakeRock(rock.id);
-      if (++mine.hits >= ROCK.hits) {
+      if (++mine.hits >= swingsWith(ROCK.hits)) {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -644,9 +659,9 @@ function updateMining() {
       }
     }
   }
-  if (keys.has('KeyE') && inventory.selectedId() === 'pickaxe') swingPick(); // holding E keeps mining
+  if (keys.has('KeyE') && holding() === 'pickaxe') swingPick(); // holding E keeps mining
   // a rock tapped with the pickaxe in hand: mine on until it breaks (or the farmer walks off)
-  if (mining && (inventory.selectedId() !== 'pickaxe' || rockInReach() !== mining || !swingPick())) mining = null;
+  if (mining && (holding() !== 'pickaxe' || rockInReach() !== mining || !swingPick())) mining = null;
 }
 
 function resetMining() {
@@ -696,6 +711,107 @@ function showFarmWilds({ felled, mined }) {
     if (!(at > now) || !worlds.home.rocks[id]) continue;
     worlds.home.breakRock(id, { instant: true });
     farmMined.set(id, at);
+  }
+}
+
+// ---------- Bopping (lobbies) ----------
+// With the wooden sword or the mallet in hand (WEAPONS in shared/level.js),
+// E swings it at the nearest farmer in reach (turning to face them), and the
+// lobby says who got bopped (BOPPED): they stumble back, and drop a little
+// of what they gathered here (DROP), which anyone can walk into (PICKUP,
+// PICKED). Not in the stone circle where farmers arrive. Nobody gets hurt.
+const knock = new THREE.Vector3(); // the stumble after a bop, added to walking while it fades
+const drops = new Map(); // id -> { id, item, count, x, y, z, group, pending }
+const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
+let bopReady = 0; // (clock time the weapon can swing again)
+
+const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
+const resting = (pos) => Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
+
+// The nearest other farmer within reach (and not resting in the stone circle): { id, pos }, or null
+function bopTarget() {
+  const weapon = WEAPONS[weaponInHand()];
+  if (!weapon) return null;
+  let best = null;
+  let bestD = weapon.reach * 0.9; // (the lobby has a slightly older idea of where they are)
+  for (const id of remotes.players.keys()) {
+    const pos = remotes.positionOf(id);
+    if (!pos || resting(pos) || Math.abs(pos.y - player.position.y) > 1.2) continue;
+    const d = Math.hypot(pos.x - player.position.x, pos.z - player.position.z);
+    if (d < bestD) {
+      bestD = d;
+      best = { id, pos };
+    }
+  }
+  return best;
+}
+
+// Swing the weapon in hand: at the nearest farmer in reach, or at the air
+function bop() {
+  const id = weaponInHand();
+  const now = clock.elapsedTime;
+  if (!id || now < bopReady || anim.swing >= 0) return;
+  if (resting(player.position)) return inventory.notify('The stone circle is for resting: no bopping here');
+  const target = bopTarget();
+  if (target) anim.facing = Math.atan2(target.pos.x - player.position.x, target.pos.z - player.position.z);
+  farmer.swing();
+  bopReady = now + WEAPONS[id].every / 1000;
+  net?.send({ t: C.BOP, weapon: id, yaw: Math.round(anim.facing * 100) / 100 });
+}
+
+function bopped(m) {
+  if (m.by !== myId) remotes.swing(m.by);
+  if (m.id === myId) {
+    stopWalking();
+    knock.set(m.dx * m.knock, 0, m.dz * m.knock);
+    player.velocity.y = 5;
+    player.onGround = false;
+    anim.squash = -0.2;
+    hud.flash('Bonk!');
+    const [item, count] = m.drop ?? [];
+    const lost = item ? Math.min(count, inventory.count(item)) : 0;
+    if (lost) inventory.remove(item, lost);
+    const who = lobbyNames.get(m.by) ?? 'Someone';
+    inventory.notify(lost ? `${who} bopped you: you dropped ${lost} ${ITEMS[item].name.toLowerCase()}` : `${who} bopped you`);
+  } else if (m.by === myId) {
+    hud.flash('Bop!');
+  }
+}
+
+// ---- What gets dropped: a little bobbing treasure, for anyone to walk into ----
+function addDrop([id, item, count, x, y, z]) {
+  if (!ITEMS[item] || drops.has(id)) return;
+  const group = new THREE.Group();
+  group.position.set(x, y - GROUND_STAND_Y + 0.3, z);
+  const gem = createItemMesh(item);
+  gem.scale.setScalar(0.7);
+  group.add(gem);
+  scene.add(group);
+  drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: 0 });
+}
+
+function removeDrop(id) {
+  const drop = drops.get(id);
+  if (!drop) return;
+  scene.remove(drop.group);
+  drops.delete(id);
+}
+
+function clearDrops() {
+  for (const id of [...drops.keys()]) removeDrop(id);
+  knock.set(0, 0, 0);
+}
+
+function updateDrops(dt, t) {
+  for (const drop of drops.values()) {
+    const gem = drop.group.children[0];
+    gem.position.y = Math.sin(t * 3 + drop.id) * 0.1;
+    gem.rotation.y += dt * 2;
+    drop.group.visible = !drop.pending;
+    const near = Math.hypot(drop.x - player.position.x, drop.y - player.position.y, drop.z - player.position.z) < TOUCH_RADIUS + 0.4;
+    if (!near || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count)) continue;
+    drop.pending = true;
+    net?.send({ t: C.PICKUP, id: drop.id });
   }
 }
 
@@ -788,7 +904,8 @@ function updateMenuCamera(t) {
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
-const inputBlocked = () => !splash.hidden || inventory.isOpen() || shop.isOpen() || chest.isOpen() || hud.isTyping();
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen();
+const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
@@ -802,18 +919,21 @@ window.addEventListener('keydown', (e) => {
 // works while standing on bare ground (not on a raised platform).
 function useAction() {
   if (place === 'lobby') {
-    if (inventory.selectedId() === 'axe' && swingAxe()) return;
-    if (inventory.selectedId() === 'pickaxe' && swingPick()) return;
+    if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
+    if (holding() === 'axe' && swingAxe()) return;
+    if (holding() === 'pickaxe' && swingPick()) return;
     const spot = gatherSpotInReach();
     if (spot) {
       takeSpot(spot);
       anim.squash = 0.15; // little crouch to pick
-    } else if (inventory.selectedId() === 'hoe' || ITEMS[inventory.selectedId()]?.plants) {
+    } else if (holding() === 'hoe' || ITEMS[inventory.selectedId()]?.plants) {
       inventory.notify('This is not your land: farm at home');
     }
     return;
   }
+  if (building) return buildHere();
   if (chest.inReach(player.position)) return chest.open();
+  if (buildings.nearest('workbench', player.position, BENCH_REACH)) return workbench.open();
   if (atStall(player.position)) {
     shop.open();
     return;
@@ -821,8 +941,8 @@ function useAction() {
   if (ANIMAL_KINDS.includes(inventory.selectedId())) return letOutAnimal(inventory.selectedId());
   const animal = animals.inReach(player.position);
   if (animal) return tendAnimal(animal);
-  if (inventory.selectedId() === 'axe' && swingAxe()) return;
-  if (inventory.selectedId() === 'pickaxe' && swingPick()) return;
+  if (holding() === 'axe' && swingAxe()) return;
+  if (holding() === 'pickaxe' && swingPick()) return;
   farmHere();
 }
 
@@ -838,14 +958,24 @@ function farmHere() {
   if (harvestAt(x, z)) return;
 
   const held = inventory.selectedId();
-  if (inPen(x, z) && (held === 'hoe' || ITEMS[held]?.plants)) {
+  if (inPen(x, z) && (holding() === 'hoe' || ITEMS[held]?.plants)) {
     inventory.notify('That\'s the animals\' pen: farm outside the fence');
     return;
   }
-  if (held === 'hoe') {
-    if (tillTileAt(x, z) && farmNet) {
-      pendingTills.add(tileKeyFor(x, z));
-      farmNet.send({ t: C.TILL, key: tileKeyFor(x, z) });
+  if (holding() === 'hoe' && buildings.get(tileKeyFor(x, z))) {
+    inventory.notify('Something is built here: take it down to till');
+  } else if (holding() === 'hoe') {
+    // (a wide hoe: the tiles either side too, across the way the farmer faces)
+    const across = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing)) ? [0, 1] : [1, 0];
+    const sides = ITEMS[held].wide ? [-1, 1] : [];
+    for (const k of [0, ...sides]) {
+      const tx = x + across[0] * k * TILE_SIZE;
+      const tz = z + across[1] * k * TILE_SIZE;
+      if (k && (buildings.get(tileKeyFor(tx, tz)) || inPen(tx, tz))) continue;
+      if (tillTileAt(tx, tz) && farmNet) {
+        pendingTills.add(tileKeyFor(tx, tz));
+        farmNet.send({ t: C.TILL, key: tileKeyFor(tx, tz) });
+      }
     }
     startHoeSwing();
   } else if (ITEMS[held]?.plants) {
@@ -981,8 +1111,8 @@ scene.add(tileCursor);
 
 function updateTileCursor() {
   const held = inventory.selectedId();
-  tileCursor.visible = place === 'home' && player.onGround &&
-    Math.abs(player.position.y - GROUND_STAND_Y) < 0.05 && (held === 'hoe' || !!ITEMS[held]?.plants);
+  tileCursor.visible = place === 'home' && !building && player.onGround &&
+    Math.abs(player.position.y - GROUND_STAND_Y) < 0.05 && (holding() === 'hoe' || !!ITEMS[held]?.plants);
   if (!tileCursor.visible) return;
   const [gx, gz] = tileKeyFor(player.position.x, player.position.z).split(',').map(Number);
   tileCursor.position.set(gx * TILE_SIZE, 0.1, gz * TILE_SIZE);
@@ -991,12 +1121,25 @@ function updateTileCursor() {
 const presses = new Map(); // pointerId -> where and when it went down
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'mouse' || e.button === 0) presses.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
+  if (e.pointerType === 'mouse' && e.button === 0 && place !== 'title' && !building && !inputBlocked()) {
+    stopWalking();
+    held = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    canvas.setPointerCapture(e.pointerId); // (keeps steering over the HUD)
+  }
 });
+canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== held?.id) return;
+  held.x = e.clientX;
+  held.y = e.clientY;
+});
+canvas.addEventListener('lostpointercapture', (e) => e.pointerId === held?.id && (held = null));
+addEventListener('blur', () => (held = null));
 canvas.addEventListener('pointercancel', (e) => {
   presses.delete(e.pointerId);
   pinch.delete(e.pointerId);
 });
 canvas.addEventListener('pointerup', (e) => {
+  if (e.pointerId === held?.id) held = null;
   const press = presses.get(e.pointerId);
   presses.delete(e.pointerId);
   pinch.delete(e.pointerId);
@@ -1041,8 +1184,10 @@ function tapAt(x, y) {
   _ndc.set((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(_ndc, camera);
   stopWalking();
+  if (building) return tapToBuild();
   const target = tappedThing() ?? tappedGround();
   if (!target) return;
+  if (target.kind === 'tile' && buildings.get(tileKeyFor(target.x, target.z)) === 'workbench') target.kind = 'workbench';
   walk = { best: Infinity, stuck: 0, hopped: false, ...target };
   if (walk.kind === 'tile') {
     marker.position.set(walk.x, walk.y + 0.08, walk.z);
@@ -1057,6 +1202,13 @@ function tappedThing() {
     for (const spot of spots.values()) if (spot.use === 'gather') things.set(spot.view.group, { kind: 'spot', spot, x: spot.x, z: spot.z });
     for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
     for (const rock of world.rocks) if (rock.state === 'up') things.set(rock.mesh, { kind: 'rock', rock, x: rock.x, z: rock.z });
+    // (with a weapon in hand: another farmer, to go and bop)
+    if (weaponInHand()) {
+      for (const [id, r] of remotes.players) {
+        const pos = remotes.positionOf(id);
+        if (pos) things.set(r.farmer.root, { kind: 'farmer', id, x: pos.x, z: pos.z });
+      }
+    }
   } else {
     const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
     if (chest.shown()) things.set(chest.root, { kind: 'chest', x: FARM_CHEST.x, z: FARM_CHEST.z + 0.9 });
@@ -1064,8 +1216,8 @@ function tappedThing() {
     things.set(world.root.getObjectByName('stall'), stall);
     for (const animal of animals.list()) if (animal.root.visible) things.set(animal.root, { kind: 'animal', animal, x: animal.pos.x, z: animal.pos.z });
     // (the farm's trees with the axe in hand, its rocks with the pickaxe: otherwise a tap there is for the tile)
-    if (inventory.selectedId() === 'axe') for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
-    if (inventory.selectedId() === 'pickaxe') for (const rock of world.rocks) if (rock.state === 'up') things.set(rock.mesh, { kind: 'rock', rock, x: rock.x, z: rock.z });
+    if (holding() === 'axe') for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
+    if (holding() === 'pickaxe') for (const rock of world.rocks) if (rock.state === 'up') things.set(rock.mesh, { kind: 'rock', rock, x: rock.x, z: rock.z });
   }
   const hits = raycaster.intersectObjects([...things.keys()].filter(Boolean), true);
   for (let obj = hits[0]?.object; obj; obj = obj.parent) if (things.has(obj)) return things.get(obj);
@@ -1110,28 +1262,56 @@ function arrived(d) {
     case 'tree': return treeInReach() === walk.tree;
     case 'rock': return rockInReach() === walk.rock;
     case 'animal': return animals.canReach(walk.animal, player.position);
+    case 'farmer': return bopTarget()?.id === walk.id;
+    case 'build': return inBuildReach(walk.key) && d < BUILD_REACH - 0.3;
+    case 'workbench': return !!buildings.nearest('workbench', player.position, BENCH_REACH);
     default: return d < ARRIVE;
   }
 }
 
 // Then do what the tap was for
 function arrive() {
-  const { kind, farm, spot, tree, rock, animal } = walk;
+  const { kind, farm, spot, tree, rock, animal, key } = walk;
   stopWalking();
-  if (kind === 'stall') shop.open();
+  if (kind === 'build') {
+    if (building) buildAt(key);
+  } else if (kind === 'workbench') workbench.open();
+  else if (kind === 'stall') shop.open();
   else if (kind === 'chest') chest.open();
   else if (kind === 'animal') tendAnimal(animal);
+  else if (kind === 'farmer') bop();
   else if (kind === 'tile' && farm) farmHere();
   else if (kind === 'spot' && spot.item && !spot.pending) {
     takeSpot(spot);
     anim.squash = 0.15;
   } else if (kind === 'tree') {
-    if (inventory.selectedId() !== 'axe') inventory.notify('Take the axe in hand to chop');
+    if (holding() !== 'axe') inventory.notify('Take the axe in hand to chop');
     else if (swingAxe()) chopping = tree;
   } else if (kind === 'rock') {
-    if (inventory.selectedId() !== 'pickaxe') inventory.notify('Take the pickaxe in hand to mine');
+    if (holding() !== 'pickaxe') inventory.notify('Take the pickaxe in hand to mine');
     else if (swingPick()) mining = rock;
   }
+}
+
+// Holding the left mouse button down walks toward wherever it points, for as
+// long as it is held: the farmer heads for the spot on the ground (at their
+// own feet' height) under the mouse, every frame, so the mouse steers. Let go
+// quickly and it was a click after all (above).
+let held = null; // { id, x, y }: the mouse button held down, and where it is
+const _feet = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const FOLLOW_CLOSE = 0.3; // the mouse this close to the farmer: stand still
+
+function followMouse(dt) {
+  _ndc.set((held.x / window.innerWidth) * 2 - 1, -(held.y / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  _feet.constant = -(player.position.y - player.height / 2);
+  if (!raycaster.ray.intersectPlane(_feet, _hit)) return { x: 0, z: 0 };
+  const dx = _hit.x - player.position.x;
+  const dz = _hit.z - player.position.z;
+  const d = Math.hypot(dx, dz);
+  if (d < FOLLOW_CLOSE) return { x: 0, z: 0 };
+  const k = Math.min(1, (d - FOLLOW_CLOSE) / (MOVE_SPEED * dt)) / d;
+  return { x: dx * k, z: dz * k };
 }
 
 // Which way to walk this frame for a tap ({0, 0}: not walking), slowing down
@@ -1141,6 +1321,14 @@ function steer(dt) {
   const none = { x: 0, z: 0 };
   if (!walk) return none;
   if (walk.kind === 'animal') ({ x: walk.x, z: walk.z } = walk.animal.pos); // (she wanders off)
+  if (walk.kind === 'farmer') {
+    const pos = remotes.positionOf(walk.id); // (they run off)
+    if (!pos) {
+      stopWalking();
+      return none;
+    }
+    ({ x: walk.x, z: walk.z } = pos);
+  }
   const dx = walk.x - player.position.x;
   const dz = walk.z - player.position.z;
   const d = Math.hypot(dx, dz);
@@ -1165,6 +1353,184 @@ function steer(dt) {
   }
   const k = Math.min(1, d / (MOVE_SPEED * dt)) / d;
   return { x: dx * k, z: dz * k };
+}
+
+// ---------- Building (build mode, at home) ----------
+// The backpack's Build tab (or B) picks a piece (PIECES in shared/level.js),
+// or taking pieces down. A see-through one shows where it would go (red
+// where it can't, src/build.js): the tile the mouse is over (until the
+// farmer walks with the keys), else the tile in front of the farmer. E puts
+// it there, paid for with the backpack's wood and stone (hold E and walk
+// along to lay a path); a click or a tap builds on the tile clicked, walking
+// over first if it is far. Taking a piece
+// down gives back what it cost. Esc or Done ends it. On a farm with helpers
+// the room says yes (BUILT) or no (FARM_DENY: it goes, and the cost comes back).
+const buildings = createBuildings(worlds.home);
+const BUILD_REACH = 2.4; // a tile this close is built on from where you stand (the farm's room allows 2.6)
+const FARM_EDGE = 27; // tiles out to here (the farm's room allows 28)
+let building = null; // build mode: a PIECES id, or 'remove'
+let builtKey = null; // the tile E last built on (holding E builds on each new one)
+let mouseAt = null; // where the mouse is over the screen, while build mode aims with it
+let buildShown = ''; // (what the build bar says, so it is only set when it changes)
+const pendingBuilds = new Set(); // tiles we built on that the farm's room hasn't said yes to yet
+const pendingUnbuilds = new Set(); // and pieces we asked it to take down
+
+function startBuilding(piece) {
+  if (place !== 'home') return;
+  stopWalking();
+  building = piece;
+  builtKey = null;
+}
+
+function stopBuilding() {
+  building = null;
+  mouseAt = null;
+  buildShown = '';
+  buildings.preview(null);
+  hud.setBuilding(null);
+}
+
+const onOwnTile = (key) => tileKeyFor(player.position.x, player.position.z) === key;
+function inBuildReach(key) {
+  const [x, z] = keyXZ(key);
+  return Math.hypot(x - player.position.x, z - player.position.z) <= BUILD_REACH && !(PIECES[building]?.solid && onOwnTile(key));
+}
+
+// The tile to build on: the one under the mouse, else the one in front
+// (taking down: the piece in front, else the path underfoot)
+function buildTarget() {
+  if (mouseAt) {
+    _ndc.set((mouseAt.x / window.innerWidth) * 2 - 1, -(mouseAt.y / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(_ndc, camera);
+    const tile = tappedGround();
+    if (tile) return tileKeyFor(tile.x, tile.z);
+  }
+  const { x, z } = player.position;
+  const front = tileKeyFor(x + Math.sin(anim.facing) * 0.95, z + Math.cos(anim.facing) * 0.95);
+  if (building !== 'remove' || buildings.get(front)) return front;
+  const here = tileKeyFor(x, z);
+  return buildings.get(here) ? here : front;
+}
+
+// Who is standing on (or half on) the tile at x, z: 'you', 'someone' or ''
+function standingAt(x, z) {
+  const near = (p, r = 0.85) => p && Math.abs(p.x - x) < r && Math.abs(p.z - z) < r;
+  if (near(player.position, 0.75)) return 'you';
+  if ([...remotes.players.keys()].some((id) => near(remotes.positionOf(id)))) return 'someone';
+  return animals.list().some((animal) => animal.root.visible && near(animal.pos)) ? 'someone' : '';
+}
+
+// Anything of the island's in the way on the tile at x, z (the stall, a
+// platform, a tree, the pens' fences)
+function blockedTile(x, z) {
+  const h = 0.45;
+  return world.platforms.some((box) => !box.ground && !box.piece && box.min.y < 2.2 &&
+    box.min.x < x + h && box.max.x > x - h && box.min.z < z + h && box.max.z > z - h);
+}
+
+// Why the piece in hand can't go on (or come off) tile key ('': it can)
+function buildProblemAt(key) {
+  if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return 'Stand on the ground to build';
+  const [x, z] = keyXZ(key);
+  const [gx, gz] = key.split(',').map(Number);
+  if (!inBuildReach(key)) return onOwnTile(key) ? 'Step off it first' : 'Too far: click it to walk over';
+  if (building === 'remove') {
+    const piece = buildings.get(key);
+    if (!piece || pendingUnbuilds.has(key)) return 'Nothing to take down there';
+    if (!Object.entries(PIECES[piece].cost).every(([item, n]) => inventory.canAdd(item, n))) return 'No room in the backpack for what it gives back';
+    return '';
+  }
+  const piece = PIECES[building];
+  if (buildings.get(key)) return 'Something is built there';
+  if (farmTiles.has(key)) return 'That soil is tilled';
+  if (Math.max(Math.abs(gx), Math.abs(gz)) > FARM_EDGE) return 'Too close to the water';
+  if (keptClear(gx, gz)) return 'Keep that spot clear for farmers arriving';
+  if (inPen(x, z)) return 'That\'s the animals\' pen';
+  if (piece.solid && Math.hypot(x - TRADE_SPOT.x, z - TRADE_SPOT.z) < 1.2) return 'Keep the way to the stall clear';
+  if (blockedTile(x, z)) return 'Something is in the way';
+  const standing = piece.solid && standingAt(x, z);
+  if (standing) return standing === 'you' ? 'Step back a little first' : 'Someone is standing there';
+  if (buildings.size() >= MAX_PIECES) return 'The farm can\'t hold any more';
+  const short = Object.entries(piece.cost).find(([item, n]) => inventory.count(item) < n);
+  if (short) return ITEMS[short[0]].piece ? `Make a ${ITEMS[short[0]].name.toLowerCase()} at a workbench first` : `Not enough ${ITEMS[short[0]].name.toLowerCase()}`;
+  return '';
+}
+
+// Build (or take down) on tile key; false (and a word why) if it can't be done
+function buildAt(key, { quiet = false } = {}) {
+  const problem = buildProblemAt(key);
+  if (problem) {
+    if (!quiet) inventory.notify(problem);
+    return false;
+  }
+  const [x, z] = keyXZ(key);
+  if (!onOwnTile(key)) anim.facing = Math.atan2(x - player.position.x, z - player.position.z);
+  anim.squash = 0.15;
+  builtKey = key;
+  if (building === 'remove') {
+    if (farmNet) {
+      pendingUnbuilds.add(key);
+      farmNet.send({ t: C.UNBUILD, key });
+    } else {
+      giveBack(buildings.remove(key));
+    }
+    return true;
+  }
+  for (const [item, n] of Object.entries(PIECES[building].cost)) inventory.remove(item, n);
+  buildings.place(key, building);
+  if (farmNet) {
+    pendingBuilds.add(key);
+    farmNet.send({ t: C.BUILD, key, piece: building });
+  }
+  return true;
+}
+
+const buildHere = () => buildAt(buildTarget());
+
+// What a piece cost, back into the backpack
+function giveBack(piece) {
+  for (const [item, n] of Object.entries(PIECES[piece]?.cost ?? {})) gift(item, n);
+}
+
+// A tap in build mode: build on the tile tapped, walking over first if it is far
+function tapToBuild() {
+  const tile = tappedGround();
+  if (!tile) return;
+  const key = tileKeyFor(tile.x, tile.z);
+  if (inBuildReach(key)) return buildAt(key);
+  walk = { kind: 'build', key, x: tile.x, z: tile.z, best: Infinity, stuck: 0, hopped: false };
+  marker.position.set(tile.x, tile.y + 0.08, tile.z);
+  marker.visible = true;
+}
+
+// Build mode aims with the mouse once it moves over the ground, and with the
+// farmer again once they walk with the keys
+canvas.addEventListener('pointermove', (e) => {
+  if (building && e.pointerType === 'mouse') mouseAt = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('pointerleave', () => (mouseAt = null));
+const WALK_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+window.addEventListener('keydown', (e) => WALK_KEYS.has(e.code) && (mouseAt = null));
+
+// Each frame in build mode: the see-through piece, holding E, the build bar.
+// Returns the prompt.
+function updateBuilding() {
+  const key = buildTarget();
+  const problem = buildProblemAt(key);
+  buildings.preview(key, building, !problem);
+  // (holding E lays a path, or takes pieces down, as you go: a fence or a wall at a time)
+  if (keys.has('KeyE') && key !== builtKey && !problem && !PIECES[building]?.solid) buildAt(key, { quiet: true });
+  const piece = PIECES[building];
+  const what = piece ? `Building: ${piece.name}` : 'Taking down';
+  const note = problem || (piece
+    ? Object.entries(piece.cost).map(([item, n]) => `${n} ${ITEMS[item].name.toLowerCase()} (you have ${inventory.count(item)})`).join(' · ')
+    : 'Gives back what it cost');
+  if (buildShown !== what + note) {
+    buildShown = what + note;
+    hud.setBuilding(what, note);
+  }
+  if (problem) return '';
+  return piece ? `E  Build ${piece.name.toLowerCase()}` : 'E  Take it down';
 }
 
 // ---------- Places: the title screen, home, an online lobby ----------
@@ -1200,8 +1566,9 @@ const hud = new Hud({
   onMenuEscape: () => splash.escape(),
   onHome: () => goHome(),
   onChat: (text) => (place === 'lobby' ? net : farmNet)?.send({ t: C.CHAT, text }),
-  isBlocked: () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || !splash.hidden,
+  isBlocked: () => menuOpen() || !splash.hidden,
   onPrompt: (text) => touch.setReady(!!text),
+  onStopBuilding: () => stopBuilding(),
 });
 // (after the HUD: its key handler goes first, see shop.js)
 const shop = createShop({
@@ -1235,6 +1602,10 @@ const chest = createChest({
   onTake: (item, count) => farmNet?.send({ t: C.CHEST_TAKE, item, count }),
 });
 worlds.home.root.add(chest.root);
+
+// The workbench (workbench.js): built in build mode, and E next to one opens it
+const BENCH_REACH = 1.7; // from its middle
+const workbench = createWorkbench({ inventory, onOpenChange: (open) => (open ? keys.clear() : saveGame()) });
 let chestCollider = null;
 function showChest(on) {
   chest.show(on);
@@ -1377,6 +1748,15 @@ async function joinFarm(id) {
     tillTileAt(...keyXZ(m.key));
     if (plantAt(...keyXZ(m.key), m.crop, ageAt(m.at))) crops.get(m.key).plantedAt = m.at;
   });
+  on(S.BUILT, (m) => {
+    if (pendingBuilds.delete(m.key) && buildings.get(m.key) === m.piece) return; // (ours: there already)
+    buildings.place(m.key, m.piece);
+  });
+  on(S.UNBUILT, (m) => {
+    pendingUnbuilds.delete(m.key);
+    buildings.remove(m.key);
+    if (m.by === myId) giveBack(m.piece);
+  });
   on(S.HARVESTED, (m) => {
     removeCrop(m.key);
     if (m.by === myId) inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
@@ -1391,6 +1771,10 @@ async function joinFarm(id) {
     } else if (m.op === 'harvest' && crop) {
       crop.pending = false;
       crop.view.group.visible = true;
+    } else if (m.op === 'build' && pendingBuilds.delete(m.key)) {
+      giveBack(buildings.remove(m.key)); // (it wasn't built after all)
+    } else if (m.op === 'unbuild') {
+      pendingUnbuilds.delete(m.key);
     }
   });
   on(S.FELLED, (m) => {
@@ -1452,6 +1836,8 @@ function leaveFarm() {
   farmNet = null;
   farmVisit = null;
   pendingTills.clear();
+  pendingBuilds.clear();
+  pendingUnbuilds.clear();
   resetChopping();
   resetMining();
   showChest(false);
@@ -1481,6 +1867,7 @@ function showRoomFarm(m) {
     const [key, bare, life] = Array.isArray(t) ? t : [t, 0];
     tillTileAt(...keyXZ(key), bare, life);
   }
+  for (const [key, piece] of m.built ?? []) buildings.place(key, piece);
   showFarmWilds(m);
   for (const [key, cropId, at] of m.crops) {
     if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
@@ -1510,6 +1897,7 @@ function leaveLobbyWorld() {
   session = null;
   myId = 0;
   clearSpots();
+  clearDrops();
   resetChopping();
   resetMining();
   remotes.clear();
@@ -1552,6 +1940,10 @@ function joinLobby({ name, code }) {
     resetMining();
     world.restoreAllRocks();
     for (const id of m.mined ?? []) world.breakRock(id, { instant: true });
+    clearDrops();
+    for (const drop of m.drops ?? []) addDrop(drop);
+    lobbyNames.clear();
+    for (const p of m.roster) lobbyNames.set(p.id, p.name);
     remotes.setRoster(m.roster, myId);
     // one time of day for everyone in the lobby, counted from when it opened
     dayNight.setTime(LOBBY_DAWN + (m.clock / DAY_LENGTH_SECONDS) * 24);
@@ -1565,6 +1957,7 @@ function joinLobby({ name, code }) {
   on(S.ROSTER, (m) => {
     hud.setRoster(m.list);
     remotes.setRoster(m.list, myId);
+    for (const p of m.list) lobbyNames.set(p.id, p.name);
   });
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
@@ -1597,6 +1990,16 @@ function joinLobby({ name, code }) {
   on(S.MINED, rockMined);
   on(S.RESURFACED, (m) => world.regrowRock(m.id));
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
+  on(S.BOPPED, (m) => bopped(m));
+  on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z]));
+  on(S.PICKED, (m) => {
+    removeDrop(m.id);
+    if (m.by === myId) inventory.add(m.item, m.count);
+  });
+  on(S.DROP_DENY, (m) => {
+    const drop = drops.get(m.id);
+    if (drop) Object.assign(drop, { pending: false, retryAt: performance.now() + 500 });
+  });
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
@@ -1624,7 +2027,8 @@ function sendState(dt, conn = net) {
     t: C.STATE,
     x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
     f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0) |
-      (farmer.axe.visible ? STATEF.AXE : 0) | (farmer.pick.visible ? STATEF.PICK : 0) | (anim.swing >= 0 ? STATEF.SWING : 0),
+      (farmer.axe.visible ? STATEF.AXE : 0) | (farmer.pick.visible ? STATEF.PICK : 0) | (anim.swing >= 0 ? STATEF.SWING : 0) |
+      (farmer.sword.visible ? STATEF.SWORD : 0) | (farmer.mallet.visible ? STATEF.MALLET : 0),
   });
 }
 
@@ -1642,7 +2046,7 @@ function sendState(dt, conn = net) {
 // is brought up to date, and one from a newer version of the game is left
 // alone: nothing is saved until the page is reloaded with that version.
 const SAVE_STORE = 'tp.save';
-const SAVE_VERSION = 6; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs; v5: cows and sheep; v6: the pickaxe
+const SAVE_VERSION = 7; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs; v5: cows and sheep; v6: the pickaxe; v7: building
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
 let saving = true; // (false: the save is from a newer version of the game, or the farm is open on another device)
 const farmSync = new FarmSync({
@@ -1664,6 +2068,7 @@ function captureFarm() {
     hours: farmHours(),
     tilled: [...farmTiles].map(([key, mesh]) => [key, crops.has(key) ? 0 : mesh.userData.bare, mesh.userData.life]),
     crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
+    built: buildings.list(),
     felled: [...farmFelled],
     mined: [...farmMined],
     ...animals.capture(), // hens, cows, sheep, eggs
@@ -1684,6 +2089,7 @@ function showFarm(farm) {
     const bareNow = growing.has(key) ? 0 : (bare || 0) + away;
     if (bareNow < life) tillTileAt(...keyXZ(key), bareNow, life);
   }
+  for (const [key, piece] of farm.built ?? []) buildings.place(key, piece);
   showFarmWilds(farm);
   for (const [key, cropId, age] of farm.crops) {
     if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);
@@ -1803,13 +2209,15 @@ function update(dt) {
     moveZ += stick.z;
   }
   if (moveX || moveZ || inputBlocked()) stopWalking(); // the stick or the keys take over from a tap
+  else if (held && !building) ({ x: moveX, z: moveZ } = followMouse(dt));
   else ({ x: moveX, z: moveZ } = steer(dt));
 
   const moveVec = new THREE.Vector3(moveX, 0, moveZ);
   const moving = moveVec.lengthSq() > 0;
   if (moving) moveVec.multiplyScalar((MOVE_SPEED * Math.min(moveVec.length(), 1)) / moveVec.length());
-  player.velocity.x = moveVec.x;
-  player.velocity.z = moveVec.z;
+  player.velocity.x = moveVec.x + knock.x;
+  player.velocity.z = moveVec.z + knock.z;
+  knock.multiplyScalar(Math.exp(-dt * 5)); // (a bop's stumble fades)
 
   if ((keys.has('Space') || jumpPressed) && player.onGround && !inputBlocked()) jump();
   jumpPressed = false;
@@ -1836,18 +2244,22 @@ function update(dt) {
   }
 
   playerMesh.position.copy(player.position);
-  hoeGroup.visible = inventory.selectedId() === 'hoe'; // only hold a tool while it's selected
-  farmer.axe.visible = inventory.selectedId() === 'axe';
-  farmer.pick.visible = inventory.selectedId() === 'pickaxe';
+  hoeGroup.visible = holding() === 'hoe'; // only hold a tool while it's selected
+  farmer.axe.visible = holding() === 'axe';
+  farmer.pick.visible = holding() === 'pickaxe';
+  farmer.sword.visible = inventory.selectedId() === 'wooden_sword';
+  farmer.mallet.visible = inventory.selectedId() === 'mallet';
   animateCharacter(dt, moving);
   updateTileCursor();
 
   const t = clock.elapsedTime;
   world.updateTrees(dt);
+  if (building && place !== 'home') stopBuilding();
   if (place === 'lobby') {
     updateChopping();
     updateMining();
     updateSpots(dt, t);
+    updateDrops(dt, t);
     sendState(dt);
     remotes.update(dt, t);
   } else {
@@ -1856,7 +2268,7 @@ function update(dt) {
     if (place === 'home') {
       updateChopping();
       updateMining();
-      hud.setPrompt(homePrompt());
+      hud.setPrompt(building ? updateBuilding() : homePrompt());
     }
     if (farmVisit) {
       sendState(dt, farmNet);
@@ -1880,7 +2292,7 @@ function update(dt) {
   const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour();
   dayNight.update(dt, {
-    paused: atHome && (inventory.isOpen() || shop.isOpen() || chest.isOpen() || !splash.hidden),
+    paused: atHome && (menuOpen() || !splash.hidden),
     fastForward,
     focus: player.position,
   });
@@ -1888,6 +2300,7 @@ function update(dt) {
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
+  buildings.setNight(dayNight.night());
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
@@ -1902,16 +2315,17 @@ function update(dt) {
 
 // What E does here at home, for the prompt
 function homePrompt() {
-  if (shop.isOpen() || chest.isOpen()) return '';
+  if (menuOpen()) return '';
+  if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
   if (chest.inReach(player.position)) return 'E  Open the farm chest';
   if (atStall(player.position)) return 'E  Trade with the merchant';
   const held = inventory.selectedId();
   if (ANIMAL_KINDS.includes(held) && animals.inPenFor(held, player.position.x, player.position.z, 0.5)) return `E  Let the ${ITEMS[held].name.toLowerCase()} out`;
   const animal = animals.inReach(player.position);
   if (animal) return `E  ${animals.verbFor(animal)}`;
-  const tree = held === 'axe' ? treeInReach() : null;
+  const tree = holding() === 'axe' ? treeInReach() : null;
   if (tree) return chopPrompt(tree);
-  const rock = held === 'pickaxe' ? rockInReach() : null;
+  const rock = holding() === 'pickaxe' ? rockInReach() : null;
   if (rock) return minePrompt(rock);
   return '';
 }
@@ -1931,7 +2345,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, chest, animals, dayNight, saveGame, camera, farmSync, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, dayNight, saveGame, camera, farmSync, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

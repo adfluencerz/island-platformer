@@ -12,6 +12,8 @@ export const C = {
   TAKE: 'take', // { id }: gathered (or walked into) what is on spot id
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
   MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
+  BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
+  PICKUP: 'pickup', // { id }: walked into drop id
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
   // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
@@ -22,11 +24,13 @@ export const C = {
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture())
+  BUILD: 'build', // { key, piece }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack
+  UNBUILD: 'unbuild', // { key }: take down the piece on tile key
 };
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken)
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; drops: [[id, item, count, x, y, z], ...])
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
@@ -38,18 +42,24 @@ export const S = {
   MINED: 'mined', // { id, by, count, at }: rock id was broken up; player `by` got count stone (at: on a farm, when it comes back, ms)
   RESURFACED: 'resurfaced', // { id }: rock id is back
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
+  BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
+  DROP: 'drop', // { id, item, count, x, y, z }: something dropped, for anyone to walk into
+  PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
+  DROP_DENY: 'dropDeny', // { id }: that pickup did not count (someone was quicker, or too far)
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, felled, mined, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, felled, mined, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
-  //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may.
+  //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
   //   chest: { item: count }. hours: the farm's clock, in game hours since it began)
   TILLED: 'tilled', // { key, by }
   UNTILLED: 'untilled', // { key }: left bare too long (SOIL_BARE_HOURS), back to grass
   PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
   HARVESTED: 'harvested', // { key, by, item }
-  FARM_DENY: 'farmDeny', // { op, key, crop }: that did not count (crop: a seed to give back)
+  BUILT: 'built', // { key, piece, by }
+  UNBUILT: 'unbuilt', // { key, piece, by }: taken down; `by` gets the cost back
+  FARM_DENY: 'farmDeny', // { op, key, crop, piece }: that did not count (crop: a seed to give back; piece: a piece whose cost goes back)
   CHEST: 'chest', // { items: { item: count } }
   CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
@@ -64,6 +74,8 @@ export const STATEF = {
   AXE: 4, // has the axe in hand
   SWING: 8, // swinging the tool in hand
   PICK: 16, // has the pickaxe in hand
+  SWORD: 32, // has the wooden sword in hand
+  MALLET: 64, // has the mallet in hand
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;

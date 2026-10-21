@@ -21,13 +21,19 @@
 // that spot, that the tree is still standing, and that they haven't been
 // felling trees faster than an axe can.
 //
+// With a wooden sword or a mallet in hand (WEAPONS in shared/level.js) a
+// farmer can bop another: the room picks who is in front of them and in
+// reach, knocks them back, and has them drop a little of what they gathered
+// on this visit (it keeps count, in p.bag) for anyone to walk into. Drops
+// fade after a while, and aren't kept when the lobby is saved.
+//
 // The players, their seats, chat and position snapshots are shared/place.js;
 // what is here is the lobby's own.
 //
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, rollLoot, woodFor, stoneFor, spawnPoint } from './level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollLoot, woodFor, stoneFor, spawnPoint } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
@@ -38,6 +44,9 @@ const MAX_TREES = 2000; // tree ids are below this (an island has a couple of hu
 const MINE_REACH = 2.6; // the client mines within 1.3 of the rock's edge (plus the rock itself: up to 1.5 times its size, as drawn)
 const MINE_EVERY = 900; // ms: the fewest between two broken rocks (breaking one takes ROCK.hits swings)
 const MAX_ROCKS = 2000;
+const MAX_DROPS = 60;
+const round2 = (v) => Math.round(v * 100) / 100;
+const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
 const WHERE = { ledge: 'up on a ledge', meadow: 'out in the meadow', mushroom: 'among the mushrooms', bush: 'in a berry bush' };
 
 export class Room extends Place {
@@ -56,6 +65,8 @@ export class Room extends Place {
     });
     this.felled = new Map(); // tree id -> when it grows back (ms)
     this.mined = new Map(); // rock id -> when a new one surfaces (ms)
+    this.drops = new Map(); // id -> { id, item, count, x, y, z, until }
+    this.dropId = 0;
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
   }
 
@@ -93,6 +104,9 @@ export class Room extends Place {
       stone, // stone mined this visit
       chopAt: 0, // when they last felled a tree
       mineAt: 0, // when they last broke a rock
+      bag: {}, // what they gathered on this visit: item -> count (what a bop can knock loose)
+      bopAt: 0, // when they last swung a weapon
+      boppedAt: 0, // when they were last bopped
     });
   }
 
@@ -108,6 +122,7 @@ export class Room extends Place {
       spots: this.spots.map(({ id, kind, x, y, z, item, count }) => [id, kind, x, y, z, item, count]),
       felled: [...this.felled.keys()],
       mined: [...this.mined.keys()],
+      drops: [...this.drops.values()].map(({ id, item, count, x, y, z }) => [id, item, count, x, y, z]),
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
       clock: (Date.now() - this.createdAt) / 1000,
@@ -130,6 +145,7 @@ export class Room extends Place {
         spot.count = 0;
         spot.regrowAt = Date.now() + (lo + this.rand() * (hi - lo)) * 1000;
         p.finds++;
+        this.gathered(p, item, count);
         if (RARE[item]) {
           p.rares++;
           this.say(`${p.name} found ${RARE[item].toLowerCase()}!`);
@@ -154,6 +170,7 @@ export class Room extends Place {
         const count = woodFor(msg.size, this.rand); // (the bigger the tree, the more wood)
         p.chopAt = now;
         p.wood += count;
+        this.gathered(p, 'wood', count);
         this.rosterDirty = true;
         this.changed = true;
         this.broadcast({ t: S.FELLED, id, by: p.id, count });
@@ -175,12 +192,85 @@ export class Room extends Place {
         const count = stoneFor(msg.size, this.rand); // (the bigger the rock, the more stone)
         p.mineAt = now;
         p.stone += count;
+        this.gathered(p, 'stone', count);
         this.rosterDirty = true;
         this.changed = true;
         this.broadcast({ t: S.MINED, id, by: p.id, count });
         break;
       }
+      case C.BOP: {
+        const weapon = Object.hasOwn(WEAPONS, msg.weapon) ? WEAPONS[msg.weapon] : null;
+        const now = Date.now();
+        if (!weapon || now - p.bopAt < weapon.every - 150 || this.resting(p)) return;
+        p.bopAt = now;
+        if (finite(msg.yaw)) p.yaw = msg.yaw;
+        const target = this.inFront(p, weapon.reach, now);
+        if (!target) return;
+        target.boppedAt = now;
+        const d = Math.hypot(target.x - p.x, target.z - p.z);
+        const dx = d > 0.01 ? (target.x - p.x) / d : Math.sin(p.yaw);
+        const dz = d > 0.01 ? (target.z - p.z) / d : Math.cos(p.yaw);
+        const drop = this.knockLoose(target, weapon.drops, now);
+        this.broadcast({
+          t: S.BOPPED, by: p.id, id: target.id, dx: round2(dx), dz: round2(dz), knock: weapon.knock,
+          drop: drop && [drop.item, drop.count],
+        });
+        if (drop) this.broadcast({ t: S.DROP, id: drop.id, item: drop.item, count: drop.count, x: drop.x, y: drop.y, z: drop.z });
+        break;
+      }
+      case C.PICKUP: {
+        const drop = this.drops.get(msg.id);
+        if (!drop || Math.hypot(drop.x - p.x, drop.y - p.y, drop.z - p.z) > TOUCH_REACH) {
+          this.send(p, { t: S.DROP_DENY, id: msg.id });
+          return;
+        }
+        this.drops.delete(drop.id);
+        this.gathered(p, drop.item, drop.count);
+        this.broadcast({ t: S.PICKED, id: drop.id, by: p.id, item: drop.item, count: drop.count });
+        break;
+      }
     }
+  }
+
+  // Something gathered on this visit, that a bop could knock loose again
+  gathered(p, item, count) {
+    if (!KEEPS.has(item)) p.bag[item] = (p.bag[item] ?? 0) + count;
+  }
+
+  // In the stone circle where farmers arrive: nobody bops or is bopped there
+  resting(p) {
+    return Math.hypot(p.x - this.island.spawn.x, p.z - this.island.spawn.z) < SAFE_CIRCLE;
+  }
+
+  // The nearest farmer in front of p within reach who can be bopped (or null)
+  inFront(p, reach, now) {
+    const fx = Math.sin(p.yaw);
+    const fz = Math.cos(p.yaw);
+    let best = null;
+    let bestD = reach;
+    for (const q of this.players.values()) {
+      if (q === p || !q.conn || now - q.boppedAt < BOP_GRACE || this.resting(q) || Math.abs(q.y - p.y) > 1.2) continue;
+      const dx = q.x - p.x;
+      const dz = q.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d > bestD || (d > 0.4 && (dx * fx + dz * fz) / d < 0.3)) continue;
+      best = q;
+      bestD = d;
+    }
+    return best;
+  }
+
+  // Up to n of one thing q gathered on this visit, out of their bag and onto
+  // the ground where they stand (or null: nothing to drop)
+  knockLoose(q, n, now) {
+    const kinds = Object.entries(q.bag).filter(([item, count]) => count > 0 && !KEEPS.has(item));
+    if (!kinds.length || this.drops.size >= MAX_DROPS) return null;
+    const [item, have] = kinds[Math.floor(this.rand() * kinds.length)];
+    const count = Math.min(n, have);
+    q.bag[item] -= count;
+    const drop = { id: ++this.dropId, item, count, x: round2(q.x), y: round2(q.y), z: round2(q.z), until: now + DROP_MS };
+    this.drops.set(drop.id, drop);
+    return drop;
   }
 
   inReach(p, spot) {
@@ -212,6 +302,12 @@ export class Room extends Place {
       this.mined.delete(id);
       this.changed = true;
       this.broadcast({ t: S.RESURFACED, id });
+    }
+
+    for (const drop of this.drops.values()) {
+      if (now < drop.until) continue;
+      this.drops.delete(drop.id);
+      this.broadcast({ t: S.PICKED, id: drop.id, by: 0, item: drop.item, count: drop.count });
     }
   }
 
