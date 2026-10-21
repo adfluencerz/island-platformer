@@ -2,7 +2,9 @@
 // One on each style of sky isle (SKY_STYLES, shared/skyisles.js), on a
 // pedestal: whoever walks into it first has it, and the lobby hears. Rare
 // finds, to collect them all (and the merchant pays well for one). Drawn like
-// the rest of the catalog (src/items.js, which takes these in).
+// the rest of the catalog (src/items.js, which takes these in). Each is a
+// decoration too: put on show on the farm, on a pedestal (PIECES, shared/level.js;
+// src/build.js draws it).
 const relic = (name, description, color, palette, sprite) => ({ name, category: 'Relic', description, maxStack: 99, color, palette, sprite });
 
 export const RELICS = {
@@ -349,3 +351,9 @@ export const RELICS = {
       '................',
     ]),
 };
+
+// (each is put down as itself, from the Build tab)
+for (const [id, def] of Object.entries(RELICS)) {
+  def.piece = id;
+  def.description += ' Put it on show on your farm from the Build tab.';
+}

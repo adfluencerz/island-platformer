@@ -205,6 +205,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     const cards = el('div', 'inv-build-cards', buildEl);
     for (const id of [...Object.keys(PIECES), 'remove']) {
       const def = PIECES[id];
+      if (def?.relic && !toBuild(id)) continue; // (a relic shows once there is one to put on show)
       const short = def ? Object.entries(def.cost).find(([item, n]) => toBuild(item) < n) : null;
       const made = ITEMS[id]?.piece === id; // (a decoration, made at the workbench)
       const card = el('button', 'inv-build-card' + (building() === id ? ' on' : ''), cards);

@@ -1869,6 +1869,7 @@ function buildProblemAt(key) {
   }
   if (buildings.size() >= MAX_PIECES) return 'The farm can\'t hold any more';
   const short = Object.entries(piece.cost).find(([item, n]) => buildStock(item) < n);
+  if (short && PIECES[short[0]]?.relic) return `Find another ${ITEMS[short[0]].name.toLowerCase()} on a sky isle first`;
   if (short) return ITEMS[short[0]].piece ? `Make a ${ITEMS[short[0]].name.toLowerCase()} at a workbench first` : `Not enough ${ITEMS[short[0]].name.toLowerCase()}`;
   return '';
 }
