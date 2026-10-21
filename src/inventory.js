@@ -496,7 +496,10 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   // ---------- Input ----------
   window.addEventListener('keydown', (e) => {
     if (e.target.closest?.('input, textarea, select')) return; // typing a name or a chat line
-    if (e.code === 'KeyI' && !e.repeat) setOpen(!open);
+    if (e.code === 'KeyI' && !e.repeat) {
+      if (!open) setTab('pack'); // (the backpack, even if the Build tab was the last one open)
+      setOpen(!open);
+    }
     else if (e.code === 'KeyB' && !e.repeat) {
       if (open && tab === 'build') setOpen(false);
       else {
