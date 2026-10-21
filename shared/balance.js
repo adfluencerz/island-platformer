@@ -56,6 +56,7 @@ export const SHOP = {
   cow: { price: 500, sell: 100},
   sheep: { price: 350, sell: 70 },
   egg: { sell: 25 },
+  large_egg: { sell: 45 },
   milk: { sell: 60 },
   wool: { sell: 120 },
 };
@@ -79,14 +80,49 @@ export const ANIMALS = {
 export const LAY_HOURS = [8, 16];
 export const EGGS_PER_HEN = 3;
 
+// ---------- Upgrades ----------
+// Bought at the workbench by the farmer, for the whole farm (a helper works
+// with what the farm has). Each list is the levels in order: a farm starts on
+// the first, and `cost` is what the next one up costs (`gold`, and items).
+// The pens: `room`, how many of each kind live there (the fence goes out a
+// little each level: shared/farmland.js), and what they give: `largeEgg`,
+// the chance an egg is a large one; `second`, the chance a cow or sheep gives
+// two milk or wool instead of one.
+export const PEN_LEVELS = {
+  yard: [
+    { room: { hen: 8 }, largeEgg: 0 },
+    { room: { hen: 12 }, largeEgg: 0.35, cost: { gold: 1200, wood: 80, stone: 40 } },
+    { room: { hen: 16 }, largeEgg: 0.7, cost: { gold: 3000, wood: 160, stone: 100 } },
+  ],
+  pasture: [
+    { room: { cow: 4, sheep: 6 }, second: 0 },
+    { room: { cow: 6, sheep: 9 }, second: 0.5, cost: { gold: 2500, wood: 120, stone: 60 } },
+    { room: { cow: 8, sheep: 12 }, second: 1, cost: { gold: 6000, wood: 240, stone: 150 } },
+  ],
+};
+// The workbench: each level makes what the ones below it do and more (a
+// recipe's `level`, in RECIPES)
+export const BENCH_LEVELS = [
+  {},
+  { cost: { gold: 2000, wood: 100, stone: 100 } },
+  { cost: { gold: 5000, wood: 200, stone: 200, gem: 3 } },
+];
+
 // ---------- Trees and rocks ----------
-// `hits`: swings to fell one or break one up (STURDY_HITS with a sturdy tool).
+// `hits`: swings to fell one or break one up (TOOL_HITS with a better tool).
 // `regrow`: seconds until it is back (somewhere else; see shared/level.js).
 // `wood`: logs from a tree of size 1 (bigger trees give more). `stone`: from
 // a rock of size `per` (a fist-sized one; the big boulders give the most).
 export const TREE_BALANCE = { hits: 4, regrow: [600, 600], wood: [2, 4] };
 export const ROCK_BALANCE = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4 };
-export const STURDY_HITS = { sturdy_axe: 3, sturdy_pickaxe: 2 };
+// The workbench's tools, a tier to each of its levels (sturdy, silver,
+// golden): swings to fell a tree or break a rock with each; `TOOL_EXTRA`: one
+// more log or stone a tree or rock gives with it; `HOE_TILLS`: the tiles a hoe
+// tills in one go, [across, ahead] (centred on the one in front, the plain
+// hoe's: [1, 1]).
+export const TOOL_HITS = { sturdy_axe: 3, silver_axe: 2, golden_axe: 1, sturdy_pickaxe: 2, silver_pickaxe: 1, golden_pickaxe: 1 };
+export const TOOL_EXTRA = { golden_axe: 1, golden_pickaxe: 1 };
+export const HOE_TILLS = { wide_hoe: [3, 1], silver_hoe: [5, 1], golden_hoe: [3, 3] };
 
 // ---------- Giant trees and rocks ----------
 // Each game morning a lobby or farm without a giant tree may get one (one
@@ -233,7 +269,8 @@ export const BUILD_COSTS = {
 
 // ---------- The workbench ----------
 // What can be made, in the order it is listed. `needs`: items used up (a
-// tool among them is swapped for the one made, in its slot).
+// tool among them is swapped for the one made, in its slot), and `gold` paid.
+// `level`: the workbench level it takes (BENCH_LEVELS; none: the first).
 export const RECIPES = [
   { makes: 'planter', needs: { stone: 4, wood: 1 } },
   { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
@@ -241,6 +278,14 @@ export const RECIPES = [
   { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
   { makes: 'wooden_sword', needs: { wood: 8 } },
   { makes: 'mallet', needs: { wood: 4, stone: 6 } },
+  // level 2
+  { makes: 'silver_axe', level: 2, needs: { sturdy_axe: 1, gold: 400, wood: 20, stone: 30, gem: 1 } },
+  { makes: 'silver_pickaxe', level: 2, needs: { sturdy_pickaxe: 1, gold: 400, wood: 30, stone: 20, gem: 1 } },
+  { makes: 'silver_hoe', level: 2, needs: { wide_hoe: 1, gold: 400, wood: 25, stone: 25, gem: 1 } },
+  // level 3
+  { makes: 'golden_axe', level: 3, needs: { silver_axe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
+  { makes: 'golden_pickaxe', level: 3, needs: { silver_pickaxe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
+  { makes: 'golden_hoe', level: 3, needs: { silver_hoe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
 ];
 
 // Made at the workbench once, built straight from wood and stone now: what
