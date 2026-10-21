@@ -3,9 +3,9 @@ import { PIECES } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
 
 // ---------- What is built on the farm ----------
-// Fences, gates, walls (stone, low stone and palisades), paths, blocks to
-// climb (steps, crates, log piles, barrels, straw bales, scaffolds, stone
-// blocks and pillars), the workbench and what it
+// Fences, gates, arches, walls (stone, low stone and palisades), paths,
+// blocks to climb (steps, crates, log piles, barrels, straw bales and stacks,
+// scaffolds, log towers, stone blocks and pillars), the workbench and what it
 // makes for the farm (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
@@ -135,6 +135,44 @@ function model(id, gx, gz, joined) {
       stone.rotation.y = r * 6 + i;
       stone.castShadow = false;
     });
+  } else if (id === 'cobble_path') {
+    // small round cobbles packed close in rows, each a little different, on
+    // a bed of darker grit
+    const r = hash(gx, gz);
+    part(g, box, MATS.stoneDark, 0, 0.015, 0, 0.94, 0.02, 0.94).castShadow = false;
+    for (let row = 0; row < 5; row++) {
+      for (let col = 0; col < 5; col++) {
+        const j = (r * 97 + row * 0.37 + col * 0.61) % 1;
+        const x = (col - 2) * 0.185 + (row % 2 ? 0.045 : -0.045);
+        if (Math.abs(x) > 0.42) continue;
+        const k = 0.15 + j * 0.03;
+        const cobble = part(g, flag, j < 0.5 ? MATS.stone : MATS.stoneLight, x, 0.035 + j * 0.01, (row - 2) * 0.185, k, 0.045, k);
+        cobble.rotation.y = j * 6;
+        cobble.castShadow = false;
+      }
+    }
+  } else if (id === 'stone_arch') {
+    // two stone piers along the walls it joins (across the tile on its own),
+    // and an arch of stones over the way through, with a keystone at the top.
+    // Like a gate it's walked through, so no colliders
+    const [ax, az] = joined.some(([dx]) => dx) || !joined.length ? [1, 0] : [0, 1];
+    const pierH = WALL_H + 0.1;
+    for (const s of [-1, 1]) {
+      const o = s * 0.39;
+      part(g, box, MATS.stone, ax * o, pierH / 2, az * o, ax ? 0.22 : 0.5, pierH, az ? 0.22 : 0.5);
+      part(g, box, MATS.stoneDark, ax * o, 0.12, az * o, ax ? 0.26 : 0.56, 0.24, az ? 0.26 : 0.56);
+      part(g, box, MATS.stoneDark, ax * o, WALL_H * 0.48, az * o, ax ? 0.24 : 0.52, 0.08, az ? 0.24 : 0.52);
+    }
+    // the arch: voussoirs round a half circle from pier to pier
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * (i + 0.5)) / n;
+      const along = Math.cos(a) * 0.36;
+      const stone = part(g, box, i === (n - 1) / 2 ? MATS.stoneLight : MATS.stone, ax * along, pierH - 0.1 + Math.sin(a) * 0.3, az * along, ax ? 0.17 : 0.48, 0.14, az ? 0.17 : 0.48);
+      if (ax) stone.rotation.z = a - Math.PI / 2;
+      else stone.rotation.x = -(a - Math.PI / 2);
+    }
+    part(g, box, MATS.stoneLight, 0, pierH + 0.26, 0, ax ? 1 : 0.56, 0.1, az ? 1 : 0.56);
   } else if (id === 'wood_gate') {
     // a post either side and a gate between, along the fences it joins
     // (across the tile on its own); it's walked through, so no colliders
@@ -223,6 +261,42 @@ function model(id, gx, gz, joined) {
         const a = i * 1.9 + r * 6;
         part(g, box, MATS.strawDark, Math.cos(a) * 0.3, h + 0.01, Math.sin(a) * 0.3, 0.26, 0.015, 0.03).rotation.y = a;
       }
+    } else if (id === 'straw_stack') {
+      // bales lying three high, each course turned across the one below,
+      // with the twine showing on every one
+      const r = hash(gx, gz);
+      const course = h / 3;
+      for (let i = 0; i < 3; i++) {
+        const y = course * i;
+        const off = ((r * 10 + i * 3) % 3 - 1) * 0.015;
+        part(g, box, i % 2 ? MATS.strawDark : MATS.straw, off, y + course / 2, -off, w, course - 0.01, w);
+        for (const o of [-0.24, 0.24]) {
+          part(g, box, MATS.twine, i % 2 ? 0 : o, y + course / 2, i % 2 ? o : 0, i % 2 ? w + 0.02 : 0.04, course + 0.005, i % 2 ? 0.04 : w + 0.02).castShadow = false;
+        }
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = i * 1.9 + r * 6;
+        part(g, box, MATS.strawDark, Math.cos(a) * 0.3, h + 0.01, Math.sin(a) * 0.3, 0.26, 0.015, 0.03).rotation.y = a;
+      }
+    } else if (id === 'log_tower') {
+      // a crib of logs laid two by two, each pair across the pair below, like
+      // a log cabin's corners, over a dark core, with a plank deck on top
+      part(g, box, MATS.crateDark, 0, (h - 0.1) / 2, 0, w - 0.22, h - 0.1, w - 0.22);
+      const r = hash(gx, gz);
+      const layers = 8;
+      const step = (h - 0.08) / layers;
+      for (let i = 0; i < layers; i++) {
+        const y = step * (i + 0.5);
+        const k = step + 0.02;
+        for (const s of [-1, 1]) {
+          const len = w + 0.04 + ((r * 10 + i) % 2) * 0.04;
+          const lg = part(g, log, MATS.bark, i % 2 ? s * 0.38 : 0, y, i % 2 ? 0 : s * 0.38, k, len, k);
+          if (i % 2) lg.rotation.x = Math.PI / 2;
+          else lg.rotation.z = Math.PI / 2;
+        }
+      }
+      part(g, box, MATS.plankA, 0, h - 0.04, 0, w, 0.08, w);
+      [-0.24, 0, 0.24].forEach((o) => part(g, box, MATS.plankB, o, h + 0.005, 0, 0.02, 0.01, w - 0.04).castShadow = false);
     } else if (id === 'stone_pillar') {
       // a round column on a square plinth, with a square cap to stand on
       const r = hash(gx, gz);
