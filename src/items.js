@@ -1470,6 +1470,27 @@ export const PIECE_ICONS = {
       '.ooo........ooo.',
     ],
   },
+  farm_chest: {
+    palette: { ...WOOD, i: '#5d6470', g: '#e0b23a' },
+    sprite: [
+      '................',
+      '................',
+      '...oooooooooo...',
+      '..oWWiWWWWiWWo..',
+      '.oWWWiWWWWiWWWo.',
+      '.owwwiwwwwiwwwo.',
+      '.oooooooooooooo.',
+      '.oWWWiWggWiWWWo.',
+      '.owwwiwggwiwwwo.',
+      '.owwwiwwwwiwwwo.',
+      '.owwwiwwwwiwwwo.',
+      '.odddiddddidddo.',
+      '.oooooooooooooo.',
+      '................',
+      '................',
+      '................',
+    ],
+  },
   remove: {
     palette: { ...WOOD, L: '#d6d4cc', M: '#a9a79f', D: '#6c6b66' },
     sprite: [

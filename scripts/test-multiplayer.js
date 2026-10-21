@@ -804,6 +804,15 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
     room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
     assert.deepEqual(ann.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,3', piece, by: bo.p.id });
   }
+  // the farm's chest is a piece too, but a farm has only the one
+  room.message(bo.p, { t: C.BUILD, key: '5,3', piece: 'farm_chest' });
+  assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,3', piece: 'farm_chest', by: bo.p.id });
+  room.message(bo.p, { t: C.BUILD, key: '5,4', piece: 'farm_chest' });
+  assert.deepEqual([bo.conn.last(S.FARM_DENY).op, bo.conn.last(S.FARM_DENY).key], ['build', '5,4'], 'one chest to a farm');
+  room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
+  room.message(bo.p, { t: C.BUILD, key: '5,4', piece: 'farm_chest' });
+  assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,4', piece: 'farm_chest', by: bo.p.id }, 'taken down, it goes somewhere else');
+  room.message(bo.p, { t: C.UNBUILD, key: '5,4' });
   room.message(bo.p, { t: C.BUILD, key: '5,4', piece: 'stone_path' });
   room.message(ann.p, { t: C.STATE, x: 0, y: 0.8, z: 5, yaw: 0, f: 1 });
   room.message(ann.p, { t: C.BUILD, key: '0,4', piece: 'stone_path' });
