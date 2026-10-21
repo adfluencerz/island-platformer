@@ -119,8 +119,8 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // taller than a crate), so step, crate, scaffold, pillar is a stair walked all
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch or a wood arbor joins the walls (or fences)
-// beside it the same way. A low stone wall, a rail fence or a box hedge is
-// hopped over like a fence; a palisade, like a stone wall, can't be. A farm has `one`
+// beside it the same way. A low stone wall, a rail fence, a picket fence or a
+// box hedge is hopped over like a fence; a palisade, like a stone wall, can't be. A farm has `one`
 // farm chest at most (src/chest.js): built, it stands where it was put; on a
 // farm with helpers there is one by the plaza till then, so the harvest
 // always has somewhere to go.
@@ -158,6 +158,12 @@ export const PIECES = {
   crate_stack: { name: 'Crate stack', cost: { wood: 6 }, solid: true, block: 1.35 },
   stone_lantern: { name: 'Stone lantern', cost: { stone: 5 }, solid: true },
   scarecrow: { name: 'Scarecrow', cost: { wood: 3, flax: 2 }, solid: true },
+  picket_fence: { name: 'Picket fence', cost: { wood: 3 }, solid: true, joins: true },
+  grain_sacks: { name: 'Grain sacks', cost: { flax: 4 }, solid: true, block: 0.9 },
+  hay_cart: { name: 'Hay cart', cost: { wood: 6, flax: 3 }, solid: true },
+  beehive: { name: 'Beehive', cost: { wood: 2, flax: 3 }, solid: true },
+  birdbath: { name: 'Birdbath', cost: { stone: 3 }, solid: true },
+  signpost: { name: 'Signpost', cost: { wood: 2 }, solid: true },
   workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
   farm_chest: { name: 'Farm chest', cost: { wood: 8, stone: 2 }, solid: true, one: true },
   house: { name: 'House', cost: { wood: 500, stone: 200 }, solid: true, one: true, size: [5, 4] },
