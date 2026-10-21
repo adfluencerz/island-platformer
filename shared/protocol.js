@@ -14,6 +14,9 @@ export const C = {
   MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
   PICKUP: 'pickup', // { id }: walked into drop id
+  COUNT: 'count', // { trees, rocks }: how many there are where we are (the page knows; a giant is one of them: shared/giants.js)
+  HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: its own scale; tool: the item in hand)
+  DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
   // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
@@ -30,16 +33,17 @@ export const C = {
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...])
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, giants, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count }: spot id was emptied by player `by`
   DENY: 'deny', // { id }: that did not count (someone got there first, or too far)
-  FELLED: 'felled', // { id, by, count, at }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms)
+  FELLED: 'felled', // { id, by, count, at, shares }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms; shares: a giant's, [[player id, count]], each player's wood)
   REGROWN: 'regrown', // { id, n }: tree id has grown back, in its place n (shared/level.js nextSite)
   CHOP_DENY: 'chopDeny', // { id }: that chop did not count (already down, too far, too fast)
-  MINED: 'mined', // { id, by, count, at }: rock id was broken up; player `by` got count stone (at: on a farm, when it comes back, ms)
+  MINED: 'mined', // { id, by, count, at, shares }: rock id was broken up; player `by` got count stone (at: on a farm, when it comes back, ms; shares: as for FELLED)
+  GIANT: 'giant', // { kind, id, hp, max, by }: tree or rock id is a giant with hp of max health left (by: who just swung at it; 0: it has just grown huge)
   RESURFACED: 'resurfaced', // { id, n }: rock id is back, in its place n
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
@@ -49,7 +53,7 @@ export const S = {
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, felled, mined, treeSites, rockSites, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, felled, mined, treeSites, rockSites, giants, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
   //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
   //   chest: { item: count }. hours: the farm's clock, in game hours since it began)

@@ -80,6 +80,17 @@ export const TREE_BALANCE = { hits: 4, regrow: [600, 600], wood: [2, 4] };
 export const ROCK_BALANCE = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4 };
 export const STURDY_HITS = { sturdy_axe: 3, sturdy_pickaxe: 2 };
 
+// ---------- Giant trees and rocks ----------
+// Each game morning a lobby or farm without a giant tree may get one (one
+// standing tree grows huge): `chance` of it. The same, apart, for a giant
+// rock. Once its giant tree is down a place never gets another (nor rocks).
+// A giant takes `hits` times the swings of an ordinary one, from everyone
+// together, and gives `loot` times what it would, shared by how much each
+// farmer did. `treeScale`, `rockScale`: how much bigger it is drawn
+// (`rockMin`: a giant rock is at least this big, even a pebble's). The health
+// bar over it shows `barSeconds` after the last swing.
+export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockScale: 2.5, rockMin: 1.6, barSeconds: 4 };
+
 // ---------- Lobby spots ----------
 // What a lobby's resource spots turn up. `regrow`: seconds until an emptied
 // spot has something again. `loot`: [item, weight, min, max]: each time it

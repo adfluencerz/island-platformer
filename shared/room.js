@@ -27,14 +27,19 @@
 // on this visit (it keeps count, in p.bag) for anyone to walk into. Drops
 // fade after a while, and aren't kept when the lobby is saved.
 //
+// Now and then of a morning one tree grows into a giant, or one rock (shared/giants.js):
+// every swing at it comes here (HIT), so everyone's add up, and what it gives
+// is shared by how much each farmer did.
+//
 // The players, their seats, chat and position snapshots are shared/place.js;
 // what is here is the lobby's own.
 //
-import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS } from './constants.js';
+import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, devToolsOn, DAY_LENGTH_SECONDS } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollLoot, woodFor, stoneFor, spawnPoint, nextSite, siteMap } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
+import { Giants, giantSwing, giantMax, gameDay, LOBBY_DAWN } from './giants.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
 const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
@@ -70,6 +75,7 @@ export class Room extends Place {
     this.rockSites = new Map(); // rock id -> count
     this.drops = new Map(); // id -> { id, item, count, x, y, z, until }
     this.dropId = 0;
+    this.giants = new Giants(rand); // (shared/giants.js)
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
   }
 
@@ -107,6 +113,7 @@ export class Room extends Place {
       stone, // stone mined this visit
       chopAt: 0, // when they last felled a tree
       mineAt: 0, // when they last broke a rock
+      hitAt: 0, // when they last swung at a giant
       bag: {}, // what they gathered on this visit: item -> count (what a bop can knock loose)
       bopAt: 0, // when they last swung a weapon
       boppedAt: 0, // when they were last bopped
@@ -131,6 +138,7 @@ export class Room extends Place {
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
       clock: (Date.now() - this.createdAt) / 1000,
+      giants: this.giants.toSave(),
       resumed,
     });
   }
@@ -164,7 +172,7 @@ export class Room extends Place {
         const { id, x, z } = msg;
         const now = Date.now();
         const ok = Number.isInteger(id) && id >= 0 && id < MAX_TREES && finite(x, z) &&
-          !this.felled.has(id) && now - p.chopAt >= CHOP_EVERY &&
+          !this.felled.has(id) && !this.giants.is('tree', id) && now - p.chopAt >= CHOP_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= CHOP_REACH && Math.abs(p.y - 0.8) < 2;
         if (!ok) {
           this.send(p, { t: S.CHOP_DENY, id });
@@ -186,7 +194,7 @@ export class Room extends Place {
         const now = Date.now();
         const size = Math.min(ROCK.size[1], Number.isFinite(msg.size) ? msg.size : 0);
         const ok = Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && finite(x, z) &&
-          !this.mined.has(id) && now - p.mineAt >= MINE_EVERY &&
+          !this.mined.has(id) && !this.giants.is('rock', id) && now - p.mineAt >= MINE_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= MINE_REACH + size * 1.5 && Math.abs(p.y - 0.8) < 2;
         if (!ok) {
           this.send(p, { t: S.MINE_DENY, id });
@@ -201,6 +209,42 @@ export class Room extends Place {
         this.rosterDirty = true;
         this.changed = true;
         this.broadcast({ t: S.MINED, id, by: p.id, count });
+        break;
+      }
+      case C.COUNT:
+        this.giants.setCounts(msg.trees, msg.rocks);
+        break;
+      case C.DEV_GIANT: {
+        // (developer tools: shared/constants.js DEV_TOOLS)
+        const { kind, id } = msg;
+        if (!devToolsOn(globalThis.process?.env?.GAME_DEV) || (kind === 'tree' ? this.felled : this.mined).has(id) || !this.giants.grow(kind, id)) return;
+        this.changed = true;
+        this.broadcast({ t: S.GIANT, kind, id, hp: giantMax(kind), max: giantMax(kind), by: 0 });
+        this.say(`${p.name} grew a giant ${kind} (developer tools)`);
+        break;
+      }
+      case C.HIT: {
+        const hit = giantSwing(this.giants, p, msg);
+        if (!hit) return;
+        const { kind, id } = hit;
+        this.changed = true;
+        this.broadcast({ t: S.GIANT, kind, id, hp: hit.hp, max: giantMax(kind), by: p.id });
+        if (!hit.shares) break;
+        // down: for everyone the way an ordinary one goes, and the loot to whoever helped
+        const tree = kind === 'tree';
+        const [lo, hi] = tree ? TREE.regrow : ROCK.regrow;
+        (tree ? this.felled : this.mined).set(id, Date.now() + (lo + this.rand() * (hi - lo)) * 1000);
+        const item = tree ? 'wood' : 'stone';
+        for (const [who, count] of hit.shares) {
+          const q = this.players.get(who);
+          if (!q) continue;
+          q[item] += count;
+          this.gathered(q, item, count);
+        }
+        this.rosterDirty = true;
+        const by = hit.shares.find(([who]) => who === p.id)?.[1] ?? 0;
+        this.broadcast({ t: tree ? S.FELLED : S.MINED, id, by: p.id, count: by, shares: hit.shares });
+        this.say(`${tree ? 'The giant tree came down' : 'The giant rock broke up'}: ${hit.loot} ${item} for ${hit.shares.length > 1 ? `the ${hit.shares.length} who helped` : p.name}!`);
         break;
       }
       case C.BOP: {
@@ -308,6 +352,14 @@ export class Room extends Place {
       }
     }
 
+    // each morning, maybe a giant
+    const hours = LOBBY_DAWN + ((now - this.createdAt) / 1000 / DAY_LENGTH_SECONDS) * 24;
+    for (const [kind, id] of this.giants.roll(gameDay(hours), { tree: this.felled, rock: this.mined })) {
+      this.changed = true;
+      this.broadcast({ t: S.GIANT, kind, id, hp: giantMax(kind), max: giantMax(kind), by: 0 });
+      this.say(kind === 'tree' ? 'A giant tree has grown somewhere on the island!' : 'A giant rock has surfaced somewhere on the island!');
+    }
+
     for (const drop of this.drops.values()) {
       if (now < drop.until) continue;
       this.drops.delete(drop.id);
@@ -334,6 +386,7 @@ export class Room extends Place {
       mined: [...this.mined],
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
+      giants: this.giants.toSave(),
       seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood, stone }) => ({ id, key, name, color, finds, rares, wood, stone })),
     };
   }
@@ -365,6 +418,7 @@ export class Room extends Place {
     }
     room.treeSites = siteMap(save.treeSites, MAX_TREES);
     room.rockSites = siteMap(save.rockSites, MAX_ROCKS);
+    room.giants = Giants.fromSave(save.giants, room.rand);
     const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
     for (const s of (save.seats ?? []).slice(0, room.maxPlayers)) {
       if (!Number.isInteger(s.id) || s.id < 1 || room.players.has(s.id) || typeof s.key !== 'string' || !s.key) continue;

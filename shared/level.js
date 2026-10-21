@@ -5,7 +5,7 @@
 // client's business (src/maps.js, src/world.js). The numbers that balance
 // the game (times, costs, what things give) are in shared/balance.js.
 import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST } from './balance.js';
-export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST } from './balance.js';
+export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, STURDY_HITS } from './balance.js';
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza

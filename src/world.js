@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { damp } from './character.js';
 import { mulberry32 } from '../shared/worldgen.js';
+import { giantScale } from '../shared/giants.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
 export { mulberry32, distToSegment, distToPaths } from '../shared/worldgen.js';
@@ -195,6 +196,17 @@ const CHIPS = 5; // bits that fly off a breaking rock
 const CHIP_LIFE = 0.7;
 const _q = new THREE.Quaternion();
 const easeOutBack = (p) => 1 + 2.7 * (p - 1) ** 3 + 1.7 * (p - 1) ** 2;
+const _rb = new THREE.Vector3();
+
+// A tree's or rock's collider, w wide and deep, round where it stands
+function fitBox(box, x, z, w) {
+  box.min.x = x - w / 2;
+  box.max.x = x + w / 2;
+  box.min.z = z - w / 2;
+  box.max.z = z + w / 2;
+  box.center.x = x;
+  box.center.z = z;
+}
 
 // Fade trees whose canopy sits on the line of sight from the camera to the
 // player. Canopies are treated as boxes around the trunk: CANOPY_RADIUS wide
@@ -205,7 +217,7 @@ const CANOPY_TOP = 3.4;
 
 function blocksView(tree, eye, camera) {
   const { x: tx, z: tz } = tree.group.position;
-  const k = tree.scale;
+  const k = tree.scale * tree.big;
   const r = CANOPY_RADIUS * k + 0.4; // a little margin around the player
   const dz = camera.position.z - eye.z;
   if (Math.abs(dz) < 1e-3) return false;
@@ -536,6 +548,7 @@ export function buildWorld(map) {
       id: trees.length, group: tree, scale: k, materials: [...materials.values()], fade: 1,
       x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
       state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
+      big: 1, from: 0.01, // (a giant is drawn `big` times its scale; growing: from this scale)
       sites: [[x, z]], rule: scattering,
     });
   }
@@ -568,12 +581,14 @@ export function buildWorld(map) {
       id: rocks.length, mesh: rock, x, z, scale: k, radius: Math.max(rock.scale.x, rock.scale.z) * 0.85,
       collider, base: rock.scale.clone(), baseY: rock.position.y,
       state: 'up', t: 0, shake: 0, chips: null,
+      big: 1, from: 0, baseRadius: 0, // (as for trees; growing: from this much of its size)
       sites: [[x, z]], rule: scattering,
     });
   }
 
   Object.assign(ctx, { addTree, addBush, addRock });
   map.decorate(ctx);
+  for (const rock of rocks) rock.baseRadius = rock.radius;
 
   // ---------- Growing back elsewhere ----------
   // A felled tree or a broken rock grows back somewhere else: each has a few
@@ -840,7 +855,7 @@ export function buildWorld(map) {
 
   function setTrunk(tree, standing) {
     const box = tree.collider;
-    box.max.y = standing ? 6 : STUMP_H * tree.scale;
+    box.max.y = standing ? 6 : STUMP_H * tree.scale * tree.big;
     box.center.y = (box.min.y + box.max.y) / 2;
   }
 
@@ -861,10 +876,11 @@ export function buildWorld(map) {
     if (!tree.stump) {
       tree.stump = new THREE.Mesh(stumpGeo, stumpMats);
       tree.stump.position.set(tree.x, 0, tree.z);
-      tree.stump.scale.set(tree.scale * tree.trunk, tree.scale, tree.scale * tree.trunk);
       tree.stump.castShadow = tree.stump.receiveShadow = true;
       root.add(tree.stump);
     }
+    const k = tree.scale * tree.big; // (a giant leaves a giant stump)
+    tree.stump.scale.set(k * tree.trunk, k, k * tree.trunk);
     tree.stump.visible = true;
     setTrunk(tree, false);
     tipAway(tree, from);
@@ -881,6 +897,9 @@ export function buildWorld(map) {
     const tree = trees[id];
     if (!tree || tree.state === 'up' || tree.state === 'growing') return;
     place(tree, n);
+    tree.big = 1; // (a giant comes back as itself)
+    tree.from = 0.01;
+    fitBox(tree.collider, tree.x, tree.z, 0.5 * tree.scale);
     setTrunk(tree, true);
     tree.stump.visible = false;
     tree.group.visible = true;
@@ -899,7 +918,8 @@ export function buildWorld(map) {
   function setBoulder(rock, standing) {
     const box = rock.collider;
     if (!box) return;
-    box.max.y = standing ? rock.scale * 0.7 : box.min.y; // (broken: nothing to bump into)
+    const k = rock.scale * rock.big;
+    box.max.y = standing && k > 0.6 ? k * 0.7 : box.min.y; // (broken, or a small one: nothing to bump into)
     box.center.y = (box.min.y + box.max.y) / 2;
   }
 
@@ -934,8 +954,8 @@ export function buildWorld(map) {
       const a = Math.random() * Math.PI * 2;
       const out = 1.2 + Math.random() * 1.6;
       chip.v.set(Math.cos(a) * out, 3 + Math.random() * 2.5, Math.sin(a) * out);
-      chip.mesh.position.set(rock.x, rock.baseY + rock.scale * 0.3, rock.z);
-      chip.mesh.scale.setScalar(Math.max(0.05, rock.scale * (0.18 + Math.random() * 0.14)));
+      chip.mesh.position.set(rock.x, (rock.baseY + rock.scale * 0.3) * rock.big, rock.z);
+      chip.mesh.scale.setScalar(Math.max(0.05, rock.scale * rock.big * (0.18 + Math.random() * 0.14)));
       chip.mesh.visible = true;
     }
     crumbling.add(rock);
@@ -945,7 +965,10 @@ export function buildWorld(map) {
     const rock = rocks[id];
     if (!rock || rock.state === 'up' || rock.state === 'growing') return;
     place(rock, n);
-    setBoulder(rock, true);
+    rock.big = 1;
+    rock.from = 0;
+    rock.radius = rock.baseRadius;
+    fitRock(rock);
     for (const chip of rock.chips ?? []) chip.mesh.visible = false;
     rock.mesh.visible = true;
     rock.mesh.scale.copy(rock.base).multiplyScalar(instant ? 1 : 0.01);
@@ -957,10 +980,92 @@ export function buildWorld(map) {
     else crumbling.add(rock);
   }
 
+  // A rock's collider as big as it is drawn (a giant one gets one, even a pebble's)
+  function fitRock(rock) {
+    const k = rock.scale * rock.big;
+    if (!rock.collider) {
+      if (k <= 0.6) return;
+      rock.collider = addCollider({ x: rock.x, y: 0, z: rock.z, w: 0, h: 0, d: 0 }, { grows: true });
+    }
+    fitBox(rock.collider, rock.x, rock.z, k * 1.4);
+    setBoulder(rock, rock.state === 'up' || rock.state === 'growing');
+  }
+
+  // ---------- Giants ----------
+  // A standing tree or rock grows into a giant (shared/giants.js): it is drawn
+  // giantScale times its size, and stays that till it comes down. instant:
+  // it is simply a giant already (it was before we came).
+  function makeGiant(kind, id, { instant = false } = {}) {
+    if (kind === 'tree') {
+      const tree = trees[id];
+      if (!tree || tree.big > 1 || (tree.state !== 'up' && tree.state !== 'growing')) return;
+      const was = tree.scale;
+      tree.big = giantScale('tree', tree.scale);
+      fitBox(tree.collider, tree.x, tree.z, 0.5 * tree.scale * tree.big);
+      if (instant) {
+        tree.state = 'up';
+        tree.group.scale.setScalar(tree.scale * tree.big);
+        moving.delete(tree);
+      } else if (tree.state === 'up') {
+        Object.assign(tree, { state: 'growing', from: was, t: 0, shake: 0 });
+        tree.group.quaternion.copy(tree.base);
+        moving.add(tree);
+      }
+    } else {
+      const rock = rocks[id];
+      if (!rock || rock.big > 1 || (rock.state !== 'up' && rock.state !== 'growing')) return;
+      rock.big = giantScale('rock', rock.scale);
+      rock.radius = rock.baseRadius * rock.big;
+      rock.mesh.position.set(rock.x, rock.baseY * rock.big, rock.z);
+      fitRock(rock);
+      if (instant) {
+        rock.state = 'up';
+        rock.mesh.scale.copy(rock.base).multiplyScalar(rock.big);
+        crumbling.delete(rock);
+      } else if (rock.state === 'up') {
+        Object.assign(rock, { state: 'growing', from: 1 / rock.big, t: 0, shake: 0 });
+        crumbling.add(rock);
+      }
+    }
+  }
+
+  // A giant standing as itself again, at once (starting the island's picture over)
+  function unGiant(kind, thing) {
+    if (thing.big <= 1) return;
+    const standing = thing.state === 'up' || thing.state === 'growing';
+    thing.big = 1;
+    if (kind === 'tree') {
+      thing.from = 0.01;
+      fitBox(thing.collider, thing.x, thing.z, 0.5 * thing.scale);
+      if (!standing) return;
+      thing.state = 'up';
+      thing.group.scale.setScalar(thing.scale);
+      moving.delete(thing);
+    } else {
+      thing.from = 0;
+      thing.radius = thing.baseRadius;
+      if (standing) {
+        thing.state = 'up';
+        thing.mesh.scale.copy(thing.base);
+        thing.mesh.position.set(thing.x, thing.baseY, thing.z);
+        crumbling.delete(thing);
+      }
+      fitRock(thing);
+    }
+  }
+
+  // Where a giant's health bar goes (null: it isn't standing)
+  function giantTop(kind, id) {
+    const thing = kind === 'tree' ? trees[id] : rocks[id];
+    if (!thing || thing.big <= 1 || thing.state === 'down' || thing.state === 'gone') return null;
+    return new THREE.Vector3(thing.x, kind === 'tree' ? 3.4 : thing.scale * thing.big * 0.75 + 0.6, thing.z);
+  }
+
   function updateRocks(dt) {
     for (const rock of crumbling) {
       rock.t += dt;
-      const { mesh, base } = rock;
+      const { mesh } = rock;
+      const base = _rb.copy(rock.base).multiplyScalar(rock.big);
       if (rock.state === 'up') {
         rock.shake *= Math.exp(-9 * dt);
         mesh.position.x = rock.x + Math.sin(rock.t * 55) * 0.04 * rock.shake * Math.min(1, rock.scale * 2);
@@ -971,7 +1076,7 @@ export function buildWorld(map) {
       } else if (rock.state === 'breaking') {
         const p = Math.min(rock.t / ROCK_BREAK, 1);
         mesh.scale.copy(base).multiplyScalar(Math.max(0.01, 1 - p * p));
-        mesh.position.set(rock.x, rock.baseY - p * rock.scale * 0.2, rock.z);
+        mesh.position.set(rock.x, (rock.baseY - p * rock.scale * 0.2) * rock.big, rock.z);
         for (const chip of rock.chips) {
           chip.v.y -= 22 * dt;
           chip.mesh.position.addScaledVector(chip.v, dt);
@@ -992,7 +1097,7 @@ export function buildWorld(map) {
         }
       } else if (rock.state === 'growing') {
         const p = Math.min(rock.t / ROCK_GROW, 1);
-        mesh.scale.copy(base).multiplyScalar(Math.max(0.01, easeOutBack(p)));
+        mesh.scale.copy(base).multiplyScalar(Math.max(0.01, rock.from + (1 - rock.from) * easeOutBack(p)));
         if (p >= 1) {
           rock.state = 'up';
           crumbling.delete(rock);
@@ -1007,7 +1112,8 @@ export function buildWorld(map) {
     updateRocks(dt);
     for (const tree of moving) {
       tree.t += dt;
-      const { group, base, axis, scale: k } = tree;
+      const { group, base, axis } = tree;
+      const k = tree.scale * tree.big;
       if (tree.state === 'falling') {
         // Slow at first, then faster, with a little bounce as it lands
         const p = Math.min(tree.t / TREE_FALL, 1);
@@ -1025,7 +1131,7 @@ export function buildWorld(map) {
         }
       } else if (tree.state === 'growing') {
         const p = Math.min(tree.t / TREE_GROW, 1);
-        group.scale.setScalar(k * Math.max(0.01, easeOutBack(p)));
+        group.scale.setScalar(Math.max(0.01, tree.from + (k - tree.from) * easeOutBack(p)));
         if (p >= 1) {
           tree.state = 'up';
           moving.delete(tree);
@@ -1060,11 +1166,14 @@ export function buildWorld(map) {
     shakeRock,
     breakRock,
     regrowRock,
+    makeGiant,
+    giantTop,
     // every rock whole again, at once (arriving on an island we were on
     // before), each in its place as counted in moved ([[id, n]], see Growing back elsewhere)
     restoreAllRocks(moved = []) {
       const at = new Map(moved);
       for (const rock of rocks) {
+        unGiant('rock', rock);
         regrowRock(rock.id, { instant: true });
         place(rock, at.get(rock.id) ?? 0);
       }
@@ -1073,6 +1182,7 @@ export function buildWorld(map) {
     standAllTrees(moved = []) {
       const at = new Map(moved);
       for (const tree of trees) {
+        unGiant('tree', tree);
         regrowTree(tree.id, { instant: true });
         place(tree, at.get(tree.id) ?? 0);
       }

@@ -27,6 +27,7 @@ const CONTROLS = [
   ['Hold T', 'Speed up time at home'],
   ['Right click', 'Cancel: stop building or walking, put down what you carry in the backpack, or close it'],
   ['Esc', 'Menu'],
+  ['`', 'Developer tools: grow a giant tree or rock'],
   ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
 ];
 const TOUCH_CONTROLS = [

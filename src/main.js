@@ -21,13 +21,16 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { STARTER_KIT } from '../shared/balance.js';
+import { STARTER_KIT, GIANT } from '../shared/balance.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
+import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
+import { createGiantBars } from './giantbar.js';
+import { createDevTools } from './devtools.js';
 
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
@@ -329,6 +332,8 @@ function resetFarm() {
   farmMined.clear();
   farmTreeSites.clear();
   farmRockSites.clear();
+  farmGiants = new Giants();
+  giantBars.clear();
   resetChopping();
   resetMining();
   animals.clear();
@@ -607,7 +612,7 @@ const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
 const farmTreeSites = new Map(); // how often each grew back: id -> count (which of its places it is in: shared/level.js nextSite)
 
-const chopPrompt = (tree) => `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`;
+const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`);
 
 // the standing tree within reach, nearest first
 function treeInReach() {
@@ -616,7 +621,7 @@ function treeInReach() {
   let bestD = CHOP_REACH;
   for (const tree of world.trees) {
     if (tree.state !== 'up' || chop.pending.has(tree.id)) continue;
-    const d = Math.hypot(tree.x - player.position.x, tree.z - player.position.z) - 0.25 * tree.scale;
+    const d = Math.hypot(tree.x - player.position.x, tree.z - player.position.z) - 0.25 * tree.scale * tree.big;
     if (d < bestD) {
       best = tree;
       bestD = d;
@@ -631,8 +636,9 @@ function swingAxe() {
   if (!tree) return false;
   const now = clock.elapsedTime;
   if (anim.swing >= 0 || now < chop.nextSwing) return true;
-  if (!inventory.canAdd('wood', mostWood(tree.scale))) {
-    inventory.add('wood', mostWood(tree.scale)); // (says "Inventory full")
+  const most = tree.big > 1 ? mostGiantLoot('tree', tree.scale) : mostWood(tree.scale);
+  if (!inventory.canAdd('wood', most)) {
+    inventory.add('wood', most); // (says "Inventory full")
     chop.nextSwing = now + 1;
     return true;
   }
@@ -651,7 +657,8 @@ function updateChopping() {
     const tree = world.trees[chop.id];
     if (tree?.state === 'up' && !chop.pending.has(tree.id)) {
       world.shakeTree(tree.id, player.position);
-      if (++chop.hits >= swingsWith(TREE.hits)) {
+      if (tree.big > 1) hitGiant('tree', tree);
+      else if (++chop.hits >= swingsWith(TREE.hits)) {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -678,7 +685,9 @@ function treeFelled(m) {
   if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
   // it falls away from whoever felled it
   world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
-  if (m.by === myId) inventory.add('wood', m.count);
+  const got = myShare(m);
+  if (got) inventory.add('wood', got);
+  if (m.shares) giantDown('tree', m.id, got, 'wood');
 }
 
 // On a farm played alone: the tree is ours to fell
@@ -704,7 +713,7 @@ const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
 const farmRockSites = new Map(); // (as farmTreeSites)
 
-const minePrompt = (rock) => `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`;
+const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`);
 
 // the whole rock within reach, nearest first
 function rockInReach() {
@@ -728,8 +737,9 @@ function swingPick() {
   if (!rock) return false;
   const now = clock.elapsedTime;
   if (anim.swing >= 0 || now < mine.nextSwing) return true;
-  if (!inventory.canAdd('stone', mostStone(rock.scale))) {
-    inventory.add('stone', mostStone(rock.scale)); // (says "Inventory full")
+  const most = rock.big > 1 ? mostGiantLoot('rock', rock.scale) : mostStone(rock.scale);
+  if (!inventory.canAdd('stone', most)) {
+    inventory.add('stone', most); // (says "Inventory full")
     mine.nextSwing = now + 1;
     return true;
   }
@@ -748,7 +758,8 @@ function updateMining() {
     const rock = world.rocks[mine.id];
     if (rock?.state === 'up' && !mine.pending.has(rock.id)) {
       world.shakeRock(rock.id);
-      if (++mine.hits >= swingsWith(ROCK.hits)) {
+      if (rock.big > 1) hitGiant('rock', rock);
+      else if (++mine.hits >= swingsWith(ROCK.hits)) {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -774,13 +785,124 @@ function rockMined(m) {
   mine.pending.delete(m.id);
   if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
   world.breakRock(m.id);
-  if (m.by === myId) inventory.add('stone', m.count);
+  const got = myShare(m);
+  if (got) inventory.add('stone', got);
+  if (m.shares) giantDown('rock', m.id, got, 'stone');
 }
 
 // On a farm played alone: the rock is ours to break
 function mineAlone(rock) {
   rockMined({ id: rock.id, by: myId, count: stoneFor(rock.scale) });
   farmMined.set(rock.id, comeBackAt(ROCK.regrow));
+}
+
+// ---------- Giants ----------
+// Now and then of a morning a tree grows into a giant, or a rock
+// (shared/giants.js), on a lobby's island or a farm. Every swing at one goes
+// to the lobby or farm's room (HIT), which says how it is doing (GIANT: a
+// health bar over it, for everyone, giantbar.js) and, when it comes down, who
+// gets how much of what it gives (FELLED or MINED with shares). On a farm
+// played alone the page keeps its giants itself (farmGiants, saved with the
+// farm), and rolls for one each morning.
+let farmGiants = new Giants(); // the farm's (on a farm with helpers, as its room has them)
+let lobbyGiants = new Giants(); // the lobby's, as it has them
+const giantsHere = () => (place === 'lobby' ? lobbyGiants : farmGiants);
+const giantBars = createGiantBars(scene);
+if (new URLSearchParams(location.search).has('giant')) GIANT.chance = 1; // (testing: ?giant grows them on a farm played alone, now)
+
+function giantPrompt(kind, thing) {
+  const hp = giantsHere()[kind]?.hp ?? giantMax(kind);
+  return `E  ${kind === 'tree' ? 'Chop' : 'Mine'} the giant  ${Math.ceil(hp)}/${giantMax(kind)}`;
+}
+
+// Our share of a FELLED or MINED: all of it, if we did it alone
+const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === myId)?.[1] ?? 0 : m.by === myId ? m.count : 0);
+
+// A swing of ours landed on a giant
+function hitGiant(kind, thing) {
+  const r = (v) => Math.round(v * 100) / 100;
+  const tool = inventory.selectedId();
+  const conn = place === 'lobby' ? net : farmNet;
+  if (conn) return conn.send({ t: C.HIT, kind, id: thing.id, x: r(thing.x), z: r(thing.z), size: r(thing.scale), tool });
+  // (a farm played alone)
+  const hit = farmGiants.hit(kind, thing.id, myId, tool, thing.scale);
+  if (!hit) return;
+  giantBars.show(kind, thing.id, hit.hp, giantMax(kind), world.giantTop(kind, thing.id), clock.elapsedTime);
+  if (!hit.shares) return;
+  const m = { id: thing.id, by: myId, count: hit.loot, shares: hit.shares };
+  if (kind === 'tree') {
+    treeFelled(m);
+    farmFelled.set(thing.id, comeBackAt(TREE.regrow));
+  } else {
+    rockMined(m);
+    farmMined.set(thing.id, comeBackAt(ROCK.regrow));
+  }
+}
+
+// GIANT, from a lobby or a farm's room: one has grown (by 0), or someone swung at it
+function giantNews(m) {
+  if (!GIANT_KINDS.includes(m.kind)) return;
+  giantsHere().set(m.kind, m.id, m.hp);
+  if (!m.by) {
+    world.makeGiant(m.kind, m.id);
+    return;
+  }
+  // (our own swing shook it already)
+  if (m.by !== myId) {
+    if (m.kind === 'tree') world.shakeTree(m.id, remotes.positionOf(m.by));
+    else world.shakeRock(m.id);
+  }
+  giantBars.show(m.kind, m.id, m.hp, m.max, world.giantTop(m.kind, m.id), clock.elapsedTime);
+}
+
+// A giant came down: no more giants of its kind here
+function giantDown(kind, id, got, item) {
+  giantsHere().felled(kind);
+  giantBars.remove(kind, id);
+  if (got) hud.flash(`+${got} ${item}!`);
+}
+
+// The giants as a lobby or farm has them (Giants toSave()), drawn on its island
+function showGiants(giants, save, island) {
+  const loaded = Giants.fromSave(save);
+  for (const kind of GIANT_KINDS) {
+    giants[kind] = loaded[kind];
+    giants.done[kind] = loaded.done[kind];
+    if (loaded[kind]) island.makeGiant(kind, loaded[kind].id, { instant: true });
+  }
+  giants.day = loaded.day;
+}
+
+// Developer tools (devtools.js): the standing tree or rock nearest us grows
+// into a giant now (its lobby or farm's room says so to everyone)
+function devGiant(kind) {
+  if (place !== 'home' && place !== 'lobby') return;
+  if (giantsHere()[kind]) return inventory.notify(`There is a giant ${kind} here already`);
+  let best = null;
+  let bestD = Infinity;
+  for (const thing of kind === 'tree' ? world.trees : world.rocks) {
+    const d = Math.hypot(thing.x - player.position.x, thing.z - player.position.z);
+    if (thing.state === 'up' && d < bestD) [best, bestD] = [thing, d];
+  }
+  if (!best) return inventory.notify(`No ${kind} standing here`);
+  const conn = place === 'lobby' ? net : farmNet;
+  if (conn) return conn.send({ t: C.DEV_GIANT, kind, id: best.id });
+  if (farmVisit) return;
+  farmGiants.setCounts(worlds.home.trees.length, worlds.home.rocks.length);
+  if (!farmGiants.grow(kind, best.id)) return;
+  worlds.home.makeGiant(kind, best.id);
+  inventory.notify(`A giant ${kind} has grown on the farm!`);
+}
+createDevTools({ onGiant: devGiant });
+
+// Each morning, on a farm played alone: maybe a giant
+function rollFarmGiants() {
+  if (place !== 'home' || farmNet || farmVisit || !farmOnScreen) return;
+  farmGiants.setCounts(worlds.home.trees.length, worlds.home.rocks.length);
+  for (const [kind, id] of farmGiants.roll(gameDay(farmHours()), { tree: farmFelled, rock: farmMined })) {
+    worlds.home.makeGiant(kind, id);
+    inventory.notify(kind === 'tree' ? 'A giant tree has grown on the farm!' : 'A giant rock has surfaced on the farm!');
+  }
 }
 
 // ...and the farm's trees grow back and its rocks surface again when it's
@@ -812,7 +934,7 @@ HOME.canGrow = (x, z) => [[0, 0], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 
 // The farm's felled trees and broken rocks as saved, or as its room has them:
 // [[id, when it comes back]], and where each stands (treeSites, rockSites:
 // [[id, how often it grew back]])
-function showFarmWilds({ felled, mined, treeSites, rockSites }) {
+function showFarmWilds({ felled, mined, treeSites, rockSites, giants }) {
   const now = Date.now();
   for (const [id, n] of siteMap(treeSites, worlds.home.trees.length)) farmTreeSites.set(id, n);
   for (const [id, n] of siteMap(rockSites, worlds.home.rocks.length)) farmRockSites.set(id, n);
@@ -828,6 +950,7 @@ function showFarmWilds({ felled, mined, treeSites, rockSites }) {
     worlds.home.breakRock(id, { instant: true });
     farmMined.set(id, at);
   }
+  showGiants(farmGiants, giants, worlds.home);
 }
 
 // ---------- Bopping (lobbies) ----------
@@ -1818,7 +1941,7 @@ let session = null; // { code, room } once a lobby has welcomed us
 let myId = 0;
 let sendTimer = 0;
 let farmOnScreen = false; // the home farm's soil and crops are in the scene
-const LOBBY_DAWN = 9; // a lobby's day starts mid-morning, in good light
+// (a lobby's day starts mid-morning, in good light: LOBBY_DAWN, shared/giants.js)
 
 const remotes = new Remotes(scene);
 const touch = new TouchControls(); // (only shown on a touch screen)
@@ -2018,6 +2141,7 @@ async function joinFarm(id) {
     myId = m.id;
     farmer.setShirt(m.color);
     showRoomFarm(m);
+    conn.send({ t: C.COUNT, trees: worlds.home.trees.length, rocks: worlds.home.rocks.length });
     farmOnScreen = m.mine;
     if (m.mine) farmSync.handedToRoom();
     chest.setOwner(m.mine, m.farm.owner);
@@ -2114,6 +2238,7 @@ async function joinFarm(id) {
     world.regrowRock(m.id, { n: m.n ?? 0 });
   });
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id));
+  on(S.GIANT, giantNews);
   on(S.CHEST, (m) => {
     roomChest = m.items;
     chest.setItems(m.items);
@@ -2223,6 +2348,8 @@ function leaveLobbyWorld() {
   clearDrops();
   resetChopping();
   resetMining();
+  lobbyGiants = new Giants();
+  giantBars.clear();
   remotes.clear();
   keys.clear();
   showCodeInAddress('');
@@ -2263,6 +2390,10 @@ function joinLobby({ name, code }) {
     resetMining();
     world.restoreAllRocks(siteMap(m.rockSites, world.rocks.length));
     for (const id of m.mined ?? []) world.breakRock(id, { instant: true });
+    lobbyGiants = new Giants();
+    giantBars.clear();
+    showGiants(lobbyGiants, m.giants, world);
+    conn.send({ t: C.COUNT, trees: world.trees.length, rocks: world.rocks.length });
     clearDrops();
     for (const drop of m.drops ?? []) addDrop(drop);
     lobbyNames.clear();
@@ -2313,6 +2444,7 @@ function joinLobby({ name, code }) {
   on(S.MINED, rockMined);
   on(S.RESURFACED, (m) => world.regrowRock(m.id, { n: m.n ?? 0 }));
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
+  on(S.GIANT, giantNews);
   on(S.BOPPED, (m) => bopped(m));
   on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z]));
   on(S.PICKED, (m) => {
@@ -2396,6 +2528,7 @@ function captureFarm() {
     mined: [...farmMined],
     treeSites: [...farmTreeSites],
     rockSites: [...farmRockSites],
+    giants: farmGiants.toSave(),
     chest: { ...ownChest }, // (on a farm with helpers, what didn't fit in the room's)
     ...animals.capture(), // hens, cows, sheep, eggs
   };
@@ -2603,6 +2736,8 @@ function update(dt) {
 
   farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: !inputBlocked(), at: player.position });
   regrowFarm();
+  rollFarmGiants();
+  giantBars.update(t);
   windTime.value = t;
   _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
   world.updateTreeFade(dt, _chest, camera);

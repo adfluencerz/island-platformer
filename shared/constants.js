@@ -1,7 +1,7 @@
 // Numbers both the server and the client go by. Pure JS: no DOM, no three.js,
 // no Node modules, so the same file runs in the browser and on the server.
 
-export const PROTOCOL_VERSION = 7; // v4: chopping trees; v5: farms with helpers; v6: mining rocks; v7: building on farms, bopping in lobbies
+export const PROTOCOL_VERSION = 8; // v4: chopping trees; v5: farms with helpers; v6: mining rocks; v7: building on farms, bopping in lobbies; v8: giant trees and rocks
 
 export const TICK_RATE = 20; // room ticks (and snapshots) per second
 export const TICK_DT = 1 / TICK_RATE;
@@ -9,6 +9,12 @@ export const INTERP_DELAY = 0.1; // seconds remote players are drawn in the past
 
 // How long a game day lasts, and how long tilled soil stays bare: shared/balance.js
 export { DAY_LENGTH_SECONDS, SOIL_BARE_HOURS } from './balance.js';
+
+// Developer tools (src/devtools.js: on a desktop, ` opens them): 'everyone'
+// for now; 'local' keeps them to a game run with npm run dev (the page's
+// import.meta.env.DEV, the server's GAME_DEV)
+export const DEV_TOOLS = 'everyone';
+export const devToolsOn = (local) => DEV_TOOLS === 'everyone' || !!local;
 
 export const MAX_PLAYERS = 8;
 export const MAX_NAME = 16;
