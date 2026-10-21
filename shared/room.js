@@ -47,7 +47,7 @@ const MAX_ROCKS = 2000;
 const MAX_DROPS = 60;
 const round2 = (v) => Math.round(v * 100) / 100;
 const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
-const WHERE = { ledge: 'up on a ledge', meadow: 'out in the meadow', mushroom: 'among the mushrooms', bush: 'in a berry bush' };
+const WHERE = { ledge: 'up on a ledge', meadow: 'out in the meadow', mushroom: 'among the mushrooms', bush: 'in a berry bush', heather: 'on the heath' };
 
 export class Room extends Place {
   // seed: the island's (shared/worldgen.js). rand: () => [0, 1), for the loot

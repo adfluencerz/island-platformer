@@ -14,7 +14,8 @@ import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, woodFor, stoneFor, mostStone } from '../shared/level.js';
-import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32 } from '../shared/worldgen.js';
+import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN } from '../shared/worldgen.js';
+import { fingerprint } from './seed-fingerprint.js';
 
 let passed = 0;
 async function test(name, fn) {
@@ -60,12 +61,61 @@ await test('the classic island is as it was made, and sound', () => {
   assert.deepEqual(checkIsland(classic), []);
 });
 
+// Old seeds must grow the very island they always did, whatever the world
+// learns later. Never change these numbers: grow the world behind a newer
+// generation instead (shared/worldgen.js, genOf).
+const GEN_1_SEEDS = {
+  'classic': 2693436923,
+  'mossy-cove-7': 3115431686,
+  'dewy-glade-31': 693153227,
+  'sunny-knoll-5': 1916120231,
+  'golden-fen-0': 1743048432,
+  'quiet-ridge-88': 48222456,
+  'willow-isle-12': 2930347281,
+  'pebble-nook-64': 2968322765,
+  'honey-grove-3': 2807543281,
+  'amber-bluff-50': 1860705309,
+  'fern-dell-77': 3709163302,
+  'velvet-shore-19': 2854819371,
+  'my-island': 1496012741,
+};
+await test('old seeds (generation 1) grow exactly the islands they always did', () => {
+  for (const [seed, print] of Object.entries(GEN_1_SEEDS)) {
+    assert.equal(genOf(seed), 1, seed);
+    assert.equal(fingerprint(seed), print, `the island of "${seed}" changed`);
+    assert.ok(!islandFor(seed).heath && !islandFor(seed).spots.some(([k]) => k === 'heather'), `"${seed}" grew generation 2 things`);
+  }
+});
+
+await test('new seeds carry their generation, and grow what it added', () => {
+  assert.equal(genOf('dewy-glade-31-v2'), 2);
+  assert.equal(genOf('dewy-glade-31-v25'), 1);
+  assert.equal(genOf('classic'), 1);
+  assert.match(randomSeed(mulberry32(1)), new RegExp(`-v${CURRENT_GEN}$`));
+  assert.equal(normalizeSeed('Dewy Glade 31 V2'), 'dewy-glade-31-v2');
+  assert.ok(normalizeSeed(randomSeed(() => 0.999)).endsWith(`-v${CURRENT_GEN}`), 'the longest seed still fits its marker');
+  let heaths = 0;
+  for (let i = 0; i < 40; i++) {
+    const seed = `${randomSeed(mulberry32(i))}`;
+    const island = islandFor(seed);
+    assert.deepEqual(checkIsland(island), [], seed);
+    if (island.heath) {
+      heaths++;
+      assert.ok(island.spots.filter(([k]) => k === 'heather').length >= 3, seed);
+      assert.ok(island.spots.filter(([k]) => k === 'heather').every(([, x, , z]) => island.groundAt(x, z) === 'heath'), `${seed}: heather grows on the heath`);
+    }
+    // the same island with the marker taken off is the old kind, without the heath
+    assert.ok(!islandFor(seed.replace(/-v2$/, '-v1')).heath);
+  }
+  assert.ok(heaths >= 30, `most gen 2 islands have a heath (${heaths} of 40)`);
+});
+
 await test('every seed grows a sound island: spots on land, reachable, not inside a cliff or a toadstool', () => {
   for (let i = 0; i < 300; i++) {
-    const island = islandFor(randomSeed(mulberry32(i)) + i);
+    const island = islandFor(randomSeed(mulberry32(i)).replace(/-v2$/, '') + i);
     assert.deepEqual(checkIsland(island), [], `seed ${island.seed}`);
     assert.ok(island.spots.length >= 25, `seed ${island.seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS)) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
   }
 });
 

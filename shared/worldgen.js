@@ -8,12 +8,29 @@
 // (shared/room.js), the client draws it (src/maps.js, src/world.js).
 //
 // The seed "classic" is the hand-made island the game started with.
+//
+// The world grows over time (new biomes, plants, items, props), but an island
+// that players know must never change. So growth is versioned by the seed
+// itself: a seed ending in "-v2" is a generation 2 island, which has what
+// generation 2 added; every other seed is generation 1, exactly as it always
+// was. New random seeds get the newest marker (randomSeed), so typing an old
+// seed in still grows the old island. To grow the world further: raise
+// CURRENT_GEN, add the new things behind `gen >= N` using streams of their own
+// (see growExtras), and pin a few old seeds in the tests so they stay put.
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
 const WILD_HALF = 34; // tiles reach this far from the middle, on both axes
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
+export const CURRENT_GEN = 2;
+export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
+
+// Which generation of the world a seed grows: "...-v2" is 2, any other seed 1
+export function genOf(seed) {
+  const m = /-v([1-9])$/.exec(String(seed));
+  return m ? Math.min(CURRENT_GEN, Number(m[1])) : 1;
+}
 
 // ---------- Randomness ----------
 export function mulberry32(seed) {
@@ -45,10 +62,10 @@ const SEED_WORDS = [
   ['hollow', 'meadow', 'brook', 'glade', 'knoll', 'cove', 'orchard', 'thicket', 'dell', 'fen', 'isle', 'grove', 'bluff', 'nook', 'shore', 'ridge'],
 ];
 
-// A fresh seed for a new lobby, e.g. "dewy-glade-31". rand: () => [0, 1)
+// A fresh seed for a new lobby, e.g. "dewy-glade-31-v2" (of the newest generation). rand: () => [0, 1)
 export function randomSeed(rand = Math.random) {
   const [adj, noun] = SEED_WORDS.map((words) => words[Math.floor(rand() * words.length)]);
-  return `${adj}-${noun}-${Math.floor(rand() * 100)}`;
+  return `${adj}-${noun}-${Math.floor(rand() * 100)}-v${CURRENT_GEN}`;
 }
 
 // ---------- Geometry ----------
@@ -80,6 +97,7 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   toadstools: [[x, z, cap size, cap top], ...]
 //   woods: [[x, z, r], ...]: forest patches (ragged edges)
 //   meadow: { x, z, r }, trails: [polylines], stones: [angles round the spawn]
+//   heath: { x, z, r } | undefined: a heather moor (generation 2 and up)
 //   spots: [[kind, x, y, z], ...]: a spot's id is its index
 function finishIsland(desc) {
   const { coast, pond } = desc;
@@ -103,8 +121,8 @@ function finishIsland(desc) {
   const topOver = (x, z, margin = 0) =>
     tops.find((t) => Math.abs(x - t.x) < t.w / 2 + margin && Math.abs(z - t.z) < t.d / 2 + margin) ?? null;
   // what the ground is at (x, z): null (the sea), 'pond', 'sand', 'stone' (the
-  // stone circle), 'path', 'meadow', 'moss' (the woods) or 'grass'
-  const { spawn, meadow, trails } = desc;
+  // stone circle), 'path', 'meadow', 'heath' (the moor), 'moss' (the woods) or 'grass'
+  const { spawn, meadow, trails, heath } = desc;
   const groundAt = (x, z) => {
     if (!isLand(x, z)) return null;
     if (inPond(x, z)) return 'pond';
@@ -113,6 +131,10 @@ function finishIsland(desc) {
     if (distToPaths(x, z, trails) < 0.9) return 'path';
     const a = Math.atan2(z - meadow.z, x - meadow.x);
     if (Math.hypot(x - meadow.x, z - meadow.z) < meadow.r + Math.sin(a * 4) * 0.8) return 'meadow';
+    if (heath) {
+      const h = Math.atan2(z - heath.z, x - heath.x);
+      if (Math.hypot(x - heath.x, z - heath.z) < heath.r + Math.sin(h * 3 + 1) * 0.9) return 'heath';
+    }
     if (woodsAt(x, z) > 0) return 'moss';
     return 'grass';
   };
@@ -208,6 +230,7 @@ const NORTH = -Math.PI / 2;
 const SOUTH = Math.PI / 2;
 const STEP_RISE = 1.2;
 const SPOT_COUNTS = { meadow: 4, trail: 3, bush: 7, mushroom: 7 };
+const HEATHER_SPOTS = 5; // (gen 2)
 
 function growIsland(seed, attempt) {
   // One stream per part, so a change to how one part grows leaves the rest of
@@ -434,8 +457,51 @@ function growIsland(seed, attempt) {
   // the ledges first, like the classic island (the order is the spots' ids)
   const order = { ledge: 0, meadow: 1, bush: 2, mushroom: 3 };
   spots.sort((a, b) => order[a[0]] - order[b[0]]);
-  const island = finishIsland({ ...draft, spots });
+  // What later generations added comes last, so the spots above keep their ids
+  let heath;
+  if (genOf(seed) >= 2) {
+    heath = growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn });
+    for (const spot of heath?.spots ?? []) spots.push(spot);
+  }
+  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }) });
   return checkIsland(island).length ? null : island;
+}
+
+// ---------- Generation 2: the heath ----------
+// A moor of heather in a clear stretch of land, with heather to pick on it.
+// Streams of its own ('heath', 'heather'), so it never moves anything else.
+// An island with no room for one just goes without.
+function growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn }) {
+  const h = mulberry32(hashSeed(`${seed}/${attempt}/heath`));
+  const rand = (min, max) => min + h() * (max - min);
+  const r = round1(rand(...HEATH_RADIUS));
+  const rocks = [...draft.terraces.map(([x, z, w, d]) => ({ x, z, size: Math.max(w, d) })), ...draft.toadstools.map(([x, z, s]) => ({ x, z, size: s }))];
+  let area = null;
+  for (let n = 0; n < 300 && !area; n++) {
+    const { x, z } = inland(rand(0, Math.PI * 2), rand(0.2, 0.8));
+    const rx = round1(x);
+    const rz = round1(z);
+    if (shoreDist(rx, rz) < r * 0.7 + 2.5) continue;
+    if (Math.hypot(rx - pond.x, rz - pond.z) < pond.r + r + 1.5) continue;
+    if (Math.hypot(rx - meadow.x, rz - meadow.z) < meadow.r + r + 1) continue;
+    if (Math.hypot(rx - spawn.x, rz - spawn.z) < r + STONE_CIRCLE + 3) continue;
+    if (rocks.some((t) => Math.hypot(rx - t.x, rz - t.z) < r + t.size / 2 + 2)) continue;
+    area = { x: rx, z: rz, r };
+  }
+  if (!area) return null;
+  const q = mulberry32(hashSeed(`${seed}/${attempt}/heather`));
+  const found = [];
+  for (let n = 0; n < 400 && found.length < HEATHER_SPOTS; n++) {
+    const a = q() * Math.PI * 2;
+    const d = Math.sqrt(q()) * (area.r - 1.3);
+    const x = round1(area.x + Math.cos(a) * d);
+    const z = round1(area.z + Math.sin(a) * d);
+    if (!groundOk(x, z) || distToPaths(x, z, draft.trails) < 1.3 || found.some(([, ox, , oz]) => Math.hypot(x - ox, z - oz) < 2.4)) continue;
+    found.push(['heather', x, 0, z]);
+    taken.push([x, z]);
+  }
+  if (found.length < 3) return null;
+  return { area, spots: found };
 }
 
 const round1 = (v) => Math.round(v * 10) / 10;
