@@ -33,7 +33,7 @@
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollLoot, woodFor, stoneFor, spawnPoint } from './level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollLoot, woodFor, stoneFor, spawnPoint, nextSite, siteMap } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
@@ -65,6 +65,9 @@ export class Room extends Place {
     });
     this.felled = new Map(); // tree id -> when it grows back (ms)
     this.mined = new Map(); // rock id -> when a new one surfaces (ms)
+    // how often each tree and rock grew back (so which of its places it is in: shared/level.js nextSite)
+    this.treeSites = new Map(); // tree id -> count
+    this.rockSites = new Map(); // rock id -> count
     this.drops = new Map(); // id -> { id, item, count, x, y, z, until }
     this.dropId = 0;
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
@@ -122,6 +125,8 @@ export class Room extends Place {
       spots: this.spots.map(({ id, kind, x, y, z, item, count }) => [id, kind, x, y, z, item, count]),
       felled: [...this.felled.keys()],
       mined: [...this.mined.keys()],
+      treeSites: [...this.treeSites],
+      rockSites: [...this.rockSites],
       drops: [...this.drops.values()].map(({ id, item, count, x, y, z }) => [id, item, count, x, y, z]),
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
@@ -290,18 +295,17 @@ export class Room extends Place {
       }
     }
 
-    for (const [id, at] of this.felled) {
-      if (now < at) continue;
-      this.felled.delete(id);
-      this.changed = true;
-      this.broadcast({ t: S.REGROWN, id });
-    }
-
-    for (const [id, at] of this.mined) {
-      if (now < at) continue;
-      this.mined.delete(id);
-      this.changed = true;
-      this.broadcast({ t: S.RESURFACED, id });
+    // (each in the next of its places)
+    for (const [list, sites, t] of [[this.felled, this.treeSites, S.REGROWN], [this.mined, this.rockSites, S.RESURFACED]]) {
+      for (const [id, at] of list) {
+        if (now < at) continue;
+        list.delete(id);
+        const n = nextSite(sites.get(id));
+        if (n) sites.set(id, n);
+        else sites.delete(id);
+        this.changed = true;
+        this.broadcast({ t, id, n });
+      }
     }
 
     for (const drop of this.drops.values()) {
@@ -328,6 +332,8 @@ export class Room extends Place {
       spots: this.spots.map(({ id, kind, x, z, item, count, regrowAt }) => [id, kind, x, z, item, count, regrowAt]),
       felled: [...this.felled],
       mined: [...this.mined],
+      treeSites: [...this.treeSites],
+      rockSites: [...this.rockSites],
       seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood, stone }) => ({ id, key, name, color, finds, rares, wood, stone })),
     };
   }
@@ -357,6 +363,8 @@ export class Room extends Place {
     for (const [id, at] of save.mined ?? []) {
       if (Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && Number.isFinite(at)) room.mined.set(id, at);
     }
+    room.treeSites = siteMap(save.treeSites, MAX_TREES);
+    room.rockSites = siteMap(save.rockSites, MAX_ROCKS);
     const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
     for (const s of (save.seats ?? []).slice(0, room.maxPlayers)) {
       if (!Number.isInteger(s.id) || s.id < 1 || room.players.has(s.id) || typeof s.key !== 'string' || !s.key) continue;

@@ -30,17 +30,17 @@ export const C = {
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; drops: [[id, item, count, x, y, z], ...])
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...])
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count }: spot id was emptied by player `by`
   DENY: 'deny', // { id }: that did not count (someone got there first, or too far)
   FELLED: 'felled', // { id, by, count, at }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms)
-  REGROWN: 'regrown', // { id }: tree id has grown back
+  REGROWN: 'regrown', // { id, n }: tree id has grown back, in its place n (shared/level.js nextSite)
   CHOP_DENY: 'chopDeny', // { id }: that chop did not count (already down, too far, too fast)
   MINED: 'mined', // { id, by, count, at }: rock id was broken up; player `by` got count stone (at: on a farm, when it comes back, ms)
-  RESURFACED: 'resurfaced', // { id }: rock id is back
+  RESURFACED: 'resurfaced', // { id, n }: rock id is back, in its place n
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
   DROP: 'drop', // { id, item, count, x, y, z }: something dropped, for anyone to walk into
@@ -49,7 +49,7 @@ export const S = {
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, felled, mined, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, felled, mined, treeSites, rockSites, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
   //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
   //   chest: { item: count }. hours: the farm's clock, in game hours since it began)

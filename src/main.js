@@ -21,7 +21,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom, pieceTiles, inHouseField } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -326,6 +326,8 @@ function resetFarm() {
   worlds.home.restoreAllRocks();
   farmFelled.clear();
   farmMined.clear();
+  farmTreeSites.clear();
+  farmRockSites.clear();
   resetChopping();
   resetMining();
   animals.clear();
@@ -563,6 +565,7 @@ const CHOP_REACH = 1.3; // from the bark
 const SWING_GAP = 0.15; // seconds between swings, so everyone else sees each one
 const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
+const farmTreeSites = new Map(); // how often each grew back: id -> count (which of its places it is in: shared/level.js nextSite)
 
 const chopPrompt = (tree) => `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`;
 
@@ -659,6 +662,7 @@ const comeBackAt = ([lo, hi]) => Math.round(Date.now() + (lo + Math.random() * (
 const MINE_REACH = 1.3; // from the rock's edge, as it is drawn
 const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
+const farmRockSites = new Map(); // (as farmTreeSites)
 
 const minePrompt = (rock) => `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`;
 
@@ -739,24 +743,41 @@ function mineAlone(rock) {
   farmMined.set(rock.id, comeBackAt(ROCK.regrow));
 }
 
-// ...and the farm's trees grow back and its rocks surface again when it's time
-// (a farm's room says so itself)
+// ...and the farm's trees grow back and its rocks surface again when it's
+// time, each somewhere else (a farm's room says so itself)
 function regrowFarm() {
   if (farmNet) return;
   const now = Date.now();
-  for (const [list, regrow] of [[farmFelled, worlds.home.regrowTree], [farmMined, worlds.home.regrowRock]]) {
+  for (const [list, sites, regrow] of [[farmFelled, farmTreeSites, worlds.home.regrowTree], [farmMined, farmRockSites, worlds.home.regrowRock]]) {
     for (const [id, at] of list) {
       if (now < at) continue;
       list.delete(id);
-      regrow(id);
+      setSite(sites, id, nextSite(sites.get(id)));
+      regrow(id, { n: sites.get(id) ?? 0 });
     }
   }
 }
 
+function setSite(sites, id, n) {
+  if (n) sites.set(id, n);
+  else sites.delete(id);
+}
+
+// Nothing grows back on tilled soil or where something is built
+HOME.canGrow = (x, z) => [[0, 0], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]].every(([dx, dz]) => {
+  const key = tileKeyFor(x + dx, z + dz);
+  return !farmTiles.has(key) && !buildings.get(key);
+});
+
 // The farm's felled trees and broken rocks as saved, or as its room has them:
-// [[id, when it comes back]]
-function showFarmWilds({ felled, mined }) {
+// [[id, when it comes back]], and where each stands (treeSites, rockSites:
+// [[id, how often it grew back]])
+function showFarmWilds({ felled, mined, treeSites, rockSites }) {
   const now = Date.now();
+  for (const [id, n] of siteMap(treeSites, worlds.home.trees.length)) farmTreeSites.set(id, n);
+  for (const [id, n] of siteMap(rockSites, worlds.home.rocks.length)) farmRockSites.set(id, n);
+  worlds.home.standAllTrees([...farmTreeSites]);
+  worlds.home.restoreAllRocks([...farmRockSites]);
   for (const [id, at] of felled ?? []) {
     if (!(at > now) || !worlds.home.trees[id]) continue;
     worlds.home.fellTree(id, null, { instant: true });
@@ -1981,7 +2002,8 @@ async function joinFarm(id) {
   });
   on(S.REGROWN, (m) => {
     farmFelled.delete(m.id);
-    world.regrowTree(m.id);
+    setSite(farmTreeSites, m.id, m.n);
+    world.regrowTree(m.id, { n: m.n ?? 0 });
   });
   on(S.CHOP_DENY, (m) => chop.pending.delete(m.id));
   on(S.MINED, (m) => {
@@ -1990,7 +2012,8 @@ async function joinFarm(id) {
   });
   on(S.RESURFACED, (m) => {
     farmMined.delete(m.id);
-    world.regrowRock(m.id);
+    setSite(farmRockSites, m.id, m.n);
+    world.regrowRock(m.id, { n: m.n ?? 0 });
   });
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id));
   on(S.CHEST, (m) => {
@@ -2136,11 +2159,11 @@ function joinLobby({ name, code }) {
     setSpots(m.spots);
     // the trees that are down right now (the rest stand, even on an island we were on before)
     resetChopping();
-    world.standAllTrees();
+    world.standAllTrees(siteMap(m.treeSites, world.trees.length)); // (each where it grew back last)
     for (const id of m.felled ?? []) world.fellTree(id, null, { instant: true });
     // and the rocks that are broken
     resetMining();
-    world.restoreAllRocks();
+    world.restoreAllRocks(siteMap(m.rockSites, world.rocks.length));
     for (const id of m.mined ?? []) world.breakRock(id, { instant: true });
     clearDrops();
     for (const drop of m.drops ?? []) addDrop(drop);
@@ -2187,10 +2210,10 @@ function joinLobby({ name, code }) {
     showSpot(spot);
   });
   on(S.FELLED, treeFelled);
-  on(S.REGROWN, (m) => world.regrowTree(m.id));
+  on(S.REGROWN, (m) => world.regrowTree(m.id, { n: m.n ?? 0 }));
   on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
   on(S.MINED, rockMined);
-  on(S.RESURFACED, (m) => world.regrowRock(m.id));
+  on(S.RESURFACED, (m) => world.regrowRock(m.id, { n: m.n ?? 0 }));
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.BOPPED, (m) => bopped(m));
   on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z]));
@@ -2273,6 +2296,8 @@ function captureFarm() {
     built: buildings.list(),
     felled: [...farmFelled],
     mined: [...farmMined],
+    treeSites: [...farmTreeSites],
+    rockSites: [...farmRockSites],
     chest: { ...ownChest }, // (on a farm with helpers, what didn't fit in the room's)
     ...animals.capture(), // hens, cows, sheep, eggs
   };

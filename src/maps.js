@@ -159,6 +159,7 @@ export function wildMap(island) {
       [island.spawn.x, island.spawn.z, STONE_CIRCLE + 0.8],
     ],
     build: (ctx) => buildWildPieces(island, ctx),
+    growBackAnywhere: true, // (a tree from the full forest may grow back out on the grass: world.js)
     decorate({ scatter, addTree, addBush, addRock, isOpenGround, tileAt, rand }) {
       // The forest: thick on the moss, with big old trees among the pines
       scatter(more(130), 2.1, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.2) && offTrail(x, z, 1.8),

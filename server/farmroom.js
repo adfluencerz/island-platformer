@@ -25,6 +25,7 @@
 // The farm is kept in the farm's own file, in the page's save format (the
 // save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age]], built:
 // [[key, piece]], felled and mined: [[tree or rock id, when it comes back (ms)]],
+// treeSites and rockSites: [[id, how often it grew back]],
 // ...the animals }), so the owner's page can always play it, alone, from there; the
 // chest beside the save (farm.chest), where no page's save can write over it.
 // Each time the room writes the farm, farm.roomRev goes up: a page that
@@ -32,7 +33,7 @@
 import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS } from '../shared/constants.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
@@ -93,10 +94,13 @@ export class FarmRoom extends Place {
     const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
     this.felled = comingBack(saved?.felled, MAX_TREES); // tree id -> when it grows back (ms)
     this.mined = comingBack(saved?.mined, MAX_ROCKS); // rock id -> when a new one surfaces (ms)
+    // how often each grew back (which of its places it is in: shared/level.js nextSite)
+    this.treeSites = siteMap(saved?.treeSites, MAX_TREES);
+    this.rockSites = siteMap(saved?.rockSites, MAX_ROCKS);
     // the rest of the farm is the animals', as the owner's page saved them
     // (and the chest the page keeps when it plays the farm alone: the owner's
     // page puts what is in it into this one when it comes)
-    const { savedAt, hours, tilled, crops, built, felled, mined, chest, ...animals } = saved ?? {};
+    const { savedAt, hours, tilled, crops, built, felled, mined, treeSites, rockSites, chest, ...animals } = saved ?? {};
     this.animals = animals;
     this.chest = { ...(farm.chest ?? {}) };
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
@@ -146,6 +150,8 @@ export class FarmRoom extends Place {
       built: [...this.built],
       felled: [...this.felled],
       mined: [...this.mined],
+      treeSites: [...this.treeSites],
+      rockSites: [...this.rockSites],
       chest: this.chest,
       hours: round3(this.hours()),
       animals: this.animals,
@@ -309,7 +315,7 @@ export class FarmRoom extends Place {
         const state = msg.state;
         if (!p.owner || !state || typeof state !== 'object' || Array.isArray(state)) return;
         if (JSON.stringify(state).length > MAX_ANIMALS) return;
-        const { savedAt, hours, tilled, crops, built, felled, mined, chest, ...animals } = state; // (only the animals' part)
+        const { savedAt, hours, tilled, crops, built, felled, mined, treeSites, rockSites, chest, ...animals } = state; // (only the animals' part)
         this.animals = animals;
         this.changed = true;
         break;
@@ -383,12 +389,15 @@ export class FarmRoom extends Place {
 
   // ---------- Every tick ----------
   tickPlace(now) {
-    for (const [list, t] of [[this.felled, S.REGROWN], [this.mined, S.RESURFACED]]) {
+    for (const [list, sites, t] of [[this.felled, this.treeSites, S.REGROWN], [this.mined, this.rockSites, S.RESURFACED]]) {
       for (const [id, at] of list) {
         if (now < at) continue;
         list.delete(id);
+        const n = nextSite(sites.get(id)); // (in the next of its places)
+        if (n) sites.set(id, n);
+        else sites.delete(id);
         this.changed = true;
-        this.broadcast({ t, id });
+        this.broadcast({ t, id, n });
       }
     }
     if (now - this.soilAt >= SOIL_EVERY) {
@@ -419,6 +428,8 @@ export class FarmRoom extends Place {
       built: [...this.built],
       felled: [...this.felled],
       mined: [...this.mined],
+      treeSites: [...this.treeSites],
+      rockSites: [...this.rockSites],
     };
   }
 }

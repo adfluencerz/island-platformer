@@ -57,7 +57,7 @@ export const SPOT_KINDS = {
 // it stands again. `wood`: [min, max] logs for whoever felled it, from a tree
 // of size 1; bigger trees give more (`size`: the smallest and biggest there are,
 // so a page can't claim a giant).
-export const TREE = { hits: 4, regrow: [60, 120], wood: [2, 4], size: [0.8, 1.6] };
+export const TREE = { hits: 4, regrow: [600, 600], wood: [2, 4], size: [0.8, 1.6] };
 
 const treeSize = (size) => Math.min(TREE.size[1], Math.max(TREE.size[0], Number.isFinite(size) ? size : 1));
 
@@ -78,7 +78,22 @@ export const mostWood = (size) => Math.round(TREE.wood[1] * treeSize(size));
 // max] for a rock of size `per` (a fist-sized one); smaller ones still give
 // one, the big boulders by the terraces give the most (`size`: the smallest
 // and biggest rocks there are, so a page can't claim a mountain).
-export const ROCK = { hits: 3, regrow: [90, 150], stone: [1, 2], per: 0.4, size: [0.15, 1.1] };
+export const ROCK = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4, size: [0.15, 1.1] };
+
+// ---------- Growing back elsewhere ----------
+// A felled tree or a broken rock grows back in another of its few places
+// (src/world.js has where they are, the same on every page). A lobby or farm
+// keeps the count of how often each grew back, going round at SITE_ROUND (a
+// number any count of places up to four goes into); a tree or rock not in its
+// list is in its first place.
+export const SITE_ROUND = 12;
+export const nextSite = (n = 0) => (n + 1) % SITE_ROUND;
+
+// A saved or sent list of [[id, count]] as a Map, keeping only sensible entries (ids below most)
+export function siteMap(list, most) {
+  return new Map((Array.isArray(list) ? list : []).filter((entry) => Array.isArray(entry) &&
+    Number.isInteger(entry[0]) && entry[0] >= 0 && entry[0] < most && Number.isInteger(entry[1]) && entry[1] > 0 && entry[1] < SITE_ROUND));
+}
 
 const rockSize = (size) => Math.min(ROCK.size[1], Math.max(ROCK.size[0], Number.isFinite(size) ? size : ROCK.per));
 

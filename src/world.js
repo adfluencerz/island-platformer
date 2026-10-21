@@ -355,10 +355,11 @@ export function buildWorld(map) {
 
   // Is this spot a good place for decoration? On a tile where things grow,
   // clear of platforms' footprints and the places the map keeps clear.
+  let findingSites = false; // (then trees and rocks don't count: see Growing back elsewhere)
   function isOpenGround(x, z, margin = 0) {
     if (!map.decorTypes.has(tileAt(x, z))) return false;
     for (const box of platforms) {
-      if (box.ground) continue;
+      if (box.ground || (box.grows && findingSites)) continue;
       if (x > box.min.x - margin && x < box.max.x + margin && z > box.min.z - margin && z < box.max.z + margin) return false;
     }
     for (const [kx, kz, r] of map.keepClear) {
@@ -369,6 +370,9 @@ export function buildWorld(map) {
 
   // Scatter by rejection sampling: random spots, kept only if far enough
   // from earlier placements and the rule for that kind of decoration passes.
+  // (While placing, `scattering` is the rule it passed: a tree or rock keeps
+  // it, to find the other places it may grow back in; see Growing back elsewhere.)
+  let scattering = null;
   function scatter(count, minDist, accept, place, tries = count * 40) {
     const placed = [];
     for (let n = 0; n < tries && placed.length < count; n++) {
@@ -377,7 +381,9 @@ export function buildWorld(map) {
       if (!accept(x, z)) continue;
       if (placed.some(([px, pz]) => Math.hypot(x - px, z - pz) < minDist)) continue;
       placed.push([x, z]);
+      scattering = { accept, minDist };
       place(x, z);
+      scattering = null;
     }
   }
 
@@ -525,15 +531,18 @@ export function buildWorld(map) {
       obj.material = materials.get(obj.material);
     });
     // Trunk collider; tall enough that you can't jump up into the canopy
-    const collider = addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k });
+    const collider = addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k }, { grows: true });
     trees.push({
       id: trees.length, group: tree, scale: k, materials: [...materials.values()], fade: 1,
       x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
       state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
+      sites: [[x, z]], rule: scattering,
     });
   }
 
+  const bushes = []; // [x, z] (so nothing grows back into one)
   function addBush(x, z) {
+    bushes.push([x, z]);
     const leaf = pick(leaves);
     const k = rand(0.35, 0.6);
     addDecor(blobGeo, leaf, x, k * 0.6, z, k, k * 0.8, k, root);
@@ -554,16 +563,103 @@ export function buildWorld(map) {
     const k = rand(lo, hi);
     const rock = addDecor(rockGeo, pick(rockMats), x, k * 0.3, z, k * rand(1, 1.5), k * rand(0.5, 0.8), k, root);
     rock.rotation.set(rand(0, 0.4), rand(0, Math.PI * 2), rand(0, 0.4));
-    const collider = k > 0.6 ? addCollider({ x, y: k * 0.35, z, w: k * 1.4, h: k * 0.7, d: k * 1.4 }) : null;
+    const collider = k > 0.6 ? addCollider({ x, y: k * 0.35, z, w: k * 1.4, h: k * 0.7, d: k * 1.4 }, { grows: true }) : null;
     rocks.push({
       id: rocks.length, mesh: rock, x, z, scale: k, radius: Math.max(rock.scale.x, rock.scale.z) * 0.85,
       collider, base: rock.scale.clone(), baseY: rock.position.y,
       state: 'up', t: 0, shake: 0, chips: null,
+      sites: [[x, z]], rule: scattering,
     });
   }
 
   Object.assign(ctx, { addTree, addBush, addRock });
   map.decorate(ctx);
+
+  // ---------- Growing back elsewhere ----------
+  // A felled tree or a broken rock grows back somewhere else: each has a few
+  // places (sites: the first is where it grew at the start), all on ground
+  // its own rule (from scatter) accepts, clear of every other tree, rock and
+  // bush and each other's places. They come from their own seeded draws, after
+  // everything else is placed, so every page has the same and nothing else
+  // moves. Which place it stands in is its lobby's or farm's count of how
+  // often it grew back (see place()).
+  {
+    const SITES = 3; // where it started, and two more
+    const AWAY = 4; // a new place is at least this far from the others
+    const NEAR = 20; // and at most this far from where it started
+    const grng = mulberry32((map.seed ^ 0x5eed) >>> 0);
+    const CELL = 4;
+    const grid = new Map(); // "cx,cz" -> [[x, z, r]]
+    const cellOf = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
+    const claim = (x, z, r) => {
+      const key = cellOf(x, z);
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push([x, z, r]);
+    };
+    const clear = (x, z, r) => {
+      const cx = Math.floor(x / CELL);
+      const cz = Math.floor(z / CELL);
+      for (let i = cx - 1; i <= cx + 1; i++) {
+        for (let j = cz - 1; j <= cz + 1; j++) {
+          for (const [px, pz, pr] of grid.get(`${i},${j}`) ?? []) if (Math.hypot(x - px, z - pz) < r + pr) return false;
+        }
+      }
+      return true;
+    };
+    const roomFor = (thing) => (thing.radius === undefined ? 1 : Math.max(0.4, thing.radius)); // (a tree, a rock)
+    for (const thing of [...trees, ...rocks]) claim(thing.x, thing.z, roomFor(thing));
+    for (const [x, z] of bushes) claim(x, z, 0.7);
+    findingSites = true; // (the grid keeps them apart instead)
+    // one more place for each in turn, then another (so the first don't take all the room)
+    for (let round = 1; round < SITES; round++) for (const thing of [...trees, ...rocks]) {
+      if (!thing.rule || thing.sites.length !== round) continue; // (placed by hand: it stays where it is)
+      const r = roomFor(thing);
+      for (let n = 0; n < 300 && thing.sites.length === round; n++) {
+        // somewhere round about where it started (the same sort of ground, likely)
+        const a = grng() * Math.PI * 2;
+        const d = AWAY + grng() * (NEAR - AWAY);
+        const x = thing.sites[0][0] + Math.cos(a) * d;
+        const z = thing.sites[0][1] + Math.sin(a) * d;
+        if (thing.sites.some(([sx, sz]) => Math.hypot(x - sx, z - sz) < AWAY)) continue;
+        // (its own sort of ground first; failing that, as a full forest is, any
+        // open ground, on a map that allows it)
+        if (!clear(x, z, r) || !(thing.rule.accept(x, z) || (map.growBackAnywhere && n >= 100 && isOpenGround(x, z, 1)))) continue;
+        thing.sites.push([x, z]);
+        claim(x, z, r);
+      }
+    }
+    findingSites = false;
+  }
+
+  // Put a tree or rock in its place number n (a count of how often it grew
+  // back; it goes round its places), or the next one canGrow(x, z) allows,
+  // if the map has that rule (the farm: not on tilled soil or anything built).
+  function place(thing, n) {
+    const { sites } = thing;
+    let [x, z] = sites[0];
+    for (let i = 0; i < sites.length; i++) {
+      const site = sites[(n + i) % sites.length];
+      if (!map.canGrow || map.canGrow(site[0], site[1])) {
+        [x, z] = site;
+        break;
+      }
+    }
+    const dx = x - thing.x;
+    const dz = z - thing.z;
+    if (!dx && !dz) return;
+    thing.x = x;
+    thing.z = z;
+    for (const box of [thing.collider].filter(Boolean)) {
+      for (const v of [box.min, box.max, box.center]) {
+        v.x += dx;
+        v.z += dz;
+      }
+    }
+    const obj = thing.group ?? thing.mesh;
+    obj.position.x = x;
+    obj.position.z = z;
+    thing.stump?.position.set(x, 0, z);
+  }
 
   // ---------- The ground's surface ----------
   // One mesh for every tile, colored by what the map says the ground is at
@@ -779,9 +875,12 @@ export function buildWorld(map) {
     else moving.add(tree);
   }
 
-  function regrowTree(id, { instant = false } = {}) {
+  // n: how often it has grown back (which of its places it is in; see
+  // Growing back elsewhere)
+  function regrowTree(id, { instant = false, n = 0 } = {}) {
     const tree = trees[id];
     if (!tree || tree.state === 'up' || tree.state === 'growing') return;
+    place(tree, n);
     setTrunk(tree, true);
     tree.stump.visible = false;
     tree.group.visible = true;
@@ -842,9 +941,10 @@ export function buildWorld(map) {
     crumbling.add(rock);
   }
 
-  function regrowRock(id, { instant = false } = {}) {
+  function regrowRock(id, { instant = false, n = 0 } = {}) {
     const rock = rocks[id];
     if (!rock || rock.state === 'up' || rock.state === 'growing') return;
+    place(rock, n);
     setBoulder(rock, true);
     for (const chip of rock.chips ?? []) chip.mesh.visible = false;
     rock.mesh.visible = true;
@@ -960,13 +1060,22 @@ export function buildWorld(map) {
     shakeRock,
     breakRock,
     regrowRock,
-    // every rock whole again, at once (arriving on an island we were on before)
-    restoreAllRocks() {
-      for (const rock of rocks) regrowRock(rock.id, { instant: true });
+    // every rock whole again, at once (arriving on an island we were on
+    // before), each in its place as counted in moved ([[id, n]], see Growing back elsewhere)
+    restoreAllRocks(moved = []) {
+      const at = new Map(moved);
+      for (const rock of rocks) {
+        regrowRock(rock.id, { instant: true });
+        place(rock, at.get(rock.id) ?? 0);
+      }
     },
-    // every tree standing again, at once (arriving on an island we were on before)
-    standAllTrees() {
-      for (const tree of trees) regrowTree(tree.id, { instant: true });
+    // every tree standing again, at once (the same way)
+    standAllTrees(moved = []) {
+      const at = new Map(moved);
+      for (const tree of trees) {
+        regrowTree(tree.id, { instant: true });
+        place(tree, at.get(tree.id) ?? 0);
+      }
     },
     tileAt,
     clearFoliageOnTile,
