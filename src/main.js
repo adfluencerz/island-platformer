@@ -2097,7 +2097,47 @@ const splash = new Splash({
   onRemoveHelper: (id) => farmSync.removeHelper(id),
   onInvite: () => farmSync.inviteHelper(splash.name()),
   where: () => hud.here(),
+  account: () => farmSync.account(),
+  onRegister: async ({ username, password, color }) => {
+    saveGame();
+    await farmSync.register(username, password, color, currentSave());
+    myShirt(); // (and the farm with helpers, if it has some, waits for us at home)
+  },
+  // (the account's farm: the page reloads to play it)
+  onLogin: async ({ username, password }) => {
+    await farmSync.login(username, password);
+    forgetLocalFarm();
+    location.reload();
+    await new Promise(() => {}); // (the page is going)
+  },
+  onLogout: () => {
+    saveGame();
+    farmSync.flush({ leaving: true });
+    farmSync.forget();
+    forgetLocalFarm();
+    location.reload();
+  },
+  onColor: async (color) => {
+    await farmSync.setColor(color);
+    myShirt();
+  },
 });
+
+// Our shirt: the account's color (src/net/farm.js), at home; in a lobby or on a
+// farm with helpers its room says what we wear (it goes by ours too)
+const myColor = () => farmSync.account()?.color ?? PLAYER_COLORS[0];
+function myShirt() {
+  if (place === 'home' && !farmNet) farmer.setShirt(myColor());
+}
+
+// This browser's copy of the farm goes (logging in to another, or out):
+// nothing of it is saved again before the page reloads
+function forgetLocalFarm() {
+  saving = false;
+  try {
+    localStorage.removeItem(SAVE_STORE);
+  } catch {}
+}
 
 function putDown({ x, y, z }) {
   stopWalking();
@@ -2120,7 +2160,7 @@ function goHome() {
   enterWorld('home');
   splash.hide();
   if (farmVisit) return; // (on our own farm with its helpers already)
-  farmer.setShirt(PLAYER_COLORS[0]);
+  farmer.setShirt(myColor());
   if (!farmOnScreen) {
     showFarm(homeFarm);
     farmOnScreen = true;
@@ -2153,7 +2193,7 @@ async function joinFarm(id) {
     }
   }
   farmJoining = 0;
-  const conn = (farmNet = new Connection({ name: splash.name(), farm: id, auth: farmSync.auth() }));
+  const conn = (farmNet = new Connection({ name: splash.name(), color: myColor(), farm: id, auth: farmSync.auth() }));
   const on = (type, fn) => conn.on(type, (m) => farmNet === conn && fn(m));
 
   on(S.FARM, (m) => {
@@ -2392,7 +2432,7 @@ function leaveLobbyWorld() {
 function joinLobby({ name, code }) {
   net?.leave();
   splash.setStatus('Walking over…');
-  const conn = (net = new Connection({ name, code }));
+  const conn = (net = new Connection({ name, color: myColor(), code }));
   // (a handler for a connection we have since left does nothing)
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 
@@ -2665,6 +2705,8 @@ async function openFarm() {
   const theirs = await farmSync.open(currentSave());
   hud.setFarmName(farmSync.name());
   if (theirs && useSave(theirs)) saveGame();
+  splash.accountChanged(); // (the server knows whether we have an account now)
+  myShirt();
   if (!splash.hidden) splash.showHelping(); // (the farms we help on: the server knows who we are now)
   // a farm with helpers, already home (the page was quick): onto its room
   if (place === 'home' && farmSync.shared() && farmSync.ready && !farmNet && !farmJoining) joinFarm(farmSync.id());

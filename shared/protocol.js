@@ -3,11 +3,11 @@
 // message is a JSON object whose `t` field is one of these; the comments list
 // the other fields. JOIN, STATE, CHAT and PING (and ROSTER, SNAP, CHAT and
 // PONG back) are the same in both.
-import { PIN_LENGTH } from './constants.js';
+import { PIN_LENGTH, MAX_NAME } from './constants.js';
 
 // client -> lobby
 export const C = {
-  JOIN: 'join', // { v, name, key, back }: the first message on a socket
+  JOIN: 'join', // { v, name, key, back, color }: the first message on a socket (color: their shirt's, one of PLAYER_COLORS)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
   TAKE: 'take', // { id }: gathered (or walked into) what is on spot id
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
@@ -89,6 +89,29 @@ export function cleanText(s, max) {
 }
 
 export const finite = (...xs) => xs.every((x) => typeof x === 'number' && Number.isFinite(x));
+
+// ---------- Accounts (server/farms.js) ----------
+// A username is the farmer's name in lobbies too, and one of a kind on the
+// server the way farm names are (usernameKey). A password is any 6 to 64
+// characters. There is no getting a forgotten one back.
+export const PASSWORD_LENGTH = [6, 64];
+export const usernameKey = (name) => farmNameKey(name);
+
+// Why this username won't do, or '' when it will
+export function usernameProblem(name) {
+  const clean = cleanText(name, MAX_NAME + 1);
+  if (clean.length > MAX_NAME) return `A username is at most ${MAX_NAME} characters.`;
+  if (!usernameKey(clean)) return 'A username needs at least 3 letters or digits.';
+  return '';
+}
+
+// Why this password won't do, or '' when it will
+export function passwordProblem(password) {
+  const n = typeof password === 'string' ? password.length : 0;
+  if (n < PASSWORD_LENGTH[0]) return `A password is at least ${PASSWORD_LENGTH[0]} characters.`;
+  if (n > PASSWORD_LENGTH[1]) return `A password is at most ${PASSWORD_LENGTH[1]} characters.`;
+  return '';
+}
 
 // ---------- Farm names and PINs (server/farms.js: getting a farm back) ----------
 // A farm's name is how it is found again, so it is one of a kind on a server,

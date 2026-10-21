@@ -19,6 +19,10 @@
 //   POST /api/farms/invite     { code } -> { id, name }: the farm an invite code is for
 //   POST /api/farms/me/help    { code, name } -> { id, name }: this farm's farmer helps on that one now
 //   POST /api/farms/me/helping -> { farms: [{ id, name, here }] }: the farms they help on (here: farmers on it now)
+//   POST /api/account/register { username, password, color, save } -> { id, token, rev, username, color }:
+//                              an account on this device's farm (sent with its token), or on a new farm from save
+//   POST /api/account/login    { username, password } -> { id, token, username, color }: this device's own token
+//   PUT  /api/account/color    { color } -> { username, color }: a new shirt color
 //   (/me: "Authorization: Bearer <id>.<token>", and every farm call names the
 //   page in "X-Farm-Session"; see server/farms.js)
 //   WS   /ws?farm=ID           be on that farm, its owner or one of its helpers (server/farmroom.js)
@@ -151,7 +155,7 @@ const server = createServer(async (req, res) => {
     const room = lobby.find(one[1].toUpperCase());
     return room ? json(res, 200, room.info()) : json(res, 404, { error: 'no such lobby' });
   }
-  if (path.startsWith('/api/farms')) return farmApi(req, res, path);
+  if (path.startsWith('/api/farms') || path.startsWith('/api/account/')) return farmApi(req, res, path);
   if (path.startsWith('/api/')) return json(res, 404, { error: 'not found' });
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
   return serveStatic(req, res, path);
@@ -165,6 +169,7 @@ async function farmApi(req, res, path) {
     'PUT /api/farms/me/recovery', 'POST /api/farms/recover',
     'POST /api/farms/me/helpers', 'POST /api/farms/me/helpers/invite', 'POST /api/farms/me/helpers/remove',
     'POST /api/farms/invite', 'POST /api/farms/me/help', 'POST /api/farms/me/helping',
+    'POST /api/account/register', 'POST /api/account/login', 'PUT /api/account/color',
   ];
   if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
   // JSON only (as for lobbies), and the page that is asking
@@ -183,12 +188,17 @@ async function farmApi(req, res, path) {
   else if (route === 'POST /api/farms/pair') out = farms.claim(body?.code, address);
   else if (route === 'POST /api/farms/recover') out = await farms.recover(body ?? {}, address);
   else if (route === 'POST /api/farms/invite') out = farms.invited(body?.code, address);
-  else {
+  else if (route === 'POST /api/account/login') out = await farms.login(body ?? {}, address);
+  else if (route === 'POST /api/account/register') {
+    // (on this device's farm, if it has one the server knows)
+    out = await farms.register(body ?? {}, farms.auth(req.headers.authorization), session, address);
+  } else {
     const farm = farms.auth(req.headers.authorization);
     if (!farm) return json(res, 401, { error: 'This device does not have that farm.' });
     if (route === 'POST /api/farms/me/open') out = farms.open(farm, session);
     else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save, { live: farmRooms.has(farm.id), roomRev: body?.roomRev });
     else if (route === 'PUT /api/farms/me/recovery') out = await farms.setRecovery(farm, body ?? {});
+    else if (route === 'PUT /api/account/color') out = farms.setColor(farm, body?.color);
     else if (route === 'POST /api/farms/me/helpers') out = { helpers: farms.helpersOf(farm) };
     else if (route === 'POST /api/farms/me/helpers/invite') out = farms.invite(farm, body?.name);
     else if (route === 'POST /api/farms/me/helpers/remove') {

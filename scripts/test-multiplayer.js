@@ -752,6 +752,34 @@ await test('a farm\'s name is one of a kind, whatever the capitals and punctuati
   assert.equal(JSON.stringify(a).includes('482913'), false, 'the PIN itself is not kept');
 });
 
+await test('an account: made with a username, password and shirt color, logged in from another device, wrong passwords lock it', async () => {
+  const dir = mkdtempSync(joinPath(tmpdir(), 'farms-'));
+  try {
+    let farms = new Farms({ dir, log: () => {} });
+    const made = await farms.register({ username: 'Niels', password: 'turnips4', color: PLAYER_COLORS[2], save: aSave(7) }, null, 'p1');
+    assert.equal(made.username, 'Niels');
+    assert.ok(made.token, 'a new farm, from the save');
+    assert.ok(!readFileSync(joinPath(dir, `${made.id}.json`), 'utf8').includes('turnips4'), 'the password itself is not kept');
+    assert.equal((await farms.register({ username: 'niels!', password: 'another1', color: PLAYER_COLORS[0], save: aSave() }, null, 'p2')).status, 409, 'taken');
+    assert.equal((await farms.register({ username: 'Bo Peep', password: 'short', color: PLAYER_COLORS[0], save: aSave() }, null, 'p2')).status, 400, 'too short');
+    // an old farm without an account gets one, keeping its id
+    const old = farms.create(aSave(3), 'p3');
+    const attached = await farms.register({ username: 'Ann', password: 'hollyhock', color: PLAYER_COLORS[1] }, farms.auth(bearer(old)), 'p3');
+    assert.equal(attached.id, old.id);
+    farms = new Farms({ dir, log: () => {} }); // (a restart: the usernames are gathered again)
+    const back = await farms.login({ username: 'NIELS', password: 'turnips4' });
+    assert.equal(back.id, made.id);
+    assert.equal(back.color, PLAYER_COLORS[2]);
+    assert.equal(farms.auth(bearer(back)).save.backpack.gold, 7);
+    assert.deepEqual(farms.setColor(farms.auth(bearer(back)), PLAYER_COLORS[5]), { username: 'Niels', color: PLAYER_COLORS[5] });
+    assert.equal(farms.open(farms.auth(bearer(back)), 'p4').color, PLAYER_COLORS[5]);
+    for (let i = 0; i < 5; i++) assert.equal((await farms.login({ username: 'Niels', password: 'wrong-one' })).status, 403);
+    assert.equal((await farms.login({ username: 'Niels', password: 'turnips4' })).status, 429, 'locked a while');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await test('a farm comes back with its name and PIN, as a device of its own; wrong PINs lock it a while', async () => {
   const dir = mkdtempSync(joinPath(tmpdir(), 'farms-'));
   try {

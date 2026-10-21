@@ -10,24 +10,21 @@
 // - Friends: the farms you help on (server/farms.js), to visit, and your
 //   farm's helpers, friends who can come and farm on it, invited with a code.
 // - Controls.
+// - Your farmer: the shirt's color, and logging out.
+// Without an account (src/net/farm.js), a welcome of its own comes first,
+// apart from the menu: logging in, or making an account (a username, a
+// password and a shirt color). Once in, it isn't seen again. (No server, no
+// accounts: the farm can be played in this browser meanwhile.)
 // A page opened from an invite link (?lobby=CODE or ?help=CODE) shows that
 // invitation first. (It began as the title screen, hence its name.)
-import { MAX_PLAYERS, MAX_NAME } from '../../shared/constants.js';
+import { MAX_PLAYERS, MAX_NAME, PLAYER_COLORS } from '../../shared/constants.js';
+import { PASSWORD_LENGTH, usernameProblem, passwordProblem } from '../../shared/protocol.js';
 import { MAX_SEED, normalizeSeed } from '../../shared/worldgen.js';
 import { listLobbies, lobbyInfo, openLobby, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode, inviteLink, helpLink } from '../net/lobby.js';
-import { el, button, copyText } from './dom.js';
+import { el, button, copyText, hexColor } from './dom.js';
 import { addHelp } from './hud.js';
 
-const NAME_STORE = 'tp.name';
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
-
-function storedName() {
-  try {
-    return localStorage.getItem(NAME_STORE) || '';
-  } catch {
-    return '';
-  }
-}
 
 const HOME_TIP_STORE = 'tp.homeTip';
 
@@ -50,6 +47,9 @@ export class Splash {
   // onHelpers(): our farm's helpers, [{ id, name }]. onRemoveHelper(id). onInvite(): an invite
   // code for a helper, { code, expiresIn }.
   // where(): where we are, { place, visit, session } (Hud.here).
+  // account(): { username, color }, or null. onRegister({ username, password, color }),
+  // onLogin({ username, password }): resolve once done (or throw, with why).
+  // onLogout(). onColor(color): a new shirt color.
   constructor(options) {
     Object.assign(this, options);
     this.pages = {};
@@ -73,14 +73,9 @@ export class Splash {
       });
     }
 
-    // ---- who you are: "Playing as niels", tap to change it ----
+    // ---- who you are: "Playing as niels", tap for your farmer ----
     const who = el('div', 'ui-who', card);
-    this.whoBtn = button('ui-link ui-who-btn', who, '', () => this.editName(true));
-    this.nameInput = el('input', 'ui-input', who);
-    Object.assign(this.nameInput, { maxLength: MAX_NAME, placeholder: 'Your name', value: storedName(), autocomplete: 'off' });
-    this.nameInput.addEventListener('keydown', (e) => e.key === 'Enter' && this.nameInput.blur());
-    this.nameInput.addEventListener('blur', () => this.nameInput.value.trim() && this.editName(false));
-    this.editName(!storedName());
+    this.whoBtn = button('ui-link ui-who-btn', who, '', () => this.open('farmer'));
 
     // ---- the main page: where you are and the way on, then the pages ----
     const main = this.page('main');
@@ -170,6 +165,51 @@ export class Splash {
     // ---- Controls ----
     addHelp(this.page('controls', 'Controls'));
 
+    // ---- The welcome: logging in, or making an account (a window of its own) ----
+    this.welcome = el('div', 'ui-splash', document.body);
+    this.welcome.hidden = true;
+    const welcomeCard = el('div', 'ui-card inv-frame', this.welcome);
+    el('h1', 'ui-logo', el('div', 'ui-title-row', welcomeCard), 'Island Platformer');
+    el('div', 'ui-context-text', welcomeCard, 'Welcome, farmer! Grow a little farm, then hop online to forage with other farmers.');
+    this.accountPage = el('form', 'ui-page', welcomeCard);
+    const tabs = el('div', 'ui-row', this.accountPage);
+    this.loginTab = button('ui-btn ui-btn-small', tabs, 'Log in', () => this.accountMode('login'));
+    this.signupTab = button('ui-btn ui-btn-small', tabs, 'Create account', () => this.accountMode('signup'));
+    this.accountNote = el('div', 'ui-muted', this.accountPage);
+    const user = el('label', 'ui-field', this.accountPage);
+    el('span', '', user, 'Username');
+    this.userInput = el('input', 'ui-input', user);
+    Object.assign(this.userInput, { maxLength: MAX_NAME, autocomplete: 'username', placeholder: 'What farmers call you' });
+    const pass = el('label', 'ui-field', this.accountPage);
+    el('span', '', pass, 'Password');
+    this.passInput = el('input', 'ui-input', pass);
+    Object.assign(this.passInput, { type: 'password', maxLength: PASSWORD_LENGTH[1], autocomplete: 'current-password' });
+    this.shirtField = el('div', 'ui-field', this.accountPage);
+    el('span', '', this.shirtField, 'Shirt color');
+    this.signupSwatches = this.swatches(this.shirtField, (color) => (this.pickedColor = color));
+    this.accountBtn = button('ui-btn ui-btn-big', this.accountPage, '', null);
+    this.accountBtn.type = 'submit';
+    this.offlineBtn = button('ui-btn ui-btn-ghost', this.accountPage, 'Play in this browser for now', () => {
+      this.showWelcome(false);
+      this.goHome();
+    });
+    this.offlineBtn.hidden = true;
+    this.accountStatus = el('div', 'ui-status', welcomeCard);
+    this.accountPage.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.submitAccount();
+    });
+    this.accountMode('login'); // (Create account is a tap away)
+
+    // ---- Your farmer ----
+    const farmer = this.page('farmer', 'Your farmer');
+    el('div', 'ui-sub', farmer, 'Shirt color');
+    this.farmerSwatches = this.swatches(farmer, (color) => this.changeColor(color));
+    el('div', 'ui-muted', farmer, 'Other farmers see you in it in lobbies and on farms.');
+    button('ui-btn ui-btn-ghost', farmer, 'Log out', () => {
+      if (confirm('Log out? Your farm stays on the server: log in again to play it, here or anywhere.')) this.onLogout();
+    });
+
     this.status = el('div', 'ui-status', card);
     this.hidden = true;
     root.hidden = true;
@@ -204,6 +244,109 @@ export class Splash {
     this.codeInputs.push(input);
   }
 
+  // A row of shirt colors to pick from; pick(color) when one is picked
+  swatches(parent, pick) {
+    const row = el('div', 'ui-swatches', parent);
+    const list = PLAYER_COLORS.map((color) => {
+      const b = button('ui-swatch', row, '', () => {
+        for (const other of list) other.classList.toggle('on', other === b);
+        pick(color);
+      });
+      b.style.background = hexColor(color);
+      b.dataset.color = color;
+      b.title = 'This one';
+      return b;
+    });
+    return { mark: (color) => list.forEach((b) => b.classList.toggle('on', Number(b.dataset.color) === color)) };
+  }
+
+  // ---------- The account ----------
+  // mode: 'login' or 'signup'
+  accountMode(mode) {
+    this.mode = mode;
+    this.loginTab.classList.toggle('ui-btn-ghost', mode !== 'login');
+    this.signupTab.classList.toggle('ui-btn-ghost', mode !== 'signup');
+    this.shirtField.hidden = mode !== 'signup';
+    this.passInput.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+    this.accountBtn.textContent = mode === 'signup' ? 'Create account' : 'Log in';
+    this.accountNote.textContent = mode === 'signup'
+      ? `Pick a username (other farmers see it) and a password of at least ${PASSWORD_LENGTH[0]} characters. There is no getting a forgotten password back, so keep it somewhere safe.`
+      : 'Log in to play your farm, on this device or any other.';
+    if (mode === 'signup' && !this.pickedColor) {
+      this.pickedColor = PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+      this.signupSwatches.mark(this.pickedColor);
+    }
+    this.welcomeStatus('');
+  }
+
+  welcomeStatus(text, isError = false) {
+    this.accountStatus.textContent = text;
+    this.accountStatus.classList.toggle('error', isError);
+  }
+
+  // The welcome, instead of the menu (on: false, away for good: we're in)
+  showWelcome(on) {
+    this.welcome.hidden = !on;
+    if (on) {
+      this.root.hidden = true;
+      this.hidden = false; // (the game waits behind it, as behind the menu)
+      document.body.classList.add('in-menu');
+    } else if (this.root.hidden) {
+      this.hidden = true;
+      document.body.classList.remove('in-menu');
+    }
+  }
+
+  async submitAccount() {
+    const username = this.userInput.value.trim();
+    const password = this.passInput.value;
+    const problem = this.mode === 'signup' ? usernameProblem(username) || passwordProblem(password) : !username || !password ? 'Type your username and password.' : '';
+    if (problem) return this.welcomeStatus(problem, true);
+    this.accountBtn.disabled = true;
+    this.welcomeStatus(this.mode === 'signup' ? 'Making your account…' : 'Logging in…');
+    try {
+      if (this.mode === 'signup') await this.onRegister({ username, password, color: this.pickedColor });
+      else await this.onLogin({ username, password });
+      this.passInput.value = '';
+      this.welcomeStatus('');
+      this.showWelcome(false);
+      this.show({ from: 'title' }); // (the menu, as the page would have opened on it)
+    } catch (e) {
+      this.welcomeStatus(e.message, true);
+      this.offlineBtn.hidden = !!e.status; // (no server: the farm can be played here meanwhile)
+    } finally {
+      this.accountBtn.disabled = false;
+    }
+  }
+
+  async changeColor(color) {
+    try {
+      await this.onColor(color);
+      this.setStatus('');
+    } catch (e) {
+      this.setStatus(e.message, true);
+      this.farmerSwatches.mark(this.account()?.color);
+    }
+  }
+
+  // The account as the server has it now: on the title screen, the way in
+  // (logging in) or out of it
+  accountChanged() {
+    this.showWho();
+    if (this.hidden || this.from !== 'title') return;
+    if (!this.account() && this.welcome.hidden) this.show({ from: 'title' });
+    else if (this.account() && !this.welcome.hidden) {
+      this.showWelcome(false);
+      this.show({ from: 'title' });
+    }
+  }
+
+  showWho() {
+    const account = this.account();
+    this.whoBtn.parentNode.hidden = !account;
+    if (account) this.whoBtn.textContent = `Playing as ${account.username} ✎`;
+  }
+
   // from: 'title' (the page just opened), or anything else for in game.
   // page: the page to open on. message: why we are here, when it was not the player's choice.
   show({ from = 'game', page = 'main', message = '' } = {}) {
@@ -213,6 +356,12 @@ export class Splash {
     this.root.classList.toggle('in-game', this.from === 'game');
     document.body.classList.toggle('in-menu', this.from === 'title');
     this.showContext();
+    this.showWho();
+    if (this.from === 'title' && !this.account()) {
+      this.showWelcome(true);
+      this.welcomeStatus(message, !!message);
+      return;
+    }
     const help = linkedHelpCode();
     const code = this.where().place !== 'lobby' && linkedCode(); // (in a lobby, the address has its own code)
     if (page === 'main' && help) this.showHelpInvite(help);
@@ -246,6 +395,7 @@ export class Splash {
     this.showPage(name);
     if (name === 'online') this.showLobbyCard();
     else if (name === 'friends') this.showFriends();
+    else if (name === 'farmer') this.farmerSwatches.mark(this.account()?.color);
   }
 
   // The one part of the main page that changes: where we are, and the way on
@@ -268,27 +418,12 @@ export class Splash {
     this.status.classList.toggle('error', isError);
   }
 
-  // ---------- Your name ----------
-  editName(on) {
-    this.whoBtn.hidden = on;
-    this.nameInput.hidden = !on;
-    if (on) {
-      if (this.hidden === false) this.nameInput.focus(); // (not as the page opens: no keyboard popping up)
-      return;
-    }
-    this.whoBtn.textContent = `Playing as ${this.name()} ✎`;
-  }
-
+  // ---------- Your name: the account's ----------
   name() {
-    const name = this.nameInput.value.trim();
-    try {
-      localStorage.setItem(NAME_STORE, name);
-    } catch {}
-    return name || 'Farmer';
+    return this.account()?.username || 'Farmer';
   }
 
   goHome() {
-    this.name(); // (remember it)
     this.onHome();
   }
 
@@ -406,7 +541,6 @@ export class Splash {
   }
 
   visit(id, name) {
-    this.name(); // (remember it)
     this.setStatus(`Walking over to ${name}…`);
     this.onVisitFarm(id, name);
   }

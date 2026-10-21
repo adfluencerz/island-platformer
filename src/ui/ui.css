@@ -349,3 +349,15 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 @media (max-width: 760px) {
   .ui-players { width: 190px; }
 }
+
+/* ---------- Shirt colors (the account, and Your farmer: splash.js) ---------- */
+.ui-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.ui-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(74, 46, 20, 0.35);
+  cursor: pointer;
+  padding: 0;
+}
+.ui-swatch.on { border-color: #4a2e14; box-shadow: 0 0 0 3px #fff6dc inset; transform: scale(1.1); }
