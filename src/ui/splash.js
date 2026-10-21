@@ -447,11 +447,11 @@ export class Splash {
   // Friends online, to invite to the lobby we are in
   async showLobbyFriends() {
     const box = this.lobbyFriends;
-    box.textContent = '';
     let friends = [];
     try {
       ({ friends } = await this.onFriends());
     } catch {}
+    box.textContent = '';
     friends = friends.filter((f) => f.online);
     box.hidden = !friends.length;
     for (const f of friends) {
@@ -497,11 +497,21 @@ export class Splash {
     }
   }
 
+  // Our friends changed (server/presence.js): the list open now, afresh
+  friendsChanged() {
+    if (this.hidden) return;
+    if (this.current === 'friends') this.showFriendList(true);
+    else if (this.current === 'online' && !this.lobbyCard.hidden) this.showLobbyFriends();
+    else if (this.current === 'start') this.showStart(true);
+  }
+
   // ---------- Starting a lobby with friends ----------
-  async showStart() {
+  // (again: the list redrawn, the friends ticked staying ticked)
+  async showStart(again = false) {
     this.showPage('start');
     const list = this.startList;
-    list.textContent = 'Asking the server…';
+    if (!again) list.textContent = 'Asking the server…';
+    const ticked = again ? this.picked : new Set();
     this.picked = new Set();
     let friends = [];
     try {
@@ -517,6 +527,8 @@ export class Splash {
       const box = el('input', '', row);
       box.type = 'checkbox';
       box.disabled = !f.online;
+      box.checked = f.online && ticked.has(f.id);
+      if (box.checked) this.picked.add(f.id);
       box.addEventListener('change', () => (box.checked ? this.picked.add(f.id) : this.picked.delete(f.id)));
       this.friendBits(row, f);
     }
@@ -612,9 +624,10 @@ export class Splash {
   }
 
   // Our friends, and who asked to be one (the Friends page)
-  async showFriendList() {
+  // (again: redrawn when it comes, without "Asking the server" meanwhile)
+  async showFriendList(again = false) {
     const list = this.friendsList;
-    list.textContent = 'Asking the server…';
+    if (!again) list.textContent = 'Asking the server…';
     let friends;
     let asks;
     try {

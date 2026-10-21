@@ -49,6 +49,7 @@ import { Farms, MAX_SAVE } from './farms.js';
 import { FarmRooms } from './farmroom.js';
 import { Presence } from './presence.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
+import { PS, usernameKey } from '../shared/protocol.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || undefined; // 127.0.0.1 behind a proxy (deploy/), every address otherwise
@@ -211,9 +212,17 @@ async function farmApi(req, res, path) {
     else if (route === 'POST /api/friends') {
       const friends = farms.friendsOf(farm).map((f) => ({ ...f, online: presence.isOnline(f.id), where: presence.whereIs(f.id) }));
       out = { friends, asks: farms.asksOf(farm) };
-    } else if (route === 'POST /api/friends/add') out = farms.askFriend(farm, String(body?.username ?? ''));
-    else if (route === 'POST /api/friends/answer') out = farms.answerFriend(farm, String(body?.id ?? ''), !!body?.yes);
-    else if (route === 'POST /api/friends/remove') out = farms.removeFriend(farm, String(body?.id ?? ''));
+    } else if (route === 'POST /api/friends/add') {
+      out = farms.askFriend(farm, String(body?.username ?? ''));
+      // (the one asked sees the ask come in, or, if they had asked first, us on their list)
+      if (!out.error) presence.sendTo(farms.accounts.get(usernameKey(String(body?.username ?? ''))), { t: PS.FRIENDS });
+    } else if (route === 'POST /api/friends/answer') {
+      out = farms.answerFriend(farm, String(body?.id ?? ''), !!body?.yes);
+      if (!out.error) presence.sendTo(String(body?.id ?? ''), { t: PS.FRIENDS });
+    } else if (route === 'POST /api/friends/remove') {
+      out = farms.removeFriend(farm, String(body?.id ?? ''));
+      presence.sendTo(String(body?.id ?? ''), { t: PS.FRIENDS });
+    }
     else if (route === 'POST /api/farms/me/helpers') out = { helpers: farms.helpersOf(farm) };
     else if (route === 'POST /api/farms/me/helpers/invite') out = farms.invite(farm, body?.name);
     else if (route === 'POST /api/farms/me/helpers/remove') {

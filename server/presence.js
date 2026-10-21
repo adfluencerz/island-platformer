@@ -62,16 +62,28 @@ export class Presence {
     }
     conn.farmId = farm.id;
     conn.place = 'home';
-    if (!this.online.has(farm.id)) this.online.set(farm.id, new Set());
+    const first = !this.online.has(farm.id);
+    if (first) this.online.set(farm.id, new Set());
     this.online.get(farm.id).add(conn);
     this.send(conn, { t: PS.READY, id: farm.id, name: farm.account.name });
+    if (first) this.tellFriends(farm.id);
     return true;
+  }
+
+  // Their friends' lists are out of date (they came online, went off or moved
+  // on): the friends online ask for them again
+  tellFriends(id) {
+    for (const friend of this.farms.get(id)?.friends ?? []) this.sendTo(friend, { t: PS.FRIENDS });
   }
 
   message(conn, msg, now = Date.now()) {
     switch (msg?.t) {
       case PC.WHERE:
-        if (PLACES.has(msg.place)) conn.place = msg.place;
+        if (PLACES.has(msg.place) && msg.place !== conn.place) {
+          const was = this.whereIs(conn.farmId);
+          conn.place = msg.place;
+          if (this.whereIs(conn.farmId) !== was) this.tellFriends(conn.farmId);
+        }
         break;
       case PC.PARTY:
         this.startParty(conn, msg.invite, now);
@@ -94,8 +106,10 @@ export class Presence {
   leave(conn) {
     const set = this.online.get(conn.farmId);
     if (!set) return;
+    const was = this.whereIs(conn.farmId);
     set.delete(conn);
     if (!set.size) this.online.delete(conn.farmId);
+    if (this.whereIs(conn.farmId) !== was) this.tellFriends(conn.farmId);
     for (const party of this.parties.values()) if (party.conn === conn && !party.code) this.callOff(party, 'They went offline.');
   }
 
