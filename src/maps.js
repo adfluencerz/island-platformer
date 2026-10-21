@@ -136,13 +136,15 @@ export function wildMap(island) {
       pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
       heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
+      glen: { color: 0x3d6b3a, jitter: 0.04, top: [0.006, 0.02], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glen']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
       meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, hue: theme.hue },
       heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
+      glen: { tufts: 3.2, lushTufts: 1.8, flowerLush: -2, flowerChance: 0, light: [0.22, 0.32], hue: [0.3, 0.36] },
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
     },
     flowerColors: theme.flowers,
@@ -177,6 +179,10 @@ export function wildMap(island) {
       if (island.marsh) {
         scatter(6, 2.4, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 5 (the fern glen): after the marsh's, again
+      if (island.glen) {
+        scatter(6, 2.4, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.8]));
+      }
     },
   };
 }
@@ -188,6 +194,9 @@ const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9
 const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
 const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
+// fern fronds in the glen (generation 5): a leaning blade, a few to a clump
+const glenFrondGeo = new THREE.ConeGeometry(0.09, 1, 4).translate(0, 0.5, 0);
+const glenFrondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 });
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
 // dots, a brown cep, violet, and golden
@@ -316,6 +325,19 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
         const stalk = addDecor(marshReedGeo, marshReedMat, px, h / 2, pz, 1, h / 2, 1, root);
         stalk.rotation.set(tilt[0], 0, tilt[1]);
         if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
+      }
+    });
+  }
+
+  // Generation 5: fern fronds, thick in the glen (after everything else drew
+  // from rng); you walk through them
+  if (island.glen) {
+    scatter(40, 1.1, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0, n = 3 + Math.floor(rng() * 3); i < n; i++) {
+        const h = rand(0.5, 1.1);
+        const a = rand(0, Math.PI * 2);
+        const frond = addDecor(glenFrondGeo, glenFrondMat, x + Math.cos(a) * 0.15, 0, z + Math.sin(a) * 0.15, 1, h, 1, root);
+        frond.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
       }
     });
   }

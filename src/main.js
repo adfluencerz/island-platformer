@@ -364,7 +364,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', fern: 'Pick ferns' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -378,6 +378,8 @@ const sprigMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.
 const reedGeo = new THREE.CylinderGeometry(0.015, 0.03, 0.9, 5).translate(0, 0.45, 0);
 const spikeGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.2, 7).translate(0, 0.85, 0);
 const spikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
+const frondGeo = new THREE.ConeGeometry(0.07, 0.7, 4).translate(0, 0.35, 0);
+const frondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 });
 const bellMat = new THREE.MeshStandardMaterial({ color: 0x9a6fc0, roughness: 0.5 });
 // A golden glint over a spot with something rare on it
 const glintGeo = new THREE.OctahedronGeometry(0.13, 0);
@@ -419,6 +421,16 @@ function makeSpotView(spot) {
       reed.rotation.set(Math.sin(a) * 0.12, 0, -Math.cos(a) * 0.12);
       reed.scale.setScalar(0.85 + (i % 3) * 0.15);
       content.add(reed);
+    }
+  } else if (spot.kind === 'fern') {
+    // A rosette of leaning fronds
+    content = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+      const a = i * 2.4;
+      const frond = new THREE.Mesh(frondGeo, frondMat);
+      frond.rotation.set(Math.sin(a) * 0.55, 0, -Math.cos(a) * 0.55);
+      frond.scale.set(1, 0.8 + (i % 3) * 0.15, 1);
+      content.add(frond);
     }
   } else if (spot.kind === 'heather') {
     // A low clump of purple sprigs
