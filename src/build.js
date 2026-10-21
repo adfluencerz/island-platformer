@@ -78,6 +78,19 @@ const barrel = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
 const pyramid = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4); // a square base 1 across
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+// ---------- Light at night ----------
+// Where the pieces that give light have their flame (from the middle of their
+// tile). After dark a few real lights go to the ones nearest the player, so
+// they light up the ground and what stands around them. (Always the same few
+// lights, however many are built: more would slow the game down.)
+const GLOWS = {
+  lamp_post: [0, 1.92, 0],
+  stone_lantern: [0, 1.03, 0],
+  house: [0, 0, 0], // (set below: the lamp over the door)
+};
+const GLOW_LIGHTS = 6;
+const GLOW_REACH = 9;
+
 // ---------- The house ----------
 // 5 tiles across and 4 deep (PIECES.house.size), built from the middle of its
 // front row: the door is on that tile, facing the camera, and the rest of the
@@ -90,6 +103,7 @@ const FOOT_H = 0.3;
 const WALL_TOP = FOOT_H + 2.2;
 const RIDGE = 1.5; // from the wall tops up to the roof's ridge
 const gableShape = new THREE.Shape([new THREE.Vector2(-HOUSE_D / 2, 0), new THREE.Vector2(HOUSE_D / 2, 0), new THREE.Vector2(0, RIDGE)]);
+GLOWS.house = [0, WALL_TOP - 0.52, HOUSE_Z + HOUSE_D / 2 + 0.45];
 const gable = new THREE.ExtrudeGeometry(gableShape, { depth: HOUSE_W, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-HOUSE_W / 2, 0, 0);
 
 function house(g, solids) {
@@ -962,11 +976,20 @@ export function createBuildings(world) {
   const pieces = new Map(); // key -> { id, group, colliders }
   const covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
 
+  const glows = new Map(); // key -> where a light-giving piece's flame is, in the world
+  const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
+    const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
+    light.castShadow = false;
+    world.root.add(light);
+    return light;
+  });
+
   const joins = (gx, gz) => PIECES[pieces.get(keyOf(gx, gz))?.id]?.joins;
   const joinedAt = (gx, gz) => DIRS.filter(([dx, dz]) => joins(gx + dx, gz + dz));
 
   function undraw(piece) {
     world.root.remove(piece.group);
+    glows.delete(piece.key);
     for (const c of piece.colliders) world.platforms.splice(world.platforms.indexOf(c), 1);
     piece.group = null;
     piece.colliders = [];
@@ -983,6 +1006,9 @@ export function createBuildings(world) {
     group.position.set(x, 0, z);
     world.root.add(group);
     piece.group = group;
+    piece.key = key;
+    const flame = GLOWS[piece.id];
+    if (flame) glows.set(key, new THREE.Vector3(x + flame[0], flame[1], z + flame[2]));
     piece.colliders = solids.map((s) => {
       const c = {
         center: new THREE.Vector3(x + s.x, s.y, z + s.z),
@@ -1076,10 +1102,21 @@ export function createBuildings(world) {
       return best;
     },
 
-    // night: 0 by day, 1 at night (the lamp posts' glow)
-    setNight(night) {
+    // night: 0 by day, 1 at night (the lamps' glow, and the light they
+    // give the lamps nearest focus, the player)
+    setNight(night, focus) {
       MATS.lantern.emissiveIntensity = night * 1.6;
       MATS.window.emissiveIntensity = night * 1.2;
+      const nearest = night > 0.01 && focus
+        ? [...glows.values()].sort((a, b) => a.distanceToSquared(focus) - b.distanceToSquared(focus))
+        : [];
+      glowLights.forEach((light, i) => {
+        // (spare ones stay on, just dark: switching a light off and on makes
+        // three.js rebuild its shaders, a hitch every dusk)
+        const at = nearest[i];
+        light.intensity = at ? night * 6 : 0;
+        if (at) light.position.copy(at);
+      });
     },
 
     // Show where `id` would go on tile key (null: nowhere), green or red

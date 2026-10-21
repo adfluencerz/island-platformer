@@ -36,6 +36,16 @@ const PACKET = [
   '...oooooooooo...',
   '................',
 ];
+// The sunflower packet shows a flower head instead (c/C = petals, d = the
+// brown middle), so it doesn't pass for golden seeds.
+const SUNFLOWER_PACKET = PACKET.map((row, y) => [
+  '...oPPcCCcPPo...',
+  '...oPcCddCcPo...',
+  '...oPCddddCPo...',
+  '...oPcCddCcPo...',
+  '...oPPcggcPPo...',
+  '...oPPPggPPPo...',
+][y - 4] ?? row);
 const packetPalette = (c, C, d) => ({ o: '#5b3a1e', p: '#d9b98a', P: '#f4e2c0', s: '#8a6a45', g: '#4f9e3c', c, C, d });
 
 export const ITEMS = {
@@ -150,8 +160,8 @@ export const ITEMS = {
     maxStack: 999,
     plants: 'sunflower',
     color: 0xffd23f,
-    palette: packetPalette('#ffd23f', '#fff1a8', '#7a4a1e'),
-    sprite: PACKET,
+    palette: packetPalette('#ffc21a', '#ffe680', '#6b3f1a'),
+    sprite: SUNFLOWER_PACKET,
   },
   flax_seeds: {
     name: 'Flax Seeds',

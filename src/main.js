@@ -1031,7 +1031,7 @@ window.addEventListener('keydown', (e) => {
 
 // E: in a lobby, chop the tree in reach with the axe in hand, else gather
 // what is in reach. At home: trade at the merchant's counter, else harvest a
-// ripe crop underfoot, otherwise use the selected toolbar item. Farming only
+// ripe crop on the tile in front, otherwise use the selected toolbar item. Farming only
 // works while standing on bare ground (not on a raised platform).
 function useAction() {
   if (place === 'lobby') {
@@ -1064,15 +1064,16 @@ function useAction() {
   farmHere();
 }
 
-// Harvest the ripe crop underfoot, else till or plant with what is in hand
+// Harvest the ripe crop on the tile at x, z (E: the one in front), else till
+// or plant it with what is in hand
 function tendAnimal(animal) {
   animals.tend(animal, player.position, collect);
   anim.squash = 0.15;
 }
 
-function farmHere() {
+function farmHere(x, z) {
   if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return;
-  const { x, z } = player.position;
+  if (x === undefined) [x, z] = keyXZ(frontTile());
   if (harvestAt(x, z)) return;
 
   const held = inventory.selectedId();
@@ -1224,8 +1225,8 @@ const marker = new THREE.Mesh(
 marker.visible = false;
 scene.add(marker);
 
-// The tile cursor: at home with the hoe or seeds in hand, a faint square on
-// the tile underfoot, the one farming works on (see updateTileCursor)
+// The tile cursor: at home with the hoe or seeds in hand, standing still, a
+// faint square on the tile in front, the one E farms (see updateTileCursor)
 const tileCursor = new THREE.Mesh(
   new THREE.RingGeometry(0.64, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
   new THREE.MeshBasicMaterial({ color: 0xfff3d6, transparent: true, opacity: 0.5, depthWrite: false })
@@ -1233,13 +1234,53 @@ const tileCursor = new THREE.Mesh(
 tileCursor.visible = false;
 scene.add(tileCursor);
 
-function updateTileCursor() {
+// The tile the farmer faces (the next one over, the way they look)
+const frontTile = () => tileKeyFor(player.position.x + Math.sin(anim.facing) * 0.95, player.position.z + Math.cos(anim.facing) * 0.95);
+
+function updateTileCursor(moving) {
   const held = inventory.selectedId();
-  tileCursor.visible = place === 'home' && !building && player.onGround &&
+  tileCursor.visible = place === 'home' && !building && !moving && player.onGround &&
     Math.abs(player.position.y - GROUND_STAND_Y) < 0.05 && (holding() === 'hoe' || !!ITEMS[held]?.plants);
   if (!tileCursor.visible) return;
-  const [gx, gz] = tileKeyFor(player.position.x, player.position.z).split(',').map(Number);
-  tileCursor.position.set(gx * TILE_SIZE, 0.1, gz * TILE_SIZE);
+  const [x, z] = keyXZ(frontTile());
+  tileCursor.position.set(x, 0.1, z);
+}
+
+// The hover outline: with a mouse, a white line round what it points at, a
+// tree or a rock, else (at home) the tile
+let hoverAt = null; // where the mouse is over the game (null: off it, or not a mouse)
+const hoverMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false });
+const hoverTile = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.68, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2), hoverMat);
+const hoverRing = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 32).rotateX(-Math.PI / 2), hoverMat);
+hoverTile.visible = hoverRing.visible = false;
+scene.add(hoverTile, hoverRing);
+canvas.addEventListener('pointermove', (e) => (hoverAt = e.pointerType === 'mouse' ? { x: e.clientX, y: e.clientY } : null));
+canvas.addEventListener('pointerleave', () => (hoverAt = null));
+
+const _base = new THREE.Vector3();
+function updateHover() {
+  hoverTile.visible = hoverRing.visible = false;
+  if (!hoverAt || held || building || place === 'title' || inputBlocked()) return;
+  _ndc.set((hoverAt.x / window.innerWidth) * 2 - 1, -(hoverAt.y / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+  const things = new Map(); // object -> [where its foot is, how wide the ring round it]
+  for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, [tree.group, 0, 0.45 + tree.scale * 0.35]);
+  for (const rock of world.rocks) if (rock.state === 'up') things.set(rock.mesh, [rock.mesh, rock.scale * 0.3, rock.radius + 0.2]);
+  const hits = raycaster.intersectObjects([...things.keys()], true);
+  for (let obj = hits[0]?.object; obj; obj = obj.parent) {
+    if (!things.has(obj)) continue;
+    const [at, sink, r] = things.get(obj);
+    at.getWorldPosition(_base);
+    hoverRing.position.set(_base.x, _base.y - sink + 0.08, _base.z);
+    hoverRing.scale.setScalar(r);
+    hoverRing.visible = true;
+    return;
+  }
+  if (place === 'lobby') return;
+  const tile = tappedGround();
+  if (!tile) return;
+  hoverTile.position.set(tile.x, tile.y + 0.1, tile.z);
+  hoverTile.visible = true;
 }
 
 // The right mouse button cancels what we are in the middle of: build mode,
@@ -1420,7 +1461,7 @@ function arrived(d) {
 
 // Then do what the tap was for
 function arrive() {
-  const { kind, farm, spot, tree, rock, animal, key } = walk;
+  const { kind, farm, spot, tree, rock, animal, key, x, z } = walk;
   stopWalking();
   if (kind === 'build') {
     if (building) buildAt(key);
@@ -1431,7 +1472,7 @@ function arrive() {
   else if (kind === 'exit') goOutside();
   else if (kind === 'animal') tendAnimal(animal);
   else if (kind === 'farmer') bop();
-  else if (kind === 'tile' && farm) farmHere();
+  else if (kind === 'tile' && farm) farmHere(x, z);
   else if (kind === 'spot' && spot.item && !spot.pending) {
     takeSpot(spot);
     anim.squash = 0.15;
@@ -2533,7 +2574,8 @@ function update(dt) {
   farmer.sword.visible = inventory.selectedId() === 'wooden_sword';
   farmer.mallet.visible = inventory.selectedId() === 'mallet';
   animateCharacter(dt, moving);
-  updateTileCursor();
+  updateTileCursor(moving);
+  updateHover();
 
   const t = clock.elapsedTime;
   world.updateTrees(dt);
@@ -2583,7 +2625,7 @@ function update(dt) {
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
-  buildings.setNight(dayNight.night());
+  buildings.setNight(dayNight.night(), player.position);
   houseRoom.setNight(dayNight.night());
   houseRoom.update(t, player.position);
   if (place !== 'lobby') {
