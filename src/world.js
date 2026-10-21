@@ -10,8 +10,9 @@ export { mulberry32, distToSegment, distToPaths } from '../shared/worldgen.js';
 // An island built from a map definition (maps.js): the ground as a grid of
 // 1x1 tiles (the same grid the hoe tills on), the earth under them, platforms,
 // grass and flowers, trees, bushes and rocks, plus anything special the map
-// builds itself. Everything is placed with a seeded RNG so a map looks the
-// same on every load, and for everyone in a lobby.
+// builds itself. The trees and rocks are where the server says (wilds:
+// shared/wilds.js), the same for everyone; the rest is placed with a seeded
+// RNG so a map looks the same on every load, and steers clear of them.
 //
 // buildWorld() returns everything the game needs from a world: its root group
 // (added to the scene while you are there), its colliders, its tiles, its
@@ -268,7 +269,9 @@ function makeTuftGeometry(rand) {
 
 const FLOWER_COLORS = [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff6b4a];
 
-export function buildWorld(map) {
+// wilds: where the trees and rocks stand (shared/wilds.js growWilds, as the
+// server sent them)
+export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const rng = mulberry32(map.seed);
   const rand = (min, max) => min + rng() * (max - min);
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
@@ -365,26 +368,47 @@ export function buildWorld(map) {
 
   for (const p of map.platforms ?? []) addBox(p);
 
+  // Every place a tree or rock may stand in, by 4x4 squares: [x, z, r]
+  const WILD_CELL = 4;
+  const wildCell = (x, z) => `${Math.floor(x / WILD_CELL)},${Math.floor(z / WILD_CELL)}`;
+  const wildPlaces = new Map();
+  for (const [list, room] of [[wilds.trees, (t) => 0.35 * t.scale], [wilds.rocks, (r) => 0.9 * r.size]]) {
+    for (const thing of list) {
+      for (const [x, z] of thing.sites) {
+        const key = wildCell(x, z);
+        if (!wildPlaces.has(key)) wildPlaces.set(key, []);
+        wildPlaces.get(key).push([x, z, room(thing)]);
+      }
+    }
+  }
+  function nearWild(x, z, margin) {
+    const cx = Math.floor(x / WILD_CELL);
+    const cz = Math.floor(z / WILD_CELL);
+    for (let i = cx - 1; i <= cx + 1; i++) {
+      for (let j = cz - 1; j <= cz + 1; j++) {
+        for (const [px, pz, r] of wildPlaces.get(`${i},${j}`) ?? []) if (Math.hypot(x - px, z - pz) < r + margin) return true;
+      }
+    }
+    return false;
+  }
+
   // Is this spot a good place for decoration? On a tile where things grow,
-  // clear of platforms' footprints and the places the map keeps clear.
-  let findingSites = false; // (then trees and rocks don't count: see Growing back elsewhere)
+  // clear of platforms' footprints, the places the map keeps clear, and
+  // every place a tree or rock may stand in.
   function isOpenGround(x, z, margin = 0) {
     if (!map.decorTypes.has(tileAt(x, z))) return false;
     for (const box of platforms) {
-      if (box.ground || (box.grows && findingSites)) continue;
+      if (box.ground || box.grows) continue;
       if (x > box.min.x - margin && x < box.max.x + margin && z > box.min.z - margin && z < box.max.z + margin) return false;
     }
     for (const [kx, kz, r] of map.keepClear) {
       if (Math.hypot(x - kx, z - kz) < r + margin) return false;
     }
-    return true;
+    return !nearWild(x, z, margin);
   }
 
   // Scatter by rejection sampling: random spots, kept only if far enough
   // from earlier placements and the rule for that kind of decoration passes.
-  // (While placing, `scattering` is the rule it passed: a tree or rock keeps
-  // it, to find the other places it may grow back in; see Growing back elsewhere.)
-  let scattering = null;
   function scatter(count, minDist, accept, place, tries = count * 40) {
     const placed = [];
     for (let n = 0; n < tries && placed.length < count; n++) {
@@ -393,9 +417,7 @@ export function buildWorld(map) {
       if (!accept(x, z)) continue;
       if (placed.some(([px, pz]) => Math.hypot(x - px, z - pz) < minDist)) continue;
       placed.push([x, z]);
-      scattering = { accept, minDist };
       place(x, z);
-      scattering = null;
     }
   }
 
@@ -507,28 +529,31 @@ export function buildWorld(map) {
   // same for everyone on the island, which is how a lobby names a tree.
   const trees = [];
 
-  // kind: 'pine' | 'round' (default: either). scale: its size.
+  // One of wilds.trees (shared/wilds.js): kind 'pine' | 'round', scale its
+  // size, look what its details are drawn from (the same on every page).
   // A map may dress its trees and bushes in its own leaves (a season, say)
   const leaves = map.leafMats ?? leafMats;
   const needles = map.pineMats ?? pineMats;
-  function addTree(x, z, { kind = rng() < 0.45 ? 'pine' : 'round', scale = rand(0.8, 1.35) } = {}) {
+  function addTree({ x, z, kind, scale, look, sites }) {
+    const lr = mulberry32(look);
+    const pickOwn = (arr) => arr[Math.floor(lr() * arr.length)];
     const tree = new THREE.Group();
     tree.position.set(x, 0, z);
-    tree.rotation.y = rand(0, Math.PI * 2);
+    tree.rotation.y = lr() * Math.PI * 2;
     const k = scale;
     tree.scale.setScalar(k);
     root.add(tree);
 
     if (kind === 'pine') {
       // Pine: stacked cones
-      const leaf = pick(needles);
+      const leaf = pickOwn(needles);
       addDecor(trunkGeo, trunkMat, 0, 0, 0, 1, 1.1, 1, tree);
       addDecor(coneGeo, leaf, 0, 1.3, 0, 1.05, 1, 1.05, tree);
       addDecor(coneGeo, leaf, 0, 2.0, 0, 0.8, 0.9, 0.8, tree);
       addDecor(coneGeo, leaf, 0, 2.6, 0, 0.55, 0.8, 0.55, tree);
     } else {
       // Round tree: a cluster of leafy blobs
-      const leaf = pick(leaves);
+      const leaf = pickOwn(leaves);
       addDecor(trunkGeo, trunkMat, 0, 0, 0, 1.1, 1.5, 1.1, tree);
       addDecor(blobGeo, leaf, 0, 2.1, 0, 1.0, 0.9, 1.0, tree);
       addDecor(blobGeo, leaf, 0.55, 1.8, 0.3, 0.7, 0.65, 0.7, tree);
@@ -549,13 +574,11 @@ export function buildWorld(map) {
       x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
       state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
       big: 1, from: 0.01, // (a giant is drawn `big` times its scale; growing: from this scale)
-      sites: [[x, z]], rule: scattering,
+      sites: sites.map(([sx, sz]) => [sx, sz]), // (where it may grow back: see place())
     });
   }
 
-  const bushes = []; // [x, z] (so nothing grows back into one)
   function addBush(x, z) {
-    bushes.push([x, z]);
     const leaf = pick(leaves);
     const k = rand(0.35, 0.6);
     addDecor(blobGeo, leaf, x, k * 0.6, z, k, k * 0.8, k, root);
@@ -571,80 +594,36 @@ export function buildWorld(map) {
   // names a rock.
   const rocks = [];
 
-  // size: [min, max] (big ones are boulders and get a collider)
-  function addRock(x, z, [lo, hi] = [0.15, 0.45]) {
-    const k = rand(lo, hi);
-    const rock = addDecor(rockGeo, pick(rockMats), x, k * 0.3, z, k * rand(1, 1.5), k * rand(0.5, 0.8), k, root);
-    rock.rotation.set(rand(0, 0.4), rand(0, Math.PI * 2), rand(0, 0.4));
+  // One of wilds.rocks (shared/wilds.js): size (big ones are boulders and
+  // get a collider), look (its shape, the same on every page)
+  function addRock({ x, z, size, look, sites }) {
+    const lr = mulberry32(look);
+    const own = (min, max) => min + lr() * (max - min);
+    const k = size;
+    const rock = addDecor(rockGeo, rockMats[Math.floor(lr() * rockMats.length)], x, k * 0.3, z, k * own(1, 1.5), k * own(0.5, 0.8), k, root);
+    rock.rotation.set(own(0, 0.4), own(0, Math.PI * 2), own(0, 0.4));
     const collider = k > 0.6 ? addCollider({ x, y: k * 0.35, z, w: k * 1.4, h: k * 0.7, d: k * 1.4 }, { grows: true }) : null;
     rocks.push({
       id: rocks.length, mesh: rock, x, z, scale: k, radius: Math.max(rock.scale.x, rock.scale.z) * 0.85,
       collider, base: rock.scale.clone(), baseY: rock.position.y,
       state: 'up', t: 0, shake: 0, chips: null,
       big: 1, from: 0, baseRadius: 0, // (as for trees; growing: from this much of its size)
-      sites: [[x, z]], rule: scattering,
+      sites: sites.map(([sx, sz]) => [sx, sz]),
     });
   }
 
-  Object.assign(ctx, { addTree, addBush, addRock });
-  map.decorate(ctx);
+  for (const tree of wilds.trees) addTree(tree);
+  for (const rock of wilds.rocks) addRock(rock);
   for (const rock of rocks) rock.baseRadius = rock.radius;
+  // (the bushes and anything else the map scatters steer clear of them: isOpenGround)
+  Object.assign(ctx, { addBush });
+  map.decorate(ctx);
 
   // ---------- Growing back elsewhere ----------
   // A felled tree or a broken rock grows back somewhere else: each has a few
-  // places (sites: the first is where it grew at the start), all on ground
-  // its own rule (from scatter) accepts, clear of every other tree, rock and
-  // bush and each other's places. They come from their own seeded draws, after
-  // everything else is placed, so every page has the same and nothing else
-  // moves. Which place it stands in is its lobby's or farm's count of how
-  // often it grew back (see place()).
-  {
-    const SITES = 3; // where it started, and two more
-    const AWAY = 4; // a new place is at least this far from the others
-    const NEAR = 20; // and at most this far from where it started
-    const grng = mulberry32((map.seed ^ 0x5eed) >>> 0);
-    const CELL = 4;
-    const grid = new Map(); // "cx,cz" -> [[x, z, r]]
-    const cellOf = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
-    const claim = (x, z, r) => {
-      const key = cellOf(x, z);
-      if (!grid.has(key)) grid.set(key, []);
-      grid.get(key).push([x, z, r]);
-    };
-    const clear = (x, z, r) => {
-      const cx = Math.floor(x / CELL);
-      const cz = Math.floor(z / CELL);
-      for (let i = cx - 1; i <= cx + 1; i++) {
-        for (let j = cz - 1; j <= cz + 1; j++) {
-          for (const [px, pz, pr] of grid.get(`${i},${j}`) ?? []) if (Math.hypot(x - px, z - pz) < r + pr) return false;
-        }
-      }
-      return true;
-    };
-    const roomFor = (thing) => (thing.radius === undefined ? 1 : Math.max(0.4, thing.radius)); // (a tree, a rock)
-    for (const thing of [...trees, ...rocks]) claim(thing.x, thing.z, roomFor(thing));
-    for (const [x, z] of bushes) claim(x, z, 0.7);
-    findingSites = true; // (the grid keeps them apart instead)
-    // one more place for each in turn, then another (so the first don't take all the room)
-    for (let round = 1; round < SITES; round++) for (const thing of [...trees, ...rocks]) {
-      if (!thing.rule || thing.sites.length !== round) continue; // (placed by hand: it stays where it is)
-      const r = roomFor(thing);
-      for (let n = 0; n < 300 && thing.sites.length === round; n++) {
-        // somewhere round about where it started (the same sort of ground, likely)
-        const a = grng() * Math.PI * 2;
-        const d = AWAY + grng() * (NEAR - AWAY);
-        const x = thing.sites[0][0] + Math.cos(a) * d;
-        const z = thing.sites[0][1] + Math.sin(a) * d;
-        if (thing.sites.some(([sx, sz]) => Math.hypot(x - sx, z - sz) < AWAY)) continue;
-        // (its own sort of ground first; failing that, as a full forest is, any
-        // open ground, on a map that allows it)
-        if (!clear(x, z, r) || !(thing.rule.accept(x, z) || (map.growBackAnywhere && n >= 100 && isOpenGround(x, z, 1)))) continue;
-        thing.sites.push([x, z]);
-        claim(x, z, r);
-      }
-    }
-    findingSites = false;
-  }
+  // places (sites, from the server: the first is where it grew at the start).
+  // Which place it stands in is its lobby's or farm's count of how often it
+  // grew back (see place()).
 
   // Put a tree or rock in its place number n (a count of how often it grew
   // back; it goes round its places), or the next one canGrow(x, z) allows,

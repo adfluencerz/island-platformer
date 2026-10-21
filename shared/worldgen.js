@@ -50,6 +50,41 @@ export function genOf(seed) {
 }
 
 // ---------- Randomness ----------
+// list in an order rng picks, the same in every browser and on the server.
+// (It once was list.sort(() => rng() - 0.5), whose order is up to how the
+// JavaScript engine sorts: browsers of other versions grew other islands
+// from the same seed. This is that sort as the server's engine does it, step
+// by step, so every island stays as the server always grew it: the first run
+// of rising or falling ones (turned round if falling), then each of the rest
+// put in by binary search.)
+export function shuffled(list, rng) {
+  const a = [...list];
+  const n = a.length;
+  if (n < 2) return a;
+  const order = () => rng() - 0.5;
+  let run = 2;
+  const falling = order() < 0;
+  for (let i = 2; i < n; i++) {
+    const o = order();
+    if (falling ? o >= 0 : o < 0) break;
+    run++;
+  }
+  if (falling) a.splice(0, run, ...a.slice(0, run).reverse());
+  for (let start = run; start < n; start++) {
+    const pivot = a[start];
+    let left = 0;
+    let right = start;
+    while (left < right) {
+      const mid = left + ((right - left) >> 1);
+      if (order() < 0) right = mid;
+      else left = mid + 1;
+    }
+    a.splice(start, 1);
+    a.splice(left, 0, pivot);
+  }
+  return a;
+}
+
 export function mulberry32(seed) {
   return () => {
     seed |= 0;
@@ -318,7 +353,7 @@ function growIsland(seed, attempt) {
   const c = stream('coast');
   const r = c.rand(...size.coast);
   const room = size.half - 1.5 - r; // how far the coast may bulge
-  const freqs = [2, 3, 4, 5, 7, 9].sort(() => c.rng() - 0.5).slice(0, 3).sort((a, b) => a - b);
+  const freqs = shuffled([2, 3, 4, 5, 7, 9], c.rng).slice(0, 3).sort((a, b) => a - b);
   const amps = size.bulges.map((range) => c.rand(...range));
   const scale = Math.min(1, room / amps.reduce((a, b) => a + b, 0));
   const coast = { r, waves: freqs.map((f, i) => [amps[i] * scale, f, c.rand(0, Math.PI * 2)]) };

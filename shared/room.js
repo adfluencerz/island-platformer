@@ -38,18 +38,17 @@
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, devToolsOn } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { SPOT_KINDS, RARE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
+import { growWilds, wildsToWire, standsAt } from './wilds.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
 const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
 const CHOP_REACH = 2.6; // the client chops within 1.5 of the trunk
 const CHOP_EVERY = 1000; // ms: the fewest between two felled trees (felling one takes TREE.hits swings)
-const MAX_TREES = 2000; // tree ids are below this (an island has a couple of hundred)
 const MINE_REACH = 2.6; // the client mines within 1.3 of the rock's edge (plus the rock itself: up to 1.5 times its size, as drawn)
 const MINE_EVERY = 900; // ms: the fewest between two broken rocks (breaking one takes ROCK.hits swings)
-const MAX_ROCKS = 2000;
 const MAX_DROPS = 60;
 const round2 = (v) => Math.round(v * 100) / 100;
 const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
@@ -62,6 +61,9 @@ export class Room extends Place {
     super({ code, name, maxPlayers, worldLimit: island.half + 40, rand, log });
     this.island = island;
     this.seed = island.seed;
+    // where its trees and rocks stand (shared/wilds.js): the room's, sent to every page
+    this.wilds = growWilds(island);
+    this.wildsWire = wildsToWire(this.wilds);
     this.inviteOnly = inviteOnly;
     // Every spot starts out full
     // (a chest up on a sky isle has a bundle of things in it: shared/level.js rollSpot)
@@ -74,6 +76,7 @@ export class Room extends Place {
     this.drops = new Map(); // id -> { id, item, count, x, y, z, until }
     this.dropId = 0;
     this.giants = new Giants(rand); // (shared/giants.js)
+    this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
   }
 
@@ -132,6 +135,7 @@ export class Room extends Place {
       mined: [...this.mined.keys()],
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
+      wilds: this.wildsWire,
       drops: [...this.drops.values()].map(({ id, item, count, x, y, z }) => [id, item, count, x, y, z]),
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
@@ -171,7 +175,8 @@ export class Room extends Place {
       case C.CHOP: {
         const { id, x, z } = msg;
         const now = Date.now();
-        const ok = Number.isInteger(id) && id >= 0 && id < MAX_TREES && finite(x, z) &&
+        const tree = Number.isInteger(id) ? this.wilds.trees[id] : null;
+        const ok = tree && finite(x, z) && standsAt(tree, x, z) &&
           !this.felled.has(id) && !this.giants.is('tree', id) && now - p.chopAt >= CHOP_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= CHOP_REACH && Math.abs(p.y - 0.8) < 2;
         if (!ok) {
@@ -179,7 +184,7 @@ export class Room extends Place {
           return;
         }
         this.felled.set(id, 0); // (for good)
-        const count = woodFor(msg.size, this.rand); // (the bigger the tree, the more wood)
+        const count = woodFor(tree.scale, this.rand); // (the bigger the tree, the more wood)
         p.chopAt = now;
         p.wood += count;
         this.gathered(p, 'wood', count);
@@ -191,8 +196,9 @@ export class Room extends Place {
       case C.MINE: {
         const { id, x, z } = msg;
         const now = Date.now();
-        const size = Math.min(ROCK.size[1], Number.isFinite(msg.size) ? msg.size : 0);
-        const ok = Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && finite(x, z) &&
+        const rock = Number.isInteger(id) ? this.wilds.rocks[id] : null;
+        const size = rock?.size ?? 0;
+        const ok = rock && finite(x, z) && standsAt(rock, x, z) &&
           !this.mined.has(id) && !this.giants.is('rock', id) && now - p.mineAt >= MINE_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= MINE_REACH + size * 1.5 && Math.abs(p.y - 0.8) < 2;
         if (!ok) {
@@ -200,7 +206,7 @@ export class Room extends Place {
           return;
         }
         this.mined.set(id, 0); // (for good)
-        const count = stoneFor(msg.size, this.rand); // (the bigger the rock, the more stone)
+        const count = stoneFor(size, this.rand); // (the bigger the rock, the more stone)
         p.mineAt = now;
         p.stone += count;
         this.gathered(p, 'stone', count);
@@ -209,10 +215,6 @@ export class Room extends Place {
         this.broadcast({ t: S.MINED, id, by: p.id, count });
         break;
       }
-      case C.COUNT:
-        this.giants.setCounts(msg.trees, msg.rocks);
-        this.checkIsland(p, msg);
-        break;
       case C.DEV_GIANT: {
         // (developer tools: shared/constants.js DEV_TOOLS)
         const { kind, id } = msg;
@@ -223,7 +225,7 @@ export class Room extends Place {
         break;
       }
       case C.HIT: {
-        const hit = giantSwing(this.giants, p, msg);
+        const hit = giantSwing(this.giants, p, this.sized(msg));
         if (!hit) return;
         const { kind, id } = hit;
         this.changed = true;
@@ -308,21 +310,42 @@ export class Room extends Place {
   }
 
   // Up to n of one thing q gathered on this visit, out of their bag and onto
-  // the ground where they stand (or null: nothing to drop)
+  // the ground under them, even if they were in the air (or null: nothing to
+  // drop, or nowhere: they are out over the sea)
   knockLoose(q, n, now) {
     const kinds = Object.entries(q.bag).filter(([item, count]) => count > 0 && !KEEPS.has(item));
-    if (!kinds.length || this.drops.size >= MAX_DROPS) return null;
+    if (!kinds.length || this.drops.size >= MAX_DROPS || !this.island.isLand(q.x, q.z)) return null;
     const [item, have] = kinds[Math.floor(this.rand() * kinds.length)];
     const count = Math.min(n, have);
     q.bag[item] -= count;
-    const drop = { id: ++this.dropId, item, count, x: round2(q.x), y: round2(q.y), z: round2(q.z), until: now + DROP_MS };
+    const y = this.groundUnder(q.x, q.y, q.z) + GROUND_STAND_Y; // (where a farmer standing there would be)
+    const drop = { id: ++this.dropId, item, count, x: round2(q.x), y: round2(y), z: round2(q.z), until: now + DROP_MS };
     this.drops.set(drop.id, drop);
     return drop;
+  }
+
+  // How high the ground is under (x, z), below a farmer at height y: the
+  // island's own (the pond is lower), or a terrace, a toadstool cap, a sky
+  // isle or one of its steps they were over
+  groundUnder(x, y, z) {
+    const feet = y - GROUND_STAND_Y + 0.3;
+    let ground = this.island.floorAt(x, z);
+    for (const over of [this.island.topOver(x, z), this.island.skyOver(x, z)]) {
+      if (over && over.top <= feet && over.top > ground) ground = over.top;
+    }
+    return ground;
   }
 
   inReach(p, spot) {
     if (SPOT_KINDS[spot.kind].use === 'touch') return Math.hypot(spot.x - p.x, spot.y - p.y, spot.z - p.z) <= TOUCH_REACH;
     return Math.hypot(spot.x - p.x, spot.z - p.z) <= GATHER_REACH && Math.abs(p.y - spot.y) < 2;
+  }
+
+  // A HIT as the page sent it, with the size the tree or rock is (shared/wilds.js), if it is one of ours there
+  sized(msg) {
+    const thing = (msg?.kind === 'tree' ? this.wilds.trees : msg?.kind === 'rock' ? this.wilds.rocks : [])[msg.id];
+    if (!thing || !finite(msg.x, msg.z) || !standsAt(thing, msg.x, msg.z)) return null;
+    return { ...msg, size: thing.scale ?? thing.size };
   }
 
   // ---------- Every tick ----------
@@ -384,14 +407,15 @@ export class Room extends Place {
       }
     }
     for (const [id, at] of save.felled ?? []) {
-      if (Number.isInteger(id) && id >= 0 && id < MAX_TREES && Number.isFinite(at)) room.felled.set(id, at);
+      if (Number.isInteger(id) && id >= 0 && id < room.wilds.trees.length && Number.isFinite(at)) room.felled.set(id, at);
     }
     for (const [id, at] of save.mined ?? []) {
-      if (Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && Number.isFinite(at)) room.mined.set(id, at);
+      if (Number.isInteger(id) && id >= 0 && id < room.wilds.rocks.length && Number.isFinite(at)) room.mined.set(id, at);
     }
-    room.treeSites = siteMap(save.treeSites, MAX_TREES);
-    room.rockSites = siteMap(save.rockSites, MAX_ROCKS);
+    room.treeSites = siteMap(save.treeSites, room.wilds.trees.length);
+    room.rockSites = siteMap(save.rockSites, room.wilds.rocks.length);
     room.giants = Giants.fromSave(save.giants, room.rand);
+    room.giants.setCounts(room.wilds.trees.length, room.wilds.rocks.length);
     const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
     for (const s of (save.seats ?? []).slice(0, room.maxPlayers)) {
       if (!Number.isInteger(s.id) || s.id < 1 || room.players.has(s.id) || typeof s.key !== 'string' || !s.key) continue;

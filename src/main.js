@@ -29,7 +29,9 @@ import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap } from './maps.js';
-import { islandFor, hashSeed } from '../shared/worldgen.js';
+import { islandFor } from '../shared/worldgen.js';
+import { wildsFromWire } from '../shared/wilds.js';
+import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createDevTools } from './devtools.js';
@@ -153,17 +155,24 @@ const dayNight = createDayNight({ scene, sun, hemi, startHour: Number.isFinite(s
 // wild island of the lobby you are in, grown from its seed
 // (shared/worldgen.js). The farm is built once; a wild island when you first
 // go to a lobby on it (the last one is kept, for going back). The one you are
-// on is in the scene; `world` is the one under your feet.
-const worlds = { home: buildWorld(HOME) };
+// on is in the scene; `world` is the one under your feet. Their trees and
+// rocks stand where the server says (shared/wilds.js): the farm's are the
+// same for every farm (shared/homewilds.js), a lobby's island's come with
+// its WELCOME.
+const worlds = { home: buildWorld(HOME, wildsFromWire(HOME_WILDS)) };
+let wildsShown = null; // (the wild island's trees and rocks, as its lobby sent them)
 let world = worlds.home;
 scene.add(world.root);
 
-// name: 'home' or 'wild' (seed: which wild island)
-function enterWorld(name, seed) {
+// name: 'home' or 'wild' (seed: which wild island; wire: its trees and
+// rocks, as its lobby sent them)
+function enterWorld(name, seed, wire) {
   let stale = null; // the wild island we will not be back on
-  if (name === 'wild' && worlds.wild?.name !== `wild:${islandFor(seed).seed}`) {
+  const wilds = name === 'wild' ? JSON.stringify(wire ?? null) : null;
+  if (name === 'wild' && (worlds.wild?.name !== `wild:${islandFor(seed).seed}` || wilds !== wildsShown)) {
     stale = worlds.wild;
-    worlds.wild = buildWorld(wildMap(islandFor(seed)));
+    worlds.wild = buildWorld(wildMap(islandFor(seed)), wildsFromWire(wire) ?? undefined);
+    wildsShown = wilds;
   }
   if (worlds[name] !== world) {
     scene.remove(world.root);
@@ -887,13 +896,6 @@ function hitGiant(kind, thing) {
     rockMined(m);
     farmMined.set(thing.id, comeBackAt(ROCK.regrow));
   }
-}
-
-// Where an island's trees and rocks first stood, by number, as one number
-// (COUNT: its room checks every page grew the same ones, shared/place.js)
-function islandPrint(island) {
-  const at = (thing) => thing.sites[0].map((v) => v.toFixed(1)).join(',');
-  return hashSeed(`${island.trees.map(at).join(';')}|${island.rocks.map(at).join(';')}`);
 }
 
 // GIANT, from a lobby or a farm's room: one has grown (by 0), or someone swung at it
@@ -2292,7 +2294,6 @@ async function joinFarm(id) {
     myId = m.id;
     farmer.setShirt(m.color);
     showRoomFarm(m);
-    conn.send({ t: C.COUNT, trees: worlds.home.trees.length, rocks: worlds.home.rocks.length, print: islandPrint(worlds.home) });
     farmOnScreen = m.mine;
     if (m.mine) farmSync.handedToRoom();
     chest.setOwner(m.mine, m.farm.owner);
@@ -2527,7 +2528,7 @@ function joinLobby({ name, code }) {
       remotes.clear();
     }
     place = 'lobby';
-    enterWorld('wild', m.seed);
+    enterWorld('wild', m.seed, m.wilds);
     session = { code: m.code, seed: m.seed, room: m.room };
     myId = m.id;
     farmer.setShirt(m.color);
@@ -2544,7 +2545,6 @@ function joinLobby({ name, code }) {
     lobbyGiants = new Giants();
     giantBars.clear();
     showGiants(lobbyGiants, m.giants, world);
-    conn.send({ t: C.COUNT, trees: world.trees.length, rocks: world.rocks.length, print: islandPrint(world) });
     clearDrops();
     for (const drop of m.drops ?? []) addDrop(drop);
     lobbyNames.clear();

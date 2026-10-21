@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "test": "node scripts/test-multiplayer.js",
-    "island": "node scripts/island.js"
+    "island": "node scripts/island.js",
+    "wilds": "node scripts/wilds.js"
   },
   "dependencies": {
     "three": "^0.180.0",
