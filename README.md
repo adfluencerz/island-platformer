@@ -10,7 +10,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
 - Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
-- A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
+- A saved home farm, and online lobbies (up to 8 farmers) where rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
 ## Setup
@@ -109,16 +109,17 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 
 **Online lobbies** are drop-in places to gather with other farmers, each out on a wild island of its own: bigger and wilder than a farm, with a ragged coast, a mossy forest with giant toadstools to hop across, a shallow pond to wade into (there may be something on the bottom), a flower meadow, (on newer islands) a heather heath, rocky terraces climbing to the north, and a ring of standing stones where you arrive. The newest islands are twice as wide, with several climbs of terraces, rings of toadstools in red, brown, violet or gold, more woods, and trails out to all of them. Press `L` at home (or pick one on the title screen): **Quick join** (the fullest public lobby with room, or a new one), **Browse lobbies**, **Open a lobby** (name, size, island seed, public or invite-only), or **Join with a code**.
 
-- There's no farming in a lobby and there are no rounds: wander in, gather, head home whenever you like with what you found.
-- Every tree can be chopped down for **wood**: with the axe in hand, press (or hold) `E` next to a tree. Four swings fell it for everyone and give wood to whoever finished it: 2–4 from an ordinary tree, up to 6 from the big old trees in the woods, fewer from a little one; a stump is left behind and the tree grows back 1–2 minutes later. The merchant buys wood.
-- Every rock can be broken up for **stone**: with the pickaxe in hand, press (or hold) `E` next to a rock. Three swings break it for everyone and give stone to whoever finished it: one or two from an ordinary rock, one from a pebble, up to 6 from the boulders at the foot of the terraces; a new rock surfaces 1½–2½ minutes later. The merchant buys stone. The farm's own trees and rocks are chopped and mined the same way, and grow back the same way too (even while you're out; with helpers on the farm, the wood or stone goes to whoever got it). A farm from before the pickaxe gets one the first time it loads.
-- Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it. Each spot grows back 25–60 seconds later with a fresh roll of what's on it.
+- A lobby is a match: anyone can drop in while it runs (it's listed under Browse and Quick join), **nothing on its island grows back**, and once the last farmer has left it's thrown away.
+- There's no farming in a lobby: wander in, gather, head home whenever you like with what you found.
+- Every tree can be chopped down for **wood**: with the axe in hand, press (or hold) `E` next to a tree. Four swings fell it for everyone and give wood to whoever finished it: 2–4 from an ordinary tree, up to 6 from the big old trees in the woods, fewer from a little one; a stump is left behind (in a lobby for good; on a farm the tree grows back 10 minutes later). The merchant buys wood.
+- Every rock can be broken up for **stone**: with the pickaxe in hand, press (or hold) `E` next to a rock. Three swings break it for everyone and give stone to whoever finished it: one or two from an ordinary rock, one from a pebble, up to 6 from the boulders at the foot of the terraces; in a lobby it stays broken. The merchant buys stone. The farm's own trees and rocks are chopped and mined the same way, and grow back (even while you're out; with helpers on the farm, the wood or stone goes to whoever got it). A farm from before the pickaxe gets one the first time it loads.
+- Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it, and it stays empty.
 - Now and then something rare turns up (golden seeds, an old key) with a golden glint over it, and the whole lobby hears about it in chat. Golden seeds grow a golden turnip at home.
 - **Bopping**: with a wooden sword or a mallet (made at a workbench) in hand, `E` bops the nearest farmer in reach (or tap them to go and bop them). They stumble back and drop a little of what they gathered on this visit, one thing with the sword, two with the mallet, for anyone to walk into: never a rare find or gold. Nobody gets hurt. A farmer just bopped can't be again for a few seconds, and nobody bops or is bopped in the stone circle where you arrive (`WEAPONS` in `shared/balance.js`).
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
-- An empty lobby goes dormant after 90 seconds: it stops running, but its link keeps working for a week, and it stays on the lobby list as a quiet lobby (nobody there right now), below the busy ones (the 20 left most recently; invite-only ones stay unlisted). Whoever comes back finds the island as it was left, with whatever grew back in the meantime.
+- An empty lobby is thrown away 30 seconds after the last farmer leaves.
 
 ### Island seeds
 Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-31`: the seed decides the coastline, where the pond, meadow, woods, terraces and toadstools are, the trails between them, where the berry bushes, mushrooms and treasures are, and the island's season (spring, autumn or cherry blossom). The same seed always grows the same island, so a new lobby on a seed you liked is that island again.
@@ -131,7 +132,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - Under `npm run dev` a lobby the server opens for an unknown code uses the code as its seed.
 
 ### How it works
-- `shared/room.js` is one lobby: its players, its island and its resource spots. The server runs one per code. What the spots can hold and how fast they regrow is in `shared/balance.js`, what counts as rare in `shared/level.js`.
+- `shared/room.js` is one lobby: its players, its island and its resource spots. The server runs one per code. What the spots can hold is in `shared/balance.js`, what counts as rare in `shared/level.js`.
 - A lobby is saved as what has happened on its island (what's on each spot, which trees are down, who was there); the island itself grows again from the seed. A saved spot the island no longer has in the same place, or an item that no longer turns up there, starts out fresh, so saves survive changes to `shared/worldgen.js` and `shared/level.js`. The server writes `data/lobbies.json` a couple of seconds after something changes and when it stops (`server/lobby.js`, `server/store.js`).
 - `shared/worldgen.js` grows an island from a seed (coastline, pond, terraces, toadstools, woods, meadow, trails, spot positions). It runs on the server and in the page, and only the seed goes over the wire, so everyone in a lobby agrees on the island. Each part of an island has its own random stream, and a layout that fails the checks (every spot on land and reachable, every step within a jump of the last) is grown again from a variant of the seed; `npm test` checks hundreds of seeds.
 - The islands are built by `src/world.js` from a map definition in `src/maps.js`: per-tile ground types, platforms, what grows where, and each map's own set pieces. The farm is built once; a lobby's island when you arrive on it (the last one is kept for going back).
@@ -184,7 +185,7 @@ island-platformer/
 │   └── worldgen.js      # islands from seeds (and the classic island)
 ├── server/
 │   ├── index.js         # HTTP API + WebSocket + built client, one port
-│   ├── lobby.js         # lobbies by code, quick join, dormant lobbies, saving them
+│   ├── lobby.js         # lobbies by code, quick join, throwing empty ones away, saving them
 │   ├── farms.js         # farms kept for their devices, pairing codes, helpers
 │   ├── farmroom.js      # a farm with helpers, played together
 │   └── store.js         # a save file written safely (the lobbies, each farm)

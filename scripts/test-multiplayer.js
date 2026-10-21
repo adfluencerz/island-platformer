@@ -319,7 +319,7 @@ await test('spots: whoever gets there first, checked against position, counted',
   assert.equal(b.conn.last(S.TAKEN).item, 'berries');
 });
 
-await test('trees: felled by whoever finishes first, next to it, not too fast; they grow back', () => {
+await test('trees: felled by whoever finishes first, next to it, not too fast; they stay down', () => {
   const room = new Room({ code: 'TEST11' });
   const a = join(room, 'A');
   const b = join(room, 'B');
@@ -343,13 +343,13 @@ await test('trees: felled by whoever finishes first, next to it, not too fast; t
   room.message(a.p, { t: C.CHOP, id: -1, x: 11, z: -3 });
   room.message(a.p, { t: C.CHOP, id: 'x', x: 11, z: -3 });
   assert.equal(a.conn.all(S.CHOP_DENY).length, 4, 'nonsense ids are turned down');
-  // a newcomer sees it down; then it grows back for everyone
+  // a newcomer sees it down, and it never grows back
   const c = join(room, 'C');
   assert.deepEqual(c.conn.last(S.WELCOME).felled, [7]);
   assert.equal(room.rosterList().find((p) => p.id === a.p.id).wood, felled.count);
   room.update(Date.now() + TREE.regrow[1] * 1000 + 100);
-  assert.equal(b.conn.last(S.REGROWN)?.id, 7);
-  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).felled, []);
+  assert.equal(b.conn.last(S.REGROWN), undefined);
+  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).felled, [7]);
 });
 
 await test('bigger trees give more wood, within the sizes trees come in', () => {
@@ -368,7 +368,7 @@ await test('bigger trees give more wood, within the sizes trees come in', () => 
   assert.equal(a.conn.last(S.FELLED).count, woodFor(1.5, luck(0.99)));
 });
 
-await test('rocks: broken by whoever finishes first, next to it, not too fast; a new one surfaces', () => {
+await test('rocks: broken by whoever finishes first, next to it, not too fast; they stay broken', () => {
   const room = new Room({ code: 'TEST13' });
   const a = join(room, 'A');
   const b = join(room, 'B');
@@ -395,8 +395,8 @@ await test('rocks: broken by whoever finishes first, next to it, not too fast; a
   assert.deepEqual(join(room, 'C').conn.last(S.WELCOME).mined, [4]);
   assert.equal(room.rosterList().find((p) => p.id === a.p.id).stone, mined.count);
   room.update(Date.now() + ROCK.regrow[1] * 1000 + 100);
-  assert.equal(b.conn.last(S.RESURFACED)?.id, 4);
-  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, []);
+  assert.equal(b.conn.last(S.RESURFACED), undefined);
+  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, [4]);
 });
 
 await test('bopping: the farmer in front, in reach, knocked back; what they gathered drops, for anyone to pick up', () => {
@@ -471,22 +471,19 @@ await test('bigger rocks give more stone, within the sizes rocks come in', () =>
   assert.equal(a.conn.last(S.MINED).count, stoneFor(1, luck(0.99)));
 });
 
-await test('an emptied spot grows back after a while, with a fresh roll', () => {
+await test('an emptied spot stays empty: nothing in a lobby grows back', () => {
   const room = new Room({ code: 'TEST04' });
   const a = join(room, 'A');
   const id = spotOf('mushroom');
   standAt(room, a, id);
   room.message(a.p, { t: C.TAKE, id });
-  const now = Date.now();
-  room.update(now + 5_000);
-  assert.equal(room.spots[id].item, null, 'not yet');
   const [, slowest] = SPOT_KINDS.mushroom.regrow;
-  room.update(now + slowest * 1000 + 100);
-  assert.ok(room.spots[id].item);
-  assert.equal(a.conn.last(S.SPOT).id, id);
+  room.update(Date.now() + slowest * 1000 * 100);
+  assert.equal(room.spots[id].item, null);
+  assert.equal(a.conn.last(S.SPOT), undefined);
 });
 
-await test('rare finds are announced when they turn up and when someone takes one', () => {
+await test('rare finds are announced when someone takes one', () => {
   const lucky = () => 0.97; // (the top of every loot table: the rare end)
   const room = new Room({ code: 'TEST05', rand: lucky });
   const a = join(room, 'A');
@@ -498,8 +495,6 @@ await test('rare finds are announced when they turn up and when someone takes on
   room.message(a.p, { t: C.TAKE, id });
   assert.match(b.conn.last(S.CHAT).text, /^A found (golden seeds|an old key)!$/);
   assert.equal(a.p.rares, 1);
-  room.update(Date.now() + 120_000);
-  assert.ok(b.conn.all(S.CHAT).some((m) => /sparkles up on a ledge/.test(m.text)));
 });
 
 await test('a dropped player gets their seat back; heading home gives it up', () => {
@@ -606,39 +601,23 @@ await test('a save from before a change keeps only what still fits', () => {
   assert.deepEqual(back.rosterList().map(({ name, color, finds }) => [name, color, finds]), [['Ab', PLAYER_COLORS[0], 0]]);
 });
 
-await test('an empty lobby goes dormant, wakes by its code, and is let go after a week', () => {
+await test('an empty lobby is thrown away a little after the last farmer leaves', () => {
   const kept = [];
   const lobby = new Lobby({ log: () => {}, store: { load: () => null, save: (d) => kept.push(d) } });
-  const room = lobby.make({ name: 'Sleepy', seed: 'dewy glade 31' });
+  const room = lobby.make({ name: 'Brief', seed: 'dewy glade 31' });
   const a = join(room, 'A');
-  const id = room.spots.findIndex((s) => s.kind === 'ledge');
-  standAt(room, a, id);
-  room.message(a.p, { t: C.TAKE, id });
+  assert.deepEqual(lobby.list().map((l) => l.code), [room.code]);
   room.leave(a.p, { hold: false });
-  room.emptySince -= 91_000;
+  room.emptySince -= 10_000;
   lobby.reap();
-  assert.equal(lobby.rooms.size, 0);
-  assert.deepEqual(lobby.list().map((l) => [l.code, l.quiet, l.players]), [[room.code, true, 0]], 'listed as quiet while dormant');
-  const hidden = lobby.make({ name: 'Secret', inviteOnly: true });
-  hidden.emptySince -= 91_000;
-  lobby.reap();
-  assert.equal(lobby.list().length, 1, 'an invite-only one stays unlisted, dormant too');
-  lobby.dormant.delete(hidden.code);
-  assert.equal(room.timer, null, 'stopped');
-  const woke = lobby.find(room.code);
-  assert.ok(woke && woke !== room);
-  assert.equal(woke.seed, 'dewy-glade-31');
-  assert.equal(woke.spots[id].item, null, 'what was taken is still gone');
-  assert.equal(lobby.list().length, 1);
-  woke.emptySince -= 91_000;
-  lobby.reap();
-  lobby.dormant.get(room.code).since -= 8 * 24 * 3600_000;
+  assert.equal(lobby.find(room.code), room, 'not yet: a reload is quick');
+  room.emptySince -= 25_000;
   lobby.reap();
   assert.equal(lobby.find(room.code), null);
+  assert.equal(room.timer, null, 'stopped');
+  assert.deepEqual(lobby.list(), []);
   lobby.save();
-  assert.deepEqual(kept.at(-1).dormant, []);
   assert.deepEqual(kept.at(-1).rooms, []);
-  woke.close();
 });
 
 await test('the store writes atomically and sets aside a file it cannot read', () => {
