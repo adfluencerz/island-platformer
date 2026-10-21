@@ -40,7 +40,7 @@
 :root:not(.touch) .tc { display: none; }
 body.in-menu .tc { display: none; }
 .tc { font-family: var(--inv-font); }
-.tc-stick, .tc-btn { touch-action: none; }
+.tc-stick, .tc-btn, :root.touch .inv-hotbar { touch-action: none; }
 
 .tc-stick {
   position: fixed;
