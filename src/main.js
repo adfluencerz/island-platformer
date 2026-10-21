@@ -22,7 +22,7 @@ import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT } from '../shared/balance.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -1542,8 +1542,7 @@ function tappedThing() {
   } else {
     const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
     if (chest.shown()) things.set(chest.root, { kind: 'chest', x: chest.at().x, z: chest.at().z + 0.9 });
-    const house = buildings.find('house');
-    if (house) {
+    for (const house of buildings.findAll('house')) {
       const door = houseDoorAt(house);
       things.set(buildings.groupOf(house), { kind: 'door', x: door.x, z: door.z + 0.6 });
     }
@@ -1719,22 +1718,28 @@ const houseDoorAt = (key) => {
   const [x, z] = keyXZ(key);
   return { x, z: z + 0.4 * TILE_SIZE };
 };
+// The house whose door is in reach (its tile), or null. (A farm has a house
+// for each helper, and one: every door goes into the same room.)
 function houseDoorInReach() {
-  const key = place === 'home' && buildings.find('house');
-  if (!key || player.position.y > 2.2) return false;
-  const door = houseDoorAt(key);
-  return Math.hypot(player.position.x - door.x, player.position.z - (door.z + 0.6)) < DOOR_REACH;
+  if (place !== 'home' || player.position.y > 2.2) return null;
+  return buildings.findAll('house').find((key) => {
+    const door = houseDoorAt(key);
+    return Math.hypot(player.position.x - door.x, player.position.z - (door.z + 0.6)) < DOOR_REACH;
+  }) ?? null;
 }
+let cameInBy = null; // the house we went inside by (its tile): out through its door again
 
 function goInside() {
+  cameInBy = houseDoorInReach() ?? buildings.find('house');
   const { x, z } = houseRoom.entry();
   putDown({ x, y: GROUND_STAND_Y, z });
   anim.facing = Math.PI; // (into the room)
 }
 
-// In front of the house's door (or, if it was taken down meanwhile, the plaza)
+// In front of the door we came in by (or another house's, if that one was
+// taken down meanwhile; with none, the plaza)
 function goOutside() {
-  const key = buildings.find('house');
+  const key = buildings.get(cameInBy ?? '') === 'house' && buildings.anchor(cameInBy) === cameInBy ? cameInBy : buildings.find('house');
   if (!key) return putDown(arrival());
   const door = houseDoorAt(key);
   putDown({ x: door.x, y: GROUND_STAND_Y, z: door.z + 0.9 });
@@ -1802,6 +1807,9 @@ function blockedTile(x, z) {
     box.min.x < x + h && box.max.x > x - h && box.min.z < z + h && box.max.z > z - h);
 }
 
+// How many helpers the farm we are on has (each lets it have one more house)
+const farmHelpers = () => (farmVisit ? farmVisit.helpers : farmSync.farm?.helpers ?? 0);
+
 // Why the piece in hand can't go on (or come off) tile key ('': it can)
 function buildProblemAt(key) {
   if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return 'Stand on the ground to build';
@@ -1816,6 +1824,7 @@ function buildProblemAt(key) {
   }
   const piece = PIECES[building];
   if (piece.one && buildings.find(building)) return `The farm has a ${piece.name.toLowerCase()}: take it down to move it`;
+  if (buildings.findAll(building).length >= mostPieces(building, farmHelpers())) return `One house, and one more for each helper: invite a friend to build another`;
   // (every tile it would stand on: a house has 20)
   for (const k of pieceTiles(building, key)) {
     const problem = tileProblem(k, piece);
@@ -1958,7 +1967,7 @@ function updateBuilding() {
 let place = 'title'; // 'title' | 'home' | 'lobby'
 let net = null; // the Connection while in (or on the way to) a lobby
 let farmNet = null; // the Connection to a farm's room (ours with its helpers, or a friend's), on it or on the way
-let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone }
+let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone, helpers }
 let farmJoining = 0; // (each joinFarm's number: a newer one wins)
 const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
 const visiting = () => !!farmVisit && !farmVisit.mine; // on a friend's farm
@@ -2162,7 +2171,7 @@ async function joinFarm(id) {
     }
     place = 'home';
     enterWorld('home');
-    farmVisit = { id: m.farm.id, name: m.farm.name, owner: m.farm.owner, mine: m.mine, alone: true };
+    farmVisit = { id: m.farm.id, name: m.farm.name, owner: m.farm.owner, mine: m.mine, alone: true, helpers: m.farm.helpers ?? 0 };
     myId = m.id;
     farmer.setShirt(m.color);
     showRoomFarm(m);

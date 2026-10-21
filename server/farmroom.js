@@ -35,7 +35,7 @@ import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS, devToolsOn } from '../shared/constants.js';
 import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
@@ -58,10 +58,12 @@ const KEY_RE = /^-?\d{1,3},-?\d{1,3}$/;
 export class FarmRoom extends Place {
   // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
   // { id, owner }, or null for someone who isn't the owner or a helper.
-  constructor({ farm, admit, log = () => {} }) {
+  // helpers(): how many helpers the farm has now (each lets it have one more house)
+  constructor({ farm, admit, helpers = () => 0, log = () => {} }) {
     super({ code: farm.id, name: farmTitle(farm), worldLimit: Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w) + 40, log }); // (the house's room is out past the sea)
     this.farmId = farm.id;
     this.admit = admit;
+    this.helpers = helpers;
     const saved = farm.save?.farm ?? null;
     const now = Date.now();
     // the clock: game hours since the farm began, running on from when it was saved
@@ -91,6 +93,7 @@ export class FarmRoom extends Place {
     this.covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
     for (const [key, piece] of saved?.built ?? []) {
       const free = KEY_RE.test(key) && PIECES[piece] && pieceTiles(piece, key).every((k) => KEY_RE.test(k) && !this.tilled.has(k) && !this.covered.has(k));
+      // (a house built while it had more helpers stays)
       if (free && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece))) this.put(key, piece);
     }
     const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
@@ -146,7 +149,7 @@ export class FarmRoom extends Place {
       id: p.id,
       name: p.name,
       color: p.color,
-      farm: { id: this.farmId, name: this.name, owner: this.ownerName },
+      farm: { id: this.farmId, name: this.name, owner: this.ownerName, helpers: this.helpers() },
       mine: p.owner,
       tilled: this.tilledList(this.hours()),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
@@ -228,7 +231,7 @@ export class FarmRoom extends Place {
         const fromChest = Object.hasOwn(PIECES, piece) ? this.chestShare(p, piece, msg.chest) : null;
         const tiles = Object.hasOwn(PIECES, piece) ? pieceTiles(piece, key) : [];
         const free = (k) => onFarm(k) && !this.covered.has(k) && !this.tilled.has(k) && !keptClear(...k.split(',').map(Number));
-        const ok = onFarm(key) && fromChest && tiles.every(free) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece)) && this.near(p, key);
+        const ok = onFarm(key) && fromChest && tiles.every(free) && this.built.size < MAX_PIECES && this.count(piece) < mostPieces(piece, this.helpers()) && this.near(p, key);
         if (!ok) return this.deny(p, 'build', key, undefined, Object.hasOwn(PIECES, piece) ? piece : undefined);
         for (const [item, n] of fromChest) {
           this.chest[item] -= n;
@@ -415,6 +418,13 @@ export class FarmRoom extends Place {
     return false;
   }
 
+  // how many of `piece` are built on the farm
+  count(piece) {
+    let n = 0;
+    for (const built of this.built.values()) if (built === piece) n++;
+    return n;
+  }
+
   store(item, count) {
     this.chest[item] = (this.chest[item] ?? 0) + count;
   }
@@ -510,7 +520,12 @@ export class FarmRooms {
     if (this.rooms.has(id)) return this.rooms.get(id);
     const farm = this.farms.get(id);
     if (!farm) return null;
-    const room = new FarmRoom({ farm, admit: (auth, name) => this.admit(farm, auth, name), log: this.log });
+    const room = new FarmRoom({
+      farm,
+      admit: (auth, name) => this.admit(farm, auth, name),
+      helpers: () => this.farms.get(id)?.helpers?.length ?? 0,
+      log: this.log,
+    });
     room.start();
     this.rooms.set(id, room);
     this.log(`farm ${id} opened for helpers`);

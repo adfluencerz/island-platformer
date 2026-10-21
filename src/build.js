@@ -1080,6 +1080,8 @@ export function createBuildings(world) {
       for (const [key, piece] of pieces) if (piece.id === id) return key;
       return null;
     },
+    // the tiles every piece of kind `id` is built on
+    findAll: (id) => [...pieces].filter(([, p]) => p.id === id).map(([key]) => key),
     list: () => [...pieces].map(([key, p]) => [key, p.id]),
     size: () => pieces.size,
 

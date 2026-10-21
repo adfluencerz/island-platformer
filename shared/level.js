@@ -157,13 +157,16 @@ export const PIECES = {
   torch: { name: 'Torch', solid: true },
   workbench: { name: 'Workbench', solid: true },
   farm_chest: { name: 'Farm chest', solid: true, one: true },
-  house: { name: 'House', solid: true, one: true, size: [5, 4] },
+  house: { name: 'House', solid: true, perHelper: true, size: [5, 4] }, // (one, and one more for each helper: mostPieces)
   lamp_post: { name: 'Lamp post', solid: true },
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
 };
 for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
 export const MAX_PIECES = 2000; // on one farm
+// How many of piece id a farm may have, with this many helpers: one of the
+// `one` pieces, one more house for each helper, as many as it likes of the rest
+export const mostPieces = (id, helpers) => (PIECES[id].one ? 1 : PIECES[id].perHelper ? 1 + helpers : Infinity);
 
 // The tiles a piece built on tile key stands on: one, or for a piece with a
 // `size` [across, deep] (the house), that many, its front row centred on key
