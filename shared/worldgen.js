@@ -21,7 +21,7 @@
 // Generation 2 added the heath. Generation 3 grows islands twice as wide, with
 // several climbs of terraces and rings of toadstools, more woods and trails
 // out to them all (NARROW and WIDE below). Generation 4 added the reed marsh.
-// Generation 5 added the bluebell glade.
+// Generation 5 added the bluebell glade. Generation 6 added the sunflower field.
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
@@ -29,9 +29,10 @@ export const WILD_HALF = 34; // tiles reach this far from the middle, on both ax
 const WIDE_HALF = 68; // and from generation 3 on: twice as wide
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
-export const CURRENT_GEN = 5;
+export const CURRENT_GEN = 6;
 export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
 export const GLADE_RADIUS = [4.5, 6.5]; // the bluebell glade's size (gen 5, on islands twice as wide)
+export const FIELD_RADIUS = [5, 7]; // the sunflower field's size (gen 6, on islands twice as wide)
 export const MARSH_RADIUS = [5, 7]; // the reed marsh's size (gen 4, on islands twice as wide)
 
 // Which generation of the world a seed grows: "...-v2" is 2, any other seed 1
@@ -110,6 +111,7 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   heath: { x, z, r } | undefined: a heather moor (generation 2 and up)
 //   marsh: { x, z, r } | undefined: a reed marsh with cattails (generation 4 and up)
 //   glade: { x, z, r } | undefined: a bluebell glade (generation 5 and up)
+//   field: { x, z, r } | undefined: a sunflower field (generation 6 and up)
 //   spots: [[kind, x, y, z], ...]: a spot's id is its index
 function finishIsland(desc) {
   const { coast, pond } = desc;
@@ -134,8 +136,8 @@ function finishIsland(desc) {
     tops.find((t) => Math.abs(x - t.x) < t.w / 2 + margin && Math.abs(z - t.z) < t.d / 2 + margin) ?? null;
   // what the ground is at (x, z): null (the sea), 'pond', 'sand', 'stone' (the
   // stone circle), 'path', 'meadow', 'heath' (the moor), 'marsh' (the reeds),
-  // 'glade' (the bluebells), 'moss' (the woods) or 'grass'
-  const { spawn, meadow, trails, heath, marsh, glade } = desc;
+  // 'glade' (the bluebells), 'field' (the sunflowers), 'moss' (the woods) or 'grass'
+  const { spawn, meadow, trails, heath, marsh, glade, field } = desc;
   const groundAt = (x, z) => {
     if (!isLand(x, z)) return null;
     if (inPond(x, z)) return 'pond';
@@ -155,6 +157,10 @@ function finishIsland(desc) {
     if (glade) {
       const g = Math.atan2(z - glade.z, x - glade.x);
       if (Math.hypot(x - glade.x, z - glade.z) < glade.r + Math.sin(g * 5 + 3) * 0.8) return 'glade';
+    }
+    if (field) {
+      const f = Math.atan2(z - field.z, x - field.x);
+      if (Math.hypot(x - field.x, z - field.z) < field.r + Math.sin(f * 3 + 1) * 0.9) return 'field';
     }
     if (woodsAt(x, z) > 0) return 'moss';
     return 'grass';
@@ -254,6 +260,7 @@ const SPOT_COUNTS = { meadow: 4, trail: 3, bush: 7, mushroom: 7 };
 const HEATHER_SPOTS = 5; // (gen 2)
 const CATTAIL_SPOTS = 5; // (gen 4)
 const BLUEBELL_SPOTS = 5; // (gen 5)
+const SUNFLOWER_SPOTS = 5; // (gen 6)
 // How big an island grows and how much is on it: up to generation 2 as it
 // always did; from generation 3 on twice as wide, with more of everything
 // (several climbs and rings of toadstools, more woods, trails out to them all)
@@ -668,7 +675,13 @@ function growIsland(seed, attempt) {
     glade = growGlade(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath: heath?.area, marsh: marsh?.area, grow: size.heath });
     for (const spot of glade?.spots ?? []) spots.push(spot);
   }
-  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }) });
+  // Generation 6 comes after generation 5's, for the same reason
+  let field;
+  if (genOf(seed) >= 6) {
+    field = growField(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath: heath?.area, marsh: marsh?.area, glade: glade?.area, grow: size.heath });
+    for (const spot of field?.spots ?? []) spots.push(spot);
+  }
+  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }) });
   return checkIsland(island).length ? null : island;
 }
 
@@ -781,6 +794,46 @@ function growGlade(seed, attempt, { draft, spots, shoreDist, groundOk, inland, t
     const z = round1(area.z + Math.sin(a) * d);
     if (!groundOk(x, z) || distToPaths(x, z, draft.trails) < 1.3 || found.some(([, ox, , oz]) => Math.hypot(x - ox, z - oz) < 2.4)) continue;
     found.push(['bluebell', x, 0, z]);
+    taken.push([x, z]);
+  }
+  if (found.length < 3) return null;
+  return { area, spots: found };
+}
+
+// ---------- Generation 6: the sunflower field ----------
+// A clearing of tall sunflowers, with sunflowers to pick. Streams of its own
+// ('field', 'sunflower'), so it never moves anything else. Like the heath, the
+// marsh and the glade, an island with no room for one goes without.
+function growField(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, heath, marsh, glade, grow = 1 }) {
+  const h = mulberry32(hashSeed(`${seed}/${attempt}/field`));
+  const rand = (min, max) => min + h() * (max - min);
+  const r = round1(rand(...FIELD_RADIUS) * grow);
+  const rocks = [...draft.terraces.map(([x, z, w, d]) => ({ x, z, size: Math.max(w, d) })), ...draft.toadstools.map(([x, z, s]) => ({ x, z, size: s }))];
+  let area = null;
+  for (let n = 0; n < 300 && !area; n++) {
+    const { x, z } = inland(rand(0, Math.PI * 2), rand(0.25, 0.85));
+    const rx = round1(x);
+    const rz = round1(z);
+    if (shoreDist(rx, rz) < r * 0.7 + 2.5) continue;
+    if (Math.hypot(rx - pond.x, rz - pond.z) < pond.r + r + 1.5) continue;
+    if (Math.hypot(rx - meadow.x, rz - meadow.z) < meadow.r + r + 1) continue;
+    if (Math.hypot(rx - spawn.x, rz - spawn.z) < r + STONE_CIRCLE + 3) continue;
+    if (heath && Math.hypot(rx - heath.x, rz - heath.z) < heath.r + r + 1.5) continue;
+    if (marsh && Math.hypot(rx - marsh.x, rz - marsh.z) < marsh.r + r + 1.5) continue;
+    if (glade && Math.hypot(rx - glade.x, rz - glade.z) < glade.r + r + 1.5) continue;
+    if (rocks.some((t) => Math.hypot(rx - t.x, rz - t.z) < r + t.size / 2 + 2)) continue;
+    area = { x: rx, z: rz, r };
+  }
+  if (!area) return null;
+  const q = mulberry32(hashSeed(`${seed}/${attempt}/sunflower`));
+  const found = [];
+  for (let n = 0, want = Math.round(SUNFLOWER_SPOTS * grow); n < 400 && found.length < want; n++) {
+    const a = q() * Math.PI * 2;
+    const d = Math.sqrt(q()) * (area.r - 1.6);
+    const x = round1(area.x + Math.cos(a) * d);
+    const z = round1(area.z + Math.sin(a) * d);
+    if (!groundOk(x, z) || distToPaths(x, z, draft.trails) < 1.3 || found.some(([, ox, , oz]) => Math.hypot(x - ox, z - oz) < 2.4)) continue;
+    found.push(['sunflower', x, 0, z]);
     taken.push([x, z]);
   }
   if (found.length < 3) return null;
