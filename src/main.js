@@ -370,7 +370,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -385,6 +385,9 @@ const reedGeo = new THREE.CylinderGeometry(0.015, 0.03, 0.9, 5).translate(0, 0.4
 const spikeGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.2, 7).translate(0, 0.85, 0);
 const spikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 const bluebellMat = new THREE.MeshStandardMaterial({ color: 0x4a62d0, roughness: 0.5 });
+const pumpkinMat = new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 });
+const pumpkinGeo = new THREE.SphereGeometry(0.2, 8, 6).scale(1, 0.8, 1);
+const pumpkinStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 0.1, 5);
 const sunflowerPetalMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5 });
 const sunflowerHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 });
 const sunflowerPetalGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.02, 10).rotateX(Math.PI / 2);
@@ -446,6 +449,19 @@ function makeSpotView(spot) {
       stem.position.set(Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22);
       stem.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25);
       content.add(stem);
+    }
+  } else if (spot.kind === 'pumpkin') {
+    // A couple of round orange pumpkins with little green stems
+    content = new THREE.Group();
+    for (let i = 0; i < 2; i++) {
+      const a = i * 3.4;
+      const pumpkin = new THREE.Mesh(pumpkinGeo, pumpkinMat);
+      pumpkin.position.set(Math.cos(a) * 0.22, 0.16, Math.sin(a) * 0.22);
+      pumpkin.scale.setScalar(0.9 + i * 0.25);
+      const stalk = new THREE.Mesh(pumpkinStemGeo, sprigMat);
+      stalk.position.set(0, 0.2, 0);
+      pumpkin.add(stalk);
+      content.add(pumpkin);
     }
   } else if (spot.kind === 'sunflower') {
     // A few tall stems, each nodding a yellow head with a brown heart
