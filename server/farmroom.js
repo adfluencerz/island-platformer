@@ -185,10 +185,11 @@ export class FarmRoom extends Place {
   }
 
   // ---------- What they do ----------
-  // Close enough to the tile, and down on the ground (not up on a platform)
+  // Close enough to the tile, and not far above it (a step or a platform is
+  // fine: the client reaches 1.2 up or down, USE_HEIGHT in src/main.js)
   near(p, key) {
     const [gx, gz] = key.split(',').map(Number);
-    return Math.hypot(gx - p.x, gz - p.z) <= REACH && Math.abs(p.y - GROUND_STAND_Y) < 0.6;
+    return Math.hypot(gx - p.x, gz - p.z) <= REACH && Math.abs(p.y - GROUND_STAND_Y) < 1.4;
   }
 
   act(p, msg) {

@@ -511,7 +511,10 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   // ---------- Input ----------
   window.addEventListener('keydown', (e) => {
     if (e.target.closest?.('input, textarea, select')) return; // typing a name or a chat line
-    if (e.code === 'KeyI' && !e.repeat) setOpen(!open);
+    if (e.code === 'KeyI' && !e.repeat) {
+      if (!open) setTab('pack'); // (the bag opens on the backpack, even after the Build tab)
+      setOpen(!open);
+    }
     else if (e.code === 'KeyB' && !e.repeat) {
       if (open && tab === 'build') setOpen(false);
       else {
@@ -529,7 +532,9 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     select((selected + Math.sign(e.deltaY) + COLS) % COLS);
   }, { passive: true });
 
-  hotbarEl.addEventListener('mousedown', (e) => {
+  // (pointerdown: a second finger, while the thumb holds the stick, gets no mousedown)
+  hotbarEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     const slot = e.target.closest('[data-index]');
     if (slot) select(Number(slot.dataset.index));
   });

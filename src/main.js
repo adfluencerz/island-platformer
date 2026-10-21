@@ -387,6 +387,9 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
+const USE_HEIGHT = 1.2; // how far above or below the feet E reaches (from a step or a platform)
+// Standing (not mid-jump) with the feet within USE_HEIGHT of y (crops, trees and rocks: the ground's 0)
+const footReach = (y = 0) => player.onGround && Math.abs(player.position.y - GROUND_STAND_Y - y) < USE_HEIGHT;
 const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins', fern: 'Pick ferns', seashell: 'Collect shells', sky_chest: 'Open the chest', sky_vault: 'Unlock the chest' };
 const CHEST_ROOM = 3; // free backpack slots a sky isle's chest asks for, since what is in it is a surprise
 
@@ -623,7 +626,7 @@ function gatherSpotInReach() {
   for (const spot of spots.values()) {
     if (spot.use !== 'gather' || !spot.item || spot.pending) continue;
     const d = Math.hypot(spot.x - player.position.x, spot.z - player.position.z);
-    if (d < bestD && Math.abs(player.position.y - GROUND_STAND_Y - spot.y) < 1.2) {
+    if (d < bestD && Math.abs(player.position.y - GROUND_STAND_Y - spot.y) < USE_HEIGHT) {
       best = spot;
       bestD = d;
     }
@@ -646,15 +649,9 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
-  const tree = holding() === 'axe' ? treeInReach() : null;
-  const rock = holding() === 'pickaxe' ? rockInReach() : null;
-  const near = gatherSpotInReach();
-  const target = bopTarget();
-  if (target && !resting(player.position)) hud.setPrompt(`E  Bop ${lobbyNames.get(target.id) ?? 'them'}`);
-  else if (tree) hud.setPrompt(chopPrompt(tree));
-  else if (rock) hud.setPrompt(minePrompt(rock));
-  else if (near?.kind === 'sky_vault' && !inventory.count('key')) hud.setPrompt('Locked: an old key would open it');
-  else hud.setPrompt(near ? `E  ${GATHER_VERB[near.kind]}` : '');
+  const hint = useHint();
+  if (hint) hud.setPrompt(`E  ${hint}`);
+  else hud.setPrompt(gatherSpotInReach()?.kind === 'sky_vault' ? 'Locked: an old key would open it' : '');
 }
 
 // ---------- Chopping trees ----------
@@ -671,11 +668,11 @@ const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
 const farmTreeSites = new Map(); // how often each grew back: id -> count (which of its places it is in: shared/level.js nextSite)
 
-const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `E  Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`);
+const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`);
 
 // the standing tree within reach, nearest first
 function treeInReach() {
-  if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.6) return null;
+  if (!footReach()) return null;
   let best = null;
   let bestD = CHOP_REACH;
   for (const tree of world.trees) {
@@ -772,11 +769,11 @@ const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
 const farmRockSites = new Map(); // (as farmTreeSites)
 
-const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `E  Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`);
+const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`);
 
 // the whole rock within reach, nearest first
 function rockInReach() {
-  if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.6) return null;
+  if (!footReach()) return null;
   let best = null;
   let bestD = MINE_REACH;
   for (const rock of world.rocks) {
@@ -871,7 +868,7 @@ if (new URLSearchParams(location.search).has('giant')) GIANT.chance = 1; // (tes
 
 function giantPrompt(kind, thing) {
   const hp = giantsHere()[kind]?.hp ?? giantMax(kind);
-  return `E  ${kind === 'tree' ? 'Chop' : 'Mine'} the giant  ${Math.ceil(hp)}/${giantMax(kind)}`;
+  return `${kind === 'tree' ? 'Chop' : 'Mine'} the giant  ${Math.ceil(hp)}/${giantMax(kind)}`;
 }
 
 // Our share of a FELLED or MINED: all of it, if we did it alone
@@ -1225,8 +1222,8 @@ window.addEventListener('keydown', (e) => {
 
 // E: in a lobby, chop the tree in reach with the axe in hand, else gather
 // what is in reach. At home: trade at the merchant's counter, else harvest a
-// ripe crop on the tile in front, otherwise use the selected toolbar item. Farming only
-// works while standing on bare ground (not on a raised platform).
+// ripe crop on the tile in front, otherwise use the selected toolbar item. Farming,
+// chopping and mining reach USE_HEIGHT up or down (from a step or a platform).
 function useAction() {
   if (place === 'lobby') {
     if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
@@ -1265,8 +1262,25 @@ function tendAnimal(animal) {
   anim.squash = 0.15;
 }
 
+// (in the house, just its field)
+const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
+
+// The tiles the hoe in hand tills from x, z: a wide hoe the tiles either side
+// too, across the way the farmer faces (where there is room)
+function hoeTiles(x, z) {
+  const across = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing)) ? [0, 1] : [1, 0];
+  const sides = ITEMS[inventory.selectedId()]?.wide ? [-1, 1] : [];
+  const tiles = [[x, z]];
+  for (const k of sides) {
+    const tx = x + across[0] * k * TILE_SIZE;
+    const tz = z + across[1] * k * TILE_SIZE;
+    if (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz)) tiles.push([tx, tz]);
+  }
+  return tiles;
+}
+
 function farmHere(x, z) {
-  if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return;
+  if (!footReach()) return;
   if (x === undefined) [x, z] = keyXZ(frontTile());
   if (harvestAt(x, z)) return;
 
@@ -1275,8 +1289,6 @@ function farmHere(x, z) {
     inventory.notify('That\'s the animals\' pen: farm outside the fence');
     return;
   }
-  // (in the house, just its field)
-  const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
   if (offField(x, z) && (holding() === 'hoe' || ITEMS[held]?.plants)) {
     inventory.notify('Farm in the field: the earth on the left');
     return;
@@ -1284,13 +1296,7 @@ function farmHere(x, z) {
   if (holding() === 'hoe' && buildings.get(tileKeyFor(x, z))) {
     inventory.notify('Something is built here: take it down to till');
   } else if (holding() === 'hoe') {
-    // (a wide hoe: the tiles either side too, across the way the farmer faces)
-    const across = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing)) ? [0, 1] : [1, 0];
-    const sides = ITEMS[held].wide ? [-1, 1] : [];
-    for (const k of [0, ...sides]) {
-      const tx = x + across[0] * k * TILE_SIZE;
-      const tz = z + across[1] * k * TILE_SIZE;
-      if (k && (buildings.get(tileKeyFor(tx, tz)) || inPen(tx, tz) || offField(tx, tz))) continue;
+    for (const [tx, tz] of hoeTiles(x, z)) {
       if (tillTileAt(tx, tz) && farmNet) {
         pendingTills.add(tileKeyFor(tx, tz));
         farmNet.send({ t: C.TILL, key: tileKeyFor(tx, tz) });
@@ -1310,6 +1316,34 @@ function farmHere(x, z) {
       inventory.notify('Seeds go on tilled soil');
     }
   }
+}
+
+// What E would do here (as useAction and farmHere ask, doing nothing), for the
+// prompt and the touch Use button: '' (nothing). In a lobby: bop, chop, mine
+// or gather; at home: chop, mine, then harvest, till or plant the tile in front.
+function useHint() {
+  if (place === 'lobby') {
+    const target = bopTarget();
+    if (target && !resting(player.position)) return `Bop ${lobbyNames.get(target.id) ?? 'them'}`;
+  }
+  const tree = holding() === 'axe' ? treeInReach() : null;
+  if (tree) return chopPrompt(tree);
+  const rock = holding() === 'pickaxe' ? rockInReach() : null;
+  if (rock) return minePrompt(rock);
+  if (place === 'lobby') {
+    const near = gatherSpotInReach();
+    return near && !(near.kind === 'sky_vault' && !inventory.count('key')) ? GATHER_VERB[near.kind] : '';
+  }
+  if (!footReach()) return '';
+  const [x, z] = keyXZ(frontTile());
+  const key = tileKeyFor(x, z);
+  const crop = crops.get(key);
+  if (crop?.ripe) return crop.pending ? '' : `Harvest ${ITEMS[CROPS[crop.cropId].produce].name.toLowerCase()}`;
+  const held = inventory.selectedId();
+  if (inPen(x, z) || offField(x, z)) return '';
+  if (holding() === 'hoe') return !buildings.get(key) && hoeTiles(x, z).some(([tx, tz]) => !farmTiles.has(tileKeyFor(tx, tz))) ? 'Till' : '';
+  if (ITEMS[held]?.plants && farmTiles.has(key) && !crops.has(key)) return `Plant ${ITEMS[held].name.toLowerCase()}`;
+  return '';
 }
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
@@ -1434,7 +1468,7 @@ const frontTile = () => tileKeyFor(player.position.x + Math.sin(anim.facing) * 0
 function updateTileCursor(moving) {
   const held = inventory.selectedId();
   tileCursor.visible = place === 'home' && !building && !moving && player.onGround &&
-    Math.abs(player.position.y - GROUND_STAND_Y) < 0.05 && (holding() === 'hoe' || !!ITEMS[held]?.plants);
+    footReach() && (holding() === 'hoe' || !!ITEMS[held]?.plants);
   if (!tileCursor.visible) return;
   const [x, z] = keyXZ(frontTile());
   tileCursor.position.set(x, 0.1, z);
@@ -2949,11 +2983,8 @@ function homePrompt() {
   if (ANIMAL_KINDS.includes(held) && animals.inPenFor(held, player.position.x, player.position.z, 0.5)) return `E  Let the ${ITEMS[held].name.toLowerCase()} out`;
   const animal = animals.inReach(player.position);
   if (animal) return `E  ${animals.verbFor(animal)}`;
-  const tree = holding() === 'axe' ? treeInReach() : null;
-  if (tree) return chopPrompt(tree);
-  const rock = holding() === 'pickaxe' ? rockInReach() : null;
-  if (rock) return minePrompt(rock);
-  return '';
+  const hint = useHint();
+  return hint ? `E  ${hint}` : '';
 }
 
 function animate() {
