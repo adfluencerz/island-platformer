@@ -32,14 +32,13 @@
 import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS } from '../shared/constants.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, keptClear, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, keptClear, chestHasRoom, spawnPoint, woodFor, stoneFor } from '../shared/level.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
 const SECONDS_PER_HOUR = DAY_LENGTH_SECONDS / 24;
 const RIPE_SLACK = 1; // seconds: pages count growth on their own clocks
-const MAX_STACK = 999; // of one item in the chest
-const MAX_KINDS = 64; // different items in the chest
+const MAX_STACK = CHEST.stack; // of one item in the chest
 const MAX_ANIMALS = 16 * 1024; // bytes of the animals' state
 const CLOCK_EVERY = 10_000; // ms between FARM_CLOCKs
 const SOIL_EVERY = 1000; // ms between looks at the bare soil
@@ -87,13 +86,15 @@ export class FarmRoom extends Place {
     }
     this.built = new Map(); // key -> piece (PIECES)
     for (const [key, piece] of saved?.built ?? []) {
-      if (KEY_RE.test(key) && PIECES[piece] && !this.tilled.has(key) && this.built.size < MAX_PIECES) this.built.set(key, piece);
+      if (KEY_RE.test(key) && PIECES[piece] && !this.tilled.has(key) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece))) this.built.set(key, piece);
     }
     const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
     this.felled = comingBack(saved?.felled, MAX_TREES); // tree id -> when it grows back (ms)
     this.mined = comingBack(saved?.mined, MAX_ROCKS); // rock id -> when a new one surfaces (ms)
     // the rest of the farm is the animals', as the owner's page saved them
-    const { savedAt, hours, tilled, crops, built, felled, mined, ...animals } = saved ?? {};
+    // (and the chest the page keeps when it plays the farm alone: the owner's
+    // page puts what is in it into this one when it comes)
+    const { savedAt, hours, tilled, crops, built, felled, mined, chest, ...animals } = saved ?? {};
     this.animals = animals;
     this.chest = { ...(farm.chest ?? {}) };
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
@@ -211,7 +212,7 @@ export class FarmRoom extends Place {
       case C.BUILD: {
         const { key, piece } = msg;
         const ok = onFarm(key) && Object.hasOwn(PIECES, piece) && !this.built.has(key) && !this.tilled.has(key) &&
-          !keptClear(...key.split(',').map(Number)) && this.built.size < MAX_PIECES && this.near(p, key);
+          !keptClear(...key.split(',').map(Number)) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece)) && this.near(p, key);
         if (!ok) return this.deny(p, 'build', key, undefined, Object.hasOwn(PIECES, piece) ? piece : undefined);
         this.built.set(key, piece);
         this.changed = true;
@@ -295,7 +296,7 @@ export class FarmRoom extends Place {
         const state = msg.state;
         if (!p.owner || !state || typeof state !== 'object' || Array.isArray(state)) return;
         if (JSON.stringify(state).length > MAX_ANIMALS) return;
-        const { savedAt, hours, tilled, crops, built, felled, mined, ...animals } = state; // (only the animals' part)
+        const { savedAt, hours, tilled, crops, built, felled, mined, chest, ...animals } = state; // (only the animals' part)
         this.animals = animals;
         this.changed = true;
         break;
@@ -324,8 +325,13 @@ export class FarmRoom extends Place {
   }
 
   canStore(item, count) {
-    const have = this.chest[item] ?? 0;
-    return have + count <= MAX_STACK && (have > 0 || Object.keys(this.chest).length < MAX_KINDS);
+    return chestHasRoom(this.chest, item, count);
+  }
+
+  // is a `piece` built on the farm? (there is only `one` of some)
+  has(piece) {
+    for (const built of this.built.values()) if (built === piece) return true;
+    return false;
   }
 
   store(item, count) {

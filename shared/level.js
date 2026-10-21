@@ -6,7 +6,14 @@
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
-export const FARM_CHEST = { x: -2.8, z: 7.4 }; // the farm's chest, on a farm with helpers (src/chest.js): on the grass by the plaza
+export const FARM_CHEST = { x: -2.8, z: 7.4 }; // where the farm's chest stands on a farm with helpers till one is built (src/chest.js): on the grass by the plaza
+export const CHEST = { stack: 999, kinds: 64 }; // the most of one item in the chest, and of different items
+
+// Is there room in a chest's items ({ item: count }) for count more of item?
+export function chestHasRoom(items, item, count) {
+  const have = items[item] ?? 0;
+  return have + count <= CHEST.stack && (have > 0 || Object.keys(items).length < CHEST.kinds);
+}
 
 // Seconds from planting to ripe (src/crops.js draws them)
 export const CROP_GROW_TIME = { turnip: 20, carrot: 30, flax: 35, sunflower: 45, golden_turnip: 60 };
@@ -96,7 +103,9 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch joins the walls (or fences) beside it the same
 // way. A low stone wall is hopped over like a fence; a palisade, like a
-// stone wall, can't be.
+// stone wall, can't be. A farm has `one` farm chest at most (src/chest.js):
+// built, it stands where it was put; on a farm with helpers there is one by
+// the plaza till then, so the harvest always has somewhere to go.
 // A farm with helpers keeps its pieces in its room (server/farmroom.js), like its soil.
 export const PIECES = {
   wood_fence: { name: 'Wood fence', cost: { wood: 2 }, solid: true, joins: true },
@@ -121,6 +130,7 @@ export const PIECES = {
   stone_arch: { name: 'Stone arch', cost: { stone: 5 }, joins: true },
   cobble_path: { name: 'Cobble path', cost: { stone: 2 } },
   workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
+  farm_chest: { name: 'Farm chest', cost: { wood: 8, stone: 2 }, solid: true, one: true },
   lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
   garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },
   planter: { name: 'Flower planter', cost: { planter: 1 }, solid: true },

@@ -20,7 +20,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -316,6 +316,7 @@ function harvestAt(x, z) {
 function resetFarm() {
   for (const key of [...crops.keys()]) removeCrop(key);
   buildings.clear();
+  placeChest();
   for (const mesh of farmTiles.values()) scene.remove(mesh);
   farmTiles.clear();
   worlds.home.restoreFoliage();
@@ -1246,7 +1247,7 @@ function tappedThing() {
     }
   } else {
     const stall = { kind: 'stall', x: TRADE_SPOT.x, z: TRADE_SPOT.z };
-    if (chest.shown()) things.set(chest.root, { kind: 'chest', x: FARM_CHEST.x, z: FARM_CHEST.z + 0.9 });
+    if (chest.shown()) things.set(chest.root, { kind: 'chest', x: chest.at().x, z: chest.at().z + 0.9 });
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
     for (const animal of animals.list()) if (animal.root.visible) things.set(animal.root, { kind: 'animal', animal, x: animal.pos.x, z: animal.pos.z });
@@ -1472,11 +1473,13 @@ function buildProblemAt(key) {
   if (building === 'remove') {
     const piece = buildings.get(key);
     if (!piece || pendingUnbuilds.has(key)) return 'Nothing to take down there';
+    if (piece === 'farm_chest' && !farmVisit && Object.keys(ownChest).length) return 'Empty the chest first';
     if (!Object.entries(PIECES[piece].cost).every(([item, n]) => inventory.canAdd(item, n))) return 'No room in the backpack for what it gives back';
     return '';
   }
   const piece = PIECES[building];
   if (buildings.get(key)) return 'Something is built there';
+  if (piece.one && buildings.find(building)) return `The farm has a ${piece.name.toLowerCase()}: take it down to move it`;
   if (farmTiles.has(key)) return 'That soil is tilled';
   if (Math.max(Math.abs(gx), Math.abs(gz)) > FARM_EDGE) return 'Too close to the water';
   if (keptClear(gx, gz)) return 'Keep that spot clear for farmers arriving';
@@ -1508,11 +1511,13 @@ function buildAt(key, { quiet = false } = {}) {
       farmNet.send({ t: C.UNBUILD, key });
     } else {
       giveBack(buildings.remove(key));
+      placeChest();
     }
     return true;
   }
   for (const [item, n] of Object.entries(PIECES[building].cost)) inventory.remove(item, n);
   buildings.place(key, building);
+  placeChest();
   if (farmNet) {
     pendingBuilds.add(key);
     farmNet.send({ t: C.BUILD, key, piece: building });
@@ -1628,30 +1633,76 @@ function freeFarmSpot() {
   return null;
 }
 const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (item, count) => inventory.add(item, count) });
-// The farm's chest (chest.js): only there on a farm with helpers. It is a
-// thing to bump into while it is there.
+// The farm's chest (chest.js): where its piece is built; on a farm with
+// helpers, by the plaza till one is. On a farm with helpers what is in it is
+// the room's; on our own farm without them, ours (ownChest, kept in the
+// farm's save). It is a thing to bump into while it is there.
+let ownChest = {}; // item -> count
 const chest = createChest({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()),
-  onPut: (item, count) => farmNet?.send({ t: C.CHEST_PUT, item, count }),
-  onTake: (item, count) => farmNet?.send({ t: C.CHEST_TAKE, item, count }),
+  onPut: (item, count) => {
+    if (farmVisit) return farmNet?.send({ t: C.CHEST_PUT, item, count });
+    if (!chestHasRoom(ownChest, item, count)) {
+      inventory.add(item, count, { quiet: true }); // (back where it came from)
+      return inventory.notify('The chest is full');
+    }
+    ownChest[item] = (ownChest[item] ?? 0) + count;
+    chest.setItems(ownChest);
+  },
+  onTake: (item, count) => {
+    if (farmVisit) return farmNet?.send({ t: C.CHEST_TAKE, item, count });
+    const n = Math.min(count, ownChest[item] ?? 0);
+    if (!n || !inventory.add(item, n)) return;
+    ownChest[item] -= n;
+    if (!ownChest[item]) delete ownChest[item];
+    chest.setItems(ownChest);
+    chest.refresh();
+  },
 });
 worlds.home.root.add(chest.root);
+
+// Where the chest stands now, and whose it is (after the farm's pieces change)
+function placeChest() {
+  const key = buildings.find('farm_chest');
+  const byPlaza = !key && !!farmVisit;
+  if (key) chest.moveTo(...keyXZ(key));
+  else chest.moveTo(FARM_CHEST.x, FARM_CHEST.z);
+  showChest(!!key || byPlaza, byPlaza); // (a built one is in the way as a piece already)
+  if (farmVisit) return; // (the room says what is in it)
+  chest.setOwner(true, '', false);
+  chest.setItems(ownChest);
+}
+
+// What we kept in our chest while playing our farm without its room goes
+// into the room's, as much as there is room for (the rest stays ours for now).
+// theirs: what the room's chest has.
+function pourOwnChest(theirs) {
+  const room = { ...theirs };
+  for (const [item, count] of Object.entries(ownChest)) {
+    if (!chestHasRoom(room, item, count)) continue;
+    room[item] = (room[item] ?? 0) + count;
+    farmNet.send({ t: C.CHEST_PUT, item, count });
+    delete ownChest[item];
+  }
+}
 
 // The workbench (workbench.js): built in build mode, and E next to one opens it
 const BENCH_REACH = 1.7; // from its middle
 const workbench = createWorkbench({ inventory, onOpenChange: (open) => (open ? keys.clear() : saveGame()) });
 let chestCollider = null;
-function showChest(on) {
+// on: is it there. collider: does it need one of its own (not built as a piece)
+function showChest(on, collider = on) {
   chest.show(on);
   const list = worlds.home.platforms;
-  if (on && !chestCollider) {
-    const { x, y, z, w, h, d } = chest.box;
-    chestCollider = { center: new THREE.Vector3(x, y, z), min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2) };
-    list.push(chestCollider);
-  } else if (!on && chestCollider) {
+  if (chestCollider) {
     list.splice(list.indexOf(chestCollider), 1);
     chestCollider = null;
+  }
+  if (on && collider) {
+    const { x, y, z, w, h, d } = chest.box();
+    chestCollider = { center: new THREE.Vector3(x, y, z), min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2), max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2) };
+    list.push(chestCollider);
   }
 }
 const splash = new Splash({
@@ -1747,7 +1798,8 @@ async function joinFarm(id) {
     if (m.mine) farmSync.handedToRoom();
     chest.setOwner(m.mine, m.farm.owner);
     chest.setItems(m.chest);
-    showChest(true);
+    placeChest();
+    if (m.mine) pourOwnChest(m.chest);
     remotes.clear();
     setFarmRoster(m.roster);
     if (!m.resumed && !(m.mine && from === 'home')) putDown(m.pos);
@@ -1786,10 +1838,12 @@ async function joinFarm(id) {
   on(S.BUILT, (m) => {
     if (pendingBuilds.delete(m.key) && buildings.get(m.key) === m.piece) return; // (ours: there already)
     buildings.place(m.key, m.piece);
+    placeChest();
   });
   on(S.UNBUILT, (m) => {
     pendingUnbuilds.delete(m.key);
     buildings.remove(m.key);
+    placeChest();
     if (m.by === myId) giveBack(m.piece);
   });
   on(S.HARVESTED, (m) => {
@@ -1808,6 +1862,7 @@ async function joinFarm(id) {
       crop.view.group.visible = true;
     } else if (m.op === 'build' && pendingBuilds.delete(m.key)) {
       giveBack(buildings.remove(m.key)); // (it wasn't built after all)
+      placeChest();
     } else if (m.op === 'unbuild') {
       pendingUnbuilds.delete(m.key);
     }
@@ -1875,7 +1930,6 @@ function leaveFarm() {
   pendingUnbuilds.clear();
   resetChopping();
   resetMining();
-  showChest(false);
   remotes.clear();
   keys.clear();
   myId = 0;
@@ -1884,6 +1938,7 @@ function leaveFarm() {
     resetFarm();
     farmOnScreen = false;
   }
+  placeChest();
 }
 
 function setFarmRoster(list) {
@@ -1903,6 +1958,7 @@ function showRoomFarm(m) {
     tillTileAt(...keyXZ(key), bare, life);
   }
   for (const [key, piece] of m.built ?? []) buildings.place(key, piece);
+  placeChest();
   showFarmWilds(m);
   for (const [key, cropId, at] of m.crops) {
     if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
@@ -2106,6 +2162,7 @@ function captureFarm() {
     built: buildings.list(),
     felled: [...farmFelled],
     mined: [...farmMined],
+    chest: { ...ownChest }, // (on a farm with helpers, what didn't fit in the room's)
     ...animals.capture(), // hens, cows, sheep, eggs
   };
 }
@@ -2113,6 +2170,7 @@ function captureFarm() {
 // (a farm from before there were animals gets the ones a new farm comes with)
 function showFarm(farm) {
   resetFarm();
+  ownChest = Object.fromEntries(Object.entries(farm?.chest ?? {}).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
@@ -2125,6 +2183,7 @@ function showFarm(farm) {
     if (bareNow < life) tillTileAt(...keyXZ(key), bareNow, life);
   }
   for (const [key, piece] of farm.built ?? []) buildings.place(key, piece);
+  placeChest();
   showFarmWilds(farm);
   for (const [key, cropId, age] of farm.crops) {
     if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);
