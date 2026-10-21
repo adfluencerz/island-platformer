@@ -4,10 +4,10 @@ import { TILE_SIZE } from './world.js';
 import { chestModel, CHEST_W } from './chest.js';
 
 // ---------- What is built on the farm ----------
-// Fences, gates, arches, walls (stone, low stone and palisades), paths,
-// blocks to climb (steps, crates, log piles, barrels, straw bales and stacks,
-// scaffolds, log towers, stone blocks and pillars), the workbench and what it
-// makes for the farm, and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// Fences (wood and split rail), gates, arches and arbors, walls (stone, low
+// stone and palisades), paths, blocks to climb (steps, crates, log piles,
+// barrels, straw bales and stacks, scaffolds, log towers, stone blocks, mossy
+// or not, and pillars), wells, the workbench and what it makes for the farm, and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -37,6 +37,10 @@ const MATS = {
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
   soil: mat(0x5b3a1e),
   leaf: mat(0x4f9e3c),
+  moss: mat(0x6f9a3e),
+  mossDark: mat(0x527a30),
+  gravel: mat(0xa89f8c),
+  water: mat(0x3d7fa8, { roughness: 0.3 }),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
@@ -105,6 +109,22 @@ function model(id, gx, gz, joined) {
     }
   } else if (id === 'stone_wall' || id === 'low_stone_wall') {
     stoneWall(g, solids, id === 'stone_wall' ? WALL_H : FENCE_H, joined);
+  } else if (id === 'rail_fence') {
+    // a squat post, and three split rails to each fence or wall it joins,
+    // resting a little unevenly, as if cut by hand
+    const r = hash(gx, gz);
+    part(g, box, MATS.bark, 0, 0.47, 0, 0.2, 0.94, 0.2);
+    part(g, box, MATS.endGrain, 0, 0.95, 0, 0.16, 0.02, 0.16).castShadow = false;
+    solids.push({ x: 0, y: FENCE_H / 2, z: 0, w: 0.3, h: FENCE_H, d: 0.3 });
+    for (const [dx, dz] of joined) {
+      [0.24, 0.52, 0.8].forEach((y, i) => {
+        const sag = ((r * 10 + i + dx + dz * 2 + 6) % 3) * 0.015;
+        const rail = part(g, flag, i % 2 ? MATS.plankB : MATS.rail, dx * 0.27, y - sag, dz * 0.27, 0.09, 0.56, 0.09);
+        if (dx) rail.rotation.z = Math.PI / 2;
+        else rail.rotation.x = Math.PI / 2;
+      });
+      solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.2, h: FENCE_H, d: dz ? 0.5 : 0.2 });
+    }
   } else if (id === 'wood_palisade') {
     // pointed logs side by side, a little uneven, with a rail behind them
     const r = hash(gx, gz);
@@ -151,6 +171,51 @@ function model(id, gx, gz, joined) {
         cobble.rotation.y = j * 6;
         cobble.castShadow = false;
       }
+    }
+  } else if (id === 'gravel_path') {
+    // a bed of raked gravel, with pebbles scattered over it a little
+    // differently on every tile
+    const r = hash(gx, gz);
+    part(g, box, MATS.gravel, 0, 0.015, 0, 0.96, 0.02, 0.96).castShadow = false;
+    for (let i = 0; i < 12; i++) {
+      const j = (r * 131 + i * 0.618) % 1;
+      const a = i * 2.4 + r * 6;
+      const d = 0.08 + ((j * 7) % 1) * 0.34;
+      const k = 0.05 + j * 0.05;
+      const pebble = part(g, ball, i % 3 ? MATS.stone : i % 2 ? MATS.stoneLight : MATS.stoneDark, Math.cos(a) * d, 0.03, Math.sin(a) * d, k, k * 0.6, k);
+      pebble.castShadow = false;
+    }
+  } else if (id === 'wood_arbor') {
+    // an arbor over the way through: a pair of posts either side, along the
+    // fences or walls it joins (across the tile on its own), beams and
+    // rafters overhead, and a vine climbing it with a few flowers. Like a
+    // gate it's walked through, so no colliders
+    const [ax, az] = joined.some(([dx]) => dx) || !joined.length ? [1, 0] : [0, 1];
+    const top = 2.1;
+    const r = hash(gx, gz);
+    // a spot o along the fence line and t across the way through
+    const at = (o, t) => [ax * o + az * t, az * o + ax * t];
+    const leaf = (x, y, z, k, i) => {
+      part(g, ball, MATS.leaf, x, y, z, k, k * 0.8, k);
+      if ((i + Math.floor(r * 5)) % 3 === 0) part(g, ball, MATS.petals[(i + Math.floor(r * 4)) % 4], x, y + k * 0.35, z, 0.09, 0.06, 0.09);
+    };
+    for (const s of [-1, 1]) {
+      for (const t of [-1, 1]) {
+        const [x, z] = at(s * 0.4, t * 0.3);
+        part(g, box, MATS.post, x, top / 2, z, 0.12, top, 0.12);
+        for (let i = 0; i < 3; i++) leaf(x, 0.45 + i * 0.55 + ((r * 10 + i + s + t + 6) % 2) * 0.12, z, 0.2, i + s + t + 2);
+      }
+      // a beam along the fence line over each pair of posts
+      const [x, z] = at(0, s * 0.3);
+      part(g, box, MATS.rail, x, top, z, ax ? 1.04 : 0.1, 0.12, az ? 1.04 : 0.1);
+    }
+    [-0.39, -0.13, 0.13, 0.39].forEach((o) => {
+      const [x, z] = at(o, 0);
+      part(g, box, MATS.plankB, x, top + 0.1, z, ax ? 0.07 : 0.92, 0.08, az ? 0.07 : 0.92);
+    });
+    for (let i = 0; i < 6; i++) {
+      const [x, z] = at(-0.45 + i * 0.18, i % 2 ? 0.3 : -0.3);
+      leaf(x, top + 0.06, z, 0.18, i);
     }
   } else if (id === 'stone_arch') {
     // two stone piers along the walls it joins (across the tile on its own),
@@ -298,6 +363,21 @@ function model(id, gx, gz, joined) {
       }
       part(g, box, MATS.plankA, 0, h - 0.04, 0, w, 0.08, w);
       [-0.24, 0, 0.24].forEach((o) => part(g, box, MATS.plankB, o, h + 0.005, 0, 0.02, 0.01, w - 0.04).castShadow = false);
+    } else if (id === 'mossy_stone_block') {
+      // old stone grown over with moss: a cushion of it on top, spilling
+      // down the sides in patches
+      const r = hash(gx, gz);
+      part(g, box, r < 0.5 ? MATS.stone : MATS.stoneDark, 0, h / 2, 0, w, h, w);
+      part(g, box, MATS.stoneDark, 0, Math.min(0.1, h / 4), 0, w + 0.02, Math.min(0.2, h / 2), w + 0.02);
+      for (const [fx, fz] of DIRS) part(g, box, MATS.stoneDark, fx * 0.485, h / 2, fz * 0.485, fz ? w : 0.03, 0.05, fz ? 0.03 : w);
+      part(g, box, MATS.moss, 0, h, 0, w - 0.02, 0.04, w - 0.02);
+      for (const [fx, fz] of DIRS) {
+        for (let i = 0; i < 2; i++) {
+          const o = ((r * 10 + i * 3 + fx + fz * 2 + 6) % 3 - 1) * 0.25;
+          const len = 0.2 + ((r * 7 + i * 0.4) % 1) * 0.35;
+          part(g, box, i ? MATS.mossDark : MATS.moss, fx * 0.485 + fz * o, h - len / 2, fz * 0.485 + fx * o, fz ? 0.24 : 0.03, len, fz ? 0.03 : 0.24).castShadow = false;
+        }
+      }
     } else if (id === 'stone_pillar') {
       // a round column on a square plinth, with a square cap to stand on
       const r = hash(gx, gz);
@@ -330,6 +410,33 @@ function model(id, gx, gz, joined) {
     part(g, box, MATS.post, -0.18, 0.9, 0.1, 0.36, 0.05, 0.05); // a mallet
     part(g, box, MATS.iron, -0.02, 0.92, 0.1, 0.1, 0.1, 0.14);
     solids.push({ x: 0, y: 0.45, z: 0, w: 0.96, h: 0.9, d: 0.62 });
+  } else if (id === 'stone_well') {
+    // a ring of stones round dark water, two posts holding a little plank
+    // roof, and a bucket hanging on its rope from the crank
+    const r = hash(gx, gz);
+    part(g, barrel, MATS.stoneDark, 0, 0.27, 0, 0.7, 0.54, 0.7);
+    part(g, barrel, MATS.water, 0, 0.55, 0, 0.68, 0.02, 0.68).castShadow = false;
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const stone = part(g, box, (i + Math.floor(r * 10)) % 3 ? MATS.stone : MATS.stoneLight, Math.cos(a) * 0.38, 0.33, Math.sin(a) * 0.38, 0.16, 0.66 - ((i + Math.floor(r * 10)) % 2) * 0.04, 0.27);
+      stone.rotation.y = -a;
+    }
+    for (const s of [-1, 1]) part(g, box, MATS.post, s * 0.42, 0.85, 0, 0.1, 1.7, 0.1);
+    part(g, box, MATS.post, 0, 1.72, 0, 0.94, 0.08, 0.1);
+    for (const s of [-1, 1]) {
+      const roof = part(g, box, s < 0 ? MATS.plankA : MATS.plankB, 0, 1.85, s * 0.2, 1.1, 0.05, 0.5);
+      roof.rotation.x = s * 0.6;
+    }
+    part(g, box, MATS.plankB, 0, 1.99, 0, 1.12, 0.06, 0.08);
+    // the crank, the rope and the bucket
+    part(g, log, MATS.post, 0, 1.25, 0, 0.07, 0.84, 0.07).rotation.z = Math.PI / 2;
+    part(g, box, MATS.iron, 0.5, 1.18, 0, 0.03, 0.16, 0.03);
+    part(g, box, MATS.post, 0.54, 1.1, 0, 0.1, 0.04, 0.04);
+    part(g, box, MATS.twine, 0, 1.08, 0, 0.02, 0.34, 0.02).castShadow = false;
+    part(g, barrel, MATS.stave, 0, 0.84, 0, 0.18, 0.16, 0.18);
+    part(g, barrel, MATS.iron, 0, 0.86, 0, 0.19, 0.03, 0.19).castShadow = false;
+    solids.push({ x: 0, y: 1, z: 0, w: 0.92, h: 2, d: 0.92 });
   } else if (id === 'lamp_post') {
     part(g, box, MATS.iron, 0, 0.08, 0, 0.36, 0.16, 0.36);
     part(g, box, MATS.iron, 0, 1.05, 0, 0.1, 2, 0.1);
