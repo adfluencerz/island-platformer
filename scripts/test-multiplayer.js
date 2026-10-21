@@ -765,7 +765,7 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
   assert.deepEqual(ann.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,3', piece: 'wood_fence', by: bo.p.id });
   // gates and the blocks to climb on are pieces too
-  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block']) {
+  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar']) {
     room.message(bo.p, { t: C.BUILD, key: '5,3', piece });
     assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,3', piece, by: bo.p.id });
     room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
