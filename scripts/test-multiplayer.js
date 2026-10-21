@@ -14,7 +14,7 @@ import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, woodFor, stoneFor, mostStone } from '../shared/level.js';
-import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN } from '../shared/worldgen.js';
+import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths } from '../shared/worldgen.js';
 import { fingerprint } from './seed-fingerprint.js';
 
 let passed = 0;
@@ -96,7 +96,7 @@ await test('new seeds carry their generation, and grow what it added', () => {
   assert.ok(normalizeSeed(randomSeed(() => 0.999)).endsWith(`-v${CURRENT_GEN}`), 'the longest seed still fits its marker');
   let heaths = 0;
   for (let i = 0; i < 40; i++) {
-    const seed = `${randomSeed(mulberry32(i))}`;
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v2');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     if (island.heath) {
@@ -110,9 +110,27 @@ await test('new seeds carry their generation, and grow what it added', () => {
   assert.ok(heaths >= 30, `most gen 2 islands have a heath (${heaths} of 40)`);
 });
 
+await test('generation 3 islands: twice as wide, with climbs, rings of toadstools and trails out to every wood', () => {
+  assert.equal(genOf('dewy-glade-31-v3'), 3);
+  for (let i = 0; i < 120; i++) {
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v3');
+    const island = islandFor(seed);
+    assert.deepEqual(checkIsland(island), [], seed);
+    const narrow = islandFor(seed.replace(/-v3$/, '-v2'));
+    assert.equal(island.half, narrow.half * 2, seed);
+    assert.ok(island.coast.r > narrow.coast.r * 1.6, `${seed}: the coast is further out`);
+    assert.ok(new Set(island.terraces.map((step) => step[5])).size >= 2, `${seed}: more than one climb`);
+    assert.ok(new Set(island.toadstools.map((cap) => cap[4])).size >= 2, `${seed}: more than one ring of toadstools`);
+    assert.ok(island.spots.length >= 50, `${seed} has ${island.spots.length} spots`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather')) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
+    // every wood has a trail into it
+    for (const [x, z, r] of island.woods) assert.ok(distToPaths(x, z, island.trails) < r, `${seed}: no trail to the wood at ${x}, ${z}`);
+  }
+});
+
 await test('every seed grows a sound island: spots on land, reachable, not inside a cliff or a toadstool', () => {
   for (let i = 0; i < 300; i++) {
-    const island = islandFor(randomSeed(mulberry32(i)).replace(/-v2$/, '') + i);
+    const island = islandFor(randomSeed(mulberry32(i)).replace(/-v\d$/, '') + i);
     assert.deepEqual(checkIsland(island), [], `seed ${island.seed}`);
     assert.ok(island.spots.length >= 25, `seed ${island.seed} has ${island.spots.length} spots`);
     for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);

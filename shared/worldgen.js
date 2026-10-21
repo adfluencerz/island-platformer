@@ -17,13 +17,18 @@
 // seed in still grows the old island. To grow the world further: raise
 // CURRENT_GEN, add the new things behind `gen >= N` using streams of their own
 // (see growExtras), and pin a few old seeds in the tests so they stay put.
+//
+// Generation 2 added the heath. Generation 3 grows islands twice as wide, with
+// several climbs of terraces and rings of toadstools, more woods and trails
+// out to them all (NARROW and WIDE below).
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
-const WILD_HALF = 34; // tiles reach this far from the middle, on both axes
+export const WILD_HALF = 34; // tiles reach this far from the middle, on both axes (generations 1 and 2, and the classic island)
+const WIDE_HALF = 68; // and from generation 3 on: twice as wide
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
-export const CURRENT_GEN = 2;
+export const CURRENT_GEN = 3;
 export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
 
 // Which generation of the world a seed grows: "...-v2" is 2, any other seed 1
@@ -93,8 +98,10 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   seed, theme, half, spawn: { x, z }
 //   coast: { r, waves: [[amp, freq, phase], ...] }: how far the shore is, by direction
 //   pond: { x, z, r, wobble: [amp, freq, phase] }, pondFloor
-//   terraces: [[x, z, w, d, top], ...]: rock steps, solid down to the ground
-//   toadstools: [[x, z, cap size, cap top], ...]
+//   terraces: [[x, z, w, d, top, chain], ...]: rock steps, solid down to the ground
+//     (chain: which climb, from generation 3; before that there is one)
+//   toadstools: [[x, z, cap size, cap top, ring, look], ...] (ring: which ring of
+//     caps, look: its color, src/maps.js; from generation 3, one ring before)
 //   woods: [[x, z, r], ...]: forest patches (ragged edges)
 //   meadow: { x, z, r }, trails: [polylines], stones: [angles round the spawn]
 //   heath: { x, z, r } | undefined: a heather moor (generation 2 and up)
@@ -231,8 +238,21 @@ const SOUTH = Math.PI / 2;
 const STEP_RISE = 1.2;
 const SPOT_COUNTS = { meadow: 4, trail: 3, bush: 7, mushroom: 7 };
 const HEATHER_SPOTS = 5; // (gen 2)
+// How big an island grows and how much is on it: up to generation 2 as it
+// always did; from generation 3 on twice as wide, with more of everything
+// (several climbs and rings of toadstools, more woods, trails out to them all)
+const NARROW = {
+  half: WILD_HALF, coast: [23.5, 27], bulges: [[2, 3.6], [1.2, 2.2], [0.6, 1.3]], arrival: [5, 9], pond: [3.6, 4.8], meadow: [5.5, 7],
+  spots: SPOT_COUNTS, tries: 600, heath: 1,
+};
+const WIDE = {
+  half: WIDE_HALF, coast: [47, 54], bulges: [[4, 7.2], [2.4, 4.4], [1.2, 2.6]], arrival: [10, 18], pond: [5.4, 7.2], meadow: [9, 11.5],
+  spots: { meadow: 8, trail: 6, bush: 18, mushroom: 18 }, tries: 2000, heath: 1.6,
+};
 
 function growIsland(seed, attempt) {
+  const wide = genOf(seed) >= 3;
+  const size = wide ? WIDE : NARROW;
   // One stream per part, so a change to how one part grows leaves the rest of
   // every island as it was
   const stream = (part) => {
@@ -243,10 +263,10 @@ function growIsland(seed, attempt) {
 
   // The coast: a round island with a few bays and headlands, never past the edge
   const c = stream('coast');
-  const r = c.rand(23.5, 27);
-  const room = WILD_HALF - 1.5 - r; // how far the coast may bulge
+  const r = c.rand(...size.coast);
+  const room = size.half - 1.5 - r; // how far the coast may bulge
   const freqs = [2, 3, 4, 5, 7, 9].sort(() => c.rng() - 0.5).slice(0, 3).sort((a, b) => a - b);
-  const amps = [c.rand(2, 3.6), c.rand(1.2, 2.2), c.rand(0.6, 1.3)];
+  const amps = size.bulges.map((range) => c.rand(...range));
   const scale = Math.min(1, room / amps.reduce((a, b) => a + b, 0));
   const coast = { r, waves: freqs.map((f, i) => [amps[i] * scale, f, c.rand(0, Math.PI * 2)]) };
   const coastAt = (a) => coast.r + waves(a, coast.waves);
@@ -257,14 +277,14 @@ function growIsland(seed, attempt) {
   // to either side of it, the terraces and the toadstools in the north
   const p = stream('places');
   const spawnA = SOUTH + p.rand(-0.5, 0.5);
-  const sd = p.rand(5, 9);
+  const sd = p.rand(...size.arrival);
   const spawn = { x: round1(Math.cos(spawnA) * sd), z: round1(Math.sin(spawnA) * sd) };
   const side = p.rng() < 0.5 ? 1 : -1; // which side the pond is on
   const pondAt = inland(SOUTH + side * p.rand(1.0, 1.6), p.rand(0.42, 0.55));
-  const pond = { x: round1(pondAt.x), z: round1(pondAt.z), r: round1(p.rand(3.6, 4.8)), wobble: [p.rand(0.4, 0.7), p.int(2, 4), p.rand(0, 6)] };
+  const pond = { x: round1(pondAt.x), z: round1(pondAt.z), r: round1(p.rand(...size.pond)), wobble: [p.rand(0.4, 0.7), p.int(2, 4), p.rand(0, 6)] };
   const pondFloor = -0.45;
   const meadowAt = inland(SOUTH - side * p.rand(0.9, 1.5), p.rand(0.4, 0.55));
-  const meadow = { x: round1(meadowAt.x), z: round1(meadowAt.z), r: round1(p.rand(5.5, 7)) };
+  const meadow = { x: round1(meadowAt.x), z: round1(meadowAt.z), r: round1(p.rand(...size.meadow)) };
   const terraceA = NORTH + p.rand(-0.9, 0.9);
   // the toadstools on the other side of north from the terraces
   const toadA = terraceA + (terraceA > NORTH ? -1 : 1) * p.rand(1.3, 1.9);
@@ -279,94 +299,219 @@ function growIsland(seed, attempt) {
     Math.hypot(x - spawn.x, z - spawn.z) > STONE_CIRCLE + 3 + Math.max(w, d) / 2 &&
     Math.hypot(x - meadow.x, z - meadow.z) > meadow.r * 0.6 + Math.max(w, d) / 2;
 
-  // The terraces: rock steps climbing north (and sideways), each 1.2 up
-  const t = stream('terraces');
   const terraces = [];
-  {
-    const start = inland(terraceA, t.rand(0.3, 0.42));
-    let w = t.rand(4.2, 5.4);
-    let d = t.rand(3.6, 4.4);
-    if (!fits(start.x, start.z, w, d)) return null;
-    terraces.push([round1(start.x), round1(start.z), round1(w), round1(d), STEP_RISE]);
-    const steps = t.int(3, 5);
-    let last = null; // the way the last step went
-    while (terraces.length < steps) {
-      const [px, pz, pw, pd, ptop] = terraces[terraces.length - 1];
-      let placed = false;
-      for (let n = 0; n < 12 && !placed; n++) {
-        const dir = t.pick(['n', 'n', 'e', 'w'].filter((k) => !(last === 'e' && k === 'w') && !(last === 'w' && k === 'e')));
-        w = t.rand(3.4, 4.6);
-        d = t.rand(3.2, 4.4);
-        const gap = t.rand(-0.6, 0.3); // (< 0: they overlap a little)
-        let x;
-        let z;
-        if (dir === 'n') {
-          z = pz - (pd + d) / 2 - gap;
-          x = px + t.rand(-1, 1) * Math.max(0, (pw + w) / 2 - 1.8); // keep 1.8 of shared edge
-        } else {
-          x = px + (dir === 'e' ? 1 : -1) * ((pw + w) / 2 + gap);
-          z = pz + t.rand(-1, 0.3) * Math.max(0, (pd + d) / 2 - 1.8);
-        }
-        // clear of every step but the one it climbs from
-        const others = terraces.slice(0, -1).map(([ox, oz, ow, od]) => ({ x: ox, z: oz, w: ow, d: od }));
-        const clear = others.every((o) => Math.abs(x - o.x) > (w + o.w) / 2 + 0.4 || Math.abs(z - o.z) > (d + o.d) / 2 + 0.4);
-        if (clear && fits(x, z, w, d)) {
-          terraces.push([round1(x), round1(z), round1(w), round1(d), round1(ptop + STEP_RISE)]);
-          last = dir;
-          placed = true;
-        }
-      }
-      if (!placed) break;
-    }
-    if (terraces.length < 3) return null;
-  }
-  for (const [x, z, w, d] of terraces) tops.push({ x, z, w, d });
-
-  // The giant toadstools: caps to hop across, each 1.2 above the last
-  const m = stream('toadstools');
   const toadstools = [];
-  {
-    const count = m.int(3, 4);
-    let at = inland(toadA, m.rand(0.45, 0.6));
-    let heading = m.rand(0, Math.PI * 2);
-    for (let i = 0; i < count; i++) {
-      const size = round1(m.rand(2.8, 3.3));
-      let placed = false;
-      for (let n = 0; n < 16 && !placed; n++) {
-        const x = i === 0 ? at.x + m.rand(-1, 1) : at.x + Math.cos(heading) * m.rand(4.1, 4.6);
-        const z = i === 0 ? at.z + m.rand(-1, 1) : at.z + Math.sin(heading) * m.rand(4.1, 4.6);
-        // (toward the camera the next cap would hide the one you stand on)
-        if (i > 0 && z > at.z + 1.5) {
-          heading += m.rand(0.6, 1.6);
-          continue;
+  if (!wide) {
+    // The terraces: rock steps climbing north (and sideways), each 1.2 up
+    const t = stream('terraces');
+    {
+      const start = inland(terraceA, t.rand(0.3, 0.42));
+      let w = t.rand(4.2, 5.4);
+      let d = t.rand(3.6, 4.4);
+      if (!fits(start.x, start.z, w, d)) return null;
+      terraces.push([round1(start.x), round1(start.z), round1(w), round1(d), STEP_RISE]);
+      const steps = t.int(3, 5);
+      let last = null; // the way the last step went
+      while (terraces.length < steps) {
+        const [px, pz, pw, pd, ptop] = terraces[terraces.length - 1];
+        let placed = false;
+        for (let n = 0; n < 12 && !placed; n++) {
+          const dir = t.pick(['n', 'n', 'e', 'w'].filter((k) => !(last === 'e' && k === 'w') && !(last === 'w' && k === 'e')));
+          w = t.rand(3.4, 4.6);
+          d = t.rand(3.2, 4.4);
+          const gap = t.rand(-0.6, 0.3); // (< 0: they overlap a little)
+          let x;
+          let z;
+          if (dir === 'n') {
+            z = pz - (pd + d) / 2 - gap;
+            x = px + t.rand(-1, 1) * Math.max(0, (pw + w) / 2 - 1.8); // keep 1.8 of shared edge
+          } else {
+            x = px + (dir === 'e' ? 1 : -1) * ((pw + w) / 2 + gap);
+            z = pz + t.rand(-1, 0.3) * Math.max(0, (pd + d) / 2 - 1.8);
+          }
+          // clear of every step but the one it climbs from
+          const others = terraces.slice(0, -1).map(([ox, oz, ow, od]) => ({ x: ox, z: oz, w: ow, d: od }));
+          const clear = others.every((o) => Math.abs(x - o.x) > (w + o.w) / 2 + 0.4 || Math.abs(z - o.z) > (d + o.d) / 2 + 0.4);
+          if (clear && fits(x, z, w, d)) {
+            terraces.push([round1(x), round1(z), round1(w), round1(d), round1(ptop + STEP_RISE)]);
+            last = dir;
+            placed = true;
+          }
         }
-        if (fits(x, z, size, size) && clearOf(x, z, size, size, 0.8)) {
-          toadstools.push([round1(x), round1(z), size, round1(1.4 + i * STEP_RISE)]);
-          tops.push({ x, z, w: size, d: size });
-          at = { x, z };
-          placed = true;
-        }
-        heading += m.rand(-0.9, 0.9);
+        if (!placed) break;
       }
-      if (!placed) break;
+      if (terraces.length < 3) return null;
     }
-    if (toadstools.length < 3) return null;
+    for (const [x, z, w, d] of terraces) tops.push({ x, z, w, d });
+
+    // The giant toadstools: caps to hop across, each 1.2 above the last
+    const m = stream('toadstools');
+    {
+      const count = m.int(3, 4);
+      let at = inland(toadA, m.rand(0.45, 0.6));
+      let heading = m.rand(0, Math.PI * 2);
+      for (let i = 0; i < count; i++) {
+        const size = round1(m.rand(2.8, 3.3));
+        let placed = false;
+        for (let n = 0; n < 16 && !placed; n++) {
+          const x = i === 0 ? at.x + m.rand(-1, 1) : at.x + Math.cos(heading) * m.rand(4.1, 4.6);
+          const z = i === 0 ? at.z + m.rand(-1, 1) : at.z + Math.sin(heading) * m.rand(4.1, 4.6);
+          // (toward the camera the next cap would hide the one you stand on)
+          if (i > 0 && z > at.z + 1.5) {
+            heading += m.rand(0.6, 1.6);
+            continue;
+          }
+          if (fits(x, z, size, size) && clearOf(x, z, size, size, 0.8)) {
+            toadstools.push([round1(x), round1(z), size, round1(1.4 + i * STEP_RISE)]);
+            tops.push({ x, z, w: size, d: size });
+            at = { x, z };
+            placed = true;
+          }
+          heading += m.rand(-0.9, 0.9);
+        }
+        if (!placed) break;
+      }
+      if (toadstools.length < 3) return null;
+    }
+  } else {
+    // somewhere for the next climb or ring of caps to start (not the first)
+    const elsewhere = (s) => inland(s.rand(0, Math.PI * 2), s.rand(0.25, 0.75));
+
+    // The terraces: climbs of rock steps going north (and sideways), each its
+    // own: how many steps, how big, how far up each one (`chain`: which climb)
+    const t = stream('terraces');
+    for (let chain = 0, climbs = t.int(2, 4), n = 0; chain < climbs && n < 20; n++) {
+      const steps = t.int(3, 7);
+      const rise = () => round1(t.rand(0.8, 1.5));
+      const start = chain === 0 ? inland(terraceA, t.rand(0.3, 0.42)) : elsewhere(t);
+      let w = t.rand(3.8, 6.4);
+      let d = t.rand(3.4, 5.2);
+      if (!fits(start.x, start.z, w, d) || !clearOf(start.x, start.z, w, d, 2.5)) {
+        if (chain === 0) return null;
+        continue;
+      }
+      const climb = [[round1(start.x), round1(start.z), round1(w), round1(d), rise(), chain]];
+      let last = null; // the way the last step went
+      while (climb.length < steps) {
+        const [px, pz, pw, pd, ptop] = climb[climb.length - 1];
+        let placed = false;
+        for (let k = 0; k < 12 && !placed; k++) {
+          const dir = t.pick(['n', 'n', 'e', 'w'].filter((q) => !(last === 'e' && q === 'w') && !(last === 'w' && q === 'e')));
+          w = t.rand(2.8, 5.2);
+          d = t.rand(2.8, 4.8);
+          const gap = t.rand(-0.6, 0.6); // (< 0: they overlap a little)
+          let x;
+          let z;
+          if (dir === 'n') {
+            z = pz - (pd + d) / 2 - gap;
+            x = px + t.rand(-1, 1) * Math.max(0, (pw + w) / 2 - 1.8); // keep 1.8 of shared edge
+          } else {
+            x = px + (dir === 'e' ? 1 : -1) * ((pw + w) / 2 + gap);
+            z = pz + t.rand(-1, 0.3) * Math.max(0, (pd + d) / 2 - 1.8);
+          }
+          // clear of every step but the one it climbs from, and of the other climbs
+          const others = climb.slice(0, -1).map(([ox, oz, ow, od]) => ({ x: ox, z: oz, w: ow, d: od }));
+          const clear = others.every((o) => Math.abs(x - o.x) > (w + o.w) / 2 + 0.4 || Math.abs(z - o.z) > (d + o.d) / 2 + 0.4);
+          if (clear && fits(x, z, w, d) && clearOf(x, z, w, d, 2.5)) {
+            climb.push([round1(x), round1(z), round1(w), round1(d), round1(ptop + rise()), chain]);
+            last = dir;
+            placed = true;
+          }
+        }
+        if (!placed) break;
+      }
+      if (climb.length < 3) {
+        if (chain === 0) return null;
+        continue;
+      }
+      terraces.push(...climb);
+      for (const [x, z, w, d] of climb) tops.push({ x, z, w, d });
+      chain++;
+    }
+
+    // The giant toadstools: rings of caps to hop across, each higher than the
+    // last; each ring its own size, count and color (`ring`; `look`: which
+    // color, src/maps.js)
+    const m = stream('toadstools');
+    for (let ring = 0, rings = m.int(2, 4), n = 0; ring < rings && n < 20; n++) {
+      const count = m.int(3, 6);
+      const look = ring === 0 ? 0 : m.int(0, 3);
+      const big = m.rand(2.4, 3.8); // (this ring's caps are about this wide)
+      const caps = [];
+      let at = ring === 0 ? inland(toadA, m.rand(0.45, 0.6)) : elsewhere(m);
+      let heading = m.rand(0, Math.PI * 2);
+      let top = round1(m.rand(1, 1.5));
+      for (let i = 0; i < count; i++) {
+        const size = round1(big * m.rand(0.85, 1.15));
+        const prev = caps[caps.length - 1];
+        let placed = false;
+        for (let k = 0; k < 16 && !placed; k++) {
+          const reach = prev ? (prev[2] + size) / 2 + m.rand(0.8, 1.8) : 0;
+          const x = prev ? at.x + Math.cos(heading) * reach : at.x + m.rand(-1, 1);
+          const z = prev ? at.z + Math.sin(heading) * reach : at.z + m.rand(-1, 1);
+          // (toward the camera the next cap would hide the one you stand on)
+          if (prev && z > at.z + 1.5) {
+            heading += m.rand(0.6, 1.6);
+            continue;
+          }
+          if (fits(x, z, size, size) && clearOf(x, z, size, size, prev ? 0.8 : 2.5)) {
+            caps.push([round1(x), round1(z), size, top, ring, look]);
+            tops.push({ x, z, w: size, d: size });
+            at = { x, z };
+            top = round1(top + m.rand(0.8, 1.4));
+            placed = true;
+          }
+          heading += m.rand(-0.9, 0.9);
+        }
+        if (!placed) break;
+      }
+      if (caps.length < 3) {
+        if (ring === 0) return null;
+        tops.splice(tops.length - caps.length, caps.length);
+        continue;
+      }
+      toadstools.push(...caps);
+      ring++;
+    }
   }
+  // the climbs (steps that share a `chain`) and the rings of caps (`ring`); up to generation 2, one of each
+  const climbs = [...new Set(terraces.map((step) => step[5]))].map((chain) => terraces.filter((step) => step[5] === chain));
+  const rings = [...new Set(toadstools.map((cap) => cap[4]))].map((ring) => toadstools.filter((cap) => cap[4] === ring));
 
   // The woods: one round the toadstools, a few more scattered about
   const wd = stream('woods');
-  const mid = toadstools.reduce((s, [x, z]) => ({ x: s.x + x / toadstools.length, z: s.z + z / toadstools.length }), { x: 0, z: 0 });
-  const woods = [[round1(mid.x), round1(mid.z), round1(wd.rand(8, 10))]];
-  for (let n = 0, more = wd.int(2, 3); n < 60 && woods.length < more + 1; n++) {
-    const { x, z } = inland(wd.rand(0, Math.PI * 2), wd.rand(0.5, 0.85));
-    const rr = wd.rand(5, 7.5);
-    if (Math.hypot(x - spawn.x, z - spawn.z) < rr + STONE_CIRCLE + 2) continue;
-    if (Math.hypot(x - meadow.x, z - meadow.z) < rr + meadow.r * 0.5) continue;
-    if (woods.some(([ox, oz, or]) => Math.hypot(x - ox, z - oz) < (rr + or) * 0.7)) continue;
-    woods.push([round1(x), round1(z), round1(rr)]);
+  const woods = [];
+  if (!wide) {
+    const mid = toadstools.reduce((s, [x, z]) => ({ x: s.x + x / toadstools.length, z: s.z + z / toadstools.length }), { x: 0, z: 0 });
+    woods.push([round1(mid.x), round1(mid.z), round1(wd.rand(8, 10))]);
+    for (let n = 0, more = wd.int(2, 3); n < 60 && woods.length < more + 1; n++) {
+      const { x, z } = inland(wd.rand(0, Math.PI * 2), wd.rand(0.5, 0.85));
+      const rr = wd.rand(5, 7.5);
+      if (Math.hypot(x - spawn.x, z - spawn.z) < rr + STONE_CIRCLE + 2) continue;
+      if (Math.hypot(x - meadow.x, z - meadow.z) < rr + meadow.r * 0.5) continue;
+      if (woods.some(([ox, oz, or]) => Math.hypot(x - ox, z - oz) < (rr + or) * 0.7)) continue;
+      woods.push([round1(x), round1(z), round1(rr)]);
+    }
+  } else {
+    // (from generation 3: one round each ring of toadstools, more scattered about)
+    woods.push(...rings.map((caps) => {
+      const mid = caps.reduce((s, [x, z]) => ({ x: s.x + x / caps.length, z: s.z + z / caps.length }), { x: 0, z: 0 });
+      return [round1(mid.x), round1(mid.z), round1(wd.rand(10, 14))];
+    }));
+    for (let n = 0, more = wd.int(5, 7), want = woods.length + more; n < 300 && woods.length < want; n++) {
+      const { x, z } = inland(wd.rand(0, Math.PI * 2), wd.rand(0.4, 0.85));
+      const rr = wd.rand(6, 11);
+      if (Math.hypot(x - spawn.x, z - spawn.z) < rr + STONE_CIRCLE + 2) continue;
+      if (Math.hypot(x - meadow.x, z - meadow.z) < rr + meadow.r * 0.5) continue;
+      if (woods.some(([ox, oz, or]) => Math.hypot(x - ox, z - oz) < (rr + or) * 0.7)) continue;
+      woods.push([round1(x), round1(z), round1(rr)]);
+    }
   }
 
-  // The trails: from the stone circle to everything, with a bend in each
+  // The trails: from the stone circle to everything, with a bend in each.
+  // From generation 3, from the nearest of those (or a trail branching off
+  // them) out to every other climb, ring of toadstools and wood too, the
+  // nearest first
   const tr = stream('trails');
   const toward = (from, to, by) => {
     const len = Math.hypot(to.x - from.x, to.z - from.z) || 1;
@@ -380,19 +525,51 @@ function growIsland(seed, attempt) {
     const mz = (from.z + to.z) / 2 + dx * bend;
     return [[round1(from.x), round1(from.z)], [round1(mx), round1(mz)], [round1(to.x), round1(to.z)]];
   };
-  const [tx, tz, , td] = terraces[0];
-  const [mx0, mz0, msize] = toadstools[0];
-  const terraceFoot = { x: tx, z: tz + td / 2 + 1.6 };
+  // the foot of a climb: just south of its first step
+  const footOf = ([[x, z, , d]]) => ({ x, z: z + d / 2 + 1.6 });
+  // just short of the first cap of a ring
+  const capsFrom = (from, [[x, z, msize]]) => toward({ x, z }, from, msize / 2 + 1.8);
   const trails = [
     trail(spawn, toward(pond, spawn, pond.r + 1.4)), // -> the pond's shore
-    trail(spawn, terraceFoot), // -> the foot of the terraces
-    trail(spawn, toward({ x: mx0, z: mz0 }, spawn, msize / 2 + 1.8)), // -> the toadstools
+    trail(spawn, footOf(climbs[0])), // -> the foot of the (first) terraces
+    trail(spawn, capsFrom(spawn, rings[0])), // -> the (first) toadstools
     trail(spawn, toward(meadow, spawn, meadow.r * 0.4)), // -> the meadow
     trail(spawn, inland(spawnA + tr.rand(-0.3, 0.3), 0.95)), // -> the south shore
   ];
+  const fromSpawn = trails.length;
+  if (wide) {
+    // the point on the trails so far nearest to (x, z)
+    const nearestOnTrails = (x, z) => {
+      let best = spawn;
+      let bestD = Infinity;
+      for (const path of trails) {
+        for (let i = 1; i < path.length; i++) {
+          const [[ax, az], [bx, bz]] = [path[i - 1], path[i]];
+          for (let f = 0; f <= 1; f += 0.125) {
+            const px = ax + (bx - ax) * f;
+            const pz = az + (bz - az) * f;
+            const dd = Math.hypot(x - px, z - pz);
+            if (dd < bestD) [best, bestD] = [{ x: px, z: pz }, dd];
+          }
+        }
+      }
+      return best;
+    };
+    const ends = [
+      ...climbs.slice(1).map((climb) => ({ at: footOf(climb) })),
+      ...rings.slice(1).map((caps) => ({ at: { x: caps[0][0], z: caps[0][1] }, caps })),
+      ...woods.map(([x, z]) => ({ at: { x, z } })),
+    ];
+    ends.sort((a, b) => Math.hypot(a.at.x - spawn.x, a.at.z - spawn.z) - Math.hypot(b.at.x - spawn.x, b.at.z - spawn.z));
+    for (const { at, caps } of ends) {
+      const from = nearestOnTrails(at.x, at.z);
+      const to = caps ? capsFrom(from, caps) : at;
+      if (Math.hypot(to.x - from.x, to.z - from.z) > 3) trails.push(trail(from, to));
+    }
+  }
 
-  // The standing stones round the arrival spot, with gaps where the trails go
-  const ways = trails.map(([[ax, az], [bx, bz]]) => Math.atan2(bz - az, bx - ax));
+  // The standing stones round the arrival spot, with gaps where the trails from it go
+  const ways = trails.slice(0, fromSpawn).map(([[ax, az], [bx, bz]]) => Math.atan2(bz - az, bx - ax));
   const turn = tr.rand(0, 1);
   const stones = [];
   for (let i = 0; i < 9; i++) {
@@ -402,17 +579,17 @@ function growIsland(seed, attempt) {
 
   // A provisional island, to ask where the ground is while placing the spots
   const theme = stream('theme').pick(['spring', 'spring', 'autumn', 'blossom']);
-  const draft = finishIsland({ seed, theme, half: WILD_HALF, spawn, coast, pond, pondFloor, terraces, toadstools, woods, meadow, trails, stones, spots: [] });
+  const draft = finishIsland({ seed, theme, half: size.half, spawn, coast, pond, pondFloor, terraces, toadstools, woods, meadow, trails, stones, spots: [] });
 
   // ---------- The spots ----------
   const s = stream('spots');
   const above = (top) => round1(top + 0.7);
   const spots = [];
-  // ledges up on every step but the first, and on every cap but the lowest
-  for (const [x, z, , , top] of terraces.slice(1)) spots.push(['ledge', x, above(top), z]);
-  for (const [x, z, , top] of toadstools.slice(1)) spots.push(['ledge', x, above(top), z]);
-  // a treasure on the lowest cap, and one on the pond's bottom
-  spots.push(['meadow', round1(mx0 + 0.6), above(toadstools[0][3]), round1(mz0 + 0.4)]);
+  // ledges up on every step of a climb but the first, and on every cap of a ring but the lowest
+  for (const climb of climbs) for (const [x, z, , , top] of climb.slice(1)) spots.push(['ledge', x, above(top), z]);
+  for (const caps of rings) for (const [x, z, , top] of caps.slice(1)) spots.push(['ledge', x, above(top), z]);
+  // a treasure on the lowest cap of each ring, and one on the pond's bottom
+  for (const [[x, z, , top]] of rings) spots.push(['meadow', round1(x + 0.6), above(top), round1(z + 0.4)]);
   spots.push(['meadow', pond.x, round1(pondFloor + 0.5), pond.z]);
 
   const taken = spots.map(([, x, , z]) => [x, z]);
@@ -422,7 +599,7 @@ function growIsland(seed, attempt) {
   // keep: does (x, z) suit this kind of spot. near(): where to look.
   function place(kind, count, near, keep, y = 0) {
     let found = 0;
-    for (let n = 0; n < 600 && found < count; n++) {
+    for (let n = 0; n < size.tries && found < count; n++) {
       const { x, z } = near();
       const rx = round1(x);
       const rz = round1(z);
@@ -442,16 +619,16 @@ function growIsland(seed, attempt) {
   const onTrail = (x, z) => distToPaths(x, z, trails) < 1;
   const offTrail = (x, z) => distToPaths(x, z, trails) > 1.3;
   const ok =
-    place('meadow', SPOT_COUNTS.meadow, aroundMeadow, () => true, 0.5) &&
-    place('meadow', SPOT_COUNTS.trail, anywhere, (x, z) => onTrail(x, z) && Math.hypot(x - meadow.x, z - meadow.z) > meadow.r, 0.5) &&
+    place('meadow', size.spots.meadow, aroundMeadow, () => true, 0.5) &&
+    place('meadow', size.spots.trail, anywhere, (x, z) => onTrail(x, z) && Math.hypot(x - meadow.x, z - meadow.z) > meadow.r, 0.5) &&
     // berry bushes along the forest's edge and round the meadow
-    place('bush', SPOT_COUNTS.bush, anywhere, (x, z) => {
+    place('bush', size.spots.bush, anywhere, (x, z) => {
       const edge = draft.woodsAt(x, z);
       const byMeadow = Math.abs(Math.hypot(x - meadow.x, z - meadow.z) - meadow.r - 1) < 1.2;
       return offTrail(x, z) && ((edge > -0.3 && edge < 0.05) || byMeadow);
     }) &&
     // mushrooms deep in the woods
-    place('mushroom', SPOT_COUNTS.mushroom, anywhere, (x, z) => offTrail(x, z) && draft.woodsAt(x, z) > 0.15);
+    place('mushroom', size.spots.mushroom, anywhere, (x, z) => offTrail(x, z) && draft.woodsAt(x, z) > 0.15);
   if (!ok) return null;
 
   // the ledges first, like the classic island (the order is the spots' ids)
@@ -460,7 +637,7 @@ function growIsland(seed, attempt) {
   // What later generations added comes last, so the spots above keep their ids
   let heath;
   if (genOf(seed) >= 2) {
-    heath = growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn });
+    heath = growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, grow: size.heath });
     for (const spot of heath?.spots ?? []) spots.push(spot);
   }
   const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }) });
@@ -470,11 +647,12 @@ function growIsland(seed, attempt) {
 // ---------- Generation 2: the heath ----------
 // A moor of heather in a clear stretch of land, with heather to pick on it.
 // Streams of its own ('heath', 'heather'), so it never moves anything else.
-// An island with no room for one just goes without.
-function growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn }) {
+// An island with no room for one just goes without. grow: how much bigger
+// than on a generation 2 island (with as many more heather spots)
+function growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, taken, pond, meadow, spawn, grow = 1 }) {
   const h = mulberry32(hashSeed(`${seed}/${attempt}/heath`));
   const rand = (min, max) => min + h() * (max - min);
-  const r = round1(rand(...HEATH_RADIUS));
+  const r = round1(rand(...HEATH_RADIUS) * grow);
   const rocks = [...draft.terraces.map(([x, z, w, d]) => ({ x, z, size: Math.max(w, d) })), ...draft.toadstools.map(([x, z, s]) => ({ x, z, size: s }))];
   let area = null;
   for (let n = 0; n < 300 && !area; n++) {
@@ -491,7 +669,7 @@ function growHeath(seed, attempt, { draft, spots, shoreDist, groundOk, inland, t
   if (!area) return null;
   const q = mulberry32(hashSeed(`${seed}/${attempt}/heather`));
   const found = [];
-  for (let n = 0; n < 400 && found.length < HEATHER_SPOTS; n++) {
+  for (let n = 0, want = Math.round(HEATHER_SPOTS * grow); n < 400 && found.length < want; n++) {
     const a = q() * Math.PI * 2;
     const d = Math.sqrt(q()) * (area.r - 1.3);
     const x = round1(area.x + Math.cos(a) * d);
@@ -522,7 +700,12 @@ export function checkIsland(island) {
     if (!island.isLand(x - w / 2, z - d / 2) || !island.isLand(x + w / 2, z + d / 2)) problems.push(`the rock or cap at ${x}, ${z} hangs over the sea`);
   }
   // each step within a jump of the one before
-  const chains = [island.terraces.map(([x, z, w, d, top]) => ({ x, z, w, d, top })), island.toadstools.map(([x, z, s, top]) => ({ x, z, w: s, d: s, top }))];
+  // (a climb's steps share a `chain`, a ring's caps a `ring`; up to generation 2, one of each)
+  const byGroup = (list, at, step) => [...new Set(list.map((it) => it[at] ?? 0))].map((g) => list.filter((it) => (it[at] ?? 0) === g).map(step));
+  const chains = [
+    ...byGroup(island.terraces, 5, ([x, z, w, d, top]) => ({ x, z, w, d, top })),
+    ...byGroup(island.toadstools, 4, ([x, z, s, top]) => ({ x, z, w: s, d: s, top })),
+  ];
   for (const chain of chains) {
     if (chain.length && chain[0].top > 1.6) problems.push('the first step is out of reach from the ground');
     for (let i = 1; i < chain.length; i++) {

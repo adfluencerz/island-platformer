@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
-import { hashSeed, STONE_CIRCLE } from '../shared/worldgen.js';
+import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from './world.js';
 import { STALL, buildStall } from './merchant.js';
 import { YARD, PASTURE, buildPens } from './animals.js';
@@ -75,11 +75,12 @@ export const HOME = {
 };
 
 // ---------- The wild islands: one per online lobby ----------
-// Bigger and wilder than a farm, and grown from the lobby's seed
-// (shared/worldgen.js has its shape): a ragged coast, a mossy forest with
-// giant toadstools to hop across, a shallow pond, a flower meadow, rocky
-// terraces, winding trails, and a ring of standing stones where farmers
-// arrive. The seed also picks the island's season: its colors.
+// Bigger and wilder than a farm (from generation 3 on, twice as wide again),
+// and grown from the lobby's seed (shared/worldgen.js has its shape): a
+// ragged coast, mossy forests, giant toadstools to hop across,
+// a shallow pond, a flower meadow, rocky terraces, winding trails, and a ring
+// of standing stones where farmers arrive. The seed also picks the island's
+// season: its colors.
 const THEMES = {
   spring: {
     tiles: { grass: 0x5a9a38, moss: 0x3d6b2f, meadow: 0x79b54c },
@@ -105,6 +106,10 @@ function leavesOf(name) {
   return themeLeaves.get(name);
 }
 
+// n of something on an island of the usual size, and as many for each such
+// island's worth of ground on a bigger one (generation 3)
+const forSize = (island, n) => Math.round(n * (island.half / WILD_HALF) ** 2);
+
 // island: from islandFor(seed)
 export function wildMap(island) {
   const theme = THEMES[island.theme] ?? THEMES.spring;
@@ -112,6 +117,7 @@ export function wildMap(island) {
   const nearTerrace = (x, z, margin) =>
     island.terraces.some(([tx, tz, w, d]) => Math.abs(x - tx) < w / 2 + margin && Math.abs(z - tz) < d / 2 + margin);
   const offTrail = (x, z, d) => distToPaths(x, z, trails) > d;
+  const more = (n) => forSize(island, n);
   return {
     name: `wild:${island.seed}`,
     island,
@@ -151,15 +157,15 @@ export function wildMap(island) {
     build: (ctx) => buildWildPieces(island, ctx),
     decorate({ scatter, addTree, addBush, addRock, isOpenGround, tileAt, rand }) {
       // The forest: thick on the moss, with big old trees among the pines
-      scatter(130, 2.1, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.2) && offTrail(x, z, 1.8),
+      scatter(more(130), 2.1, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.2) && offTrail(x, z, 1.8),
         (x, z) => addTree(x, z, { scale: rand(1, 1.6) }));
       // Lone trees out on the grass
-      scatter(24, 5, (x, z) => tileAt(x, z) === 'grass' && isOpenGround(x, z, 1.6) && offTrail(x, z, 2.2),
+      scatter(more(24), 5, (x, z) => tileAt(x, z) === 'grass' && isOpenGround(x, z, 1.6) && offTrail(x, z, 2.2),
         (x, z) => addTree(x, z));
-      scatter(60, 1.8, (x, z) => isOpenGround(x, z, 0.8) && offTrail(x, z, 1.2), addBush);
-      scatter(45, 1.4, (x, z) => tileAt(x, z) === 'sand' || isOpenGround(x, z, 0.5), (x, z) => addRock(x, z));
+      scatter(more(60), 1.8, (x, z) => isOpenGround(x, z, 0.8) && offTrail(x, z, 1.2), addBush);
+      scatter(more(45), 1.4, (x, z) => tileAt(x, z) === 'sand' || isOpenGround(x, z, 0.5), (x, z) => addRock(x, z));
       // Boulders tumbled at the foot of the terraces
-      scatter(9, 2.2, (x, z) => nearTerrace(x, z, 2.2) && !nearTerrace(x, z, 0.6) && isOpenGround(x, z, 0.4) && offTrail(x, z, 1.6),
+      scatter(more(9), 2.2, (x, z) => nearTerrace(x, z, 2.2) && !nearTerrace(x, z, 0.6) && isOpenGround(x, z, 0.4) && offTrail(x, z, 1.6),
         (x, z) => addRock(x, z, [0.7, 1.1]));
       // Generation 2 (the heath): last, so nothing before it moves
       if (island.heath) {
@@ -171,9 +177,13 @@ export function wildMap(island) {
 
 // ---------- The wild island's set pieces ----------
 const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf1e6cc, roughness: 0.8 });
-const toadCapMat = new THREE.MeshStandardMaterial({ color: 0xd8452f, roughness: 0.55 });
 const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9 });
-const dotMat = new THREE.MeshStandardMaterial({ color: 0xfff8ec, roughness: 0.6 });
+// a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
+// dots, a brown cep, violet, and golden
+const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4ecff], [0xe9a92a, 0xfffbe8]].map(([cap, dots]) => ({
+  cap: new THREE.MeshStandardMaterial({ color: cap, roughness: 0.55 }),
+  dots: new THREE.MeshStandardMaterial({ color: dots, roughness: 0.6 }),
+}));
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
 const pondWaterMat = addRipples(new THREE.MeshStandardMaterial({ color: 0x3aa0a8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 }));
 const padMat = new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 });
@@ -183,12 +193,14 @@ const logMat = foliageMat(0x7a5432);
 const logEndMat = foliageMat(0xc49a6c);
 
 function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, tileAt, scatter }) {
-  // Giant toadstools: a flat red cap you can stand on, white dots, a pale stalk
-  for (const [x, z, size, top] of island.toadstools) {
+  // Giant toadstools: a flat cap you can stand on (red with white dots, or
+  // its ring's own colors), a pale stalk
+  for (const [x, z, size, top, , look = 0] of island.toadstools) {
+    const { cap: capMat, dots: dotMat } = TOAD_LOOKS[look] ?? TOAD_LOOKS[0];
     const r = size * 0.6;
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, top - 0.35, 10), stalkMat);
     stalk.position.set(x, (top - 0.35) / 2, z);
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.92, r, 0.4, 20), toadCapMat);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.92, r, 0.4, 20), capMat);
     cap.position.set(x, top - 0.2, z);
     const gills = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.95, r * 0.5, 0.12, 20), gillMat);
     gills.position.set(x, top - 0.44, z);
@@ -253,7 +265,7 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
   }
 
   // Fallen logs in the forest, to hop over (or along)
-  scatter(5, 7, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.6) && distToPaths(x, z, island.trails) > 2, (x, z) => {
+  scatter(forSize(island, 5), 7, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.6) && distToPaths(x, z, island.trails) > 2, (x, z) => {
     const len = rand(2.2, 3.4);
     const along = rng() < 0.5; // lying east-west, else north-south
     const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, len, 9), [logMat, logEndMat, logEndMat]);
