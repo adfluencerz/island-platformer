@@ -9,7 +9,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
+- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
 - A saved home farm, and online lobbies (up to 8 farmers) you start with friends, where rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -80,6 +80,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
   Put them side by side for a platform, or step, crate, scaffold, pillar for a stair that is walked all the way up.
 - A **stone well** (6 stone, 3 wood), a ring of stones round dark water under a little roof, with a bucket on the crank.
 - A **stone lantern** (5 stone), a garden lantern with a little firebox that lights up at night like the lamp posts.
+- A **lamp post** (3 wood, 2 stone) that lights up at night, and a **garden bench** (6 wood). (Ones made at the workbench before turn back into the wood and stone they cost.)
 - A **scarecrow** (3 wood, 2 flax), in an old red shirt and a straw hat; a crow sits on the arm of some.
 - A **hay cart** (6 wood, 3 flax), a two-wheeled cart heaped with hay.
 - A **beehive** (2 wood, 3 flax), a straw skep on a stand, with bees about its door.
@@ -96,7 +97,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **stone cairn** (3 stone), flat stones piled one on another, each a little off the one below; moss at the foot of some.
 - A **clothesline** (2 wood, 2 flax), a line between two T-posts with a shirt, a sheet and trousers pegged out on it.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
-  - decorations, put down from the Build tab like the rest: a **lamp post** (3 wood, 2 stone) that lights up at night, a **garden bench** (6 wood) and a **flower planter** (4 stone, 1 wood);
+  - a **flower planter** (4 stone, 1 wood), put down from the Build tab like the rest;
   - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
   - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below).
 - A **farm chest** (8 wood, 2 stone), one to a farm: somewhere to keep things. What your backpack is short of when you build comes out of it.
