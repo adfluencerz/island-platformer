@@ -289,6 +289,28 @@ await test('a sky isle chest opens once, for what is in it; the locked one takes
   assert.ok(b.conn.all(S.CHAT).some((m) => m.text === `A found ${RARE[item].toLowerCase()}!`));
 });
 
+await test('every lobby has an old key somewhere, on a spot a save keeps it on', () => {
+  const hasKey = (room) => room.spots.some((s) => s.item === 'key' || s.bundle?.some(([item]) => item === 'key'));
+  for (let i = 0; i < 40; i++) {
+    const seed = i === 0 ? 'classic' : randomSeed(mulberry32(100 + i));
+    assert.ok(hasKey(new Room({ code: 'KEY', seed, rand: mulberry32(i) })), `a key on ${seed}`);
+  }
+  // nothing rolled one (the bottom of every loot table): one is put out anyway
+  const room = new Room({ code: 'KEY', seed: randomSeed(mulberry32(5)), rand: () => 0 });
+  const spot = room.spots.find((s) => s.item === 'key');
+  assert.ok(['meadow', 'ledge', 'sky'].includes(spot?.kind), 'on a meadow, ledge or sky spot');
+  assert.ok(!room.spots.some((s) => s.bundle?.some(([item]) => item === 'key')), 'not in a chest');
+  const back = Room.fromSave(room.toSave(), { rand: () => 0.5 });
+  assert.equal(back.spots[spot.id].item, 'key', 'still there after a restart');
+  // ...and never in place of golden seeds
+  const can = room.spots.filter((s) => ['meadow', 'ledge', 'sky'].includes(s.kind));
+  for (const s of can) Object.assign(s, { item: 'golden_seeds', count: 1 });
+  can.at(-1).item = 'coin';
+  room.hideKey();
+  assert.equal(can.at(-1).item, 'key');
+  assert.equal(can.filter((s) => s.item === 'golden_seeds').length, can.length - 1);
+});
+
 await test('new seeds carry their generation, and grow what it added', () => {
   assert.equal(genOf('dewy-glade-31-v2'), 2);
   assert.equal(genOf('dewy-glade-31-v25'), 1);
