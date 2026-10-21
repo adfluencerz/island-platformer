@@ -1518,8 +1518,8 @@ function updateBuilding() {
   const key = buildTarget();
   const problem = buildProblemAt(key);
   buildings.preview(key, building, !problem);
-  // (holding E lays a path, or takes pieces down, as you go: a fence or a wall at a time)
-  if (keys.has('KeyE') && key !== builtKey && !problem && !PIECES[building]?.solid) buildAt(key, { quiet: true });
+  // (holding E lays a path, or takes pieces down, as you go: a fence, a gate, a wall or a block at a time)
+  if (keys.has('KeyE') && key !== builtKey && !problem && !PIECES[building]?.solid && !PIECES[building]?.joins) buildAt(key, { quiet: true });
   const piece = PIECES[building];
   const what = piece ? `Building: ${piece.name}` : 'Taking down';
   const note = problem || (piece

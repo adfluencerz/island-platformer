@@ -9,7 +9,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, walls, paths and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
+- Building on the farm with wood and stone: fences, gates, walls, paths, crates and stone blocks to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -69,6 +69,8 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 
 - **Wood fence** (2 wood) and **stone wall** (3 stone) join up with the fences and walls beside them. A fence can be hopped over; a wall can't.
 - **Wood path** (1 wood) and **stone path** (1 stone) are walked on.
+- A **wood gate** (3 wood) joins up with the fences beside it, like a fence, but is walked through.
+- Blocks to climb on: a **stone step** (2 stone) is walked up onto, a **wood crate** (3 wood) or a **stone block** (4 stone) takes a hop (or a step in front of it). Put them side by side for a platform, or step, crate, block for a stair.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
   - decorations, put down from the Build tab like the rest: a **lamp post** (3 wood, 2 stone) that lights up at night, a **garden bench** (6 wood) and a **flower planter** (4 stone, 1 wood);
   - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
@@ -139,7 +141,7 @@ island-platformer/
 │   ├── merchant.js      # the merchant's stall on the farm, and the merchant behind it
 │   ├── shop.js          # the merchant's shop window: buy seeds and animals, sell from the backpack
 │   ├── chest.js         # the farm chest on a farm with helpers, and its window
-│   ├── build.js         # what is built on the farm: fences, walls, paths, the workbench, decorations
+│   ├── build.js         # what is built on the farm: fences, gates, walls, paths, blocks, the workbench, decorations
 │   ├── workbench.js     # the workbench's window: decorations, sturdy tools, the sword and the mallet
 │   ├── animals.js       # the hen yard and the pasture, the hens, cows and sheep, eggs
 │   ├── remotes.js       # other players: interpolation, name tags

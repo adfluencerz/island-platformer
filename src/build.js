@@ -3,8 +3,8 @@ import { PIECES } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
 
 // ---------- What is built on the farm ----------
-// Fences, walls, paths, the workbench and what it makes for the farm (PIECES
-// in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// Fences, gates, walls, paths, blocks to climb, the workbench and what it
+// makes for the farm (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -21,6 +21,8 @@ const MATS = {
   stone: mat(0x9c9a92),
   stoneDark: mat(0x7d7b74),
   stoneLight: mat(0xb9b7ae),
+  crate: mat(0xc9955a),
+  crateDark: mat(0x8f6136),
   benchTop: mat(0xc28a52),
   iron: mat(0x5d6470, { roughness: 0.5, metalness: 0.4 }),
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
@@ -101,6 +103,52 @@ function model(id, gx, gz, joined) {
       stone.rotation.y = r * 6 + i;
       stone.castShadow = false;
     });
+  } else if (id === 'wood_gate') {
+    // a post either side and a gate between, along the fences it joins
+    // (across the tile on its own); it's walked through, so no colliders
+    const along = joined.some(([dx]) => dx) || !joined.length ? [1, 0] : [0, 1];
+    const [ax, az] = along;
+    for (const s of [-1, 1]) {
+      part(g, box, MATS.post, ax * s * 0.44, FENCE_H * 0.55, az * s * 0.44, 0.16, FENCE_H * 1.1, 0.16);
+      part(g, box, MATS.post, ax * s * 0.44, FENCE_H * 1.1 + 0.03, az * s * 0.44, 0.22, 0.06, 0.22);
+    }
+    const len = 0.72;
+    for (const y of [0.3, 0.86]) part(g, box, MATS.rail, 0, y, 0, ax ? len : 0.06, 0.1, az ? len : 0.06);
+    for (const o of [-0.24, 0, 0.24]) part(g, box, MATS.plankA, ax * o, 0.58, az * o, ax ? 0.12 : 0.05, 0.62, az ? 0.12 : 0.05);
+    // a brace corner to corner, and the latch
+    const brace = part(g, box, MATS.plankB, 0, 0.58, 0, ax ? 0.78 : 0.05, 0.08, az ? 0.78 : 0.05);
+    if (ax) brace.rotation.z = 0.62;
+    else brace.rotation.x = -0.62;
+    part(g, box, MATS.iron, ax * 0.3, 0.62, az * 0.3, 0.1, 0.06, 0.1);
+  } else if (id === 'wood_crate' || id === 'stone_block' || id === 'stone_step') {
+    // a block to climb on: a box filling the tile, with a little trim
+    const h = PIECES[id].block;
+    const w = 0.96;
+    if (id === 'wood_crate') {
+      part(g, box, MATS.crate, 0, h / 2, 0, w, h, w);
+      // a frame around each side, and a diagonal board across it
+      for (const [fx, fz] of DIRS) {
+        const along = fz ? [w + 0.02, 0.12] : [0.12, w + 0.02];
+        for (const y of [0.06, h - 0.06]) part(g, box, MATS.crateDark, fx * 0.47, y, fz * 0.47, fz ? along[0] : 0.04, 0.12, fz ? 0.04 : along[1]);
+        const diag = part(g, box, MATS.crateDark, fx * 0.485, h / 2, fz * 0.485, fz ? 1.05 : 0.03, 0.1, fz ? 0.03 : 1.05);
+        if (fz) diag.rotation.z = fz * 0.72;
+        else diag.rotation.x = -fx * 0.72;
+      }
+      for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) part(g, box, MATS.crateDark, x, h / 2, z, 0.14, h, 0.14);
+      part(g, box, MATS.plankA, 0, h + 0.005, 0, w - 0.16, 0.01, w - 0.16).castShadow = false;
+    } else {
+      // dressed stone, a shade different on every tile, with a darker
+      // course along the bottom and a lighter cap
+      const r = hash(gx, gz);
+      part(g, box, r < 0.5 ? MATS.stone : MATS.stoneLight, 0, h / 2, 0, w, h, w);
+      part(g, box, MATS.stoneDark, 0, Math.min(0.1, h / 4), 0, w + 0.02, Math.min(0.2, h / 2), w + 0.02);
+      part(g, box, r < 0.5 ? MATS.stoneLight : MATS.stone, 0, h + 0.02, 0, w - 0.04, 0.04, w - 0.04);
+      if (h > 0.6) {
+        // the joints of a two-stone face
+        for (const [fx, fz] of DIRS) part(g, box, MATS.stoneDark, fx * 0.485, h * 0.55, fz * 0.485, fz ? w : 0.03, 0.05, fz ? 0.03 : w);
+      }
+    }
+    solids.push({ x: 0, y: h / 2, z: 0, w, h, d: w });
   } else if (id === 'workbench') {
     part(g, box, MATS.benchTop, 0, 0.82, 0, 0.96, 0.1, 0.62);
     for (const [x, z] of [[-0.4, -0.24], [0.4, -0.24], [-0.4, 0.24], [0.4, 0.24]]) part(g, box, MATS.post, x, 0.39, z, 0.1, 0.78, 0.1);
