@@ -95,8 +95,8 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // taller than a crate), so step, crate, scaffold, pillar is a stair walked all
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch joins the walls (or fences) beside it the same
-// way. A low stone wall is hopped over like a fence; a palisade, like a
-// stone wall, can't be.
+// way. A low stone wall and a picket fence are hopped over like a fence; a
+// palisade, like a stone wall, can't be.
 // A farm with helpers keeps its pieces in its room (server/farmroom.js), like its soil.
 export const PIECES = {
   wood_fence: { name: 'Wood fence', cost: { wood: 2 }, solid: true, joins: true },
@@ -120,6 +120,10 @@ export const PIECES = {
   log_tower: { name: 'Log tower', cost: { wood: 8 }, solid: true, block: 1.8 },
   stone_arch: { name: 'Stone arch', cost: { stone: 5 }, joins: true },
   cobble_path: { name: 'Cobble path', cost: { stone: 2 } },
+  picket_fence: { name: 'Picket fence', cost: { wood: 3 }, solid: true, joins: true },
+  straw_step: { name: 'Straw step', cost: { flax: 2 }, solid: true, block: 0.45 },
+  gravel_path: { name: 'Gravel path', cost: { stone: 1 } },
+  mossy_stone_block: { name: 'Mossy stone block', cost: { stone: 4 }, solid: true, block: 1 },
   workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
   lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
   garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },

@@ -3,9 +3,10 @@ import { PIECES } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
 
 // ---------- What is built on the farm ----------
-// Fences, gates, arches, walls (stone, low stone and palisades), paths,
-// blocks to climb (steps, crates, log piles, barrels, straw bales and stacks,
-// scaffolds, log towers, stone blocks and pillars), the workbench and what it
+// Fences (wood and picket), gates, arches, walls (stone, low stone and
+// palisades), paths, blocks to climb (steps, crates, log piles, barrels, straw
+// steps, bales and stacks, scaffolds, log towers, stone blocks, mossy or not,
+// and pillars), the workbench and what it
 // makes for the farm (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
@@ -23,6 +24,11 @@ const MATS = {
   stone: mat(0x9c9a92),
   stoneDark: mat(0x7d7b74),
   stoneLight: mat(0xb9b7ae),
+  moss: mat(0x6f8f3a),
+  mossDark: mat(0x52702b),
+  picket: mat(0xeee6d4),
+  picketShade: mat(0xcfc6b2),
+  gravel: mat(0x8b8780),
   crate: mat(0xc9955a),
   crateDark: mat(0x8f6136),
   bark: mat(0x6e4a2b),
@@ -102,6 +108,23 @@ function model(id, gx, gz, joined) {
       }
       solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.2, h: FENCE_H, d: dz ? 0.5 : 0.2 });
     }
+  } else if (id === 'picket_fence') {
+    // a painted post, and pointed pickets on two rails to each fence or wall
+    // it joins; as low as a wood fence, so it's hopped over too
+    const pick = (x, z, h) => {
+      part(g, box, MATS.picket, x, h / 2, z, 0.1, h, 0.1);
+      part(g, box, MATS.picket, x, h, z, 0.07, 0.07, 0.07).rotation.set(Math.PI / 4, 0, Math.PI / 4);
+    };
+    part(g, box, MATS.picket, 0, FENCE_H / 2, 0, 0.16, FENCE_H, 0.16);
+    part(g, box, MATS.picketShade, 0, FENCE_H + 0.03, 0, 0.22, 0.06, 0.22);
+    solids.push({ x: 0, y: FENCE_H / 2, z: 0, w: 0.3, h: FENCE_H, d: 0.3 });
+    for (const [dx, dz] of joined) {
+      for (const y of [0.3, 0.72]) {
+        part(g, box, MATS.picketShade, dx * 0.25 - (dz ? 0.06 : 0), y, dz * 0.25 - (dx ? 0.06 : 0), dx ? 0.5 : 0.04, 0.07, dz ? 0.5 : 0.04);
+      }
+      for (const o of [0.2, 0.38]) pick(dx * o, dz * o, FENCE_H - 0.12);
+      solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.2, h: FENCE_H, d: dz ? 0.5 : 0.2 });
+    }
   } else if (id === 'stone_wall' || id === 'low_stone_wall') {
     stoneWall(g, solids, id === 'stone_wall' ? WALL_H : FENCE_H, joined);
   } else if (id === 'wood_palisade') {
@@ -150,6 +173,20 @@ function model(id, gx, gz, joined) {
         cobble.rotation.y = j * 6;
         cobble.castShadow = false;
       }
+    }
+  } else if (id === 'gravel_path') {
+    // a bed of fine gravel with a scatter of pebbles, a little different on
+    // every tile, and a few bigger stones along its edges
+    const r = hash(gx, gz);
+    part(g, box, MATS.gravel, 0, 0.015, 0, 0.94, 0.02, 0.94).castShadow = false;
+    for (let i = 0; i < 18; i++) {
+      const j = (r * 131 + i * 0.618) % 1;
+      const x = ((j * 7.3 + i * 0.29) % 1) * 0.84 - 0.42;
+      const z = ((j * 3.1 + i * 0.47) % 1) * 0.84 - 0.42;
+      const k = 0.05 + j * 0.04;
+      const pebble = part(g, ball, i % 3 ? MATS.stone : i % 2 ? MATS.stoneLight : MATS.stoneDark, x, 0.03, z, k, k * 0.5, k);
+      pebble.rotation.y = j * 6;
+      pebble.castShadow = false;
     }
   } else if (id === 'stone_arch') {
     // two stone piers along the walls it joins (across the tile on its own),
@@ -261,6 +298,16 @@ function model(id, gx, gz, joined) {
         const a = i * 1.9 + r * 6;
         part(g, box, MATS.strawDark, Math.cos(a) * 0.3, h + 0.01, Math.sin(a) * 0.3, 0.26, 0.015, 0.03).rotation.y = a;
       }
+    } else if (id === 'straw_step') {
+      // half a bale, lying low, with its twine round it and a few loose straws
+      const r = hash(gx, gz);
+      part(g, box, MATS.straw, 0, h / 2, 0, w, h, w);
+      part(g, box, MATS.strawDark, 0, 0.04, 0, w + 0.02, 0.08, w + 0.02).castShadow = false;
+      for (const z of [-0.24, 0.24]) part(g, box, MATS.twine, 0, h / 2, z, w + 0.02, h + 0.02, 0.04).castShadow = false;
+      for (let i = 0; i < 4; i++) {
+        const a = i * 2.3 + r * 6;
+        part(g, box, MATS.strawDark, Math.cos(a) * 0.28, h + 0.01, Math.sin(a) * 0.28, 0.24, 0.015, 0.03).rotation.y = a;
+      }
     } else if (id === 'straw_stack') {
       // bales lying three high, each course turned across the one below,
       // with the twine showing on every one
@@ -306,6 +353,23 @@ function model(id, gx, gz, joined) {
       for (const y of [h * 0.4, h * 0.65]) part(g, shaft, MATS.stoneDark, 0, y, 0, 0.72, 0.03, 0.72).castShadow = false;
       part(g, box, MATS.stone, 0, h - 0.19, 0, w - 0.1, 0.1, w - 0.1);
       part(g, box, r < 0.5 ? MATS.stoneLight : MATS.stone, 0, h - 0.07, 0, w, 0.14, w);
+    } else if (id === 'mossy_stone_block') {
+      // old rough stones, set a little out of line, with moss over the top
+      // and creeping down the sides
+      const r = hash(gx, gz);
+      part(g, box, MATS.stoneDark, 0, h / 2, 0, w - 0.04, h, w - 0.04);
+      for (let i = 0; i < 2; i++) {
+        const off = ((r * 10 + i * 3) % 3 - 1) * 0.012;
+        part(g, box, (r * 10 + i) % 2 < 1 ? MATS.stone : MATS.stoneLight, off, h * (i + 0.5) / 2, -off, w, h / 2 - 0.03, w);
+      }
+      part(g, box, MATS.moss, 0, h + 0.015, 0, w - 0.02, 0.03, w - 0.02);
+      for (let i = 0; i < 8; i++) {
+        const [fx, fz] = DIRS[(Math.floor(r * 4) + i) % 4];
+        const along = (((r * 37 + i * 0.29) % 1) - 0.5) * 0.7;
+        const drip = 0.15 + ((r * 13 + i * 0.41) % 1) * 0.35;
+        const patch = part(g, box, i % 2 ? MATS.moss : MATS.mossDark, fx * 0.485 + fz * along, h - drip / 2, fz * 0.485 + fx * along, fz ? 0.2 : 0.03, drip, fz ? 0.03 : 0.2);
+        patch.castShadow = false;
+      }
     } else {
       // dressed stone, a shade different on every tile, with a darker
       // course along the bottom and a lighter cap
