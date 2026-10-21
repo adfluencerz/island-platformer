@@ -286,7 +286,7 @@ export class Farms {
     farm.helpers ??= [];
     if (!farm.helpers.some((h) => h.id === theirs.id)) {
       if (farm.helpers.length >= MAX_HELPERS) return { error: 'That farm has all the helpers it can have.', status: 409 };
-      farm.helpers.push({ id: theirs.id, name: cleanText(name, MAX_NAME) || 'Farmer', since: Date.now() });
+      farm.helpers.push({ id: theirs.id, name: theirs.account?.name || cleanText(name, MAX_NAME) || 'Farmer', since: Date.now() });
       this.indexHelper(theirs.id, farm.id, true);
     }
     this.invites.delete(normalizeHelpCode(text));
@@ -320,9 +320,10 @@ export class Farms {
     return list;
   }
 
-  // The owner came onto the farm (or asked for an invite): what to call the farm by
+  // The owner came onto the farm (or asked for an invite): what to call the
+  // farm by (with an account, its username: a farmer goes by that everywhere)
   seenOwner(farm, name) {
-    name = cleanText(name, MAX_NAME);
+    name = farm.account?.name || cleanText(name, MAX_NAME);
     if (!name || name === farm.ownerName) return;
     farm.ownerName = name;
     this.write(farm);
@@ -332,7 +333,7 @@ export class Farms {
   seenHelper(farm, id, name) {
     const h = farm.helpers?.find((x) => x.id === id);
     if (!h) return false;
-    name = cleanText(name, MAX_NAME);
+    name = this.get(id)?.account?.name || cleanText(name, MAX_NAME);
     if (name && name !== h.name) {
       h.name = name;
       this.write(farm);
@@ -429,6 +430,11 @@ Object.assign(Farms.prototype, {
     this.accounts.set(key, farm.id);
     if (!this.write(farm)) return { error: 'The server could not keep your account.', status: 500 };
     this.log(`farm ${farm.id}: an account was made`);
+    // (on the farms they help on they go by their username from now on too)
+    for (const id of this.helping.get(farm.id) ?? []) {
+      const other = this.get(id);
+      if (other) this.seenHelper(other, farm.id, username);
+    }
     return { id: farm.id, token: made?.token, rev: made?.rev, username, color };
   },
 
