@@ -136,14 +136,16 @@ export function wildMap(island) {
       pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
       heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
+      field: { color: 0x8fa83e, jitter: 0.04, top: [0.006, 0.02], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'field']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
       meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, hue: theme.hue },
       heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
+      field: { tufts: 2, lushTufts: 1, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.14, 0.18] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -177,6 +179,10 @@ export function wildMap(island) {
       if (island.marsh) {
         scatter(6, 2.4, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 5 (the sunflower field): after the marsh's
+      if (island.field) {
+        scatter(4, 2.6, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -188,6 +194,13 @@ const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9
 const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
 const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
+// sunflowers on the field (generation 5): a stalk 2 tall (scaled to its height) and a yellow bloom with a brown heart
+const fieldStalkGeo = new THREE.CylinderGeometry(0.02, 0.035, 2, 5);
+const fieldBloomGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.03, 12).rotateX(Math.PI / 2);
+const fieldHeartGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.05, 10).rotateX(Math.PI / 2);
+const fieldStalkMat = new THREE.MeshStandardMaterial({ color: 0x5f8f35, roughness: 0.8 });
+const fieldBloomMat = new THREE.MeshStandardMaterial({ color: 0xf2b92a, roughness: 0.6 });
+const fieldHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3414, roughness: 0.9 });
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
 // dots, a brown cep, violet, and golden
@@ -317,6 +330,17 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
         stalk.rotation.set(tilt[0], 0, tilt[1]);
         if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
       }
+    });
+  }
+
+  // Generation 5: sunflowers, tall stalks with a bloom facing south, thick on the field (after
+  // everything else drew from rng); you walk through them
+  if (island.field) {
+    scatter(30, 1.3, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      const h = rand(0.9, 1.5);
+      addDecor(fieldStalkGeo, fieldStalkMat, x, h / 2, z, 1, h / 2, 1, root);
+      addDecor(fieldBloomGeo, fieldBloomMat, x, h, z + 0.03, 1, 1, 1, root);
+      addDecor(fieldHeartGeo, fieldHeartMat, x, h, z + 0.05, 1, 1, 1, root);
     });
   }
 

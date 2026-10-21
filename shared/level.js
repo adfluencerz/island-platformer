@@ -36,6 +36,7 @@ export const SPOT_KINDS = {
   },
   heather: { use: 'gather', regrow: [30, 45], loot: [['heather', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the heath, generation 2 islands)
   cattail: { use: 'gather', regrow: [30, 45], loot: [['cattail', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the marsh, generation 4 islands)
+  sunflower: { use: 'gather', regrow: [30, 45], loot: [['wild_sunflower', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the field, generation 5 islands)
   meadow: {
     use: 'touch',
     regrow: [30, 50],
