@@ -9,7 +9,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, gates, walls, low walls, palisades, paths, and steps, crates, log piles, barrels, straw bales, scaffolds, stone blocks and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
+- Building on the farm with wood and stone: fences, gates, stone arches, walls, low walls, palisades, paths, and steps, crates, log piles, barrels, straw bales, scaffolds, straw stacks, log towers, stone blocks and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
 - A saved home farm, and drop-in online lobbies (up to 8 farmers) where resources regrow and rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -68,13 +68,14 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 **Building.** Wood and stone from the lobbies build things on your farm. Open the backpack's **Build** tab (`B`) and pick a piece: a see-through one shows where it goes (red where it can't), on the tile you point at with the mouse or the one in front of you. `E` puts it down (hold `E` and walk to lay a path), and so does a click or a tap on a tile (the farmer walks over first if it's far). **Done** or `Esc` ends build mode.
 
 - **Wood fence** (2 wood), **low stone wall** (2 stone), **stone wall** (3 stone) and **wood palisade** (4 wood, a row of pointed logs) join up with the fences and walls beside them. A fence or a low wall can be hopped over; a stone wall or a palisade can't.
-- **Wood path** (1 wood) and **stone path** (1 stone) are walked on.
+- **Wood path** (1 wood), **stone path** (1 stone) and **cobble path** (2 stone) are walked on.
 - A **wood gate** (3 wood) joins up with the fences beside it, like a fence, but is walked through.
+- A **stone arch** (5 stone) joins up with the walls beside it the same way, and is walked through too.
 - Blocks to climb on, in heights a step apart:
   - a **wood step** (2 wood) or a **stone step** (2 stone) is walked up onto;
   - a **wood crate** (3 wood), a **straw bale** (3 flax), a **wood barrel** (4 wood), a **log pile** (4 wood) or a **stone block** (4 stone) takes a hop, or a step in front of it;
-  - a **wood scaffold** (5 wood, a plank deck on posts) or a **tall stone block** (6 stone) is a step up from a crate or a block;
-  - a **stone pillar** (8 stone) is a step up from those, the tallest thing to stand on.
+  - a **wood scaffold** (5 wood, a plank deck on posts), a **straw stack** (6 flax, bales three high) or a **tall stone block** (6 stone) is a step up from a crate or a block;
+  - a **log tower** (8 wood, logs laid crosswise) or a **stone pillar** (8 stone) is a step up from those, the tallest things to stand on.
 
   Put them side by side for a platform, or step, crate, scaffold, pillar for a stair that is walked all the way up.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
