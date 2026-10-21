@@ -221,6 +221,9 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-players-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-ping { flex: none; font-size: 17px; }
 .ui-players-body { display: flex; flex-direction: column; gap: inherit; }
+/* the hints under the place's name, going round (hud.js TIPS) */
+.ui-tip { transition: opacity 0.4s; }
+.ui-tip.fading { opacity: 0; }
 .ui-code { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 20px; letter-spacing: 0.05em; }
 .ui-player-list { display: flex; flex-direction: column; gap: 3px; }
 .ui-player { display: flex; align-items: center; gap: 6px; font-size: 21px; }

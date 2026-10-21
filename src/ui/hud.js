@@ -39,6 +39,34 @@ const TOUCH_CONTROLS = [
   ['Tap farmer', 'With a sword or mallet in a lobby: bop them'],
 ];
 
+// The hints the place panel goes round under its name, a new one every
+// TIP_EVERY ms. keys: it is about the keyboard (not shown on a touch screen).
+// place: only there ('home', 'lobby', 'farm' for our own farm with helpers,
+// 'visit' for a friend's); arriving somewhere starts on its own first.
+const TIPS = [
+  { text: 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.', place: 'home' },
+  { text: 'Your helpers can farm here any time, you here or not. What anyone harvests goes in the chest by the plaza.', place: 'farm' },
+  { text: 'Till, plant and harvest with what you brought: the harvest goes in the farm\'s chest, for the farmer.', place: 'visit' },
+  { text: 'Whoever gets there first takes it. Things grow back, and now and then something rare turns up.', place: 'lobby' },
+  { text: 'Hold E to keep chopping or mining.', keys: true },
+  { text: 'B opens the Build tab in your backpack.', keys: true },
+  { text: 'A right click cancels building, or walking somewhere.', keys: true },
+  { text: 'Hold T at home to hurry the day along.', keys: true },
+  { text: 'Press L to visit a lobby and meet other farmers.', keys: true },
+  { text: 'Shift+click at the stall to buy five at once.', keys: true },
+  { text: 'A felled tree grows back somewhere new after a while. So does a rock.' },
+  { text: 'A giant tree takes everyone\'s swings, and everyone who helped shares the wood.' },
+  { text: 'Golden seeds grow golden turnips, worth a small fortune at the stall.' },
+  { text: 'Tilled soil left empty goes back to grass, so plant it soon.' },
+  { text: 'Hens lay an egg a day. Have a look around the hen yard.' },
+  { text: 'Cows have milk every morning. Sheep grow their wool back in two days.' },
+  { text: 'Build a workbench to make sturdy tools: an axe that fells a tree in two swings.' },
+  { text: 'The stone circle where you arrive in a lobby is for resting: no bopping there.' },
+  { text: 'Keep an eye on the ledges in a lobby: something rare may sparkle there.' },
+  { text: 'Wood and stone build fences, paths and steps on your farm.' },
+];
+const TIP_EVERY = 20_000;
+
 function keyList(parent, className, rows) {
   const list = el('div', `ui-help ui-keys ${className}`, parent);
   for (const [keys, what] of rows) {
@@ -82,7 +110,7 @@ export class Hud {
     this.pingEl = el('span', 'ui-muted ui-ping', this.foldBtn);
     button('ui-btn ui-btn-small ui-btn-ghost compact-only', head, 'Menu', () => this.onMenu());
     const body = el('div', 'ui-players-body', this.panel);
-    this.blurb = el('div', 'ui-muted', body);
+    this.blurb = el('div', 'ui-muted ui-tip', body); // (the hints: TIPS)
     this.codeRow = el('div', 'ui-code', body);
     this.codeText = el('span', '', this.codeRow);
     this.copyBtn = button('ui-btn ui-btn-small', this.codeRow, 'Copy invite', () => this.copyInvite());
@@ -90,6 +118,8 @@ export class Hud {
     this.list = el('div', 'ui-player-list', body);
     this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', body, 'Go home', () => this.onHome());
     el('div', 'ui-muted ui-small', body, 'Esc: menu & controls');
+    this.tipPlace = 'home';
+    this.tipAt = 0;
     this.setFolded(true);
 
     this.prompt = el('div', 'ui-prompt', root);
@@ -132,7 +162,7 @@ export class Hud {
     this.enter('home');
     this.session = null;
     this.placeName.textContent = this.farmName || 'My farm';
-    this.blurb.textContent = 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.';
+    this.startTips('home');
   }
 
   // A farm with helpers, ours or a friend's. visit: { name, mine }
@@ -141,9 +171,7 @@ export class Hud {
     this.session = null;
     this.myId = myId;
     this.placeName.textContent = visit.mine ? this.farmName || 'My farm' : visit.name;
-    this.blurb.textContent = visit.mine
-      ? 'Your helpers can farm here any time, you here or not. What anyone harvests goes in the chest by the plaza.'
-      : 'Till, plant and harvest with what you brought: the harvest goes in the farm\'s chest, for the farmer.';
+    this.startTips(visit.mine ? 'farm' : 'visit');
     this.chatLog.textContent = '';
     this.setConnStatus('');
   }
@@ -156,9 +184,44 @@ export class Hud {
     this.placeName.textContent = session.room.name;
     this.codeText.textContent = `Code ${session.code}`;
     this.islandText.textContent = `Island seed: ${session.seed}`;
-    this.blurb.textContent = 'Whoever gets there first takes it. Things grow back, and now and then something rare turns up.';
+    this.startTips('lobby');
     this.chatLog.textContent = '';
     this.setConnStatus('');
+  }
+
+  // The hints for here, starting with the place's own (then round them all
+  // from a random one, every TIP_EVERY ms)
+  startTips(place) {
+    this.tipPlace = place;
+    const tips = this.tipsHere();
+    this.tipAt = Math.max(0, tips.findIndex((tip) => tip.place === place));
+    this.showTip(tips[this.tipAt].text, false);
+    this.tipFrom = Math.floor(Math.random() * tips.length);
+    clearInterval(this.tipTimer);
+    this.tipTimer = setInterval(() => this.nextTip(), TIP_EVERY);
+  }
+
+  tipsHere() {
+    return TIPS.filter((tip) => (!tip.keys || !isTouch()) && (!tip.place || tip.place === this.tipPlace));
+  }
+
+  nextTip() {
+    const tips = this.tipsHere();
+    if (this.tipFrom !== null) [this.tipAt, this.tipFrom] = [this.tipFrom, null];
+    else this.tipAt = (this.tipAt + 1) % tips.length;
+    this.showTip(tips[this.tipAt].text);
+  }
+
+  // (fading out, then in with the new one)
+  showTip(text, fade = true) {
+    const set = () => {
+      this.blurb.textContent = `Hint: ${text}`;
+      this.blurb.classList.remove('fading');
+    };
+    clearTimeout(this.tipFade);
+    if (!fade) return set();
+    this.blurb.classList.add('fading');
+    this.tipFade = setTimeout(set, 400);
   }
 
   // Small screens in a lobby only: the panel down to its first line, or all of it
