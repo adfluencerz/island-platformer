@@ -10,7 +10,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
 - Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
-- A saved home farm, and online lobbies (up to 8 farmers) where rare finds turn up (see below)
+- A saved home farm, and online lobbies (up to 8 farmers) you start with friends, where rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
 ## Setup
@@ -107,8 +107,9 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - The farm keeps its own clock, the same for everyone on it. It doesn't stop for the menu, and `T` fast-forwards it only while you're alone on it.
 - Once a farm has helpers it's played through the game server whenever the server is there, also when you're alone, so it's the same farm whoever comes. Without the server you can still play it in your browser, but if your helpers changed it meanwhile, their farm is the one you get back (your backpack stays as you left it).
 
-**Online lobbies** are drop-in places to gather with other farmers, each out on a wild island of its own: bigger and wilder than a farm, with a ragged coast, a mossy forest with giant toadstools to hop across, a shallow pond to wade into (there may be something on the bottom), a flower meadow, (on newer islands) a heather heath, rocky terraces climbing to the north, and a ring of standing stones where you arrive. The newest islands are twice as wide, with several climbs of terraces, rings of toadstools in red, brown, violet or gold, more woods, and trails out to all of them. Press `L` at home (or pick one on the title screen): **Quick join** (the fullest public lobby with room, or a new one), **Browse lobbies**, **Open a lobby** (name, size, island seed, public or invite-only), or **Join with a code**.
+**Online lobbies** are drop-in places to gather with other farmers, each out on a wild island of its own: bigger and wilder than a farm, with a ragged coast, a mossy forest with giant toadstools to hop across, a shallow pond to wade into (there may be something on the bottom), a flower meadow, (on newer islands) a heather heath, rocky terraces climbing to the north, and a ring of standing stones where you arrive. The newest islands are twice as wide, with several climbs of terraces, rings of toadstools in red, brown, violet or gold, more woods, and trails out to all of them. Press `L` at home (or pick one on the title screen): **Start a lobby**, **Quick join** (the fullest lobby with room, or a new one), **Browse lobbies**, or **Join with a code**.
 
+- **Starting a lobby with friends**: tick the friends to invite (friends who are online; add friends by username under **Friends**, and once they say yes you're friends). Each gets an invitation that pops up right away, wherever they are in the game, with **Join** and **Decline**; it goes away after 25 seconds. You see a 30-second countdown and who's coming; then everyone who said yes lands on a fresh island together (sooner, once everyone has answered). From inside a lobby you can invite more friends, and a yes goes straight there.
 - A lobby is a match: anyone can drop in while it runs (it's listed under Browse and Quick join), **nothing on its island grows back**, and once the last farmer has left it's thrown away.
 - There's no farming in a lobby: wander in, gather, head home whenever you like with what you found.
 - Every tree can be chopped down for **wood**: with the axe in hand, press (or hold) `E` next to a tree. Four swings fell it for everyone and give wood to whoever finished it: 2–4 from an ordinary tree, up to 6 from the big old trees in the woods, fewer from a little one; a stump is left behind (in a lobby for good; on a farm the tree grows back 10 minutes later). The merchant buys wood.
@@ -186,6 +187,7 @@ island-platformer/
 ├── server/
 │   ├── index.js         # HTTP API + WebSocket + built client, one port
 │   ├── lobby.js         # lobbies by code, quick join, throwing empty ones away, saving them
+│   ├── presence.js      # who is online, and starting lobbies with friends (invitations)
 │   ├── farms.js         # farms kept for their devices, pairing codes, helpers
 │   ├── farmroom.js      # a farm with helpers, played together
 │   └── store.js         # a save file written safely (the lobbies, each farm)

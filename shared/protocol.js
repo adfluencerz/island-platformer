@@ -69,6 +69,27 @@ export const S = {
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
 };
 
+// Presence (server/presence.js): every logged in page keeps one more socket,
+// /ws?presence, wherever it is, so friends can invite it to a lobby.
+// page -> server
+export const PC = {
+  HELLO: 'hello', // { v, auth }: the first message (auth: "<farm id>.<token>", a farm with an account)
+  WHERE: 'where', // { place }: 'home', 'lobby' or 'farm' (for the friends list)
+  PARTY: 'party', // { invite: [friend farm ids] }: start a lobby, inviting them (the lobby opens PARTY_MS later)
+  CANCEL: 'cancel', // {}: the party we started is called off
+  ANSWER: 'answer', // { party, yes }: to an invitation
+  INVITE: 'invite', // { code, invite: [friend farm ids] }: to the lobby we are in, now
+};
+// server -> page
+export const PS = {
+  READY: 'ready', // { id, name }: we are online (our farm id and name)
+  INVITED: 'invited', // { party, from, color, ms, late }: friend `from` invites us; it lapses in ms (late: to a lobby already running)
+  PARTY: 'party', // { party, ms, friends: [[id, name, state]] }: our party: it opens in ms; state 'waiting', 'yes' or 'no'
+  GO: 'go', // { party, code }: off to lobby code
+  GONE: 'gone', // { party }: that invitation is over for us (it lapsed, or another tab answered it)
+  CALLED_OFF: 'calledOff', // { party, why }: the party was called off
+};
+
 // spots in WELCOME: [[id, kind, x, y, z, item, count], ...] (item null: nothing there right now)
 
 // bits of a player's state flags

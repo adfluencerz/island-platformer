@@ -1,0 +1,31 @@
+/* A friend's invitation to a lobby (src/ui/invite.js): at the top, over everything */
+.ui-invites {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(380px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 50;
+  pointer-events: none;
+  font-family: var(--inv-font);
+  color: var(--inv-ink);
+}
+.ui-invite-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  pointer-events: auto;
+  animation: ui-invite-in 0.25s ease-out;
+}
+.ui-invite-pop-text { display: flex; align-items: center; flex-wrap: wrap; gap: 0 6px; font-size: 22px; line-height: 1.15; }
+.ui-invite-pop-text .ui-dot { margin-right: 2px; }
+.ui-invite-pop-time { height: 8px; border-radius: 4px; background: var(--inv-slot-bg); overflow: hidden; }
+.ui-invite-pop-bar { width: 100%; height: 100%; background: #7ed957; transition-property: width; transition-timing-function: linear; }
+@keyframes ui-invite-in {
+  from { transform: translateY(-16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}

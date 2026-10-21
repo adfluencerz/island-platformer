@@ -36,7 +36,8 @@
 //
 // Farmers with accounts can be friends: one asks for the other by username
 // (farm.friendAsks, on the farm asked), and once that one says yes each is on
-// the other's farm.friends.
+// the other's farm.friends. Friends see who is online, and invite each other
+// to lobbies (server/presence.js).
 //
 // One file per farm, data/farms/<id>.json (server/store.js); with no folder
 // (GAME_DATA=off) the farms are kept in memory only.

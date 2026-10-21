@@ -307,6 +307,9 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-helper-list { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 4px; background: var(--inv-slot-bg); }
 .ui-helper { display: flex; align-items: center; gap: 8px; font-size: 21px; }
 
+/* Starting a lobby: the seconds till it opens */
+.ui-party-clock { font-size: 56px; font-weight: 700; text-align: center; line-height: 1; }
+
 /* ---------- Chat (bottom right) ---------- */
 .ui-chat {
   position: fixed;

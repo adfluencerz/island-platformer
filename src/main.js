@@ -15,12 +15,14 @@ import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
 import { showCodeInAddress } from './net/lobby.js';
 import { FarmSync } from './net/farm.js';
+import { PresenceLink } from './net/presence.js';
+import { InvitePopups } from './ui/invite.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
-import { C, S, STATEF } from '../shared/protocol.js';
+import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT } from '../shared/balance.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
@@ -2101,6 +2103,7 @@ const splash = new Splash({
   onRegister: async ({ username, password, color }) => {
     saveGame();
     await farmSync.register(username, password, color, currentSave());
+    presence.start();
     myShirt(); // (and the farm with helpers, if it has some, waits for us at home)
   },
   // (the account's farm: the page reloads to play it)
@@ -2125,6 +2128,32 @@ const splash = new Splash({
   onAddFriend: (username) => farmSync.addFriend(username),
   onAnswerFriend: (id, yes) => farmSync.answerFriend(id, yes),
   onRemoveFriend: (id) => farmSync.removeFriend(id),
+  onStartParty: (ids) => presence.ready && (presence.send({ t: PC.PARTY, invite: ids }), true),
+  onCancelParty: () => presence.send({ t: PC.CANCEL }),
+  onInviteToLobby: (ids) => session && presence.send({ t: PC.INVITE, code: session.code, invite: ids }),
+});
+
+// ---------- Friends online ----------
+// The page keeps a line to the server open for its friends (net/presence.js,
+// server/presence.js): an invitation to a lobby pops up the moment it comes
+// (ui/invite.js), wherever we are, and when a lobby we said yes to (or
+// started) opens, off we go to it.
+const invites = new InvitePopups({ onAnswer: (party, yes) => presence.send({ t: PC.ANSWER, party, yes }) });
+const presence = new PresenceLink({
+  auth: () => (farmSync.account() ? farmSync.auth() : null),
+  onMessage: (m) => {
+    if (m.t === PS.INVITED) invites.show(m);
+    else if (m.t === PS.GONE) invites.gone(m.party);
+    else if (m.t === PS.PARTY) splash.partyStatus(m);
+    else if (m.t === PS.CALLED_OFF) {
+      invites.calledOff(m.party, m.why);
+      splash.partyOver(m.why);
+    } else if (m.t === PS.GO) {
+      invites.remove(m.party);
+      splash.partyOver();
+      joinLobby({ name: splash.name(), code: m.code });
+    }
+  },
 });
 
 // Our shirt: the account's color (src/net/farm.js), at home; in a lobby or on a
@@ -2710,6 +2739,7 @@ async function openFarm() {
   hud.setFarmName(farmSync.name());
   if (theirs && useSave(theirs)) saveGame();
   splash.accountChanged(); // (the server knows whether we have an account now)
+  presence.start();
   myShirt();
   if (!splash.hidden) splash.showHelping(); // (the farms we help on: the server knows who we are now)
   // a farm with helpers, already home (the page was quick): onto its room
@@ -2829,6 +2859,7 @@ function update(dt) {
   // runs; so it does on a farm with helpers (the owner, alone on it, may
   // still fast-forward it).
   const atHome = place !== 'lobby' && !farmVisit;
+  presence.where(place === 'lobby' ? 'lobby' : farmVisit ? 'farm' : 'home'); // (for friends' lists)
   const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour();
   dayNight.update(dt, {

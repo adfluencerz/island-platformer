@@ -8,7 +8,7 @@
 // otherwise it gets a fresh one.
 //
 // A lobby is a match: a farmer starts one, most often with friends they
-// invited, anyone may drop in while
+// invited (server/presence.js gathers them first), anyone may drop in while
 // it runs, and nothing on it grows back. Once the last farmer has left (and
 // IDLE_MS more, for a reload) it is thrown away. Public lobbies are listed
 // (Browse) and are where Quick join puts you; invite-only ones are reached
