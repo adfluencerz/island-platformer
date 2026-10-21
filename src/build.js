@@ -3,7 +3,8 @@ import { PIECES } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
 
 // ---------- What is built on the farm ----------
-// Fences, gates, walls, paths, blocks to climb, the workbench and what it
+// Fences, gates, walls, paths, blocks to climb (steps, crates, log piles,
+// scaffolds, stone blocks and pillars), the workbench and what it
 // makes for the farm (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
@@ -23,6 +24,8 @@ const MATS = {
   stoneLight: mat(0xb9b7ae),
   crate: mat(0xc9955a),
   crateDark: mat(0x8f6136),
+  bark: mat(0x6e4a2b),
+  endGrain: mat(0xe0b57a),
   benchTop: mat(0xc28a52),
   iron: mat(0x5d6470, { roughness: 0.5, metalness: 0.4 }),
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
@@ -33,6 +36,8 @@ const MATS = {
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
 const box = new THREE.BoxGeometry(1, 1, 1);
 const flag = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
+const log = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
+const shaft = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 const keyOf = (gx, gz) => `${gx},${gz}`;
@@ -120,7 +125,7 @@ function model(id, gx, gz, joined) {
     if (ax) brace.rotation.z = 0.62;
     else brace.rotation.x = -0.62;
     part(g, box, MATS.iron, ax * 0.3, 0.62, az * 0.3, 0.1, 0.06, 0.1);
-  } else if (id === 'wood_crate' || id === 'stone_block' || id === 'stone_step') {
+  } else if (PIECES[id]?.block) {
     // a block to climb on: a box filling the tile, with a little trim
     const h = PIECES[id].block;
     const w = 0.96;
@@ -136,6 +141,52 @@ function model(id, gx, gz, joined) {
       }
       for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) part(g, box, MATS.crateDark, x, h / 2, z, 0.14, h, 0.14);
       part(g, box, MATS.plankA, 0, h + 0.005, 0, w - 0.16, 0.01, w - 0.16).castShadow = false;
+    } else if (id === 'wood_step') {
+      // a low box of boards, with the boards' ends showing on top
+      part(g, box, MATS.crateDark, 0, h / 2, 0, w, h, w);
+      [-0.36, -0.12, 0.12, 0.36].forEach((o, i) => {
+        part(g, box, i % 2 ? MATS.plankB : MATS.plankA, o, h + 0.015, 0, 0.22, 0.03, w).castShadow = false;
+      });
+      for (const [fx, fz] of DIRS) part(g, box, MATS.plankA, fx * 0.475, h * 0.5, fz * 0.475, fz ? w : 0.03, h * 0.5, fz ? 0.03 : w);
+    } else if (id === 'log_pile') {
+      // three rows of three logs, their cut ends to the front and back,
+      // over a dark core so no light shows between them
+      part(g, box, MATS.crateDark, 0, h / 2, 0, w - 0.1, h - 0.06, w - 0.1);
+      const r = hash(gx, gz);
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 3; col++) {
+          const x = (col - 1) * 0.31 + (row % 2 ? 0.02 : -0.02);
+          const y = 0.165 + row * 0.33;
+          const k = 0.31 + ((r * 10 + row * 3 + col) % 3) * 0.01;
+          part(g, log, MATS.bark, x, y, 0, k, w, k).rotation.x = Math.PI / 2;
+          for (const s of [-1, 1]) {
+            const end = part(g, log, MATS.endGrain, x, y, s * (w / 2 + 0.005), k * 0.8, 0.01, k * 0.8);
+            end.rotation.x = Math.PI / 2;
+            end.castShadow = false;
+          }
+        }
+      }
+    } else if (id === 'wood_scaffold') {
+      // a plank deck on four posts, braced on every side
+      const top = 0.1;
+      part(g, box, MATS.plankA, 0, h - top / 2, 0, w, top, w);
+      [-0.32, 0, 0.32].forEach((o) => part(g, box, MATS.plankB, o, h + 0.005, 0, 0.02, 0.01, w - 0.04).castShadow = false);
+      for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) part(g, box, MATS.post, x, (h - top) / 2, z, 0.12, h - top, 0.12);
+      for (const [fx, fz] of DIRS) {
+        part(g, box, MATS.rail, fx * 0.44, 0.2, fz * 0.44, fz ? w - 0.1 : 0.06, 0.08, fz ? 0.06 : w - 0.1);
+        const brace = part(g, box, MATS.rail, fx * 0.45, (h - top) / 2, fz * 0.45, fz ? 1.2 : 0.05, 0.08, fz ? 0.05 : 1.2);
+        if (fz) brace.rotation.z = fz * 0.85;
+        else brace.rotation.x = -fx * 0.85;
+      }
+    } else if (id === 'stone_pillar') {
+      // a round column on a square plinth, with a square cap to stand on
+      const r = hash(gx, gz);
+      part(g, box, MATS.stoneDark, 0, 0.12, 0, w, 0.24, w);
+      part(g, box, MATS.stone, 0, 0.29, 0, w - 0.1, 0.1, w - 0.1);
+      part(g, shaft, r < 0.5 ? MATS.stone : MATS.stoneLight, 0, h / 2, 0, 0.7, h - 0.5, 0.7);
+      for (const y of [h * 0.4, h * 0.65]) part(g, shaft, MATS.stoneDark, 0, y, 0, 0.72, 0.03, 0.72).castShadow = false;
+      part(g, box, MATS.stone, 0, h - 0.19, 0, w - 0.1, 0.1, w - 0.1);
+      part(g, box, r < 0.5 ? MATS.stoneLight : MATS.stone, 0, h - 0.07, 0, w, 0.14, w);
     } else {
       // dressed stone, a shade different on every tile, with a darker
       // course along the bottom and a lighter cap
@@ -143,9 +194,10 @@ function model(id, gx, gz, joined) {
       part(g, box, r < 0.5 ? MATS.stone : MATS.stoneLight, 0, h / 2, 0, w, h, w);
       part(g, box, MATS.stoneDark, 0, Math.min(0.1, h / 4), 0, w + 0.02, Math.min(0.2, h / 2), w + 0.02);
       part(g, box, r < 0.5 ? MATS.stoneLight : MATS.stone, 0, h + 0.02, 0, w - 0.04, 0.04, w - 0.04);
-      if (h > 0.6) {
-        // the joints of a two-stone face
-        for (const [fx, fz] of DIRS) part(g, box, MATS.stoneDark, fx * 0.485, h * 0.55, fz * 0.485, fz ? w : 0.03, 0.05, fz ? 0.03 : w);
+      // the joints between its courses of stone, one about every half a tile up
+      const courses = Math.round(h / 0.5);
+      for (let i = 1; i < courses; i++) {
+        for (const [fx, fz] of DIRS) part(g, box, MATS.stoneDark, fx * 0.485, (h * i) / courses, fz * 0.485, fz ? w : 0.03, 0.05, fz ? 0.03 : w);
       }
     }
     solids.push({ x: 0, y: h / 2, z: 0, w, h, d: w });

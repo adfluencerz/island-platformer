@@ -89,8 +89,11 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // the backpack, and goes back in when the piece is taken down: wood and
 // stone, or for the decorations, one made at the workbench (src/workbench.js).
 // Blocks (`block`: its height) are solid boxes a farmer can stand on: a step
-// is walked up onto, anything taller takes a jump. A gate `joins` the fences
-// beside it like a fence, but is walked through.
+// is walked up onto, anything taller takes a jump. They come in heights a
+// step apart (0.45, 0.9, 1.35, 1.8; a log pile and a stone block are a little
+// taller than a crate), so step, crate, scaffold, pillar is a stair walked all
+// the way up. A gate `joins` the fences beside it like a fence, but is walked
+// through.
 // A farm with helpers keeps its pieces in its room (server/farmroom.js), like its soil.
 export const PIECES = {
   wood_fence: { name: 'Wood fence', cost: { wood: 2 }, solid: true, joins: true },
@@ -101,6 +104,11 @@ export const PIECES = {
   wood_crate: { name: 'Wood crate', cost: { wood: 3 }, solid: true, block: 0.9 },
   stone_step: { name: 'Stone step', cost: { stone: 2 }, solid: true, block: 0.45 },
   stone_block: { name: 'Stone block', cost: { stone: 4 }, solid: true, block: 1 },
+  wood_step: { name: 'Wood step', cost: { wood: 2 }, solid: true, block: 0.45 },
+  log_pile: { name: 'Log pile', cost: { wood: 4 }, solid: true, block: 1 },
+  wood_scaffold: { name: 'Wood scaffold', cost: { wood: 5 }, solid: true, block: 1.35 },
+  tall_stone_block: { name: 'Tall stone block', cost: { stone: 6 }, solid: true, block: 1.35 },
+  stone_pillar: { name: 'Stone pillar', cost: { stone: 8 }, solid: true, block: 1.8 },
   workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
   lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
   garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },
