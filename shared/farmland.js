@@ -8,6 +8,16 @@ import { distToPaths } from './worldgen.js';
 export const STALL = { x: 5.5, z: 6.5 }; // the merchant's stall
 export const YARD = { x: -9, z: 6, w: 8, d: 6 }; // the hen yard
 export const PASTURE = { x: -8.5, z: 15, w: 11, d: 8 }; // the cows' and sheep's pasture
+// The pens at each of their levels (PEN_LEVELS in shared/balance.js), the
+// first as above: each level the fence goes out a little, away from the
+// paths (the yard to the west and north, the pasture to the west and
+// south), round the same gate, and clear of where the farm's trees and rocks
+// stand (shared/homewilds.js)
+const rect = (minX, maxX, minZ, maxZ) => ({ x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, w: maxX - minX, d: maxZ - minZ });
+export const PEN_RECTS = {
+  yard: [YARD, rect(-13.8, -5, 2, 9), rect(-14.5, -5, 1, 9)],
+  pasture: [PASTURE, rect(-14.8, -3, 11, 20), rect(-15.5, -3, 11, 21)],
+};
 
 export const HOME_HALF = 29;
 // A square island: a sand rim, a stone plaza at spawn, dirt paths toward a

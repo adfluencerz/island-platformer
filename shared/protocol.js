@@ -25,7 +25,7 @@ export const C = {
   CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
-  ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture())
+  ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture()), and the farm's upgrade `levels`
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
 };

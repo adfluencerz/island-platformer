@@ -296,6 +296,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     return box;
   }
 
+  // (a set piece's, when it is built afresh: the pens, when they grow)
+  function removeCollider(box) {
+    const i = platforms.indexOf(box);
+    if (i >= 0) platforms.splice(i, 1);
+  }
+
   function addBox({ x, y, z, w, h, d, color = 0x6b8e23, cap = null }) {
     const mesh = new THREE.Mesh(roughBox(x, y, z, w, h, d, color), roughMat);
     mesh.position.set(x, y, z);
@@ -421,7 +427,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     }
   }
 
-  const ctx = { root, rng, rand, pick, tileAt, isOpenGround, scatter, addBox, addCollider };
+  const ctx = { root, rng, rand, pick, tileAt, isOpenGround, scatter, addBox, addCollider, removeCollider };
 
   // The map's own set pieces (they claim their ground before anything grows)
   const animate = map.build?.(ctx);
