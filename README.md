@@ -9,7 +9,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
+- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes lamp posts, benches, flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
 - A saved home farm, and online lobbies (up to 8 farmers) you start with friends, where rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -67,7 +67,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 
 **Building.** Wood and stone from the lobbies build things on your farm. Open the backpack's **Build** tab (`B`) and pick a piece: a see-through one shows where it goes (red where it can't), on the tile you point at with the mouse or the one in front of you. `E` puts it down (hold `E` and walk to lay a path), and so does a click or a tap on a tile (the farmer walks over first if it's far). **Done** or `Esc` ends build mode.
 
-- **Wood fence** (2 wood), **rail fence** (3 wood, split rails on squat posts), **picket fence** (3 wood, pale pointed pickets), **wattle fence** (3 wood, withies woven between stakes), **box hedge** (1 wood, 2 flax, clipped bushes), **low stone wall** (2 stone), **stone wall** (3 stone) and **wood palisade** (4 wood, a row of pointed logs) join up with the fences, hedges and walls beside them. A fence, a rail, picket or wattle fence, a hedge or a low wall can be hopped over; a stone wall or a palisade can't.
+- **Wood fence** (2 wood), **rail fence** (3 wood, split rails on squat posts), **picket fence** (3 wood, pale pointed pickets), **wattle fence** (3 wood, withies woven between stakes), **log fence** (3 wood, whole logs laid two high between stumps), **box hedge** (1 wood, 2 flax, clipped bushes), **low stone wall** (2 stone), **stone wall** (3 stone) and **wood palisade** (4 wood, a row of pointed logs) join up with the fences, hedges and walls beside them. A fence, a rail, picket, wattle or log fence, a hedge or a low wall can be hopped over; a stone wall or a palisade can't.
 - **Wood path** (1 wood), **stone path** (1 stone), **gravel path** (1 stone), **stepping stones** (1 stone, three flat stones across the grass) and **cobble path** (2 stone) are walked on.
 - A **wood gate** (3 wood) joins up with the fences beside it, like a fence, but is walked through.
 - A **stone arch** (5 stone) or a **wood arbor** (5 wood, posts and rafters with a flowering vine) joins up with the walls and fences beside it the same way, and is walked through too.
@@ -90,6 +90,11 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **sundial** (4 stone), a brass dial on a stone pedestal, its gnomon pointing north.
 - A **wheelbarrow** (3 wood, 1 stone), set down at a slant, with stones, logs or earth in it.
 - A **torch** (1 wood, 1 flax), a flame on a stick: it burns day and night and lights up what is around it after dark, flickering.
+- A **mailbox** (2 wood), a wooden box with a rounded lid on a post; its red flag is up on some, and a letter pokes out of a few.
+- A **birdhouse** (2 wood), a little house with a round door on a tall pole; a bird sits on the perch of some.
+- A **flagpole** (3 wood, 2 flax), a tall pole on a stone footing with a red, blue or yellow pennant rippling from it.
+- A **stone cairn** (3 stone), flat stones piled one on another, each a little off the one below; moss at the foot of some.
+- A **clothesline** (2 wood, 2 flax), a line between two T-posts with a shirt, a sheet and trousers pegged out on it.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
   - decorations, put down from the Build tab like the rest: a **lamp post** (3 wood, 2 stone) that lights up at night, a **garden bench** (6 wood) and a **flower planter** (4 stone, 1 wood);
   - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
