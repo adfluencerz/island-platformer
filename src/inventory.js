@@ -1,6 +1,6 @@
 import './inventory.css';
 import { ITEMS, PIECE_ICONS, spriteURL } from './items.js';
-import { PIECES } from '../shared/level.js';
+import { PIECES, BUILD_GROUPS } from '../shared/level.js';
 import { buzz } from './ui/touch.js';
 
 // ---------- Slot-based inventory (Stardew Valley style) ----------
@@ -94,6 +94,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   let held = null; // stack carried on the cursor while the menu is open
   let lastFullNotice = 0;
   let tab = 'pack'; // 'pack' | 'build'
+  let group = BUILD_GROUPS[0]; // the Build tab's group on show
 
   // ---------- DOM ----------
   function makeSlot(parent, index, label) {
@@ -202,10 +203,23 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     const problem = buildProblem();
     const note = el('div', 'inv-build-note', buildEl);
     note.textContent = problem || 'Pick something to build. E puts it where the see-through one is (the tile you point at, or in front of you), or click or tap a tile. What your backpack is short of comes out of your farm\'s chest. Taking a piece down gives back what it cost.';
+    // (a relic shows once there is one to put on show; its group, once there is a relic)
+    const shown = (id) => !PIECES[id].relic || toBuild(id) > 0;
+    const groups = BUILD_GROUPS.filter((g) => Object.keys(PIECES).some((id) => PIECES[id].group === g && shown(id)));
+    if (!groups.includes(group)) group = groups[0];
+    const tabsRow = el('div', 'inv-build-groups', buildEl);
+    for (const g of groups) {
+      const btn = el('button', 'inv-build-group' + (g === group ? ' on' : ''), tabsRow);
+      btn.type = 'button';
+      btn.textContent = g;
+      btn.addEventListener('click', () => {
+        group = g;
+        renderBuild();
+      });
+    }
     const cards = el('div', 'inv-build-cards', buildEl);
-    for (const id of [...Object.keys(PIECES), 'remove']) {
+    for (const id of [...Object.keys(PIECES).filter((id) => PIECES[id].group === group && shown(id)), 'remove']) {
       const def = PIECES[id];
-      if (def?.relic && !toBuild(id)) continue; // (a relic shows once there is one to put on show)
       const short = def ? Object.entries(def.cost).find(([item, n]) => toBuild(item) < n) : null;
       const made = ITEMS[id]?.piece === id; // (a decoration, made at the workbench)
       const card = el('button', 'inv-build-card' + (building() === id ? ' on' : ''), cards);
@@ -481,6 +495,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     if (next === open) return;
     if (!next && !putBack()) return;
     open = next;
+    if (open && PIECES[building()]) group = PIECES[building()].group; // (the Build tab opens where the piece in hand is)
     menuEl.hidden = !open;
     hotbarEl.hidden = open;
     tooltipEl.hidden = true;
