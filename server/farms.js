@@ -34,6 +34,10 @@
 // the way a pairing code does. Wrong passwords lock the account a while, as
 // wrong PINs do. There is no getting a forgotten password back.
 //
+// Farmers with accounts can be friends: one asks for the other by username
+// (farm.friendAsks, on the farm asked), and once that one says yes each is on
+// the other's farm.friends.
+//
 // One file per farm, data/farms/<id>.json (server/store.js); with no folder
 // (GAME_DATA=off) the farms are kept in memory only.
 import { randomBytes, createHash, timingSafeEqual, randomInt, scrypt } from 'node:crypto';
@@ -60,6 +64,7 @@ const HELP_LENGTH = 8; // (longer than a pairing code, so the two can't be mixed
 const HELP_MS = 24 * 3600_000;
 const MAX_HELPERS = 12;
 const MAX_INVITES = 10; // invite codes out at once, per farm
+const MAX_FRIENDS = 50; // friends per farmer, and asks waiting on one
 
 const scryptAsync = promisify(scrypt);
 const pinHash = async (pin, salt) => (await scryptAsync(pin, Buffer.from(salt, 'hex'), 32)).toString('hex');
@@ -464,6 +469,84 @@ Object.assign(Farms.prototype, {
     farm.color = color;
     if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
     return accountOf(farm);
+  },
+});
+
+// ---------- Friends ----------
+const without = (list, id) => (list ?? []).filter((x) => x !== id);
+
+Object.assign(Farms.prototype, {
+  // Are these two farms' farmers friends? (it takes both lists)
+  areFriends(a, b) {
+    return !!(a?.friends?.includes(b?.id) && b?.friends?.includes(a?.id));
+  },
+
+  // A farmer's friends: [{ id, name, color }]
+  friendsOf(farm) {
+    const list = [];
+    for (const id of farm.friends ?? []) {
+      const other = this.get(id);
+      if (other?.account && this.areFriends(farm, other)) list.push({ id, name: other.account.name, color: other.color });
+    }
+    return list;
+  },
+
+  // Who asked to be their friend: [{ id, name }]
+  asksOf(farm) {
+    const list = [];
+    for (const id of farm.friendAsks ?? []) {
+      const other = this.get(id);
+      if (other?.account) list.push({ id, name: other.account.name });
+    }
+    return list;
+  },
+
+  // Ask the farmer with this username to be friends (they asked us already:
+  // friends now). -> { name, friends: true or false }
+  askFriend(farm, username) {
+    if (!farm.account) return { error: 'Make an account first.', status: 400 };
+    const id = this.accounts.get(usernameKey(username));
+    const other = id && this.get(id);
+    if (!other?.account) return { error: 'There is no farmer by that name.', status: 404 };
+    if (other.id === farm.id) return { error: "That's you!", status: 400 };
+    const name = other.account.name;
+    if (this.areFriends(farm, other)) return { error: `You and ${name} are friends already.`, status: 409 };
+    if (farm.friendAsks?.includes(other.id)) return this.answerFriend(farm, other.id, true);
+    if (other.friendAsks?.includes(farm.id)) return { name, friends: false };
+    if ((other.friendAsks?.length ?? 0) >= MAX_FRIENDS) return { error: `${name} has too many asks waiting.`, status: 409 };
+    other.friendAsks = [...(other.friendAsks ?? []), farm.id];
+    if (!this.write(other)) return { error: 'The server could not keep that.', status: 500 };
+    return { name, friends: false };
+  },
+
+  // Yes or no to an ask from farm id. -> { name, friends }
+  answerFriend(farm, id, yes) {
+    const other = this.get(id);
+    if (!farm.friendAsks?.includes(id) || !other?.account) return { error: 'That ask is not there (any more).', status: 404 };
+    farm.friendAsks = without(farm.friendAsks, id);
+    if (yes) {
+      if ((farm.friends?.length ?? 0) >= MAX_FRIENDS || (other.friends?.length ?? 0) >= MAX_FRIENDS) {
+        this.write(farm);
+        return { error: 'One of you has all the friends they can have.', status: 409 };
+      }
+      farm.friends = [...without(farm.friends, id), id];
+      other.friends = [...without(other.friends, farm.id), farm.id];
+      other.friendAsks = without(other.friendAsks, farm.id);
+      this.write(other);
+    }
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    return { name: other.account.name, friends: !!yes };
+  },
+
+  removeFriend(farm, id) {
+    const other = this.get(id);
+    farm.friends = without(farm.friends, id);
+    if (other) {
+      other.friends = without(other.friends, farm.id);
+      this.write(other);
+    }
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    return {};
   },
 });
 

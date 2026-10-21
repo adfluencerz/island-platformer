@@ -2121,6 +2121,10 @@ const splash = new Splash({
     await farmSync.setColor(color);
     myShirt();
   },
+  onFriends: () => farmSync.friends(),
+  onAddFriend: (username) => farmSync.addFriend(username),
+  onAnswerFriend: (id, yes) => farmSync.answerFriend(id, yes),
+  onRemoveFriend: (id) => farmSync.removeFriend(id),
 });
 
 // Our shirt: the account's color (src/net/farm.js), at home; in a lobby or on a

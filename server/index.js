@@ -23,6 +23,10 @@
 //                              an account on this device's farm (sent with its token), or on a new farm from save
 //   POST /api/account/login    { username, password } -> { id, token, username, color }: this device's own token
 //   PUT  /api/account/color    { color } -> { username, color }: a new shirt color
+//   POST /api/friends          -> { friends: [{ id, name, color }], asks: [{ id, name }] }
+//   POST /api/friends/add      { username } -> { name, friends }: ask them (friends: they had asked us, so now we are)
+//   POST /api/friends/answer   { id, yes } -> { name, friends }
+//   POST /api/friends/remove   { id } -> {}
 //   (/me: "Authorization: Bearer <id>.<token>", and every farm call names the
 //   page in "X-Farm-Session"; see server/farms.js)
 //   WS   /ws?farm=ID           be on that farm, its owner or one of its helpers (server/farmroom.js)
@@ -155,7 +159,7 @@ const server = createServer(async (req, res) => {
     const room = lobby.find(one[1].toUpperCase());
     return room ? json(res, 200, room.info()) : json(res, 404, { error: 'no such lobby' });
   }
-  if (path.startsWith('/api/farms') || path.startsWith('/api/account/')) return farmApi(req, res, path);
+  if (path.startsWith('/api/farms') || path.startsWith('/api/account/') || path.startsWith('/api/friends')) return farmApi(req, res, path);
   if (path.startsWith('/api/')) return json(res, 404, { error: 'not found' });
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
   return serveStatic(req, res, path);
@@ -170,6 +174,7 @@ async function farmApi(req, res, path) {
     'POST /api/farms/me/helpers', 'POST /api/farms/me/helpers/invite', 'POST /api/farms/me/helpers/remove',
     'POST /api/farms/invite', 'POST /api/farms/me/help', 'POST /api/farms/me/helping',
     'POST /api/account/register', 'POST /api/account/login', 'PUT /api/account/color',
+    'POST /api/friends', 'POST /api/friends/add', 'POST /api/friends/answer', 'POST /api/friends/remove',
   ];
   if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
   // JSON only (as for lobbies), and the page that is asking
@@ -199,6 +204,10 @@ async function farmApi(req, res, path) {
     else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save, { live: farmRooms.has(farm.id), roomRev: body?.roomRev });
     else if (route === 'PUT /api/farms/me/recovery') out = await farms.setRecovery(farm, body ?? {});
     else if (route === 'PUT /api/account/color') out = farms.setColor(farm, body?.color);
+    else if (route === 'POST /api/friends') out = { friends: farms.friendsOf(farm), asks: farms.asksOf(farm) };
+    else if (route === 'POST /api/friends/add') out = farms.askFriend(farm, String(body?.username ?? ''));
+    else if (route === 'POST /api/friends/answer') out = farms.answerFriend(farm, String(body?.id ?? ''), !!body?.yes);
+    else if (route === 'POST /api/friends/remove') out = farms.removeFriend(farm, String(body?.id ?? ''));
     else if (route === 'POST /api/farms/me/helpers') out = { helpers: farms.helpersOf(farm) };
     else if (route === 'POST /api/farms/me/helpers/invite') out = farms.invite(farm, body?.name);
     else if (route === 'POST /api/farms/me/helpers/remove') {

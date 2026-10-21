@@ -254,6 +254,24 @@ export class FarmSync {
     return (await this.me('/api/farms/me/helping')).farms;
   }
 
+  // Friends (an account's): { friends: [{ id, name, color, online, where }], asks: [{ id, name }] }
+  friends() {
+    return this.me('/api/friends');
+  }
+
+  // Ask the farmer with this username to be friends: { name, friends } (friends: they had asked us, so now we are)
+  addFriend(username) {
+    return this.me('/api/friends/add', { username });
+  }
+
+  answerFriend(id, yes) {
+    return this.me('/api/friends/answer', { id, yes });
+  }
+
+  removeFriend(id) {
+    return this.me('/api/friends/remove', { id });
+  }
+
   // A call about this browser's farm (it needs one on the server)
   me(path, body = {}, method = 'POST') {
     if (!this.ready) return Promise.reject(new Error(`${NO_SERVER} Your farm is only in this browser for now.`));

@@ -7,7 +7,8 @@
 //   one), Browse, New lobby, or a code from a friend: a lobby's, or an
 //   invitation to help on their farm (8 long, so the two can't be mixed up).
 //   In a lobby, its code and invite link too.
-// - Friends: the farms you help on (server/farms.js), to visit, and your
+// - Friends: your friends (asking for new ones by username, and saying yes
+//   to theirs), the farms you help on (server/farms.js), to visit, and your
 //   farm's helpers, friends who can come and farm on it, invited with a code.
 // - Controls.
 // - Your farmer: the shirt's color, and logging out.
@@ -50,6 +51,8 @@ export class Splash {
   // account(): { username, color }, or null. onRegister({ username, password, color }),
   // onLogin({ username, password }): resolve once done (or throw, with why).
   // onLogout(). onColor(color): a new shirt color.
+  // onFriends(): { friends: [{ id, name, color }], asks: [{ id, name }] }.
+  // onAddFriend(username): { name, friends }. onAnswerFriend(id, yes). onRemoveFriend(id).
   constructor(options) {
     Object.assign(this, options);
     this.pages = {};
@@ -156,6 +159,15 @@ export class Splash {
 
     // ---- Friends ----
     const friends = this.page('friends', 'Friends');
+    this.friendsList = el('div', 'ui-helper-list', friends);
+    const add = el('form', 'ui-row ui-code-row', friends);
+    this.friendInput = el('input', 'ui-input', add);
+    Object.assign(this.friendInput, { placeholder: 'Add a friend by username', maxLength: MAX_NAME, autocomplete: 'off' });
+    button('ui-btn', add, 'Add', null).type = 'submit';
+    add.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.addFriend();
+    });
     el('div', 'ui-sub', friends, 'Farms you help on');
     this.helpingList = el('div', 'ui-helper-list', friends);
     el('div', 'ui-sub', friends, 'Your helpers');
@@ -512,8 +524,78 @@ export class Splash {
 
   // ---------- Friends ----------
   showFriends() {
+    this.showFriendList();
     this.showHelping();
     this.showHelpers();
+  }
+
+  // A friend's shirt and name, in a row
+  friendBits(row, f) {
+    const dot = el('span', 'ui-dot', row);
+    dot.style.background = hexColor(f.color ?? 0xffffff);
+    el('span', 'ui-player-name', row, f.name);
+  }
+
+  friendRow(parent, f) {
+    const row = el('div', 'ui-helper', parent);
+    this.friendBits(row, f);
+    return row;
+  }
+
+  // Our friends, and who asked to be one (the Friends page)
+  async showFriendList() {
+    const list = this.friendsList;
+    list.textContent = 'Asking the server…';
+    let friends;
+    let asks;
+    try {
+      ({ friends, asks } = await this.onFriends());
+    } catch (e) {
+      list.textContent = e.message;
+      return;
+    }
+    list.textContent = '';
+    for (const a of asks) {
+      const row = el('div', 'ui-helper', list);
+      el('span', 'ui-player-name', row, a.name);
+      el('span', 'ui-muted', row, 'wants to be friends');
+      const answer = (yes) => async () => {
+        try {
+          await this.onAnswerFriend(a.id, yes);
+          this.showFriendList();
+        } catch (e) {
+          this.setStatus(e.message, true);
+        }
+      };
+      button('ui-btn ui-btn-small', row, 'Yes', answer(true));
+      button('ui-btn ui-btn-small ui-btn-ghost', row, 'No', answer(false));
+    }
+    if (!friends.length && !asks.length) el('div', 'ui-muted', list, 'No friends yet. Add one by their username: once they say yes you’re friends.');
+    for (const f of friends) {
+      const row = this.friendRow(list, f);
+      button('ui-btn ui-btn-small ui-btn-ghost', row, '✕', async () => {
+        if (!confirm(`Take ${f.name} off your friends?`)) return;
+        try {
+          await this.onRemoveFriend(f.id);
+          this.showFriendList();
+        } catch (e) {
+          this.setStatus(e.message, true);
+        }
+      }).title = 'Not friends any more';
+    }
+  }
+
+  async addFriend() {
+    const username = this.friendInput.value.trim();
+    if (!username) return;
+    try {
+      const { name, friends } = await this.onAddFriend(username);
+      this.friendInput.value = '';
+      this.setStatus(friends ? `You and ${name} are friends now!` : `Asked ${name}. Once they say yes, you're friends.`);
+      this.showFriendList();
+    } catch (e) {
+      this.setStatus(e.message, true);
+    }
   }
 
   // The farms we help on (the Friends page, when it is open)
