@@ -19,9 +19,21 @@ import { FARM_CHEST } from '../shared/level.js';
 //
 //   click a backpack slot     put the stack in (right click: one)
 //   click something in it     take it out, the owner only (right click: one)
+//   Put all in                everything in the backpack rows (not the toolbar, never tools)
+//   Organize by kind          what is in it grouped by kind, as the backpack's Organize
+//                             does (again: A to Z); this page remembers which
 //   E / Esc / ×               close
 
 const REACH = 1.6; // from the chest's middle
+const KIND_ORDER = Object.keys(CATEGORIES);
+const BY_KIND = 'tp.chestByKind'; // (localStorage: this page shows the chest by kind)
+const loadByKind = () => {
+  try {
+    return localStorage.getItem(BY_KIND) === '1';
+  } catch {
+    return false;
+  }
+};
 export const CHEST_W = 1.1;
 
 // ---------- The chest itself ----------
@@ -76,6 +88,7 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
   let shared = true; // (false: a farm without helpers, the farmer's own chest)
   let items = {}; // item -> count, as the room says
   let lidOpen = 0;
+  let byKind = loadByKind();
 
   // ---------- The window ----------
   const menuEl = el('div', 'inv-menu chest-menu', document.body);
@@ -85,9 +98,21 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
   const closeBtn = button('inv-close', windowEl, '×', () => setOpen(false));
   closeBtn.title = 'Close (E / Esc)';
   const noteEl = el('div', 'chest-note', windowEl);
+  const itemsBar = el('div', 'chest-bar', windowEl);
+  el('div', 'chest-heading', itemsBar, 'In the chest');
+  const kindBtn = button('inv-button', itemsBar, '', () => {
+    byKind = !byKind;
+    try {
+      localStorage.setItem(BY_KIND, byKind ? '1' : '0');
+    } catch {}
+    render();
+  });
   const itemsEl = el('div', 'chest-items', windowEl);
 
-  el('div', 'chest-heading', windowEl, 'Put in from your backpack');
+  const putBar = el('div', 'chest-bar', windowEl);
+  el('div', 'chest-heading', putBar, 'Put in from your backpack');
+  const allBtn = button('inv-button', putBar, 'Put all in', () => putAll());
+  allBtn.title = 'Everything in your backpack rows (the toolbar and your tools stay with you)';
   const gridEl = el('div', 'inv-grid', windowEl);
   const slotViews = Array.from({ length: SLOT_COUNT }, (_, i) => {
     if (i === COLS) el('div', 'inv-divider', gridEl);
@@ -118,10 +143,18 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
       ? 'Click: take the stack out (right click: one) · Click your items: put the stack in (right click: one)'
       : 'Click your items: put the stack in (right click: one)';
     touchHint.textContent = mine ? 'Tap: take the stack out · Tap your items: put them in' : 'Tap your items: put them in';
+    kindBtn.textContent = byKind ? 'Sort A to Z' : 'Organize by kind';
+    kindBtn.title = byKind ? 'List what is in the chest by name' : 'Group what is in the chest by kind, as the backpack is';
     itemsEl.textContent = '';
     const ids = Object.keys(items).filter((id) => items[id] > 0);
     if (!ids.length) el('div', 'chest-empty', itemsEl, 'Empty for now.');
-    for (const id of ids.sort((a, b) => (ITEMS[a]?.name ?? a).localeCompare(ITEMS[b]?.name ?? b))) {
+    const name = (id) => ITEMS[id]?.name ?? id;
+    const kind = (id) => {
+      const at = KIND_ORDER.indexOf(ITEMS[id]?.category);
+      return at < 0 ? KIND_ORDER.length : at; // (something this page doesn't know: last)
+    };
+    ids.sort((a, b) => (byKind && kind(a) - kind(b)) || name(a).localeCompare(name(b)));
+    for (const id of ids) {
       const cell = button('inv-slot chest-cell' + (mine ? '' : ' chest-locked'), itemsEl);
       cell.dataset.take = id;
       const img = el('img', 'inv-icon', cell);
@@ -168,6 +201,19 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
     if (!keeps(stack.id)) return inventory.notify('Your tools stay with you');
     const n = inventory.take(i, count);
     if (n) onPut(stack.id, n);
+  }
+
+  // Everything in the backpack rows that can go in (the toolbar is left alone)
+  function putAll() {
+    let any = false;
+    for (let i = COLS; i < SLOT_COUNT; i++) {
+      const stack = inventory.slot(i);
+      if (!stack || !keeps(stack.id)) continue;
+      put(i, Infinity);
+      any = true;
+    }
+    if (!any) inventory.notify('Nothing in your backpack rows to put in');
+    render();
   }
 
   function take(id, count) {
