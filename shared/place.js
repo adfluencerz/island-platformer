@@ -225,6 +225,25 @@ export class Place {
     this.say(`${p.name} headed home.`);
   }
 
+  // ---------- Is everyone's island the same? ----------
+  // A page says how many trees and rocks it grew and a fingerprint of where
+  // they stand (COUNT, print). Giants and felled trees go by their number, so
+  // a page that grew them differently sees them somewhere else: the first
+  // page's picture is the place's, and every page hears whether it matches.
+  checkIsland(p, { trees, rocks, print } = {}) {
+    if (!Number.isInteger(print) || !Number.isInteger(trees) || !Number.isInteger(rocks)) return;
+    const what = `${trees} trees, ${rocks} rocks, #${(print >>> 0).toString(16).padStart(8, '0').slice(0, 6)}`;
+    const first = this.islandPrint;
+    if (!first) {
+      this.islandPrint = { print, what, name: p.name };
+      this.send(p, { t: S.CHAT, from: 0, text: `Island check: ${what} (the first here)` });
+    } else if (first.print === print) {
+      this.send(p, { t: S.CHAT, from: 0, text: `Island check: ${what}, the same as ${first.name}'s` });
+    } else {
+      this.say(`Island check: ${p.name}'s island is not the same as ${first.name}'s (${what} against ${first.what}): giants and felled trees will be in different places`);
+    }
+  }
+
   // ---------- Sending ----------
   say(text) {
     this.broadcast({ t: S.CHAT, from: 0, text });
