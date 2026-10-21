@@ -106,8 +106,20 @@ body.in-menu .tc { display: none; }
   text-shadow: none;
   box-shadow: inset 0 3px 0 var(--inv-slot-light), inset 0 -3px 0 var(--inv-slot-shade), 0 3px 0 rgba(0, 0, 0, 0.3);
 }
-.tc-bag { right: 14px; bottom: 88px; }
-.tc-chat { right: 97px; bottom: 82px; }
+/* Bag, Build and Chat: a column top right, under the coin counter (touch.js puts its top there) */
+.tc-side {
+  position: fixed;
+  top: calc(var(--safe-t) + 120px);
+  right: calc(var(--safe-r) + 10px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none; /* (taps between the buttons go to the world) */
+}
+.tc-side .tc-btn { position: relative; }
+.tc-build { font-size: 17px; }
 
 /* Hold the clock to fast-forward (at home) */
 :root.touch .dn-clock { pointer-events: auto; touch-action: none; }
@@ -281,13 +293,13 @@ body.in-menu .tc { display: none; }
 @media (orientation: landscape) {
   :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); max-height: calc(100dvh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
   :root.touch .ui-prompt { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--hotbar-b) + var(--hotbar-h) + 12px); }
-  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 10px); top: calc(var(--safe-t) + 116px); bottom: auto; width: min(300px, 36vw); }
+  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 96px); top: calc(var(--safe-t) + 182px); bottom: auto; width: min(300px, 36vw); } /* (under the buttons, clear of Jump) */
   :root.touch .ui-chat-log { max-height: 96px; }
   :root.touch .inv-toasts { bottom: calc(var(--controls-b) + var(--stick) + 10px); }
   :root.touch .inv-menu { padding-top: calc(var(--safe-t) + 46px); }
   /* the buttons stacked up beside the toolbar rather than along it */
   :root.touch { --inv-slot: 34px; }
   .tc-jump { right: 3px; bottom: 88px; }
-  .tc-bag { right: 84px; bottom: 104px; }
-  .tc-chat { right: 84px; bottom: 44px; }
+  /* Bag, Build and Chat in a row under the coin counter (no room for a column over Jump) */
+  .tc-side { flex-direction: row-reverse; }
 }
