@@ -136,14 +136,16 @@ export function wildMap(island) {
       pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
       heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
+      glade: { color: 0x5f8a6a, jitter: 0.04, top: [0.006, 0.024], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
       meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, hue: theme.hue },
       heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
       marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
+      glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -177,6 +179,10 @@ export function wildMap(island) {
       if (island.marsh) {
         scatter(6, 2.4, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
       }
+      // Generation 5 (the bluebell glade): after the marsh's
+      if (island.glade) {
+        scatter(4, 2.6, (x, z) => tileAt(x, z) === 'glade' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
+      }
     },
   };
 }
@@ -187,6 +193,10 @@ const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9
 // reeds on the marsh (generation 4): a thin stalk 2 tall (scaled to its height) and a brown velvet head
 const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
+const gladeStemGeo = new THREE.CylinderGeometry(0.012, 0.018, 0.4, 4);
+const gladeBellGeo = new THREE.SphereGeometry(0.04, 6, 5);
+const gladeStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const gladeBellMat = new THREE.MeshStandardMaterial({ color: 0x5a6fd8, roughness: 0.5 });
 const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
@@ -316,6 +326,21 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
         const stalk = addDecor(marshReedGeo, marshReedMat, px, h / 2, pz, 1, h / 2, 1, root);
         stalk.rotation.set(tilt[0], 0, tilt[1]);
         if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
+      }
+    });
+  }
+
+  // Generation 5: bluebells, nodding blue bells on thin stems, thick in the glade
+  // (after everything else drew from rng); you walk through them
+  if (island.glade) {
+    scatter(46, 0.9, (x, z) => tileAt(x, z) === 'glade' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0, n = 2 + Math.floor(rng() * 3); i < n; i++) {
+        const h = rand(0.7, 1.1);
+        const px = x + rand(-0.25, 0.25);
+        const pz = z + rand(-0.25, 0.25);
+        const stem = addDecor(gladeStemGeo, gladeStemMat, px, 0.2 * h, pz, 1, h, 1, root);
+        stem.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
+        for (let b = 0; b < 3; b++) addDecor(gladeBellGeo, gladeBellMat, px + (b - 1) * 0.03, (0.3 + b * 0.04) * h + 0.1, pz, 1, 1.3, 1, root);
       }
     });
   }
