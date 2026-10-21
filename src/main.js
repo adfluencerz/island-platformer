@@ -364,7 +364,7 @@ function updateCrops(dt, growDt, t) {
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
 const TOUCH_RADIUS = 0.6;
 const GATHER_REACH = 1.6;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather' };
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
@@ -372,6 +372,10 @@ const stalkGeo = new THREE.CylinderGeometry(0.07, 0.09, 0.28, 7).translate(0, 0.
 const capGeo = new THREE.SphereGeometry(0.25, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.25, 0);
 const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf2e8d0, roughness: 0.8 });
 const capMat = new THREE.MeshStandardMaterial({ color: 0xd8452f, roughness: 0.6 });
+const sprigGeo = new THREE.ConeGeometry(0.05, 0.42, 5).translate(0, 0.21, 0);
+const bellGeo = new THREE.SphereGeometry(0.07, 6, 5);
+const sprigMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 });
+const bellMat = new THREE.MeshStandardMaterial({ color: 0x9a6fc0, roughness: 0.5 });
 // A golden glint over a spot with something rare on it
 const glintGeo = new THREE.OctahedronGeometry(0.13, 0);
 const glintMat = new THREE.MeshStandardMaterial({ color: 0xffe14d, emissive: 0xffc400, emissiveIntensity: 1 });
@@ -400,6 +404,22 @@ function makeSpotView(spot) {
       shroom.position.set(x, 0, z);
       shroom.scale.setScalar(k);
       content.add(shroom);
+    }
+  } else if (spot.kind === 'heather') {
+    // A low clump of purple sprigs
+    content = new THREE.Group();
+    for (let i = 0; i < 7; i++) {
+      const a = i * 2.4;
+      const sprig = new THREE.Group();
+      sprig.add(new THREE.Mesh(sprigGeo, sprigMat));
+      for (let b = 0; b < 3; b++) {
+        const bell = new THREE.Mesh(bellGeo, bellMat);
+        bell.position.set(0.03 * (b % 2 ? 1 : -1), 0.2 + b * 0.09, 0);
+        sprig.add(bell);
+      }
+      sprig.position.set(Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22);
+      sprig.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3);
+      content.add(sprig);
     }
   } else {
     content = createItemMesh('coin'); // (a treasure: the item itself, made solid, itemmesh.js)

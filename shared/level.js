@@ -27,6 +27,7 @@ export const SPOT_KINDS = {
     regrow: [25, 40],
     loot: [['mushroom', 0.95, 1, 2], ['golden_seeds', 0.05, 1, 1]],
   },
+  heather: { use: 'gather', regrow: [30, 45], loot: [['heather', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the heath, generation 2 islands)
   meadow: {
     use: 'touch',
     regrow: [30, 50],

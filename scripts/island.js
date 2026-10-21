@@ -3,11 +3,11 @@
 // No seed: a random one. North is up.
 import { islandFor, checkIsland, randomSeed } from '../shared/worldgen.js';
 
-const GROUND = { pond: '~', sand: '.', stone: 'o', path: ':', meadow: '"', moss: '&', grass: ',' };
-const SPOT = { ledge: 'L', meadow: '$', bush: 'B', mushroom: 'M' };
+const GROUND = { pond: '~', sand: '.', stone: 'o', path: ':', meadow: '"', moss: '&', grass: ',', heath: '^' };
+const SPOT = { ledge: 'L', meadow: '$', bush: 'B', mushroom: 'M', heather: 'H' };
 const color = process.stdout.isTTY;
 const paint = (code, s) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
-const INK = { '~': 36, '.': 33, o: 37, ':': 33, '"': 92, '&': 32, ',': 32, '#': 90, T: 31, L: 95, $: 93, B: 91, M: 97, '@': 1 };
+const INK = { '~': 36, '.': 33, o: 37, ':': 33, '"': 92, '&': 32, '^': 35, H: 95, ',': 32, '#': 90, T: 31, L: 95, $: 93, B: 91, M: 97, '@': 1 };
 
 const seeds = process.argv.slice(2);
 for (const asked of seeds.length ? seeds : [randomSeed()]) {

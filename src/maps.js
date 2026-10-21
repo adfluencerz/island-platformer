@@ -128,12 +128,14 @@ export function wildMap(island) {
       stone: { color: 0x8f8d86, jitter: 0.08, top: [0.012, 0.035] },
       sand: { color: 0xe0c690, jitter: 0.03, top: [0.004, 0.012] },
       pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
+      heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow']),
+    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath']),
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
       meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, hue: theme.hue },
+      heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -159,6 +161,10 @@ export function wildMap(island) {
       // Boulders tumbled at the foot of the terraces
       scatter(9, 2.2, (x, z) => nearTerrace(x, z, 2.2) && !nearTerrace(x, z, 0.6) && isOpenGround(x, z, 0.4) && offTrail(x, z, 1.6),
         (x, z) => addRock(x, z, [0.7, 1.1]));
+      // Generation 2 (the heath): last, so nothing before it moves
+      if (island.heath) {
+        scatter(14, 2.4, (x, z) => tileAt(x, z) === 'heath' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.5, 0.9]));
+      }
     },
   };
 }
@@ -258,6 +264,22 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
     root.add(log);
     addCollider({ x, y: 0.28, z, w: along ? len : 0.6, h: 0.56, d: along ? 0.6 : len });
   });
+
+  // Generation 2: cairns, stacks of flat stones, on the heath (after everything
+  // else drew from rng, so the older set pieces stay where they were)
+  if (island.heath) {
+    scatter(4, 5, (x, z) => tileAt(x, z) === 'heath' && isOpenGround(x, z, 1) && distToPaths(x, z, island.trails) > 1.5, (x, z) => {
+      let y = 0;
+      for (let i = 0, n = 3 + Math.floor(rng() * 2); i < n; i++) {
+        const r = 0.42 - i * 0.08;
+        const h = 0.2;
+        const stone = addDecor(rockGeo, rockMats[i % rockMats.length], x + rand(-0.04, 0.04), y + h / 2, z + rand(-0.04, 0.04), r, h / 2, r * 0.9, root);
+        stone.rotation.y = rand(0, Math.PI * 2);
+        y += h * 0.9;
+      }
+      addCollider({ x, y: y / 2, z, w: 0.7, h: y, d: 0.7 });
+    });
+  }
 
   // the lily pads drift a little
   return (t) => {
