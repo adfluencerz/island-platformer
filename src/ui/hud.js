@@ -25,6 +25,7 @@ const CONTROLS = [
   ['L', 'Visit a lobby'],
   ['Enter', 'Chat'],
   ['Hold T', 'Speed up time at home'],
+  ['Right click', 'Cancel: stop building or walking, put down what you carry in the backpack, or close it'],
   ['Esc', 'Menu'],
   ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
 ];
@@ -60,7 +61,7 @@ export class Hud {
   // onMenu(): open the menu (Esc). isMenuOpen(). onMenuEscape(): Esc in the menu.
   // isBlocked(): another screen (the backpack, the menu) has the keyboard.
   // onPrompt(text): the prompt changed ('' : nothing to do here).
-  // onStopBuilding(): out of build mode (Done, or Esc while building).
+  // onStopBuilding(): out of build mode (Done, or Esc while building; main.js has the right click).
   constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding }) {
     Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding });
     this.place = null; // 'home' | 'lobby' | 'farm' (a farm with helpers) | null (the title screen)
@@ -99,7 +100,7 @@ export class Hud {
     const buildText = el('div', 'ui-build-text', this.buildBar);
     this.buildWhat = el('b', '', buildText);
     this.buildNote = el('span', 'ui-muted', buildText);
-    button('ui-btn ui-btn-small', this.buildBar, 'Done', () => this.onStopBuilding());
+    button('ui-btn ui-btn-small', this.buildBar, 'Done', () => this.onStopBuilding()).title = 'Done building (Esc, or right click)';
     this.buildBar.hidden = true;
     this.big = el('div', 'ui-big', root);
     this.big.hidden = true;

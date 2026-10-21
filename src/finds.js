@@ -1,4 +1,5 @@
 import { RARE } from '../shared/level.js';
+import { FARM_FINDS } from '../shared/balance.js';
 import { createItemMesh } from './itemmesh.js';
 
 // ---------- Finds on the farm ----------
@@ -8,19 +9,8 @@ import { createItemMesh } from './itemmesh.js';
 // it up. Only on your own farm while you play it alone (on a farm with
 // helpers its room has the say over what is on it), and not kept: they are
 // gone when you set off.
-const CHECK_EVERY = 60; // seconds of play at home between rolls
-const CHANCE = 0.15; // that a roll turns something up (about one every 6 or 7 minutes)
-const TWO = 0.3; // that it is two finds, not one
-const MOST = 2; // on the farm at once
-const FINDS = [ // [item, weight, min, max]
-  ['coin', 0.5, 1, 2],
-  ['turnip_seeds', 0.16, 2, 3],
-  ['carrot_seeds', 0.12, 1, 3],
-  ['flax_seeds', 0.1, 1, 2],
-  ['sunflower_seeds', 0.07, 1, 2],
-  ['gem', 0.04, 1, 1],
-  ['golden_seeds', 0.01, 1, 1],
-];
+// (how often, how likely, and what: FARM_FINDS in shared/balance.js)
+const { every: CHECK_EVERY, chance: CHANCE, two: TWO, most: MOST, loot: FINDS } = FARM_FINDS;
 const FLOAT_Y = 0.6; // over the ground
 const REACH = 0.7; // from the farmer's middle, to pick one up
 const GROW = 0.4; // seconds to pop up

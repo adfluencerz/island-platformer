@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { damp } from './character.js';
 import { foliageMat } from './world.js';
 import { ITEMS } from './items.js';
+import { ANIMALS, LAY_HOURS, EGGS_PER_HEN } from '../shared/balance.js'; // (what they give, and how often)
 
 // ---------- Animals: hens, cows and sheep ----------
 // Two pens on the home farm. West of the plaza, a fenced yard with a coop for
@@ -70,17 +71,15 @@ export const inPen = (x, z, margin = 0) => Object.values(PENS).some((pen) => inR
 // the farmer aside). reach: how close (beyond her radius) to pet her. walk /
 // scurry: speeds. startle: a moving farmer this close sends her scurrying (0:
 // never). product: what she gives (an item), and `regrow`: game hours until
-// she has more ('morning': the next morning). The item that lets one out is
-// named like the kind (items.js).
+// she has more ('morning': the next morning), both from ANIMALS in
+// shared/balance.js. The item that lets one out is named like the kind (items.js).
 const KINDS = {
   hen: { pen: 'yard', max: 8, name: 'hen', radius: 0.25, reach: 1.15, walk: 0.9, scurry: 2.8, startle: 0.8, full: 'The coop is full: eight hens is plenty' },
-  cow: { pen: 'pasture', max: 4, name: 'cow', radius: 0.62, reach: 1, walk: 0.55, scurry: 0, startle: 0, product: 'milk', regrow: 'morning', verb: 'Milk the cow', full: 'The pasture has room for four cows' },
-  sheep: { pen: 'pasture', max: 6, name: 'sheep', radius: 0.45, reach: 1, walk: 0.75, scurry: 2.2, startle: 1, product: 'wool', regrow: 48, verb: 'Shear the sheep', full: 'The pasture has room for six sheep' },
+  cow: { pen: 'pasture', max: 4, name: 'cow', radius: 0.62, reach: 1, walk: 0.55, scurry: 0, startle: 0, ...ANIMALS.cow, verb: 'Milk the cow', full: 'The pasture has room for four cows' },
+  sheep: { pen: 'pasture', max: 6, name: 'sheep', radius: 0.45, reach: 1, walk: 0.75, scurry: 2.2, startle: 1, ...ANIMALS.sheep, verb: 'Shear the sheep', full: 'The pasture has room for six sheep' },
 };
 export const ANIMAL_KINDS = Object.keys(KINDS);
 
-const EGGS_PER_HEN = 3; // eggs left lying about stop at this many a hen
-const LAY_HOURS = [8, 16]; // when in the day an egg falls due
 const EGG_REACH = 0.55;
 const SHORN = 0.72; // a freshly shorn sheep's fleece, against a full one
 

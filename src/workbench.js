@@ -1,6 +1,7 @@
 import './workbench.css';
 import { ITEMS, spriteURL } from './items.js';
 import { el, button } from './ui/dom.js';
+import { RECIPES } from '../shared/balance.js'; // (what can be made, and from what)
 
 // ---------- The workbench ----------
 // Built on the farm in build mode (src/build.js), and E next to it (or a tap)
@@ -13,18 +14,6 @@ import { el, button } from './ui/dom.js';
 //   Make          make one
 //   E / Esc / ×   close
 
-// What can be made, in the order it is listed. `needs`: items used up (a
-// tool among them is swapped for the one made, in its slot).
-export const RECIPES = [
-  { makes: 'lamp_post', needs: { wood: 3, stone: 2 } },
-  { makes: 'garden_bench', needs: { wood: 6 } },
-  { makes: 'planter', needs: { stone: 4, wood: 1 } },
-  { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
-  { makes: 'sturdy_pickaxe', needs: { pickaxe: 1, wood: 8, stone: 12 } },
-  { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
-  { makes: 'wooden_sword', needs: { wood: 8 } },
-  { makes: 'mallet', needs: { wood: 4, stone: 6 } },
-];
 
 const isTool = (id) => ITEMS[id]?.category === 'Tool';
 
@@ -91,6 +80,7 @@ export function createWorkbench({ inventory, onOpenChange }) {
   }
 
   menuEl.addEventListener('mousedown', (e) => e.target === menuEl && setOpen(false)); // click outside the window
+  menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
   menuEl.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
   // Capture phase, like the chest's: while the workbench is open it has the keyboard

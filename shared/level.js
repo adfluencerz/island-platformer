@@ -2,12 +2,14 @@
 // spots can turn up, where players are put down, and how long crops take. The
 // wild islands the lobbies are on (their shape, and where their spots are)
 // grow from seeds in shared/worldgen.js. What the worlds look like is the
-// client's business (src/maps.js, src/world.js).
+// client's business (src/maps.js, src/world.js). The numbers that balance
+// the game (times, costs, what things give) are in shared/balance.js.
+import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST } from './balance.js';
+export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST } from './balance.js';
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
 export const FARM_CHEST = { x: -2.8, z: 7.4 }; // where the farm's chest stands on a farm with helpers till one is built (src/chest.js): on the grass by the plaza
-export const CHEST = { stack: 999, kinds: 64 }; // the most of one item in the chest, and of different items
 
 // Is there room in a chest's items ({ item: count }) for count more of item?
 export function chestHasRoom(items, item, count) {
@@ -15,8 +17,7 @@ export function chestHasRoom(items, item, count) {
   return have + count <= CHEST.stack && (have > 0 || Object.keys(items).length < CHEST.kinds);
 }
 
-// Seconds from planting to ripe (src/crops.js draws them)
-export const CROP_GROW_TIME = { turnip: 20, carrot: 30, flax: 35, sunflower: 45, golden_turnip: 60 };
+// (Seconds from planting to ripe: CROP_GROW_TIME, shared/balance.js; src/crops.js draws them)
 // what a ripe crop gives when it is harvested (on a farm with helpers the
 // server hands it out, into the farm's chest)
 export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', sunflower: 'sunflower', golden_turnip: 'golden_turnip' };
@@ -27,28 +28,9 @@ export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', 
 // an emptied spot has something again. `loot`: [item, weight, min, max]; one
 // is rolled each time the spot regrows, so a spot is a little different every
 // time.
-export const SPOT_KINDS = {
-  bush: { use: 'gather', regrow: [35, 50], loot: [['berries', 1, 2, 3]] },
-  mushroom: {
-    use: 'gather',
-    regrow: [25, 40],
-    loot: [['mushroom', 0.95, 1, 2], ['golden_seeds', 0.05, 1, 1]],
-  },
-  heather: { use: 'gather', regrow: [30, 45], loot: [['heather', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the heath, generation 2 islands)
-  cattail: { use: 'gather', regrow: [30, 45], loot: [['cattail', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the marsh, generation 4 islands)
-  bluebell: { use: 'gather', regrow: [30, 45], loot: [['bluebell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the glade, generation 5 islands)
-  sunflower: { use: 'gather', regrow: [30, 45], loot: [['sunflower', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (the field, generation 6 islands)
-  meadow: {
-    use: 'touch',
-    regrow: [30, 50],
-    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.02, 1, 1]],
-  },
-  ledge: {
-    use: 'touch',
-    regrow: [40, 60],
-    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.04, 1, 1]],
-  },
-};
+// (regrow and loot: LOBBY_SPOTS, shared/balance.js)
+const TOUCHED = new Set(['meadow', 'ledge']); // (the rest are gathered)
+export const SPOT_KINDS = Object.fromEntries(Object.entries(LOBBY_SPOTS).map(([kind, spot]) => [kind, { use: TOUCHED.has(kind) ? 'touch' : 'gather', ...spot }]));
 
 // ---------- Trees ----------
 // Every tree on a wild island can be chopped down for wood. Where the trees
@@ -58,7 +40,7 @@ export const SPOT_KINDS = {
 // it stands again. `wood`: [min, max] logs for whoever felled it, from a tree
 // of size 1; bigger trees give more (`size`: the smallest and biggest there are,
 // so a page can't claim a giant).
-export const TREE = { hits: 4, regrow: [600, 600], wood: [2, 4], size: [0.8, 1.6] };
+export const TREE = { ...TREE_BALANCE, size: [0.8, 1.6] }; // (hits, regrow, wood: shared/balance.js)
 
 const treeSize = (size) => Math.min(TREE.size[1], Math.max(TREE.size[0], Number.isFinite(size) ? size : 1));
 
@@ -79,7 +61,7 @@ export const mostWood = (size) => Math.round(TREE.wood[1] * treeSize(size));
 // max] for a rock of size `per` (a fist-sized one); smaller ones still give
 // one, the big boulders by the terraces give the most (`size`: the smallest
 // and biggest rocks there are, so a page can't claim a mountain).
-export const ROCK = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4, size: [0.15, 1.1] };
+export const ROCK = { ...ROCK_BALANCE, size: [0.15, 1.1] }; // (hits, regrow, stone, per: shared/balance.js)
 
 // ---------- Growing back elsewhere ----------
 // A felled tree or a broken rock grows back in another of its few places
@@ -112,7 +94,8 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // piece to a tile. `solid` ones are in the way (fences and walls join up with
 // the fences and walls beside them); paths are walked on. `cost` comes out of
 // the backpack, and goes back in when the piece is taken down: wood and
-// stone, or for the decorations, one made at the workbench (src/workbench.js).
+// stone, or for the decorations, one made at the workbench (src/workbench.js);
+// what each costs is BUILD_COSTS in shared/balance.js.
 // Blocks (`block`: its height) are solid boxes a farmer can stand on: a step
 // is walked up onto, anything taller takes a jump. They come in heights a
 // step apart (0.45, 0.9, 1.35, 1.8; a log pile and a stone block are a little
@@ -126,51 +109,52 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // always has somewhere to go.
 // A farm with helpers keeps its pieces in its room (server/farmroom.js), like its soil.
 export const PIECES = {
-  wood_fence: { name: 'Wood fence', cost: { wood: 2 }, solid: true, joins: true },
-  stone_wall: { name: 'Stone wall', cost: { stone: 3 }, solid: true, joins: true },
-  wood_path: { name: 'Wood path', cost: { wood: 1 } },
-  stone_path: { name: 'Stone path', cost: { stone: 1 } },
-  wood_gate: { name: 'Wood gate', cost: { wood: 3 }, joins: true },
-  wood_crate: { name: 'Wood crate', cost: { wood: 3 }, solid: true, block: 0.9 },
-  stone_step: { name: 'Stone step', cost: { stone: 2 }, solid: true, block: 0.45 },
-  stone_block: { name: 'Stone block', cost: { stone: 4 }, solid: true, block: 1 },
-  wood_step: { name: 'Wood step', cost: { wood: 2 }, solid: true, block: 0.45 },
-  log_pile: { name: 'Log pile', cost: { wood: 4 }, solid: true, block: 1 },
-  wood_scaffold: { name: 'Wood scaffold', cost: { wood: 5 }, solid: true, block: 1.35 },
-  tall_stone_block: { name: 'Tall stone block', cost: { stone: 6 }, solid: true, block: 1.35 },
-  stone_pillar: { name: 'Stone pillar', cost: { stone: 8 }, solid: true, block: 1.8 },
-  low_stone_wall: { name: 'Low stone wall', cost: { stone: 2 }, solid: true, joins: true },
-  wood_palisade: { name: 'Wood palisade', cost: { wood: 4 }, solid: true, joins: true },
-  wood_barrel: { name: 'Wood barrel', cost: { wood: 4 }, solid: true, block: 1 },
-  straw_bale: { name: 'Straw bale', cost: { flax: 3 }, solid: true, block: 0.9 },
-  straw_stack: { name: 'Straw stack', cost: { flax: 6 }, solid: true, block: 1.35 },
-  log_tower: { name: 'Log tower', cost: { wood: 8 }, solid: true, block: 1.8 },
-  stone_arch: { name: 'Stone arch', cost: { stone: 5 }, joins: true },
-  cobble_path: { name: 'Cobble path', cost: { stone: 2 } },
-  rail_fence: { name: 'Rail fence', cost: { wood: 3 }, solid: true, joins: true },
-  wood_arbor: { name: 'Wood arbor', cost: { wood: 5 }, joins: true },
-  gravel_path: { name: 'Gravel path', cost: { stone: 1 } },
-  mossy_stone_block: { name: 'Mossy stone block', cost: { stone: 4 }, solid: true, block: 1 },
-  stone_well: { name: 'Stone well', cost: { stone: 6, wood: 3 }, solid: true },
-  box_hedge: { name: 'Box hedge', cost: { wood: 1, flax: 2 }, solid: true, joins: true },
-  stepping_stones: { name: 'Stepping stones', cost: { stone: 1 } },
-  tree_stump: { name: 'Tree stump', cost: { wood: 2 }, solid: true, block: 0.45 },
-  crate_stack: { name: 'Crate stack', cost: { wood: 6 }, solid: true, block: 1.35 },
-  stone_lantern: { name: 'Stone lantern', cost: { stone: 5 }, solid: true },
-  scarecrow: { name: 'Scarecrow', cost: { wood: 3, flax: 2 }, solid: true },
-  picket_fence: { name: 'Picket fence', cost: { wood: 3 }, solid: true, joins: true },
-  grain_sacks: { name: 'Grain sacks', cost: { flax: 4 }, solid: true, block: 0.9 },
-  hay_cart: { name: 'Hay cart', cost: { wood: 6, flax: 3 }, solid: true },
-  beehive: { name: 'Beehive', cost: { wood: 2, flax: 3 }, solid: true },
-  birdbath: { name: 'Birdbath', cost: { stone: 3 }, solid: true },
-  signpost: { name: 'Signpost', cost: { wood: 2 }, solid: true },
-  workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
-  farm_chest: { name: 'Farm chest', cost: { wood: 8, stone: 2 }, solid: true, one: true },
-  house: { name: 'House', cost: { wood: 500, stone: 200 }, solid: true, one: true, size: [5, 4] },
-  lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
-  garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },
-  planter: { name: 'Flower planter', cost: { planter: 1 }, solid: true },
+  wood_fence: { name: 'Wood fence', solid: true, joins: true },
+  stone_wall: { name: 'Stone wall', solid: true, joins: true },
+  wood_path: { name: 'Wood path' },
+  stone_path: { name: 'Stone path' },
+  wood_gate: { name: 'Wood gate', joins: true },
+  wood_crate: { name: 'Wood crate', solid: true, block: 0.9 },
+  stone_step: { name: 'Stone step', solid: true, block: 0.45 },
+  stone_block: { name: 'Stone block', solid: true, block: 1 },
+  wood_step: { name: 'Wood step', solid: true, block: 0.45 },
+  log_pile: { name: 'Log pile', solid: true, block: 1 },
+  wood_scaffold: { name: 'Wood scaffold', solid: true, block: 1.35 },
+  tall_stone_block: { name: 'Tall stone block', solid: true, block: 1.35 },
+  stone_pillar: { name: 'Stone pillar', solid: true, block: 1.8 },
+  low_stone_wall: { name: 'Low stone wall', solid: true, joins: true },
+  wood_palisade: { name: 'Wood palisade', solid: true, joins: true },
+  wood_barrel: { name: 'Wood barrel', solid: true, block: 1 },
+  straw_bale: { name: 'Straw bale', solid: true, block: 0.9 },
+  straw_stack: { name: 'Straw stack', solid: true, block: 1.35 },
+  log_tower: { name: 'Log tower', solid: true, block: 1.8 },
+  stone_arch: { name: 'Stone arch', joins: true },
+  cobble_path: { name: 'Cobble path' },
+  rail_fence: { name: 'Rail fence', solid: true, joins: true },
+  wood_arbor: { name: 'Wood arbor', joins: true },
+  gravel_path: { name: 'Gravel path' },
+  mossy_stone_block: { name: 'Mossy stone block', solid: true, block: 1 },
+  stone_well: { name: 'Stone well', solid: true },
+  box_hedge: { name: 'Box hedge', solid: true, joins: true },
+  stepping_stones: { name: 'Stepping stones' },
+  tree_stump: { name: 'Tree stump', solid: true, block: 0.45 },
+  crate_stack: { name: 'Crate stack', solid: true, block: 1.35 },
+  stone_lantern: { name: 'Stone lantern', solid: true },
+  scarecrow: { name: 'Scarecrow', solid: true },
+  picket_fence: { name: 'Picket fence', solid: true, joins: true },
+  grain_sacks: { name: 'Grain sacks', solid: true, block: 0.9 },
+  hay_cart: { name: 'Hay cart', solid: true },
+  beehive: { name: 'Beehive', solid: true },
+  birdbath: { name: 'Birdbath', solid: true },
+  signpost: { name: 'Signpost', solid: true },
+  workbench: { name: 'Workbench', solid: true },
+  farm_chest: { name: 'Farm chest', solid: true, one: true },
+  house: { name: 'House', solid: true, one: true, size: [5, 4] },
+  lamp_post: { name: 'Lamp post', solid: true },
+  garden_bench: { name: 'Garden bench', solid: true },
+  planter: { name: 'Flower planter', solid: true },
 };
+for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
 export const MAX_PIECES = 2000; // on one farm
 
 // The tiles a piece built on tile key stands on: one, or for a piece with a
@@ -215,13 +199,7 @@ export function keptClear(gx, gz) {
 // gold). Nobody gets hurt. `every`: ms between swings that count. A farmer
 // who was just bopped can't be again for BOP_GRACE ms, and the stone circle
 // where farmers arrive (within SAFE_CIRCLE of it) is for resting.
-export const WEAPONS = {
-  wooden_sword: { reach: 1.9, knock: 7, every: 700, drops: 1 },
-  mallet: { reach: 2, knock: 11, every: 1100, drops: 2 },
-};
-export const BOP_GRACE = 2500;
-export const SAFE_CIRCLE = 3.5;
-export const DROP_MS = 45_000; // a drop nobody picks up fades after this
+// (WEAPONS, BOP_GRACE, SAFE_CIRCLE and DROP_MS: shared/balance.js)
 
 // Finds rare enough that the whole lobby hears when one turns up
 export const RARE = {

@@ -1,3 +1,5 @@
+import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
+
 // ---------- Item catalog ----------
 // Shared by the world (pickup meshes use `color`) and the inventory UI.
 // `sprite` is 16x16 pixel art: one string per row, one character per pixel,
@@ -6,11 +8,12 @@
 // `maxStack: 1` items never stack. `currency` items don't take a slot; picking
 // one up adds that much gold instead. `trashable: false` protects tools.
 // `plants` names the crop (see crops.js) a seed grows into.
-// `price` is what the merchant at the farm stall asks for it (only seeds have
-// one); `sell` is what the merchant pays for one. No `sell`: not for sale.
-// `tool` says what a tool does (the sturdy ones from the workbench do the
-// same as the plain ones, better: `hits` swings fell a tree or break a rock,
-// a `wide` hoe tills three tiles at once). `piece`: a thing made at the
+// `price` is what the merchant at the farm stall asks for it; `sell` is what
+// the merchant pays for one. No `sell`: not for sale. `tool` says what a tool
+// does (the sturdy ones from the workbench do the same as the plain ones,
+// better: `hits` swings fell a tree or break a rock, a `wide` hoe tills three
+// tiles at once). Prices, a coin's worth and the sturdy tools' hits are set
+// in shared/balance.js (see the end of the catalog). `piece`: a thing made at the
 // workbench to be put down on the farm in build mode (PIECES, shared/level.js).
 
 // Seed packets share one drawing; only the picture on the front changes color.
@@ -125,8 +128,6 @@ export const ITEMS = {
     category: 'Seed',
     description: 'Plant on tilled soil. Ready to pull in about 20 seconds.',
     maxStack: 999,
-    price: 20,
-    sell: 10,
     plants: 'turnip',
     color: 0xd9b98a,
     palette: packetPalette('#f2eef5', '#ffffff', '#9b59b6'),
@@ -137,8 +138,6 @@ export const ITEMS = {
     category: 'Seed',
     description: 'Plant on tilled soil. Ready to pull in about 30 seconds.',
     maxStack: 999,
-    price: 35,
-    sell: 17,
     plants: 'carrot',
     color: 0xff8c1a,
     palette: packetPalette('#ff8c1a', '#ffc27a', '#c25a12'),
@@ -149,8 +148,6 @@ export const ITEMS = {
     category: 'Seed',
     description: 'Plant on tilled soil. Grows tall in about 45 seconds.',
     maxStack: 999,
-    price: 60,
-    sell: 30,
     plants: 'sunflower',
     color: 0xffd23f,
     palette: packetPalette('#ffd23f', '#fff1a8', '#7a4a1e'),
@@ -161,8 +158,6 @@ export const ITEMS = {
     category: 'Seed',
     description: 'Plant on tilled soil. Slender and blue, ready in about 35 seconds.',
     maxStack: 999,
-    price: 45,
-    sell: 22,
     plants: 'flax',
     color: 0x6f8fd6,
     palette: packetPalette('#6f8fd6', '#b8c9f2', '#3a557f'),
@@ -173,7 +168,6 @@ export const ITEMS = {
     category: 'Produce',
     description: 'Crunchy, peppery and very easy to grow.',
     maxStack: 999,
-    sell: 35,
     color: 0xe8dff0,
     palette: { o: '#3d2a4a', g: '#3f8a3a', G: '#6cc04a', v: '#9b59b6', V: '#c99be0', w: '#f5f0f8', W: '#ffffff', s: '#cfc2da' },
     sprite: [
@@ -200,7 +194,6 @@ export const ITEMS = {
     category: 'Produce',
     description: 'Sweet and bright orange. Good for your eyes, allegedly.',
     maxStack: 999,
-    sell: 60,
     color: 0xff8c1a,
     palette: { o: '#5a2a08', g: '#3f8a3a', G: '#6cc04a', q: '#ff8c1a', Q: '#ffc27a', r: '#c25a12' },
     sprite: [
@@ -227,7 +220,6 @@ export const ITEMS = {
     category: 'Produce',
     description: 'A big cheerful bloom that follows the sun.',
     maxStack: 999,
-    sell: 110,
     color: 0xffd23f,
     palette: { o: '#5a3a08', y: '#ffd23f', Y: '#fff1a8', b: '#7a4a1e', B: '#4a2a0e', G: '#4f9e3c' },
     sprite: [
@@ -254,7 +246,6 @@ export const ITEMS = {
     category: 'Produce',
     description: 'A bundle of slender blue fibre. Weavers would pay well for this.',
     maxStack: 999,
-    sell: 80,
     color: 0x8fb4e0,
     palette: { o: '#2a3f5c', b: '#6f8fd6', B: '#b8c9f2', g: '#3f8a3a', G: '#6cc04a' },
     sprite: [
@@ -281,7 +272,6 @@ export const ITEMS = {
     category: 'Forage',
     description: 'Sweet and a little tart. Picked from a bush in an online lobby.',
     maxStack: 999,
-    sell: 15,
     color: 0xd8344f,
     palette: { o: '#4a1020', r: '#d8344f', R: '#ff7a8a', d: '#9a1b33', g: '#3f8a3a', G: '#6cc04a' },
     sprite: [
@@ -308,7 +298,6 @@ export const ITEMS = {
     category: 'Forage',
     description: 'A brown velvet spike from the reed marsh, found in online lobbies on islands with a bog. Good for stuffing pillows.',
     maxStack: 999,
-    sell: 35,
     color: 0x7a4a2a,
     palette: { o: '#2e1a0e', b: '#7a4a2a', B: '#a8703f', d: '#52301a', g: '#3f8a3a', G: '#6cc04a' },
     sprite: [
@@ -335,7 +324,6 @@ export const ITEMS = {
     category: 'Forage',
     description: 'A nodding blue bell from the glade, found in online lobbies on islands with a bluebell wood. Smells like spring.',
     maxStack: 999,
-    sell: 40,
     color: 0x4a62d0,
     palette: { o: '#1c2250', b: '#4a62d0', B: '#8ea2f0', d: '#2e3c96', g: '#3f8a3a', G: '#6cc04a' },
     sprite: [
@@ -362,7 +350,6 @@ export const ITEMS = {
     category: 'Forage',
     description: 'A tall yellow sunflower, found in online lobbies on islands with a sunflower field. It always faces the light.',
     maxStack: 999,
-    sell: 45,
     color: 0xf2c230,
     palette: { o: '#4a3210', y: '#f2c230', Y: '#ffe27a', d: '#d9981a', k: '#5a3a1a', g: '#3f8a3a', G: '#6cc04a' },
     sprite: [
@@ -389,7 +376,6 @@ export const ITEMS = {
     category: 'Forage',
     description: 'Found in the shade in online lobbies. Smells of rain.',
     maxStack: 999,
-    sell: 25,
     color: 0xd8452f,
     palette: { o: '#4a1a10', r: '#d8452f', R: '#ff8a6a', d: '#9a2a1b', w: '#fff4e0', s: '#e8dcc0', S: '#fffaf0' },
     sprite: [
@@ -416,7 +402,6 @@ export const ITEMS = {
     category: 'Forage',
     description: 'Purple sprigs from the heath, found in online lobbies on islands with a moor. Smells of honey.',
     maxStack: 999,
-    sell: 30,
     color: 0x9a6fc0,
     palette: { o: '#3a2050', p: '#9a6fc0', P: '#c7a2ea', d: '#6a4590', g: '#3f8a3a', G: '#6cc04a' },
     sprite: [
@@ -443,7 +428,6 @@ export const ITEMS = {
     category: 'Produce',
     description: 'Still warm. Your hens lay one a day each, out in the yard or in the nest by the coop.',
     maxStack: 999,
-    sell: 25,
     color: 0xf3e3c3,
     palette: { o: '#6b4a2b', w: '#f3e3c3', W: '#fffaf0', s: '#d9c29a' },
     sprite: [
@@ -471,7 +455,6 @@ export const ITEMS = {
     description: 'A hen in a basket, clucking softly. Let her out in the hen yard on your farm with E, and she lays an egg a day.',
     maxStack: 8,
     trashable: false,
-    price: 150,
     color: 0xf6f1e4,
     palette: { o: '#3b2412', w: '#f7f3ea', s: '#d6cfc0', r: '#e0362c', y: '#f2a516', e: '#1a1a1a', l: '#e8962a' },
     sprite: [
@@ -498,7 +481,6 @@ export const ITEMS = {
     category: 'Produce',
     description: 'Fresh from your cow this morning. She has more each day.',
     maxStack: 999,
-    sell: 60,
     color: 0xffffff,
     palette: { o: '#3b3b4a', w: '#ffffff', s: '#dfe6ee', b: '#4a7fd6', B: '#7fb0ff' },
     sprite: [
@@ -525,7 +507,6 @@ export const ITEMS = {
     category: 'Material',
     description: 'Soft and springy, shorn from your sheep. Her fleece grows back in two days.',
     maxStack: 999,
-    sell: 120,
     color: 0xf4f0e6,
     palette: { o: '#6b6258', w: '#f4f0e6', W: '#ffffff', s: '#cfc6b6', d: '#a89e8c' },
     sprite: [
@@ -553,7 +534,6 @@ export const ITEMS = {
     description: 'On a lead, and very patient about it. Let her loose in the pasture on your farm with E, and milk her once a day.',
     maxStack: 4,
     trashable: false,
-    price: 500,
     color: 0xf7f3ea,
     palette: { o: '#2a1d14', w: '#f7f3ea', k: '#2b2b2b', h: '#e8dcc0', e: '#111111', p: '#d97f86', P: '#f2a7a7' },
     sprite: [
@@ -581,7 +561,6 @@ export const ITEMS = {
     description: 'A woolly sheep on a lead. Let her loose in the pasture on your farm with E; shear her every two days.',
     maxStack: 6,
     trashable: false,
-    price: 350,
     color: 0xf4f0e6,
     palette: { o: '#2a241e', w: '#f4f0e6', W: '#ffffff', k: '#3a3330', d: '#4a423c', D: '#2a2420', e: '#ffffff' },
     sprite: [
@@ -608,7 +587,6 @@ export const ITEMS = {
     category: 'Seed',
     description: 'Rare! Found now and then in online lobbies. Grows a golden turnip in about a minute.',
     maxStack: 999,
-    sell: 150,
     plants: 'golden_turnip',
     color: 0xffd700,
     palette: packetPalette('#ffd700', '#fff6b0', '#b8860b'),
@@ -618,7 +596,6 @@ export const ITEMS = {
     name: 'Coin',
     category: 'Currency',
     description: 'Shiny and spendable.',
-    currency: 10,
     color: 0xffd700,
     palette: { o: '#7a4a00', y: '#ffcc1a', Y: '#fff3a0', d: '#d49a00' },
     sprite: [
@@ -645,7 +622,6 @@ export const ITEMS = {
     category: 'Material',
     description: 'A sturdy log, chopped from a tree out on a wild island.',
     maxStack: 999,
-    sell: 6,
     color: 0x9a6a3a,
     palette: { o: '#3b2412', h: '#b07a45', b: '#9a6a3a', B: '#7a4f28', e: '#e8c98f', r: '#c9a066', c: '#f2dcae', C: '#8a5a30', g: '#4f9e3c' },
     sprite: [
@@ -672,7 +648,6 @@ export const ITEMS = {
     category: 'Material',
     description: 'A chunk of stone, broken from a rock out on a wild island.',
     maxStack: 999,
-    sell: 4,
     color: 0x8d8d88,
     palette: { o: '#3a3632', l: '#d6d4cc', G: '#b3b1a8', g: '#8d8d88', d: '#6c6b66' },
     sprite: [
@@ -699,7 +674,6 @@ export const ITEMS = {
     category: 'Mineral',
     description: 'A rare crystal that only forms up on the high ledges.',
     maxStack: 999,
-    sell: 200,
     color: 0x33ccff,
     palette: { o: '#16365a', c: '#33ccff', C: '#a6ecff', d: '#1d86c0', w: '#ffffff' },
     sprite: [
@@ -756,7 +730,6 @@ ITEMS.golden_turnip = {
   category: 'Produce',
   description: 'It glows a little. Nobody else on the island has one of these.',
   maxStack: 999,
-  sell: 600,
   color: 0xffd700,
   palette: { ...ITEMS.turnip.palette, o: '#5a4200', v: '#e0a800', V: '#ffe680', w: '#ffd700', W: '#fff6b0', s: '#c99a00' },
   sprite: [...ITEMS.turnip.sprite],
@@ -777,7 +750,6 @@ ITEMS.sturdy_axe = {
   ...ITEMS.axe,
   name: 'Sturdy axe',
   description: 'Fells a tree in two swings. Swing with E (or hold it).',
-  hits: 2,
   palette: { ...ITEMS.axe.palette, ...STEEL },
   sprite: [...ITEMS.axe.sprite],
 };
@@ -785,7 +757,6 @@ ITEMS.sturdy_pickaxe = {
   ...ITEMS.pickaxe,
   name: 'Sturdy pickaxe',
   description: 'Breaks a rock in two swings. Swing with E (or hold it).',
-  hits: 2,
   palette: { ...ITEMS.pickaxe.palette, ...STEEL },
   sprite: [...ITEMS.pickaxe.sprite],
 };
@@ -928,6 +899,15 @@ ITEMS.planter = {
     '................',
   ],
 };
+
+// What things cost and are worth (shared/balance.js)
+for (const [id, { price, sell }] of Object.entries(SHOP)) {
+  if (!ITEMS[id]) continue;
+  if (price) ITEMS[id].price = price;
+  if (sell) ITEMS[id].sell = sell;
+}
+ITEMS.coin.currency = COIN_VALUE;
+for (const [id, hits] of Object.entries(STURDY_HITS)) ITEMS[id].hits = hits;
 
 // Render a sprite to a data URL once and reuse it for every <img>. Keyed by the
 // item, since items may share a drawing with different palettes.

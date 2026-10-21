@@ -21,6 +21,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF } from '../shared/protocol.js';
+import { STARTER_KIT } from '../shared/balance.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
@@ -1225,8 +1226,25 @@ function updateTileCursor() {
   tileCursor.position.set(gx * TILE_SIZE, 0.1, gz * TILE_SIZE);
 }
 
+// The right mouse button cancels what we are in the middle of: build mode,
+// or walking (and chopping, mining) to something clicked, or steering with
+// the left button held down
+function cancelAction() {
+  if (building) {
+    stopBuilding();
+  } else if (walk || chopping || mining || held) {
+    stopWalking();
+    held = null;
+  }
+}
+canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // (no browser menu over the game)
+
 const presses = new Map(); // pointerId -> where and when it went down
 canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button === 2) {
+    if (place !== 'title' && !inputBlocked()) cancelAction();
+    return;
+  }
   if (e.pointerType !== 'mouse' || e.button === 0) presses.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
   if (e.pointerType === 'mouse' && e.button === 0 && place !== 'title' && !building && !inputBlocked()) {
     stopWalking();
@@ -2408,11 +2426,7 @@ function loadGame() {
   if (save?.v >= 1 && save.v < SAVE_VERSION) keepAside(`${SAVE_STORE}.v${save.v}`, text); // (kept as it was)
   if (!(save?.v >= 1 && useSave(save))) {
     // A new farmer's starting kit (or, beside a save from a newer version, one to play this time)
-    inventory.add('hoe', 1, { quiet: true });
-    inventory.add('axe', 1, { quiet: true });
-    inventory.add('pickaxe', 1, { quiet: true });
-    inventory.add('turnip_seeds', 10, { quiet: true });
-    gift('flax_seeds', 5);
+    for (const [item, count] of STARTER_KIT) gift(item, count); // (shared/balance.js)
   }
   showFarm(homeFarm);
   farmOnScreen = true;

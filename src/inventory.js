@@ -539,6 +539,13 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   packTab.addEventListener('click', () => setTab('pack'));
   buildTab.addEventListener('click', () => setTab('build'));
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
+  // A right click outside the window: put down what is carried, or close
+  menuEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 2 || e.target !== menuEl) return;
+    if (!held) return setOpen(false);
+    putBack();
+    render();
+  });
 
   window.addEventListener('pointermove', (e) => {
     heldEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
