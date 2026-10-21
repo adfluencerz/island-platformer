@@ -14,7 +14,7 @@ export const C = {
   MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
   PICKUP: 'pickup', // { id }: walked into drop id
-  COUNT: 'count', // { trees, rocks }: how many there are where we are (the page knows; a giant is one of them: shared/giants.js)
+  COUNT: 'count', // { trees, rocks, print (where they stand: islandPrint() in src/main.js) }: how many there are where we are (the page knows; a giant is one of them: shared/giants.js)
   HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: its own scale; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   CHAT: 'chat', // { text }

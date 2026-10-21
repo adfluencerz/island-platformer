@@ -211,6 +211,7 @@ export class Room extends Place {
       }
       case C.COUNT:
         this.giants.setCounts(msg.trees, msg.rocks);
+        this.checkIsland(p, msg);
         break;
       case C.DEV_GIANT: {
         // (developer tools: shared/constants.js DEV_TOOLS)
