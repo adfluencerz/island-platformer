@@ -2432,7 +2432,7 @@ function leaveLobbyWorld() {
 function joinLobby({ name, code }) {
   net?.leave();
   splash.setStatus('Walking over…');
-  const conn = (net = new Connection({ name, color: myColor(), code }));
+  const conn = (net = new Connection({ name, color: myColor(), code, auth: farmSync.auth() }));
   // (a handler for a connection we have since left does nothing)
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 

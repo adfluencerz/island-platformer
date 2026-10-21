@@ -1040,8 +1040,19 @@ function startServer(env = {}) {
 let server = startServer();
 await server.ready;
 
-// (farm: be on that farm instead, as the farm auth says: "<id>.<token>")
-function client(code = '', key = `key${Math.random()}`, { farm = null, auth = null } = {}) {
+// An account on the server: its farm's auth, "<id>.<token>" (a lobby is for logged in farmers)
+async function signUp(username, color = PLAYER_COLORS[3]) {
+  const out = await fetch(`${base}/api/account/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-farm-session': `signup-${Math.random().toString(36).slice(2)}` },
+    body: JSON.stringify({ username, password: 'bot-password', color, save: { v: 7, farm: null, backpack: {} } }),
+  }).then((r) => r.json());
+  return `${out.id}.${out.token}`;
+}
+let botAuth = await signUp('Bot');
+
+// (farm: be on that farm instead; auth: whose browser it is, as "<id>.<token>")
+function client(code = '', key = `key${Math.random()}`, { farm = null, auth = botAuth } = {}) {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws${farm ? `?farm=${farm}` : code ? `?lobby=${code}` : ''}`);
   const inbox = [];
   const waiters = [];
@@ -1051,7 +1062,7 @@ function client(code = '', key = `key${Math.random()}`, { farm = null, auth = nu
     for (const w of [...waiters]) if (w.match(m)) waiters.splice(waiters.indexOf(w), 1) && w.done(m);
   });
   const closed = new Promise((done) => ws.on('close', (code) => done(code)));
-  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(farm && { auth }) })));
+  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(auth && { auth }) })));
   return {
     ws,
     inbox,
@@ -1125,6 +1136,16 @@ try {
     assert.equal(await bad.closed, CLOSE.NO_GAME);
   });
 
+  await test('a lobby is for logged in farmers: their account\'s name and shirt, whatever the page says', async () => {
+    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
+    assert.equal(await client(code, 'k-nobody', { auth: null }).closed, CLOSE.NO_ACCOUNT);
+    assert.equal(await client(code, 'k-forged', { auth: `${botAuth.split('.')[0]}.not-the-right-token` }).closed, CLOSE.NO_ACCOUNT);
+    const fern = client(code, 'k-fern', { auth: await signUp('Fern', PLAYER_COLORS[6]) });
+    const w = await fern.next(S.WELCOME);
+    assert.deepEqual([w.name, w.color], ['Fern', PLAYER_COLORS[6]]);
+    fern.ws.close(1000);
+  });
+
   await test('farms over HTTP: make, open, save, pair; another device\'s page is turned down', async () => {
     const call = (method, path, { body = {}, auth, session = 'page-aaaaaaaa', type = 'application/json' } = {}) =>
       fetch(`${base}${path}`, {
@@ -1181,6 +1202,7 @@ try {
     try {
       server = startServer({ GAME_DATA });
       await server.ready;
+      botAuth = await signUp('Bot'); // (this server keeps its farms, and its accounts, in dir)
       const made = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ours', seed: 'sunny knoll 5', inviteOnly: true }) }).then((r) => r.json());
       const a = client(made.code, 'restart-key');
       const w = await a.next(S.WELCOME);

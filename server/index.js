@@ -263,6 +263,12 @@ function attach(ws, room) {
       return;
     }
     if (!player) {
+      // who they are: the account on this browser's farm (its token, as for
+      // the farm API) has the name and shirt color. A lobby is for logged in
+      // farmers only; on a farm the room asks who they are itself.
+      const farm = farms.auth(`Bearer ${typeof msg?.auth === 'string' ? msg.auth : ''}`);
+      if (farm?.account) msg = { ...msg, name: farm.account.name, color: farm.color };
+      else if (!room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
       player = room.join(conn, msg);
       if (player) clearTimeout(joinTimer);
     } else if (player.conn === conn) {

@@ -116,6 +116,7 @@ export class Farms {
     this.allowPut = limiter(5, 1); // per farm (a page saves every 15 s, and when it is left)
     this.allowRecover = limiter(10, 30);
     this.allowLogin = limiter(10, 30);
+    this.allowSignUp = limiter(5, 60);
     this.accounts = new Map(); // username key -> farm id
     this.names = new Map(); // farm name key -> farm id
     this.invites = new Map(); // helper's invite code -> { id, until }
@@ -405,7 +406,7 @@ Object.assign(Farms.prototype, {
     if (farm?.account) return { error: 'This farm has an account already. Log out first.', status: 409 };
     const key = usernameKey(username);
     if (this.accounts.has(key)) return { error: 'That username is taken. Try another.', status: 409 };
-    if (address && !this.allowCreate(address)) return { error: 'Too many new accounts from here. Try again in a minute.', status: 429 };
+    if (address && !this.allowSignUp(address)) return { error: 'Too many new accounts from here. Try again in a minute.', status: 429 };
     const salt = randomBytes(16).toString('hex');
     const hashed = await pinHash(password, salt);
     // (from here on nothing waits, so two can't both take a name)

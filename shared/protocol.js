@@ -7,7 +7,7 @@ import { PIN_LENGTH, MAX_NAME } from './constants.js';
 
 // client -> lobby
 export const C = {
-  JOIN: 'join', // { v, name, key, back, color }: the first message on a socket (color: their shirt's, one of PLAYER_COLORS)
+  JOIN: 'join', // { v, name, key, back, color, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name and color are the ones that count; name, color: as the page has them)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
   TAKE: 'take', // { id }: gathered (or walked into) what is on spot id
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)

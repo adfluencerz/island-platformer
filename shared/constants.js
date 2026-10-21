@@ -38,6 +38,7 @@ export const CLOSE = {
   ENDED: 4007,
   REPLACED: 4008, // the same player came back on another socket
   NOT_HELPER: 4009, // a farm's owner hasn't (or no longer has) them down as a helper
+  NO_ACCOUNT: 4010, // a lobby is for farmers logged in to an account
 };
 export const CLOSE_TEXT = {
   [CLOSE.NO_GAME]: 'That lobby does not exist (any more).',
@@ -46,4 +47,5 @@ export const CLOSE_TEXT = {
   [CLOSE.ENDED]: 'The lobby was closed.',
   [CLOSE.REPLACED]: 'You joined this lobby from another tab.',
   [CLOSE.NOT_HELPER]: 'You are not on that farm\'s helpers any more.',
+  [CLOSE.NO_ACCOUNT]: 'Log in to play online. (Your login may have run out: log out and in again.)',
 };
