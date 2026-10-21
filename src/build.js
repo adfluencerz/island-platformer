@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PIECES } from '../shared/level.js';
+import { PIECES, pieceTiles } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
 import { chestModel, CHEST_W } from './chest.js';
 
@@ -41,6 +41,10 @@ const MATS = {
   mossDark: mat(0x527a30),
   gravel: mat(0xa89f8c),
   water: mat(0x3d7fa8, { roughness: 0.3 }),
+  plaster: mat(0xf0e2c4),
+  roofTile: mat(0xa8492f),
+  roofDark: mat(0x83361f),
+  window: mat(0xffe7a3, { emissive: 0xffb84a, emissiveIntensity: 0 }), // (the house's, lit at night with the lamps)
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
@@ -51,6 +55,76 @@ const shaft = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
 const tip = new THREE.ConeGeometry(0.5, 1, 8);
 const barrel = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+// ---------- The house ----------
+// 5 tiles across and 4 deep (PIECES.house.size), built from the middle of its
+// front row: the door is on that tile, facing the camera, and the rest of the
+// house stands behind it. A cottage: a stone footing, timber-framed walls, a
+// gabled roof of red tiles with a chimney, and windows that light up at night.
+const HOUSE_W = 4.7; // the walls (the tiles are 5 by 4)
+const HOUSE_D = 3.7;
+const HOUSE_Z = -1.5; // the middle of the house, from the middle of the door's tile
+const FOOT_H = 0.3;
+const WALL_TOP = FOOT_H + 2.2;
+const RIDGE = 1.5; // from the wall tops up to the roof's ridge
+const gableShape = new THREE.Shape([new THREE.Vector2(-HOUSE_D / 2, 0), new THREE.Vector2(HOUSE_D / 2, 0), new THREE.Vector2(0, RIDGE)]);
+const gable = new THREE.ExtrudeGeometry(gableShape, { depth: HOUSE_W, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-HOUSE_W / 2, 0, 0);
+
+function house(g, solids) {
+  const z0 = HOUSE_Z;
+  const front = z0 + HOUSE_D / 2;
+  part(g, box, MATS.stoneDark, 0, FOOT_H / 2, z0, HOUSE_W + 0.3, FOOT_H, HOUSE_D + 0.3);
+  part(g, box, MATS.plaster, 0, (FOOT_H + WALL_TOP) / 2, z0, HOUSE_W, WALL_TOP - FOOT_H, HOUSE_D);
+  // the timber frame: a post at each corner and either side of the door, a beam round the top
+  for (const x of [-HOUSE_W / 2, HOUSE_W / 2]) {
+    for (const z of [z0 - HOUSE_D / 2, front]) part(g, box, MATS.bark, x, (FOOT_H + WALL_TOP) / 2, z, 0.2, WALL_TOP - FOOT_H, 0.2);
+  }
+  for (const x of [-0.65, 0.65]) part(g, box, MATS.bark, x, (FOOT_H + WALL_TOP) / 2, front + 0.02, 0.16, WALL_TOP - FOOT_H, 0.06);
+  part(g, box, MATS.bark, 0, WALL_TOP - 0.08, front + 0.03, HOUSE_W + 0.1, 0.16, 0.06);
+  part(g, box, MATS.bark, 0, FOOT_H + 0.08, front + 0.03, HOUSE_W + 0.1, 0.16, 0.06);
+  // the roof: the gables, and two slopes of tiles meeting at the ridge
+  part(g, gable, MATS.plaster, 0, WALL_TOP, z0, 1, 1, 1);
+  const slope = Math.atan2(RIDGE, HOUSE_D / 2);
+  const run = Math.hypot(RIDGE, HOUSE_D / 2) + 0.45;
+  for (const s of [1, -1]) {
+    const a = s * slope;
+    const y = WALL_TOP + RIDGE / 2 + 0.1;
+    const z = z0 + s * (HOUSE_D / 4 + 0.1);
+    part(g, box, MATS.roofTile, 0, y, z, HOUSE_W + 0.6, 0.16, run).rotation.x = a;
+    // rows of tiles: darker lines across the slope (along it from its middle, on top of it)
+    for (const t of [-0.3, 0, 0.3]) {
+      const along = t * run;
+      const row = part(g, box, MATS.roofDark, 0, y + 0.09 * Math.cos(a) - along * Math.sin(a), z + 0.09 * Math.sin(a) + along * Math.cos(a), HOUSE_W + 0.62, 0.04, 0.07);
+      row.rotation.x = a;
+      row.castShadow = false;
+    }
+  }
+  part(g, box, MATS.roofDark, 0, WALL_TOP + RIDGE + 0.12, z0, HOUSE_W + 0.65, 0.14, 0.24); // the ridge
+  // the chimney, at the back on the right
+  part(g, box, MATS.stone, 1.4, WALL_TOP + RIDGE * 0.55, z0 - 0.75, 0.55, RIDGE * 1.3 + 0.5, 0.55);
+  part(g, box, MATS.stoneDark, 1.4, WALL_TOP + RIDGE * 1.2 + 0.32, z0 - 0.75, 0.65, 0.14, 0.65);
+  // the door, a step up to it, and a lamp over it
+  part(g, box, MATS.plankB, 0, FOOT_H + 0.78, front + 0.04, 0.9, 1.56, 0.06);
+  for (const x of [-0.22, 0, 0.22]) part(g, box, MATS.plankA, x, FOOT_H + 0.78, front + 0.075, 0.18, 1.5, 0.02).castShadow = false;
+  part(g, box, MATS.iron, 0.3, FOOT_H + 0.78, front + 0.1, 0.07, 0.07, 0.05);
+  part(g, box, MATS.stone, 0, FOOT_H / 2, front + 0.32, 1.2, FOOT_H, 0.36);
+  part(g, box, MATS.iron, 0, WALL_TOP - 0.38, front + 0.12, 0.08, 0.08, 0.2);
+  part(g, box, MATS.lantern, 0, WALL_TOP - 0.52, front + 0.2, 0.2, 0.24, 0.2).castShadow = false;
+  // windows: two at the front with flower boxes under them, one on each side
+  const pane = (x, y, z, sideways) => {
+    part(g, box, MATS.bark, x, y, z, sideways ? 0.08 : 0.86, 0.76, sideways ? 0.86 : 0.08);
+    part(g, box, MATS.window, x + (sideways ? Math.sign(x) * 0.02 : 0), y, z + (sideways ? 0 : 0.02), sideways ? 0.06 : 0.66, 0.56, sideways ? 0.66 : 0.06).castShadow = false;
+    part(g, box, MATS.bark, x + (sideways ? Math.sign(x) * 0.04 : 0), y, z + (sideways ? 0 : 0.04), sideways ? 0.03 : 0.05, 0.56, sideways ? 0.05 : 0.03);
+    part(g, box, MATS.bark, x + (sideways ? Math.sign(x) * 0.04 : 0), y, z + (sideways ? 0 : 0.04), sideways ? 0.03 : 0.66, 0.05, sideways ? 0.66 : 0.03);
+  };
+  for (const x of [-1.55, 1.55]) {
+    pane(x, FOOT_H + 1.3, front, false);
+    part(g, box, MATS.crateDark, x, FOOT_H + 0.8, front + 0.14, 0.8, 0.18, 0.22);
+    for (let i = 0; i < 4; i++) part(g, ball, MATS.petals[(i + (x > 0 ? 2 : 0)) % 4], x - 0.27 + i * 0.18, FOOT_H + 0.94, front + 0.14, 0.14, 0.12, 0.14);
+  }
+  for (const x of [-HOUSE_W / 2, HOUSE_W / 2]) pane(x, FOOT_H + 1.3, z0, true);
+  solids.push({ x: 0, y: WALL_TOP / 2, z: z0, w: HOUSE_W + 0.3, h: WALL_TOP, d: HOUSE_D + 0.3 });
+}
 
 const keyOf = (gx, gz) => `${gx},${gz}`;
 const gridOf = (key) => key.split(',').map(Number);
@@ -456,6 +530,8 @@ function model(id, gx, gz, joined) {
     // just where it is in the way: the chest itself is chest.js's, which
     // main.js stands on this tile (it opens, and keeps what is in it)
     solids.push({ x: 0, y: 0.4, z: 0, w: CHEST_W, h: 0.8, d: 0.7 });
+  } else if (id === 'house') {
+    house(g, solids);
   } else if (id === 'planter') {
     part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
     part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
@@ -478,6 +554,7 @@ function model(id, gx, gz, joined) {
 // world: the world the pieces are on (world.js buildWorld)
 export function createBuildings(world) {
   const pieces = new Map(); // key -> { id, group, colliders }
+  const covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
 
   const joins = (gx, gz) => PIECES[pieces.get(keyOf(gx, gz))?.id]?.joins;
   const joinedAt = (gx, gz) => DIRS.filter(([dx, dz]) => joins(gx + dx, gz + dz));
@@ -528,7 +605,12 @@ export function createBuildings(world) {
   let ghost = null; // { group, id, key }
 
   return {
-    get: (key) => pieces.get(key)?.id ?? null,
+    // what stands on tile key (any tile of it), or null
+    get: (key) => pieces.get(covered.get(key))?.id ?? null,
+    // the piece built on tile key, as drawn (to tap)
+    groupOf: (key) => pieces.get(key)?.group ?? null,
+    // the tile the piece standing on tile key was built on (null: nothing there)
+    anchor: (key) => covered.get(key) ?? null,
     // the tile a piece of kind `id` is built on (the first, for one there is only one of), or null
     find(id) {
       for (const [key, piece] of pieces) if (piece.id === id) return key;
@@ -539,28 +621,37 @@ export function createBuildings(world) {
 
     // false: something is built there already, or no such piece
     place(key, id) {
-      if (pieces.has(key) || !PIECES[id]) return false;
+      if (!PIECES[id]) return false;
+      const tiles = pieceTiles(id, key);
+      if (tiles.some((k) => covered.has(k))) return false;
       pieces.set(key, { id, group: null, colliders: [] });
+      for (const k of tiles) covered.set(k, key);
       draw(key);
       if (PIECES[id].joins) redrawAround(key);
-      world.clearFoliageOnTile(key);
+      for (const k of tiles) world.clearFoliageOnTile(k);
       return true;
     },
 
     // the piece that was there (or null)
+    // (key: any tile it stands on)
     remove(key) {
+      key = covered.get(key);
       const piece = pieces.get(key);
       if (!piece) return null;
       undraw(piece);
       pieces.delete(key);
+      for (const k of pieceTiles(piece.id, key)) {
+        covered.delete(k);
+        world.restoreFoliage(k);
+      }
       if (PIECES[piece.id].joins) redrawAround(key);
-      world.restoreFoliage(key);
       return piece.id;
     },
 
     clear() {
       for (const piece of pieces.values()) undraw(piece);
       pieces.clear();
+      covered.clear();
     },
 
     // The nearest piece of kind `id` whose tile is within `reach` of pos (its key, or null)
@@ -582,6 +673,7 @@ export function createBuildings(world) {
     // night: 0 by day, 1 at night (the lamp posts' glow)
     setNight(night) {
       MATS.lantern.emissiveIntensity = night * 1.6;
+      MATS.window.emissiveIntensity = night * 1.2;
     },
 
     // Show where `id` would go on tile key (null: nowhere), green or red

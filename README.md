@@ -83,6 +83,8 @@ The animals and eggs are saved with the farm (`src/animals.js`).
   - decorations, put down from the Build tab like the rest: a **lamp post** (3 wood, 2 stone) that lights up at night, a **garden bench** (6 wood) and a **flower planter** (4 stone, 1 wood);
   - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
   - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below).
+- A **farm chest** (8 wood, 2 stone), one to a farm: somewhere to keep things. What your backpack is short of when you build comes out of it.
+- A **house** (500 wood, 200 stone), one to a farm, 5 tiles across and 4 deep, built from the middle of its front where the door is. `E` at the door (or a tap on the house) goes inside: a room of 200 tiles (20 by 10) with a bed, a table, a fireplace and a shelf of books, and a field of earth (8 by 6) to till and plant like the farm's. `E` at the door inside goes back out. Its windows light up at night (`HOUSE_ROOM` in `shared/level.js`, `src/house.js`).
 - **Take down** (in the Build tab) takes a piece away and gives back what it cost.
 - Nothing goes on tilled soil, in the animals' pens, by the stall's counter, where farmers arrive on the plaza, or on someone standing there. What's built is saved with the farm, and on a farm with helpers everyone can build (each pays from their own backpack) and the farm's room keeps it, like the soil (`PIECES` in `shared/level.js`, `src/build.js`).
 
@@ -152,6 +154,7 @@ island-platformer/
 │   ├── shop.js          # the merchant's shop window: buy seeds and animals, sell from the backpack
 │   ├── chest.js         # the farm chest on a farm with helpers, and its window
 │   ├── build.js         # what is built on the farm: fences, gates, walls, paths, blocks, the workbench, decorations
+│   ├── house.js         # inside the house: its room, with a field to farm
 │   ├── workbench.js     # the workbench's window: decorations, sturdy tools, the sword and the mallet
 │   ├── animals.js       # the hen yard and the pasture, the hens, cows and sheep, eggs
 │   ├── remotes.js       # other players: interpolation, name tags

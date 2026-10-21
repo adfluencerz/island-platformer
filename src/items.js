@@ -1491,6 +1491,27 @@ export const PIECE_ICONS = {
       '................',
     ],
   },
+  house: {
+    palette: { o: '#3b2412', R: '#c0563a', c: '#9c9a92', P: '#f0e2c4', p: '#d8c8a4', w: '#ffe7a3', D: '#7a4f28' },
+    sprite: [
+      '................',
+      '..........ooo...',
+      '.....ooooooco...',
+      '....oRRRRRRcoo..',
+      '...oRRRRRRRRRRo.',
+      '..oRRRRRRRRRRRRo',
+      '.oooooooooooooo.',
+      '..oPPPPPPPPPPo..',
+      '..oPwwPPPPwwPo..',
+      '..oPwwPDDPwwPo..',
+      '..oPPPPDDPPPPo..',
+      '..oPPPPDDPPPPo..',
+      '..oppppDDppppo..',
+      '.oooooooooooooo.',
+      '................',
+      '................',
+    ],
+  },
   remove: {
     palette: { ...WOOD, L: '#d6d4cc', M: '#a9a79f', D: '#6c6b66' },
     sprite: [

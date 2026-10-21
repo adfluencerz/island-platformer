@@ -137,11 +137,41 @@ export const PIECES = {
   stone_well: { name: 'Stone well', cost: { stone: 6, wood: 3 }, solid: true },
   workbench: { name: 'Workbench', cost: { wood: 10, stone: 5 }, solid: true },
   farm_chest: { name: 'Farm chest', cost: { wood: 8, stone: 2 }, solid: true, one: true },
+  house: { name: 'House', cost: { wood: 500, stone: 200 }, solid: true, one: true, size: [5, 4] },
   lamp_post: { name: 'Lamp post', cost: { lamp_post: 1 }, solid: true },
   garden_bench: { name: 'Garden bench', cost: { garden_bench: 1 }, solid: true },
   planter: { name: 'Flower planter', cost: { planter: 1 }, solid: true },
 };
 export const MAX_PIECES = 2000; // on one farm
+
+// The tiles a piece built on tile key stands on: one, or for a piece with a
+// `size` [across, deep] (the house), that many, its front row centred on key
+// and the rest behind it (toward -z, away from the camera)
+export function pieceTiles(piece, key) {
+  const size = PIECES[piece]?.size;
+  if (!size) return [key];
+  const [gx, gz] = key.split(',').map(Number);
+  const [w, d] = size;
+  const left = gx - Math.floor(w / 2);
+  const tiles = [];
+  for (let dz = 0; dz < d; dz++) for (let dx = 0; dx < w; dx++) tiles.push(`${left + dx},${gz - dz}`);
+  return tiles;
+}
+
+// ---------- Inside the house ----------
+// The house's door (in the middle of its front, on the tile it was built on)
+// leads inside: a room of its own, out past the sea where nothing else is, so
+// its tiles have keys of their own (the farm's are within 28 of the middle).
+// Its field is farmed like the farm's, on a farm with helpers too; the rest
+// of the floor is boards. One house to a farm, so one room.
+export const HOUSE_ROOM = { x0: 110, z0: -5, w: 20, d: 10 }; // tiles x0..x0+w-1 across, z0..z0+d-1 deep: 200
+export const HOUSE_FIELD = { x0: 111, z0: -4, w: 8, d: 6 }; // the indoor field, in the room's left half
+export const HOUSE_DOOR_IN = { x: 119.5, z: 4.5 }; // the room's door, in the middle of its front wall
+
+const inArea = (a, x, z) => x > a.x0 - 0.5 && x < a.x0 + a.w - 0.5 && z > a.z0 - 0.5 && z < a.z0 + a.d - 0.5;
+// Is x, z (world units, a tile's middle or anywhere) in the house's room, or its field?
+export const inHouseRoom = (x, z) => inArea(HOUSE_ROOM, x, z);
+export const inHouseField = (x, z) => inArea(HOUSE_FIELD, x, z);
 
 // Tiles kept clear of building: where farmers arrive, and the farm's chest
 export function keptClear(gx, gz) {
