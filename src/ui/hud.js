@@ -62,6 +62,7 @@ const TIPS = [
   { text: 'Hens lay an egg a day. Have a look around the hen yard.' },
   { text: 'Cows have milk every morning. Sheep grow their wool back in two days.' },
   { text: 'Build a workbench to make sturdy tools: an axe that fells a tree in two swings.' },
+  { text: 'Build an arcade on your farm to try your luck: a coinflip, blackjack and Lucky Hand.', place: 'home' },
   { text: 'The stone circle where you arrive in a lobby is for resting: no bopping there.' },
   { text: 'Keep an eye on the ledges in a lobby: something rare may sparkle there.' },
   { text: 'Wood and stone build fences, paths and steps on your farm.' },

@@ -10,8 +10,8 @@
 //
 // What uses each part: the item catalog (src/items.js), the world and its
 // lobbies (shared/level.js, shared/room.js), the workbench (src/workbench.js),
-// the animals (src/animals.js), the farm's finds (src/finds.js) and a new
-// farmer's backpack (src/main.js).
+// the animals (src/animals.js), the farm's finds (src/finds.js), the arcade's
+// games (shared/arcade.js) and a new farmer's backpack (src/main.js).
 
 // ---------- Time ----------
 export const DAY_LENGTH_SECONDS = 1440; // a whole game day, in real seconds
@@ -259,6 +259,7 @@ export const BUILD_COSTS = {
   stone_cairn: { stone: 3 },
   clothesline: { wood: 2, flax: 2 },
   workbench: { wood: 10, stone: 5 },
+  arcade: { wood: 30, stone: 10, flax: 6 },
   farm_chest: { wood: 8, stone: 2 },
   house: { wood: 500, stone: 200 },
   lamp_post: { wood: 3, stone: 2 },
@@ -312,6 +313,52 @@ export const WEAPONS = {
 export const BOP_GRACE = 2500; // ms a farmer who was just bopped can't be again
 export const SAFE_CIRCLE = 3.5; // nobody bops or is bopped this close to where farmers arrive
 export const DROP_MS = 45_000; // a drop nobody picks up fades after this (ms)
+
+// ---------- The arcade (shared/arcade.js) ----------
+// Games against the house for gold, built on the farm. Stakes have no limit
+// (whatever is in the backpack). Payouts are what comes back for each 1g
+// staked, the stake included (2: double; 0: lost). The house keeps a small
+// edge, a gentle gold sink.
+export const COINFLIP = { pays: 2 }; // heads or tails, even odds
+// Blackjack: the dealer draws to 17 and stands on any 17; a blackjack (an ace
+// and a ten in the first two cards) pays 3 to 2. A hand can be doubled on its
+// first two cards; there is no splitting. A shoe of `decks` is shuffled for
+// every hand. (Played well, about 97% comes back.)
+export const BLACKJACK = { decks: 6, natural: 2.5, win: 2, push: 1 };
+// Lucky Hand: a short card game after Balatro. Draw `hand` cards; `plays`
+// times, play up to five as a poker hand, which scores (chips) x (mult): the
+// hand's own (LUCKY_HANDS), plus each scoring card's chips (LUCKY_CARD_CHIPS),
+// then whatever the jokers add. `discards` times, swap cards instead. A
+// joker is picked from `offer` before the first play, and another after it.
+// The total after the last play pays by `tiers`: [score, payout], the highest
+// one reached. (Played as well as can be, about 97% of what is staked comes
+// back; half the games reach the 1x tier.)
+export const LUCKY = {
+  hand: 8, plays: 3, discards: 3, offer: 3, picks: 2,
+  tiers: [[1250, 0.5], [1850, 1], [2450, 1.5], [3000, 2.5], [4000, 5], [6000, 15]],
+};
+// [chips, mult] for each poker hand (shared/cards.js HANDS, in order)
+export const LUCKY_HANDS = [[5, 1], [10, 2], [20, 2], [30, 3], [30, 4], [35, 4], [40, 4], [60, 7], [100, 8]];
+// what a scoring card adds to the chips: its number, 10 for a face, 11 for an ace
+export const LUCKY_CARD_CHIPS = { T: 10, J: 10, Q: 10, K: 10, A: 11 };
+// The jokers. `needs`: only when the hand played has a rank 2 or 3 times
+// (a pair, a three of a kind; in a bigger hand too), or is a 'straight' or a
+// 'flush'. `suit`, `face`: for each scoring card of that suit, or that is a
+// jack, queen or king. Then +chips, +mult, and last x`times` the mult.
+export const LUCKY_JOKERS = {
+  sunflower: { name: 'Sunflower', mult: 4 },
+  twin_turnips: { name: 'Twin turnips', needs: 2, mult: 8 },
+  hay_bale: { name: 'Hay bale', needs: 2, chips: 50 },
+  scarecrow: { name: 'Scarecrow', needs: 3, times: 2 },
+  garden_path: { name: 'Garden path', needs: 'straight', mult: 12 },
+  bouquet: { name: 'Bouquet', needs: 'flush', mult: 10 },
+  rosy_heart: { name: 'Rosy heart', suit: 'h', mult: 3 },
+  dewdrop: { name: 'Dewdrop', suit: 'd', mult: 3 },
+  clover: { name: 'Four-leaf clover', suit: 'c', mult: 3 },
+  trowel: { name: 'Garden trowel', suit: 's', mult: 3 },
+  royal_hen: { name: 'Royal hen', face: true, chips: 20 },
+  golden_goose: { name: 'Golden goose', times: 1.5 },
+};
 
 // ---------- Room to keep things ----------
 export const CHEST = { stack: 999, kinds: 64 }; // the most of one item in a farm chest, and of different items

@@ -10,6 +10,7 @@ import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './ani
 import { createBuildings } from './build.js';
 import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
+import { createArcade } from './arcade.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
@@ -1214,7 +1215,7 @@ function updateMenuCamera(t) {
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
-const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen();
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen();
 const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
@@ -1246,6 +1247,7 @@ function useAction() {
   if (houseRoom.exitInReach(player.position)) return goOutside();
   if (chest.inReach(player.position)) return chest.open();
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return workbench.open();
+  if (buildings.nearest('arcade', player.position, BENCH_REACH)) return arcade.open();
   if (atStall(player.position)) {
     shop.open();
     return;
@@ -1603,7 +1605,8 @@ function tapAt(x, y) {
   if (building) return tapToBuild();
   const target = tappedThing() ?? tappedGround();
   if (!target) return;
-  if (target.kind === 'tile' && buildings.get(tileKeyFor(target.x, target.z)) === 'workbench') target.kind = 'workbench';
+  const built = target.kind === 'tile' && buildings.get(tileKeyFor(target.x, target.z));
+  if (built === 'workbench' || built === 'arcade') target.kind = built;
   walk = { best: Infinity, stuck: 0, hopped: false, ...target };
   if (walk.kind === 'tile') {
     marker.position.set(walk.x, walk.y + 0.08, walk.z);
@@ -1688,6 +1691,7 @@ function arrived(d) {
     case 'farmer': return bopTarget()?.id === walk.id;
     case 'build': return inBuildReach(walk.key) && d < BUILD_REACH - 0.3;
     case 'workbench': return !!buildings.nearest('workbench', player.position, BENCH_REACH);
+    case 'arcade': return !!buildings.nearest('arcade', player.position, BENCH_REACH);
     default: return d < ARRIVE;
   }
 }
@@ -1699,6 +1703,7 @@ function arrive() {
   if (kind === 'build') {
     if (building) buildAt(key);
   } else if (kind === 'workbench') workbench.open();
+  else if (kind === 'arcade') arcade.open();
   else if (kind === 'stall') shop.open();
   else if (kind === 'chest') chest.open();
   else if (kind === 'door') goInside();
@@ -3038,6 +3043,7 @@ function update(dt) {
 function homePrompt() {
   if (menuOpen()) return '';
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
+  if (buildings.nearest('arcade', player.position, BENCH_REACH)) return 'E  Play at the arcade';
   if (houseDoorInReach()) return 'E  Go inside';
   if (houseRoom.exitInReach(player.position)) return 'E  Go outside';
   if (chest.inReach(player.position)) return 'E  Open the farm chest';
