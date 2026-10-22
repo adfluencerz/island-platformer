@@ -43,7 +43,7 @@ export const portalOf = (id) => `${id}_portal`;
 export const portalBoss = (piece) => (typeof piece === 'string' && piece.endsWith('_portal') && BOSSES[piece.slice(0, -7)] ? piece.slice(0, -7) : null);
 
 const PHASES = ['sleep', 'wake', 'fight', 'friendly'];
-const MOVES = ['rest', 'hop', 'roll', 'dizzy', 'seeds'];
+const MOVES = ['rest', 'hop', 'roll', 'dizzy', 'seeds', 'pounce', 'roar']; // (as numbers on the wire: only ever added to)
 
 export class BossFight {
   // rand: () => [0, 1)
@@ -138,8 +138,11 @@ export class BossFight {
         if (this.mt >= m.dur) this.pick(here);
         break;
       }
-      case 'hop': {
-        const { windup, air, height } = d.hop;
+      case 'hop':
+      case 'pounce': {
+        // (a hop and a pounce are the same leap, at different heights and speeds)
+        const leap = d[this.move];
+        const { windup, air, height } = leap;
         if (this.mt < windup) break;
         const k = Math.min(1, (this.mt - windup) / air);
         this.x = m.from.x + (m.to.x - m.from.x) * k;
@@ -147,8 +150,8 @@ export class BossFight {
         this.y = 4 * height * k * (1 - k);
         if (k < 1) break;
         this.y = 0;
-        fx.push({ e: 'wave', x: ROUND(this.x), z: ROUND(this.z), speed: d.hop.wave, max: d.hop.waveMax });
-        if (--m.left > 0) this.hopAt(here, m.left);
+        fx.push({ e: 'wave', x: ROUND(this.x), z: ROUND(this.z), speed: leap.wave, max: leap.waveMax });
+        if (--m.left > 0) this.hopAt(here, m.left, this.move);
         else this.rest(here);
         break;
       }
@@ -181,6 +184,17 @@ export class BossFight {
       case 'dizzy':
         if (this.mt >= m.dur) this.rest(here);
         break;
+      case 'roar': {
+        // rings of shockwave, one after another, out to the arena's edge
+        const { windup, count, gap, speed, max } = d.roar;
+        if (this.mt < windup) this.face(this.nearest(here));
+        while (m.fired < count && this.mt >= windup + m.fired * gap) {
+          fx.push({ e: 'wave', x: ROUND(this.x), z: ROUND(this.z), speed, max, roar: true });
+          m.fired++;
+        }
+        if (this.mt >= windup + count * gap + 0.3) this.rest(here);
+        break;
+      }
       case 'seeds': {
         const { windup, volleys, gap, count, perPlayer, speed } = d.seeds;
         while (m.fired < volleys && this.mt >= windup + m.fired * gap) {
@@ -194,14 +208,16 @@ export class BossFight {
     }
   }
 
-  // The next move, not the last one again
+  // The next of its moves (BOSSES `moves`), not the last one again
   pick(here) {
-    const moves = ['hop', 'roll', 'seeds'].filter((move) => move !== this.last);
+    const moves = this.def.moves.filter((move) => move !== this.last || this.def.moves.length === 1);
     const move = moves[Math.floor(this.rand() * moves.length)];
     this.last = move;
-    if (move === 'hop') {
-      const [lo, hi] = this.def.hop.hops;
-      this.hopAt(here, lo + Math.floor(this.rand() * (hi - lo + 1)));
+    if (move === 'hop' || move === 'pounce') {
+      const [lo, hi] = this.def[move].hops;
+      this.hopAt(here, lo + Math.floor(this.rand() * (hi - lo + 1)), move);
+    } else if (move === 'roar') {
+      this.start('roar', { fired: 0 });
     } else if (move === 'roll') {
       this.start('roll', { dir: this.yaw });
     } else {
@@ -209,19 +225,20 @@ export class BossFight {
     }
   }
 
-  // A hop at one of them (left: hops to go, this one too)
-  hopAt(here, left) {
+  // A hop (or a pounce) at one of them (left: hops to go, this one too)
+  hopAt(here, left, move = 'hop') {
     const t = here[Math.floor(this.rand() * here.length)];
     const from = { x: this.x, z: this.z };
     let dx = t.x - from.x;
     let dz = t.z - from.z;
     const d = Math.hypot(dx, dz);
-    if (d > this.def.hop.reach) {
-      dx *= this.def.hop.reach / d;
-      dz *= this.def.hop.reach / d;
+    const reach = this.def[move].reach;
+    if (d > reach) {
+      dx *= reach / d;
+      dz *= reach / d;
     }
     this.face(t);
-    this.start('hop', { from, to: this.inside(from.x + dx, from.z + dz), left });
+    this.start(move, { from, to: this.inside(from.x + dx, from.z + dz), left });
   }
 
   rest(here) {
