@@ -1661,6 +1661,22 @@ await test('a farm room: machines take things in, and whoever is next to one whe
   room.message(bo.p, { t: C.UNBUILD, key: '4,4' });
   assert.deepEqual(ann.conn.last(S.UNBUILT).back, { egg: 1 });
   assert.ok(!room.machines.has('4,4'));
+  // three on the fire at once (any fish: back as the cheapest), and all three collected
+  room.message(bo.p, { t: C.BUILD, key: '4,4', piece: 'campfire' });
+  room.message(bo.p, { t: C.LOAD, key: '4,4', dish: 'grilled_fish', n: 4 });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'load', 'too many at once');
+  room.message(bo.p, { t: C.LOAD, key: '4,4', dish: 'grilled_fish', n: 3 });
+  assert.deepEqual(bo.conn.last(S.MACHINE).state.slice(2), [{ minnow: 3 }, 3]);
+  rooms.write(room);
+  assert.equal(new FarmRoom({ farm: a, admit: () => null }).machines.get('4,4').n, 3, 'kept in the save');
+  room.clockBase += 1;
+  room.message(bo.p, { t: C.COLLECT, key: '4,4' });
+  assert.deepEqual([ann.conn.last(S.MACHINE).got, ann.conn.last(S.MACHINE).n], ['grilled_fish', 3]);
+  // a farm feast eaten: everyone on the farm hears of it (an ordinary dish: nobody)
+  room.message(bo.p, { t: C.FEAST, dish: 'pancakes' });
+  assert.equal(ann.conn.last(S.FEAST), undefined);
+  room.message(bo.p, { t: C.FEAST, dish: 'farm_feast' });
+  assert.deepEqual([ann.conn.last(S.FEAST).dish, ann.conn.last(S.FEAST).by], ['farm_feast', bo.p.id]);
   // a beehive built now: honey on its way; collected once ready, it starts again
   room.message(bo.p, { t: C.BUILD, key: '3,4', piece: 'beehive' });
   assert.equal(ann.conn.last(S.MACHINE).state[0], 'honey');

@@ -225,7 +225,10 @@ export function createHouseRoom(world) {
   glow.castShadow = false;
   kPart(box, MATS.ironDark, stoveX, 2.1, back + 0.2, 0.18, 2.4, 0.18); // the pipe
   kPart(box, MATS.copper, stoveX - 0.2, 1.06, back + 0.4, 0.36, 0.24, 0.36); // the pot
-  kPart(box, MATS.copper, stoveX - 0.2, 1.19, back + 0.4, 0.4, 0.03, 0.4);
+  const lid = kPart(box, MATS.copper, stoveX - 0.2, 1.19, back + 0.4, 0.4, 0.03, 0.4);
+  const pot = { x: stoveX - 0.2, y: 1.22, z: back + 0.4 };
+  let rattle = 0; // seconds left of the lid's rattle (something just cooked)
+  let lastT = 0;
   kPart(box, MATS.ironDark, stoveX + 0.08, 1.12, back + 0.4, 0.3, 0.03, 0.03); // its handle
   solid({ x: stoveX, y: 0.45, z: back + 0.4, w: 1, h: 0.9, d: 0.7 });
   kPart(box, MATS.wood, counterX, 0.43, back + 0.4, 1.4, 0.86, 0.7);
@@ -260,6 +263,11 @@ export function createHouseRoom(world) {
     kitchenSpot: () => ({ ...cookAt }),
     kitchenInReach: (pos) => pos.y < 2.2 && Math.abs(pos.x - cookAt.x) < 1.6 && pos.z < cookAt.z + 0.6,
     shelfInReach: (pos) => pos.y < 2.2 && pos.x > right - 1.6 && Math.abs(pos.z - shelfZ) < 1.2,
+    // something was just cooked: the pot's lid rattles (where its steam goes: potSpot)
+    cooked() {
+      rattle = 0.6;
+    },
+    potSpot: () => ({ ...pot }),
     // night: 0 by day, 1 at night
     setNight(night) {
       MATS.lantern.emissiveIntensity = night * 1.6;
@@ -279,6 +287,10 @@ export function createHouseRoom(world) {
       fire.scale.y = 0.4 * (0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3));
       glow.scale.y = 0.14 * (0.8 + 0.2 * Math.sin(t * 7.1) * Math.sin(t * 3.7));
       fire.position.y = 0.2 + fire.scale.y / 2;
+      rattle = Math.max(0, rattle - Math.min(0.1, t - lastT));
+      lastT = t;
+      lid.position.y = pot.y - 0.03 + (rattle > 0 ? Math.abs(Math.sin(t * 40)) * 0.05 * (rattle / 0.6) : 0);
+      lid.rotation.z = rattle > 0 ? Math.sin(t * 33) * 0.12 * (rattle / 0.6) : 0;
     },
   };
 }

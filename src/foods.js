@@ -304,6 +304,24 @@ export const FOODS = {
     '................',
     '................',
   ])),
+  grilled_fish: item('Grilled fish', 'Food', '', 0xc98a4a, { ...PLATE_COLORS, s: '#c98a4a', S: '#e8b070', g: '#5a3a1e', e: '#202020', l: '#ffe060', L: '#f0c020' }, plate([
+    '................',
+    '................',
+    '................',
+    '................',
+    '..........oo....',
+    '..oooooooooSo...',
+    '.oSSgSSgSSSSo...',
+    'oeSgSSgSSgSSSoSo',
+    'oSSSSgSSgSSSsoSo',
+    '.osssssssssso.o.',
+    '..oooooooooo.oLo',
+    '............olLo',
+    '.............oo.',
+    '................',
+    '................',
+    '................',
+  ])),
 
   // ---------- Cooked in the kitchen ----------
   pancakes: item('Pancakes', 'Food', '', 0xe0a860, { ...PLATE_COLORS, p: '#e0a860', P: '#f6d090', d: '#b07838', h: '#f0a020', H: '#ffd060' }, plate([
@@ -379,6 +397,60 @@ export const FOODS = {
     '................',
   ])),
   mushroom_pie: item('Mushroom pie', 'Food', '', 0xa0603a, { o: '#3b2412', C: '#e0b070', c: '#c9904a', d: '#a06a2a', D: '#7a4f28', f: '#6e3a1e', F: '#a0603a' }, PIE),
+  fish_stew: item('Fish stew', 'Food', '', 0xefe3c4, { o: '#4a2a12', s: '#efe3c4', S: '#fff6e0', w: '#e07a1f', f: '#f4d8c0', b: '#b0743a', B: '#d99b57', d: '#7a4f28', g: '#4f9e3c' }, [
+    '................',
+    '................',
+    '................',
+    '......g..g......',
+    '................',
+    '..oooooooooooo..',
+    '.oSSfsswsSSfsdo.',
+    '.osswsfssswsddo.',
+    '.oBoossssssooBo.',
+    '.oBBBoooooooBBo.',
+    '..oBBBBBBBBBBo..',
+    '..obBBBBBBBBbo..',
+    '...obbbbbbbbo...',
+    '....odddddddo...',
+    '.....oooooo.....',
+    '................',
+  ]),
+  sushi_rolls: item('Sushi rolls', 'Food', '', 0xf08a8a, { ...PLATE_COLORS, n: '#2f4a2a', r: '#fffdf8', p: '#f08a8a', P: '#f6b0a0', w: '#8ac24a' }, plate([
+    '................',
+    '................',
+    '................',
+    '................',
+    '..ooooo..ooooo..',
+    '.onnnnnoonnnnno.',
+    '.onrrrnoonrrrno.',
+    '.onrpPnoonrpPno.',
+    '.onrrrnoonrrrno.',
+    '.onnnnnoonnnnno.',
+    '..ooooo.owoooo..',
+    '.........o......',
+    '................',
+    '................',
+    '................',
+    '................',
+  ])),
+  farm_feast: item('Farm feast', 'Food', '', 0xe8862a, { ...PLATE_COLORS, p: '#e8862a', P: '#f6b060', g: '#4f9e3c', s: '#c98a4a', S: '#e8b070', e: '#202020', c: '#e07a1f', h: '#f0a020', y: '#f2c84b' }, plate([
+    '................',
+    '.....g..........',
+    '...oogoo........',
+    '..oPpPpPo.......',
+    '.oPpPpPpPo.oooo.',
+    '.oPpPpPpPooSSSSo',
+    '..oPpPpPooeSSSSo',
+    '...ooooooyyoSSo.',
+    '..occco.oyyyoo..',
+    '.occccohoyyyo...',
+    '..ooooohhooo....',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+  ])),
   carrot_cake: item('Carrot cake', 'Food', '', 0xd98a3a, { o: '#4a2a12', c: '#d98a3a', C: '#e8a860', d: '#a8642a', w: '#fffaf0', W: '#f4e6d0', r: '#e07a1f', g: '#4f9e3c' }, [
     '................',
     '................',
@@ -449,11 +521,12 @@ for (const [dish, d] of Object.entries(DISHES)) {
 }
 
 // What each dish needs and does, in its description (src/cooking.js has the names of the boosts)
-const BOOST_WORDS = { quick: 'quicker on your feet', strong: 'stronger with the axe and the pickaxe', bouncy: 'springier when you jump' };
+const BOOST_WORDS = { quick: 'quicker on your feet', strong: 'stronger with the axe and the pickaxe', bouncy: 'springier when you jump', lucky: 'luckier with a rod (fish bite sooner)' };
 const andList = (words) => (words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : words[0]);
 for (const [dish, d] of Object.entries(DISHES)) {
   const where = d.cook === 'campfire' ? 'Cooked on a campfire.' : 'Cooked in your kitchen.';
-  FOODS[dish].description = `${where} Eat it (E with it in hand) to feel ${andList(d.boost.map((b) => BOOST_WORDS[b]))} for a while.`;
+  const shared = d.shared ? ' Eaten on your farm with friends, everyone there gets it too.' : '';
+  FOODS[dish].description = `${where} Eat it (E with it in hand, or double-click it in the backpack) to feel ${andList(d.boost.map((b) => BOOST_WORDS[b]))} for a while.${shared}`;
   FOODS[dish].maxStack = 99;
   FOODS[dish].dish = dish;
 }

@@ -37,9 +37,10 @@ export function biting(water, rod, hour) {
 // One cast: { bite, window, item, count, items? }: seconds till something
 // bites, ms to land it in, and what it is ('chest': a little chest of loot,
 // what is in it as items [[item, count], ...]). level: the farmer's fishing
-// skill (shared/skills.js: bites that much sooner). rand: () => [0, 1)
-export function castLine(water, rod, hour, level = 1, rand = Math.random) {
-  const [lo, hi] = RODS[rod].bite.map((s) => s * (1 - bonusChance('fishing', level)));
+// skill (shared/skills.js: bites that much sooner). rand: () => [0, 1).
+// sooner: a lucky meal's (BOOSTS.lucky.bite), the wait times this.
+export function castLine(water, rod, hour, level = 1, rand = Math.random, sooner = 1) {
+  const [lo, hi] = RODS[rod].bite.map((s) => s * (1 - bonusChance('fishing', level)) * sooner);
   const table = biting(water, rod, hour);
   const [item, count] = pick(table.map(([it, w, , [min, max]]) => [it, w, min, max]), rand);
   const rarity = table.find(([it]) => it === item)[2];

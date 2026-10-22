@@ -119,7 +119,8 @@ export function createTackle(scene) {
 // connection while we are in one (null: on a farm, where the page rolls).
 // rodInHand(): the rod's item id, or null. skill(): our fishing level
 // (src/skills.js). landed(): something came up on the line (for the XP).
-export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed }) {
+// sooner(): a lucky meal's factor on the wait for a bite (1: none).
+export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed, sooner = () => 1 }) {
   const tackle = createTackle(scene);
   const tip = new THREE.Vector3();
   let line = null; // { n, rod, at, from, phase: 'out' | 'bite' | 'wait', conn, local, biteAt, closeAt }
@@ -138,9 +139,9 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     const conn = lobby();
     line = { n: ++casts, rod, at, from: { x: player.position.x, z: player.position.z }, phase: 'out', conn, local: null };
     if (conn) {
-      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill() });
+      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill(), ...(sooner() < 1 && { sooner: sooner() }) });
     } else {
-      line.local = castLine(at.water, rod, hour(), skill());
+      line.local = castLine(at.water, rod, hour(), skill(), Math.random, sooner());
       line.biteAt = now + line.local.bite * 1000;
     }
     farmer.swing(); // (a flick of the rod)

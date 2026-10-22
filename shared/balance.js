@@ -97,12 +97,18 @@ export const SHOP = {
   carrot_cake: { sell: 420 },
   berry_tart: { sell: 300 },
   golden_pie: { sell: 700 },
+  grilled_fish: { sell: 50 },
+  fish_stew: { sell: 260 },
+  sushi_rolls: { sell: 150 },
+  farm_feast: { sell: 850 },
   // the kitchen's recipes the merchant sells (read, one goes in your recipe
   // book), and the old recipe card found in lobbies (its recipe is a surprise;
   // with all of those in the book already, it is only worth selling)
   recipe_pumpkin_soup: { price: 400 },
   recipe_honey_carrots: { price: 500 },
   recipe_mushroom_pie: { price: 600 },
+  recipe_sushi_rolls: { price: 450 },
+  recipe_farm_feast: { price: 1200 },
   recipe_card: { sell: 150 },
 };
 export const COIN_VALUE = 10; // gold for picking up one coin
@@ -426,19 +432,28 @@ export const MACHINES = {
 // eating one does (BOOSTS; a kitchen dish does it better, and for longer).
 // `learn` (the kitchen's): 'start', known from the start; 'shop', the
 // merchant sells the recipe (recipe_<dish>, SHOP); 'find', on an old recipe
-// card found in the lobbies.
+// card found in the lobbies. `shared`: eaten on a farm with helpers, everyone
+// there gets its boost too. A need of 'any_fish' is any of ANY.any_fish
+// (the first ones first: the cheapest).
 export const CAMPFIRE_HOURS = 1;
+export const CAMPFIRE_MOST = 3; // dishes on the fire at once (all the same)
+export const KITCHEN_MOST = 5; // dishes the kitchen's "×5" cooks at once
+export const ANY = { any_fish: ['minnow', 'sardine', 'perch', 'mackerel', 'trout'] };
 export const DISHES = {
   fried_egg: { cook: 'campfire', needs: { egg: 1 }, boost: ['quick'] },
   roasted_mushrooms: { cook: 'campfire', needs: { mushroom: 2 }, boost: ['strong'] },
   baked_turnip: { cook: 'campfire', needs: { turnip: 1 }, boost: ['bouncy'] },
   berry_skewer: { cook: 'campfire', needs: { berries: 3 }, boost: ['quick'] },
   roast_carrot: { cook: 'campfire', needs: { carrot: 1 }, boost: ['strong'] },
+  grilled_fish: { cook: 'campfire', needs: { any_fish: 1 }, boost: ['lucky'] },
   pancakes: { cook: 'kitchen', needs: { egg: 1, milk: 1, honey: 1 }, boost: ['quick'], learn: 'start' },
   cheese_omelette: { cook: 'kitchen', needs: { egg: 2, cheese: 1 }, boost: ['strong'], learn: 'start' },
   pumpkin_soup: { cook: 'kitchen', needs: { pumpkin: 2, milk: 1 }, boost: ['bouncy'], learn: 'shop' },
   honey_carrots: { cook: 'kitchen', needs: { carrot: 2, honey: 1 }, boost: ['quick'], learn: 'shop' },
   mushroom_pie: { cook: 'kitchen', needs: { mushroom: 3, egg: 1, flax: 1 }, boost: ['strong'], learn: 'shop' },
+  fish_stew: { cook: 'kitchen', needs: { any_fish: 2, carrot: 1, milk: 1 }, boost: ['lucky', 'strong'], learn: 'start' },
+  sushi_rolls: { cook: 'kitchen', needs: { any_fish: 2, seaweed: 2 }, boost: ['lucky', 'quick'], learn: 'shop' },
+  farm_feast: { cook: 'kitchen', needs: { pumpkin: 2, carrot: 2, cheese: 1, honey: 1, any_fish: 2 }, boost: ['quick', 'bouncy', 'lucky'], learn: 'shop', shared: true },
   carrot_cake: { cook: 'kitchen', needs: { carrot: 2, egg: 2, honey: 1 }, boost: ['bouncy', 'quick'], learn: 'find' },
   berry_tart: { cook: 'kitchen', needs: { berries: 4, egg: 1, honey: 1 }, boost: ['quick', 'strong'], learn: 'find' },
   golden_pie: { cook: 'kitchen', needs: { golden_turnip: 1, egg: 1, cheese: 1, honey: 1 }, boost: ['quick', 'strong', 'bouncy'], learn: 'find' },
@@ -446,12 +461,14 @@ export const DISHES = {
 // What eating a dish does, for a while: [a campfire dish's, a kitchen dish's].
 // `speed`: walking goes this much faster. `swings`: this many fewer swings
 // fell a tree or break up a rock (one at the least; not a giant). `jump`:
-// jumping goes this much higher. `seconds`: how long it lasts (seconds of
+// jumping goes this much higher. `bite`: fish bite this much sooner (the
+// wait till one does, times this). `seconds`: how long it lasts (seconds of
 // play). One meal at a time: eating another puts the last one's out.
 export const BOOSTS = {
   quick: { speed: [1.1, 1.2] },
   strong: { swings: [1, 2] },
   bouncy: { jump: [1.06, 1.12] },
+  lucky: { bite: [0.8, 0.65] },
 };
 export const BOOST_SECONDS = { campfire: 240, kitchen: 480 };
 

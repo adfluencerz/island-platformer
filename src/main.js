@@ -229,6 +229,7 @@ const inventory = createInventory({
   onOpenChange: (open) => open && keys.clear(),
   onBuild: (piece) => startBuilding(piece),
   onAdd: (id) => readRecipe(id),
+  onEat: (id) => eat(id, false),
   onDrop: ({ id, count }) => dropFromBackpack(id, count),
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
@@ -2338,6 +2339,7 @@ const fishing = createFishing({
   rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : null),
   skill: () => skills.level('fishing'),
   landed: () => skills.gain('fishing', SKILLS.xp.fish),
+  sooner: () => boostOf(meal, 'bite'),
 });
 
 // ---------- The bosses ----------
@@ -2590,8 +2592,12 @@ const known = (dish) => DISHES[dish]?.learn === 'start' || learned.has(dish);
 const cooking = createCooking({
   inventory,
   known,
-  onCampfire: (key, dish) => loadMachine(key, dish),
-  onKitchen: (dish) => inventory.add(dish),
+  onCampfire: (key, dish, n, took) => loadMachine(key, dish, n, took),
+  onKitchen: (dish, n) => {
+    inventory.add(dish, n);
+    houseRoom.cooked();
+    puffs.puff(new THREE.Vector3().copy(houseRoom.potSpot()), { rise: true });
+  },
   onOpenChange: (open) => (open ? keys.clear() : saveGame()),
 });
 
@@ -2606,7 +2612,7 @@ function machinePrompt(key) {
   const piece = buildings.get(key);
   const state = machines.get(key);
   if (state?.pending) return '';
-  if (state && isReady(state, farmHours())) return `E  Collect ${ITEMS[state.item].name.toLowerCase()}`;
+  if (state && isReady(state, farmHours())) return `E  Collect ${state.n > 1 ? `${state.n} ` : ''}${ITEMS[state.item].name.toLowerCase()}`;
   if (state) return `${ITEMS[state.item].name} in ${timeLeft(state.at - farmHours())}`;
   if (piece === 'campfire') return 'E  Cook on the campfire';
   const takes = MACHINES[piece]?.takes;
@@ -2629,30 +2635,39 @@ function useMachine(key) {
   loadMachine(key);
 }
 
-// Into the machine on tile key (what it takes is out of the backpack already;
-// dish: what goes on the campfire)
-function loadMachine(key, dish) {
-  const state = loadFor(buildings.get(key), farmHours(), dish);
-  if (!state) return;
+// Into the machine on tile key (what it takes is out of the backpack already:
+// took, else what the machine takes; dish: what goes on the campfire, n of it)
+function loadMachine(key, dish, n = 1, took) {
+  const state = loadFor(buildings.get(key), farmHours(), dish, n);
+  if (!state) return giveItems(took); // (it can't: back it goes)
   anim.squash = 0.15;
+  steamAt(key);
   if (farmNet) {
-    pendingLoads.set(key, state.takes);
+    pendingLoads.set(key, took ?? state.takes);
     machines.set(key, { ...state, pending: true });
-    farmNet.send({ t: C.LOAD, key, ...(dish && { dish }) });
+    farmNet.send({ t: C.LOAD, key, ...(dish && { dish }), ...(n > 1 && { n }) });
   } else {
-    machines.set(key, state);
+    machines.set(key, took ? { ...state, takes: took } : state); // (the very fish that went in)
   }
-  inventory.notify(`${ITEMS[state.item].name} in ${timeLeft(state.at - farmHours())}`);
+  inventory.notify(`${n > 1 ? `${n} × ` : ''}${ITEMS[state.item].name.toLowerCase()} in ${timeLeft(state.at - farmHours())}`);
+}
+
+// A curl of steam off the machine on tile key (the campfire's dishes)
+function steamAt(key) {
+  if (buildings.get(key) !== 'campfire') return;
+  const [gx, gz] = key.split(',').map(Number);
+  puffs.puff(new THREE.Vector3(gx * TILE_SIZE, 0.7, gz * TILE_SIZE), { rise: true });
 }
 
 function collectMachine(key, state) {
-  if (!inventory.canAdd(state.item)) return inventory.notify('No room in your backpack');
+  if (!inventory.canAdd(state.item, state.n ?? 1)) return inventory.notify('No room in your backpack');
   anim.squash = 0.15;
+  steamAt(key);
   if (farmNet) {
     machines.set(key, { ...state, pending: true });
     return farmNet.send({ t: C.COLLECT, key });
   }
-  inventory.add(state.item);
+  inventory.add(state.item, state.n ?? 1);
   machines.set(key, fillsItself(buildings.get(key), farmHours())); // (a beehive starts on the next jar)
 }
 
@@ -2682,14 +2697,16 @@ function readRecipe(id) {
 // ---------- Eating ----------
 // E with a dish in hand eats it: a boost for a while (cooking.js boostFrom;
 // BOOSTS in shared/balance.js), counting down while you play. One meal at a
-// time: another puts the last one's out.
+// time: another puts the last one's out. A dish double-clicked in the
+// backpack is eaten too. A `shared` one (the farm feast) eaten on a farm with
+// helpers: the room tells everyone there (FEAST), and it is theirs as well.
 let meal = null; // { dish, kinds, level, left (seconds) }, or null
-function eat() {
-  const dish = inventory.selectedId();
-  if (!DISHES[dish] || !inventory.consumeSelected(1)) return;
+function eat(dish = inventory.selectedId(), fromSlot = true) {
+  if (!DISHES[dish] || !(fromSlot ? inventory.consumeSelected(1) : inventory.remove(dish, 1))) return;
   meal = { dish, ...boostFrom(dish) };
   anim.squash = 0.15;
   inventory.notify(`Mmm, ${ITEMS[dish].name.toLowerCase()}! ${boostText(dish)}`);
+  if (DISHES[dish].shared && farmNet) farmNet.send({ t: C.FEAST, dish });
 }
 
 function updateMeal(dt) {
@@ -2941,10 +2958,18 @@ async function joinFarm(id) {
   });
   on(S.MACHINE, (m) => {
     if (m.by === myId) pendingLoads.delete(m.key);
-    const [item, at, takes] = Array.isArray(m.state) ? m.state : [];
-    machines.set(m.key, item && ITEMS[item] ? { item, at, takes: takes ?? {} } : null);
+    const [item, at, takes, n] = Array.isArray(m.state) ? m.state : [];
+    machines.set(m.key, item && ITEMS[item] ? { item, at, takes: takes ?? {}, ...(n > 1 && { n }) } : null);
+    if (m.by !== myId) steamAt(m.key);
     // (collected: ours, into the backpack; no room after all, into the chest)
-    if (m.got && m.by === myId && !inventory.add(m.got)) farmNet.send({ t: C.CHEST_PUT, item: m.got, count: 1 });
+    const got = Number.isInteger(m.n) && m.n > 0 ? m.n : 1;
+    if (m.got && m.by === myId && !inventory.add(m.got, got)) farmNet.send({ t: C.CHEST_PUT, item: m.got, count: got });
+  });
+  on(S.FEAST, (m) => {
+    if (m.by === myId || !DISHES[m.dish]?.shared) return;
+    meal = { dish: m.dish, ...boostFrom(m.dish) };
+    hud.flash('A feast!');
+    inventory.notify(`${remotes.players.get(m.by)?.name || 'A friend'} shared a ${ITEMS[m.dish].name.toLowerCase()}! ${boostText(m.dish)}`);
   });
   on(S.HARVESTED, (m) => {
     const crop = crops.get(m.key);
