@@ -9,7 +9,12 @@
 //              last heard the player was, the way a lobby's spots are;
 //              king of the hill: every tick a player's feet are up on the
 //              hill's crown (where the room last heard they were) counts,
-//              a point a second (GAME_SCORE, with who is up there now)
+//              a point a second (GAME_SCORE, with who is up there now);
+//              last one standing: the tiles drop on the arena's schedule,
+//              and whoever the room hears has fallen in (or is on the islet
+//              where fallen farmers wash up) is out, scoring the seconds they
+//              lasted (GAME_SCORE, with who is still up). It is over once
+//              one is left (or none).
 //   over       the scores to everyone, the prize to the winner (and a few
 //              coins to everyone else who played), and all of them back in
 //              the lobby, where they arrive. The next game can start
@@ -39,11 +44,11 @@ function pick(loot, rand) {
   return [item, min];
 }
 
-// What a game's players get: [[id, [[item, count], ...]], ...] (winner: 0, nobody)
-export function prizesFor(ids, winner, rand = Math.random) {
+// What a game's players get: [[id, [[item, count], ...]], ...] (winners: ids, [] for nobody)
+export function prizesFor(ids, winners, rand = Math.random) {
   const { coins, perPlayer, loot, played: [lo, hi] } = MINIGAMES.prize;
   return ids.map((id) => {
-    if (id !== winner) return [id, [['coin', lo + Math.floor(rand() * (hi - lo + 1))]]];
+    if (!winners.includes(id)) return [id, [['coin', lo + Math.floor(rand() * (hi - lo + 1))]]];
     const [item, count] = pick(loot, rand);
     return [id, [['coin', coins + perPlayer * (ids.length - 1)], [item, count]]];
   });
@@ -54,7 +59,7 @@ export class Party {
   constructor(room) {
     this.room = room;
     this.sign = signFor(room.island);
-    this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at, held }, taken: Set of coin ids, top: ids on the crown, last }
+    this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at, held, out }, taken: Set of coin ids, top: ids on the crown (still up), last }
     this.count = 0; // games so far (each one's id)
     this.nextAt = 0; // when the next one can start (ms)
   }
@@ -89,7 +94,7 @@ export class Party {
       id: ++this.count, kind, seed, arena: arenaFor(kind, seed), phase: 'gathering', until: now + MINIGAMES.gatherMs,
       players: new Map(), taken: new Set(), top: [], last: 0,
     };
-    this.game.players.set(p.id, { score: 0, at: 0, held: 0 });
+    this.game.players.set(p.id, { score: 0, at: 0, held: 0, out: 0 });
     this.room.say(`${p.name} is starting a ${GAMES[kind].name.toLowerCase()}! Join at the signpost in the stone circle (${Math.round(MINIGAMES.gatherMs / 1000)} s).`);
     this.tell(now);
     return '';
@@ -98,7 +103,7 @@ export class Party {
   join(p, now = Date.now()) {
     const g = this.game;
     if (!g || g.phase !== 'gathering' || g.players.has(p.id)) return;
-    g.players.set(p.id, { score: 0, at: 0, held: 0 });
+    g.players.set(p.id, { score: 0, at: 0, held: 0, out: 0 });
     this.tell(now);
   }
 
@@ -161,10 +166,30 @@ export class Party {
     this.room.broadcast({ t: S.GAME_SCORE, scores: [...g.players].map(([id, { score }]) => [id, score]), top });
   }
 
+  // Last one standing: who has fallen in since the last tick (their feet
+  // well under the tiles, or washed up on the islet); over once one is left
+  standOrFall(g, now) {
+    const lasted = Math.floor((now - (g.until - GAMES[g.kind].ms)) / 1000);
+    const fell = g.top.filter((id) => {
+      const p = this.room.players.get(id);
+      return p?.game === g.id && (p.y - GROUND_STAND_Y < -1.2 || g.arena.isLand(p.x, p.z));
+    });
+    for (const id of fell) Object.assign(g.players.get(id), { out: now, score: lasted, at: -now });
+    if (fell.length) {
+      g.top = g.top.filter((id) => !fell.includes(id));
+      this.room.broadcast({ t: S.GAME_SCORE, scores: [...g.players].map(([id, { score }]) => [id, score]), top: g.top });
+    }
+    if (!g.top.length || (g.players.size > 1 && g.top.length < 2)) this.end(now);
+  }
+
   // ---------- Every tick ----------
   tick(now) {
     const g = this.game;
     if (g?.phase === 'playing' && g.kind === 'king_of_hill') this.holdHill(g, now);
+    if (g?.phase === 'playing' && g.kind === 'last_one') {
+      this.standOrFall(g, now);
+      if (!this.game) return;
+    }
     if (!g || now < g.until) {
       // coin rush: over as soon as every coin is picked up
       if (g?.phase === 'playing' && g.kind === 'coin_rush' && g.taken.size >= g.arena.coins.length) this.end(now);
@@ -179,6 +204,7 @@ export class Party {
         const p = this.room.players.get(id);
         Object.assign(p, g.arena.start(i, ids.length), { game: g.id });
       });
+      if (g.kind === 'last_one') g.top = ids; // (all up, to begin with)
       this.room.rosterDirty = true;
       this.room.say(`The ${GAMES[g.kind].name.toLowerCase()} is on: ${ids.map((id) => this.room.players.get(id).name).join(', ')}.`);
       this.tell(now);
@@ -191,17 +217,24 @@ export class Party {
     }
   }
 
-  // It is over: the winner (the most, and of those whoever got there first),
-  // the prizes, and everyone back in the lobby
+  // It is over: the winner (the most, and of those whoever got there first;
+  // last one standing: whoever is still up, or else fell in last, a few if
+  // they are level), the prizes, and everyone back in the lobby
   end(now) {
     const g = this.game;
     this.game = null;
     this.nextAt = now + MINIGAMES.cooldownMs;
+    if (g.kind === 'last_one') {
+      const lasted = Math.floor((now - (g.until - GAMES[g.kind].ms)) / 1000);
+      for (const id of g.top) Object.assign(g.players.get(id), { score: lasted, at: -Number.MAX_SAFE_INTEGER });
+    }
     const scores = [...g.players].sort(([, a], [, b]) => b.score - a.score || a.at - b.at);
     const [best] = scores;
-    const winner = best && best[1].score > 0 ? best[0] : 0;
+    let winners = best && best[1].score > 0 ? scores.filter(([, me]) => me.score === best[1].score && me.at === best[1].at).map(([id]) => id) : [];
+    if (g.kind === 'last_one' && g.players.size === 1 && !g.top.length) winners = []; // (alone, and fell in)
+    const winner = winners[0] ?? 0;
     const ids = scores.map(([id]) => id);
-    const prizes = prizesFor(ids, winner, this.room.rand);
+    const prizes = prizesFor(ids, winners, this.room.rand);
     const pos = [];
     for (const id of ids) {
       const p = this.room.players.get(id);
@@ -212,12 +245,13 @@ export class Party {
     }
     this.room.rosterDirty = true;
     this.room.broadcast({
-      t: S.GAME_END, game: g.kind, seed: g.seed, winner, prizes, pos,
+      t: S.GAME_END, game: g.kind, seed: g.seed, winner, winners, prizes, pos,
       scores: scores.map(([id, { score }]) => [id, score]),
     });
     const { name, scored, nobody } = GAMES[g.kind];
-    const won = this.room.players.get(winner);
-    this.room.say(won ? `${won.name} won the ${name.toLowerCase()} with ${scored(best[1].score)}!` : `The ${name.toLowerCase()} is over: ${nobody}.`);
+    const names = winners.map((id) => this.room.players.get(id)?.name ?? 'Someone');
+    const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+    this.room.say(who ? `${who} won the ${name.toLowerCase()} with ${scored(best[1].score)}!` : `The ${name.toLowerCase()} is over: ${nobody}.`);
     this.tell(now);
   }
 }

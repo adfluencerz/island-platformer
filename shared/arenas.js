@@ -9,12 +9,16 @@
 //
 // An arena is:
 //   game, seed, half: tiles reach this far from the middle
-//   coast: { r, waves }: a round little island, the shore by direction
+//   coast: { r, waves, x, z }: a round little island, the shore by direction
+//     (x, z: its middle, if not the arena's)
 //   bales: [[x, z, w, d, top], ...]: hay bales to climb, solid down to the
 //     ground; a stack is a wide one with a narrower one standing on it
 //   coins: [[x, y, z], ...]: a coin's id is its index (y: where it floats)
 //   hill: [[x, z, w, d, top], ...]: king of the hill's steps, bottom up (the
 //     last is the crown); [] for other games
+//   tiles: [[x, z], ...]: last one standing's floor over the sea (TILE
+//     apart, their tops at 0); order: which falls when (tile ids, the first
+//     to go first), fallAt[id]: ms into the game it drops (Infinity: it stays)
 //   start(i, n): where player i of n starts, round the middle (round the
 //     edge, with a hill there)
 // and answers isLand(x, z), groundAt(x, z) ('grass', 'sand' or null: the sea),
@@ -36,7 +40,11 @@ export const GAMES = {
   },
   king_of_hill: {
     name: 'King of the hill', ms: MINIGAMES.king_of_hill.ms, blurb: 'Stand on top of the hill the longest: bop the others off',
-    unit: ' s', scored: (n) => `${n} s on top`, nobody: 'nobody held the hill',
+    unit: ' s', scored: (n) => `${n} s on top`, nobody: 'nobody held the hill', shove: true,
+  },
+  last_one: {
+    name: 'Last one standing', ms: MINIGAMES.last_one.ms, blurb: 'The tiles drop one by one: be the last one up (shove the others off)',
+    unit: ' s', scored: (n) => `${n} s up`, nobody: 'everyone took a splash', shove: true,
   },
 };
 
@@ -167,28 +175,90 @@ function growKingOfHill(seed, attempt) {
   return finishArena({ game: 'king_of_hill', seed, half: Math.ceil(coast.r + 3), coast, hill, bales, coins: [], startR });
 }
 
+// ---------- Last one standing: a floor of tiles over the sea ----------
+// The tiles drop one by one, from the edge in (more or less), quicker and
+// quicker, till only a couple are left. Whoever falls in washes up on a
+// little islet off to the side to watch, too far to jump back from.
+export const TILE = 2; // the tiles' spacing (each is TILE_GAP narrower)
+export const TILE_GAP = 0.1;
+function growLastOne(seed, attempt) {
+  const stream = streamFor('last_one', seed, attempt);
+  const f = stream('floor');
+  const r = f.rand(6.5, 8);
+  const bumps = [[f.rand(0.4, 0.9), f.int(2, 4), f.rand(0, 6.3)]];
+  const tiles = [];
+  const n = Math.ceil(r / TILE + 1);
+  for (let i = -n; i <= n; i++) {
+    for (let j = -n; j <= n; j++) {
+      const [x, z] = [i * TILE, j * TILE];
+      if (Math.hypot(x, z) < r + waves(Math.atan2(z, x), bumps)) tiles.push([x, z]);
+    }
+  }
+  // the order they fall in: mostly from the edge in, with a good shuffle
+  const o = stream('order');
+  const key = tiles.map(([x, z]) => o.rng() * 0.5 - (Math.hypot(x, z) / r) * 0.5);
+  const order = tiles.map((_, id) => id).sort((a, b) => key[a] - key[b] || a - b);
+  // where fallen farmers wash up
+  const w = stream('watch');
+  const a = w.rand(0, Math.PI * 2);
+  const coast = { r: 3.2, waves: [[0.3, 3, w.rand(0, 6.3)]], x: round1(Math.cos(a) * (r + 11)), z: round1(Math.sin(a) * (r + 11)) };
+  return finishArena({
+    game: 'last_one', seed, half: Math.ceil(r + 11 + coast.r + 3), coast, bales: [], coins: [], tiles, order, startR: MINIGAMES.last_one.startR,
+  });
+}
+
+// When each of last one standing's tiles drops (ms into the game; Infinity:
+// it stays), from the order they go in: one every so often, quicker toward
+// the end. (MINIGAMES.last_one: tuning it doesn't change the arena.)
+function fallTimes(order) {
+  const { ms, graceMs, quietMs, keep, slowdown } = MINIGAMES.last_one;
+  const at = new Array(order.length).fill(Infinity);
+  const m = order.length - keep;
+  const weights = Array.from({ length: m }, (_, k) => 1 + (slowdown - 1) * (1 - k / Math.max(m - 1, 1)));
+  const total = weights.reduce((sum, v) => sum + v, 0);
+  let t = graceMs;
+  for (let k = 0; k < m; k++) {
+    t += (weights[k] / total) * (ms - graceMs - quietMs);
+    at[order[k]] = Math.round(t);
+  }
+  return at;
+}
+
 // The questions everyone asks of an arena
 function finishArena(desc) {
-  const { coast, bales, hill = [], startR = 1.6 } = desc;
+  const { coast, bales, hill = [], startR = 1.6, tiles = [], order = [] } = desc;
   const blocks = [...bales, ...hill];
-  const shoreDist = (x, z) => coast.r + waves(Math.atan2(z, x), coast.waves) - Math.hypot(x, z);
+  const [ox, oz] = [coast.x ?? 0, coast.z ?? 0];
+  const shoreDist = (x, z) => coast.r + waves(Math.atan2(z - oz, x - ox), coast.waves) - Math.hypot(x - ox, z - oz);
   const isLand = (x, z) => shoreDist(x, z) > 0.5;
   const groundAt = (x, z) => (!isLand(x, z) ? null : shoreDist(x, z) < 2 ? 'sand' : 'grass');
   const topAt = (x, z, margin = 0) =>
     blocks.reduce((top, [bx, bz, w, d, t]) => (Math.abs(x - bx) < w / 2 + margin && Math.abs(z - bz) < d / 2 + margin ? Math.max(top, t) : top), 0);
+  // Last one standing: the tile under x, z (its id; -1: none)
+  const tileIds = new Map(tiles.map(([x, z], id) => [`${Math.round(x / TILE)},${Math.round(z / TILE)}`, id]));
+  const tileAt = (x, z) => tileIds.get(`${Math.round(x / TILE)},${Math.round(z / TILE)}`) ?? -1;
   // round the middle, as farmers arrive on an island (shared/level.js
-  // spawnPoint); round the edge for a game with a hill in the middle
+  // spawnPoint); round the edge for a game with a hill in the middle; on the
+  // tiles nearest a ring round the middle, over the sea
   const start = (i, n) => {
     const a = (i / Math.max(n, 1)) * Math.PI * 2;
-    const r = hill.length ? startR : n > 1 ? startR : 0;
-    return { x: round1(Math.cos(a) * r), y: GROUND_STAND_Y, z: round1(Math.sin(a) * r) };
+    const r = hill.length || tiles.length ? startR : n > 1 ? startR : 0;
+    let [x, z] = [Math.cos(a) * r, Math.sin(a) * r];
+    if (tiles.length) [x, z] = tiles.reduce((best, t) => (Math.hypot(t[0] - x, t[1] - z) < Math.hypot(best[0] - x, best[1] - z) ? t : best));
+    return { x: round1(x), y: GROUND_STAND_Y, z: round1(z) };
+  };
+  // Last one standing: where farmer i of n who fell in washes up, on the islet
+  const watch = (i, n) => {
+    const a = (i / Math.max(n, 1)) * Math.PI * 2;
+    return { x: round1(ox + Math.cos(a) * 1.4), y: GROUND_STAND_Y, z: round1(oz + Math.sin(a) * 1.4) };
   };
   // King of the hill: whether a farmer with their feet at y is up on the
   // crown (standing, or jumping about over it)
   const crown = hill.at(-1);
   const onCrown = (x, y, z) =>
     !!crown && Math.abs(x - crown[0]) < crown[2] / 2 + 0.3 && Math.abs(z - crown[1]) < crown[3] / 2 + 0.3 && y > crown[4] - 0.3 && y < crown[4] + 2.5;
-  return { ...desc, hill, isLand, groundAt, topAt, start, crown, onCrown };
+  const fallAt = tiles.length ? fallTimes(order) : [];
+  return { ...desc, hill, tiles, order, isLand, groundAt, topAt, start, crown, onCrown, tileAt, fallAt, watch };
 }
 
 // What every arena must be: a list of what is wrong with it (empty: nothing).
@@ -197,7 +267,15 @@ function finishArena(desc) {
 // inside a bale.
 export function checkArena(arena) {
   const problems = [];
-  if (!arena.isLand(0, 0)) problems.push('the middle is in the sea');
+  if (!arena.tiles.length && !arena.isLand(0, 0)) problems.push('the middle is in the sea');
+  // last one standing: enough floor, and the islet out of a jump's reach of it
+  if (arena.tiles.length) {
+    if (arena.tiles.length < 25) problems.push('too few tiles');
+    const { x, z, r } = arena.coast;
+    if (!arena.isLand(x, z)) problems.push('the islet is in the sea');
+    const gap = Math.min(...arena.tiles.map(([tx, tz]) => Math.hypot(tx - x, tz - z))) - TILE * 0.71 - r - 0.4;
+    if (gap < 6) problems.push(`the islet is a jump from the tiles (${gap.toFixed(1)})`);
+  }
   for (const [x, z, w, d, top] of arena.bales) {
     if (![[-1, -1], [1, -1], [-1, 1], [1, 1]].every(([sx, sz]) => arena.isLand(x + (sx * w) / 2, z + (sz * d) / 2))) problems.push(`the bale at ${x}, ${z} hangs over the sea`);
     if (top > BALE_RISE) {
@@ -221,12 +299,14 @@ export function checkArena(arena) {
   }
   for (let i = 0; i < 8; i++) {
     const { x, z } = arena.start(i, 8);
-    if (!arena.isLand(x, z) || arena.topAt(x, z, 0.6)) problems.push('a start is not on open land');
+    if (arena.tiles.length) {
+      if (arena.tileAt(x, z) < 0 || arena.fallAt[arena.tileAt(x, z)] < MINIGAMES.last_one.graceMs + 3000) problems.push('a start is not on a tile that stays a while');
+    } else if (!arena.isLand(x, z) || arena.topAt(x, z, 0.6)) problems.push('a start is not on open land');
   }
   return problems;
 }
 
-const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill };
+const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill, last_one: growLastOne };
 
 // The arena a kind of game grows from a seed (the same every time,
 // everywhere), or null for a kind there isn't. A seed whose first tries make

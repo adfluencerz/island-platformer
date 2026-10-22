@@ -199,6 +199,7 @@ function enterWorld(name, seed, wire) {
     const map = arenaMap(arenaFor(seed.kind, seed.seed));
     worlds.arena = buildWorld(map);
     worlds.arena.coins = map.coins; // (a view per coin, by id)
+    worlds.arena.dropTiles = (ms) => map.dropTiles(ms); // (last one standing's tiles, as they are ms into the game)
   }
   if (worlds[name] !== world) {
     scene.remove(world.root);
@@ -1167,10 +1168,10 @@ const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
 let bopReady = 0; // (clock time the weapon can swing again)
 
 const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
-// (in king of the hill's arena, empty hands shove: MINIGAMES in shared/balance.js)
-const shoving = () => !!arenaId && partyGame?.kind === 'king_of_hill' && !weaponInHand();
+// (in the arenas of games that say so, GAMES, empty hands shove: MINIGAMES.shove in shared/balance.js)
+const shoving = () => !!arenaId && !!GAMES[partyGame?.kind]?.shove && !weaponInHand();
 const bopWith = () => (shoving() ? 'shove' : weaponInHand());
-const bopStats = (id) => (id === 'shove' ? MINIGAMES.king_of_hill.shove : WEAPONS[id]);
+const bopStats = (id) => (id === 'shove' ? MINIGAMES.shove : WEAPONS[id]);
 const resting = (pos) => !arenaId && Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
 
 // The nearest other farmer within reach (and not resting in the stone circle): { id, pos }, or null
@@ -3196,6 +3197,7 @@ function showParty(game, pos = null) {
     arenaId = game.id;
     coinPending.clear();
     world.coins.forEach((coin, id) => (coin.visible = !game.taken.includes(id)));
+    world.dropTiles(0);
     showLobbyThings(false);
     showRemotes();
     const i = game.players.findIndex(([id]) => id === myId);
@@ -3207,7 +3209,7 @@ function showParty(game, pos = null) {
     readyCount = -1;
     hud.flash('Go!');
   }
-  if (playing) showCrowns(game.top ?? []);
+  if (playing && game.kind === 'king_of_hill') showCrowns(game.top ?? []);
   if (!playing && arenaId) backFromArena(); // (it was called off, or we are out of it)
 }
 
@@ -3249,21 +3251,41 @@ function showCrowns(ids) {
   }
 }
 
-// GAME_SCORE: king of the hill's scores, and who holds the hill now
+// GAME_SCORE: the scores, and who holds the hill now (last one standing: who is still up)
 function partyScores(m) {
   if (!partyGame) return;
   partyGame.top = m.top;
   partyHud.scores(m.scores);
-  if (!arenaId) return;
+  if (!arenaId || partyGame.kind !== 'king_of_hill') return;
   const had = crowns.has(myId);
   showCrowns(m.top);
   if (!had && crowns.has(myId)) hud.flash('King of the hill!');
 }
 
-// Every frame in the arena: the countdown, coins we walk into, crowns
+// What to say at the bottom in the arena
+function arenaPrompt() {
+  if (partyGame?.phase !== 'playing') return '';
+  const shove = shoving() ? 'E: shove' : 'E: bop';
+  if (partyGame.kind === 'king_of_hill') return crowns.has(myId) ? 'You hold the hill!' : `Up the hill! ${shove}`;
+  if (partyGame.kind === 'last_one') return partyGame.top?.includes(myId) ? `Stay up! ${shove}` : 'Splash! Watching from the islet';
+  return '';
+}
+
+// Every frame in the arena: the countdown, coins we walk into, crowns,
+// tiles dropping
 function updateArena() {
   partyHud.update();
-  hud.setPrompt(crowns.has(myId) ? 'You hold the hill!' : partyGame?.kind === 'king_of_hill' && partyGame.phase === 'playing' ? (shoving() ? 'E: shove' : 'Up the hill! E: bop') : '');
+  hud.setPrompt(arenaPrompt());
+  if (partyGame?.kind === 'last_one') {
+    const arena = arenaFor(partyGame.kind, partyGame.seed);
+    world.dropTiles(partyGame.phase === 'playing' ? GAMES.last_one.ms - (partyHud.endsAt - performance.now()) : 0);
+    // fell in: wash up on the islet (and out, once the lobby hears)
+    if (player.position.y < GROUND_STAND_Y - 1.5) {
+      const i = Math.max(0, partyGame.players.findIndex(([id]) => id === myId));
+      putDown(arena.watch(i, partyGame.players.length));
+      if (partyGame.phase === 'playing') hud.flash('Splash!');
+    }
+  }
   const t = performance.now() / 1000;
   for (const [id, crown] of crowns) {
     const pos = id === myId ? player.position : remotes.positionOf(id);
@@ -3320,7 +3342,7 @@ function partyOver(m) {
       return count > 1 && !name.endsWith('s') ? `${name}s` : name;
     };
     partyHud.results(m, got, named);
-    if (m.winner === myId) hud.flash('You won!');
+    if ((m.winners ?? [m.winner]).includes(myId)) hud.flash('You won!');
   } else {
     partyHud.show(null, myId);
   }
