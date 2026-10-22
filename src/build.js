@@ -140,6 +140,12 @@ const POND_Z = -1; // its middle, from the middle of the tile it was built on
 const POND_IN = 1.25; // half the water's width
 const waterMat = mat(0x3d8fb8, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
 const padMat = mat(0x4f9e3c);
+// ---------- The aquarium ----------
+// Where in it the fish swim, from the middle of its tile: [x, y, z] of the
+// middle, and half its size
+export const TANK_BOX = { at: [0, 0.84, 0], half: [0.36, 0.16, 0.18] };
+const tankWaterMat = mat(0x6fc3e0, { roughness: 0.1, transparent: true, opacity: 0.3, depthWrite: false });
+const sandMat = mat(0xe6cf98);
 
 function pond(g, solids, r) {
   part(g, box, MATS.soil, 0, 0.02, POND_Z, POND_IN * 2, 0.04, POND_IN * 2);
@@ -1473,6 +1479,23 @@ function model(id, gx, gz, joined) {
     part(g, box, MATS.post, 0, 0.8, 0.12, 0.86, 0.06, 0.06); // the beater
     for (const s of [-1, 1]) part(g, box, MATS.post, s * 0.4, 0.8, 0.06, 0.04, 0.04, 0.12);
     solids.push({ x: 0, y: 0.75, z: 0, w: 0.96, h: 1.5, d: 0.6 });
+  } else if (id === 'aquarium') {
+    // a glass tank on a little wooden cabinet: sand, a few weeds and a stone
+    // on the bottom, the water in it, and the fish put in swimming about
+    // (src/machines.js draws those, inside TANK_BOX)
+    part(g, box, MATS.plankB, 0, 0.25, 0, 0.94, 0.5, 0.56);
+    part(g, box, MATS.plankA, 0, 0.27, 0.285, 0.8, 0.36, 0.02).castShadow = false;
+    part(g, box, MATS.brass, 0, 0.3, 0.3, 0.12, 0.04, 0.02).castShadow = false;
+    part(g, box, MATS.post, 0, 0.52, 0, 0.98, 0.04, 0.6);
+    part(g, box, sandMat, 0, 0.58, 0, 0.88, 0.08, 0.5).castShadow = false;
+    part(g, ball, MATS.stone, 0.24, 0.63, -0.08, 0.16, 0.12, 0.14);
+    for (let i = 0; i < 4; i++) part(g, box, MATS.leaf, -0.32 + i * 0.05, 0.75, -0.14 + (i % 2) * 0.06, 0.03, 0.3 - (i % 3) * 0.06, 0.03).castShadow = false;
+    part(g, box, tankWaterMat, 0, 0.84, 0, 0.88, 0.44, 0.5).castShadow = false;
+    // the glass, edged in dark wood
+    part(g, box, MATS.glass, 0, 0.86, 0, 0.92, 0.6, 0.54).castShadow = false;
+    for (const x of [-0.46, 0.46]) for (const z of [-0.27, 0.27]) part(g, box, MATS.bark, x, 0.86, z, 0.04, 0.6, 0.04);
+    for (const z of [-0.27, 0.27]) part(g, box, MATS.bark, 0, 1.16, z, 0.96, 0.04, 0.04);
+    solids.push({ x: 0, y: 0.58, z: 0, w: 0.98, h: 1.16, d: 0.6 });
   } else if (id === 'campfire') {
     // a ring of stones round the ashes, logs leant together and a fire in
     // them (it flickers, and lights the ground round it at night), and a

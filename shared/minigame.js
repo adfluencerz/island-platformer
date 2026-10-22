@@ -1,12 +1,16 @@
 // A lobby's party games (shared/room.js keeps one Party). One at a time:
 //
-//   gathering  someone pressed E at the signpost (shared/arenas.js signFor):
+//   gathering  someone pressed E at the signpost (shared/arenas.js signFor),
+//              or for a fishing contest at the board by the pond (boardFor,
+//              shared/fishing.js):
 //              everyone in the lobby hears, and has MINIGAMES.gatherMs to join
 //   ready      whoever joined is in the arena, grown from the game's seed
 //              (shared/arenas.js), at their start, for readyMs: a look about
 //   playing    the game, for its time (GAMES); coin rush: walking into a
 //              coin (GAME_COIN) scores it, checked against where the room
-//              last heard the player was, the way a lobby's spots are
+//              last heard the player was, the way a lobby's spots are;
+//              fishing contest: every fish landed off the arena's shore
+//              scores its weight (the room's CAST and REEL, shared/room.js)
 //   over       the scores to everyone, the prize to the winner (and a few
 //              coins to everyone else who played), and all of them back in
 //              the lobby, where they arrive. The next game can start
@@ -20,6 +24,8 @@
 import { S } from './protocol.js';
 import { GAMES, arenaFor, arenaSeed, signFor, SIGN_REACH } from './arenas.js';
 import { MINIGAMES } from './balance.js';
+import { boardFor, weightText, BOARD_REACH } from './fishing.js';
+import { STONE_CIRCLE } from './worldgen.js';
 
 const COIN_REACH = 1.8; // the page picks a coin up within 0.6; the slack covers a position up to ~150 ms old
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -50,6 +56,14 @@ export class Party {
   constructor(room) {
     this.room = room;
     this.sign = signFor(room.island);
+    // where a fishing contest starts: the board by the pond, clear of the
+    // trees, rocks and spots, and out of the stone circle (the signpost's)
+    const { island, wilds, spots } = room;
+    const sites = [...wilds.trees, ...wilds.rocks].flatMap((w) => w.sites);
+    this.board = boardFor(island, (x, z) =>
+      Math.hypot(x - island.spawn.x, z - island.spawn.z) < STONE_CIRCLE + 1.5 || Math.hypot(x - this.sign.x, z - this.sign.z) < SIGN_REACH + BOARD_REACH + 1 ||
+      sites.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 1.7) || spots.some((s) => Math.hypot(s.x - x, s.z - z) < 1.3) ||
+      island.terraces.some(([tx, tz, w, d]) => Math.abs(x - tx) < w / 2 + 0.9 && Math.abs(z - tz) < d / 2 + 0.9));
     this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at }, taken: Set of coin ids }
     this.count = 0; // games so far (each one's id)
     this.nextAt = 0; // when the next one can start (ms)
@@ -78,14 +92,19 @@ export class Party {
     if (!Object.hasOwn(GAMES, kind)) return 'There is no such game.';
     if (this.game) return 'A game is on already.';
     if (now < this.nextAt) return 'The next game can start in a few seconds.';
-    if (Math.hypot(p.x - this.sign.x, p.z - this.sign.z) > SIGN_REACH + 0.6 || Math.abs(p.y - 0.8) > 1.5) return 'Start a game at the signpost.';
+    const fishing = kind === 'fishing_contest';
+    const at = fishing ? this.board : this.sign;
+    if (Math.hypot(p.x - at.x, p.z - at.z) > (fishing ? BOARD_REACH : SIGN_REACH) + 0.6 || Math.abs(p.y - 0.8) > 1.5) {
+      return fishing ? 'Start a fishing contest at the board by the pond.' : 'Start a game at the signpost.';
+    }
     const seed = arenaSeed(this.room.rand);
     this.game = {
       id: ++this.count, kind, seed, arena: arenaFor(kind, seed), phase: 'gathering', until: now + MINIGAMES.gatherMs,
       players: new Map(), taken: new Set(),
     };
     this.game.players.set(p.id, { score: 0, at: 0 });
-    this.room.say(`${p.name} is starting a ${GAMES[kind].name.toLowerCase()}! Join at the signpost in the stone circle (${Math.round(MINIGAMES.gatherMs / 1000)} s).`);
+    const where = fishing ? 'the board by the pond' : 'the signpost in the stone circle';
+    this.room.say(`${p.name} is starting a ${GAMES[kind].name.toLowerCase()}! Join at ${where} (${Math.round(MINIGAMES.gatherMs / 1000)} s).`);
     this.tell(now);
     return '';
   }
@@ -103,6 +122,7 @@ export class Party {
     const g = this.game;
     if (!g?.players.has(p.id)) return;
     g.players.delete(p.id);
+    p.line = null; // (a line out in the arena, or for the contest, comes in)
     if (p.game) {
       p.game = 0;
       this.room.rosterDirty = true;
@@ -129,6 +149,21 @@ export class Party {
     me.score++;
     me.at = now;
     this.room.broadcast({ t: S.GAME_COIN, id, by: p.id, score: me.score });
+  }
+
+  // Fishing contest: the game p is fishing in (null: none, or not now)
+  fishingFor(p) {
+    const g = this.game;
+    return g?.kind === 'fishing_contest' && g.phase === 'playing' && p.game === g.id && g.players.has(p.id) ? g : null;
+  }
+
+  // Fishing contest: p landed a fish of `grams`
+  landed(p, grams, now = Date.now()) {
+    const me = this.fishingFor(p) && this.game.players.get(p.id);
+    if (!me || !(grams > 0)) return;
+    me.score += Math.round(grams);
+    me.at = now;
+    this.room.broadcast({ t: S.GAME_SCORE, by: p.id, score: me.score });
   }
 
   // ---------- Every tick ----------
@@ -175,6 +210,7 @@ export class Party {
     for (const id of ids) {
       const p = this.room.players.get(id);
       p.game = 0;
+      p.line = null;
       const at = this.room.spawnFor(id);
       Object.assign(p, at);
       pos.push([id, round2(at.x), round2(at.y), round2(at.z)]);
@@ -186,7 +222,11 @@ export class Party {
     });
     const name = GAMES[g.kind].name.toLowerCase();
     const won = this.room.players.get(winner);
-    this.room.say(won ? `${won.name} won the ${name} with ${best[1].score} coin${best[1].score === 1 ? '' : 's'}!` : `The ${name} is over: nobody picked up a coin.`);
+    if (g.kind === 'fishing_contest') {
+      this.room.say(won ? `${won.name} won the ${name} with ${weightText(best[1].score)} of fish!` : `The ${name} is over: nobody landed a fish.`);
+    } else {
+      this.room.say(won ? `${won.name} won the ${name} with ${best[1].score} coin${best[1].score === 1 ? '' : 's'}!` : `The ${name} is over: nobody picked up a coin.`);
+    }
     this.tell(now);
   }
 }

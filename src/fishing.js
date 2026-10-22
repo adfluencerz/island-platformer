@@ -2,14 +2,16 @@ import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { RARE } from '../shared/level.js';
 import { C } from '../shared/protocol.js';
-import { CAST_EVERY, castLine } from '../shared/fishing.js';
+import { CAST_EVERY, castLine, weightText } from '../shared/fishing.js';
 
 // ---------- Fishing, on the page ----------
 // With a rod in hand, E facing water casts (the rules: shared/fishing.js).
 // The bobber floats a while, then dips with a splash and a "!": E then (the
-// Use button on a phone, which pulses, and the phone buzzes) lands it. Too
-// slow and it gets away; E before anything bites just reels in, and walking
-// off or putting the rod away does too.
+// Use button on a phone, which pulses, and the phone buzzes) lands it: out
+// it leaps, with a splash, and a fish's weight goes in the journal. Too slow
+// and it gets away; E before anything bites just reels in, and walking off or
+// putting the rod away does too. Bait or a lure in the backpack goes on the
+// hook by itself, and one is used up with each catch (TACKLE).
 //
 // On a farm the page rolls the catch itself; in a lobby the room does: CAST
 // goes off, BITE comes back when something bites, REEL goes off and CAUGHT
@@ -118,8 +120,10 @@ export function createTackle(scene) {
 // null. hour(): the time of day, in game hours. lobby(): the lobby's
 // connection while we are in one (null: on a farm, where the page rolls).
 // rodInHand(): the rod's item id, or null. skill(): our fishing level
-// (src/skills.js). landed(): something came up on the line (for the XP).
-export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed }) {
+// (src/skills.js). landed(item, grams): something came up on the line (for
+// the XP, and the journal: says { first, record }, a fish's first or its
+// heaviest). ripples: src/ripples.js.
+export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed, ripples }) {
   const tackle = createTackle(scene);
   const tip = new THREE.Vector3();
   let line = null; // { n, rod, at, from, phase: 'out' | 'bite' | 'wait', conn, local, biteAt, closeAt }
@@ -136,14 +140,17 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     castAt = now;
     const rod = rodInHand();
     const conn = lobby();
-    line = { n: ++casts, rod, at, from: { x: player.position.x, z: player.position.z }, phase: 'out', conn, local: null };
+    // (bait and a lure: none in a contest, where every rod is alike)
+    const hooked = { bait: at.water !== 'contest' && inventory.count('bait') > 0, lure: at.water !== 'contest' && inventory.count('lure') > 0 };
+    line = { n: ++casts, rod, at, from: { x: player.position.x, z: player.position.z }, phase: 'out', conn, local: null, hooked };
     if (conn) {
-      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill() });
+      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill(), ...(hooked.bait && { bait: true }), ...(hooked.lure && { lure: true }) });
     } else {
-      line.local = castLine(at.water, rod, hour(), skill());
+      line.local = castLine(at.water, rod, hour(), skill(), Math.random, hooked);
       line.biteAt = now + line.local.bite * 1000;
     }
     farmer.swing(); // (a flick of the rod)
+    setTimeout(() => line?.at === at && ripples.ring(at.x, at.y, at.z, 0.9), 250); // (plop)
   }
 
   // Something bit: E within window ms
@@ -161,15 +168,24 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     touch.setBite(false);
   }
 
-  // What came up on the line: { item, count, items? } (item null: it got away)
-  function land({ item, count, items }) {
+  // What came up on the line: { item, count, grams?, items? } (item null: it got away)
+  function land({ item, count, grams, items }) {
+    const was = line;
     end();
     farmer.swing();
     if (!item) {
       inventory.notify('It got away…');
       return;
     }
-    landed();
+    // out of the water it leaps, to us
+    if (was) {
+      const { x, y, z } = was.at;
+      ripples.splash(x, y, z);
+      ripples.leap(items ? items[0][0] : item, new THREE.Vector3(x, y, z), new THREE.Vector3(player.position.x, player.position.y + 0.4, player.position.z));
+      // the bait and lure on the hook are used up
+      for (const it of ['bait', 'lure']) if (was.hooked?.[it] && inventory.count(it)) inventory.remove(it, 1);
+    }
+    const { first, record } = landed(item, grams ?? 0);
     if (items) {
       for (const [it, n] of items) inventory.add(it, n);
       const rare = items.find(([it]) => RARE[it]);
@@ -177,7 +193,9 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
       return;
     }
     inventory.add(item, count);
-    hud.flash(RARE[item] ? `${RARE[item]}!` : item === 'old_boot' ? 'An old boot…' : item === 'wood' ? 'Driftwood!' : `${ITEMS[item].name}!`);
+    const name = RARE[item] ?? ITEMS[item].name;
+    const what = item === 'old_boot' ? 'An old boot…' : item === 'wood' ? 'Driftwood!' : grams ? `${name}, ${weightText(grams)}!` : `${name}!`;
+    hud.flash(record ? `${what} Your heaviest!` : first ? `${what} A new fish!` : what);
   }
 
   // Reel in, nothing on it (walked off, put the rod away, left)
@@ -234,6 +252,8 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     },
     // 'out', 'bite' or null, for the farmer's pose and what everyone else sees (STATEF)
     state: () => (line ? (line.phase === 'bite' ? 'bite' : 'out') : null),
+    // where our bobber floats ({ x, y, z }), or null: no line out
+    bobber: () => (line && line.phase !== 'wait' ? line.at : null),
 
     update(t) {
       if (line && line.phase !== 'wait' && (!rodInHand() || rodInHand() !== line.rod || Math.hypot(player.position.x - line.from.x, player.position.z - line.from.z) > WALK_OFF)) reelIn();

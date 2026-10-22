@@ -16,8 +16,8 @@ import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/const
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
-import { FISHING, RODS, SHOP } from '../shared/balance.js';
-import { biting, castLine } from '../shared/fishing.js';
+import { FISHING, RODS, SHOP, FISH_WEIGHT, TACKLE, AQUARIUM } from '../shared/balance.js';
+import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, BOARD_SIZE } from '../shared/fishing.js';
 import { fingerprint } from './seed-fingerprint.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
@@ -1066,6 +1066,124 @@ await test('fishing in a lobby: the room rolls it, a bite in time lands it, a la
   assert.equal(a.conn.last(S.CAUGHT).n, 5, 'casting again too soon');
 });
 
+await test('fish weigh what their kind does; bait brings bites sooner, a lure rarer fish; the journal keeps only fish there are', () => {
+  for (const { id } of FISH_LIST) assert.ok(FISH_WEIGHT[id] && SHOP[id]?.sell, id);
+  for (const table of Object.values(FISHING)) for (const [item] of table) if (!['chest', 'key', 'wood', 'seaweed', 'old_boot'].includes(item)) assert.ok(FISH_WEIGHT[item], `${item} has a weight`);
+  assert.ok(FISHING.contest.every(([item]) => FISH_WEIGHT[item]), 'a contest is all fish');
+  const rand = mulberry32(9);
+  let plain = 0;
+  let baited = 0;
+  for (let i = 0; i < 300; i++) {
+    const line = castLine('sea', 'sturdy_rod', 10, 1, rand);
+    if (FISH_WEIGHT[line.item]) {
+      const [lo, hi] = FISH_WEIGHT[line.item];
+      assert.ok(Number.isInteger(line.grams) && line.grams >= lo && line.grams <= hi, `${line.item} ${line.grams}`);
+    } else {
+      assert.equal(line.grams, undefined, `${line.item} has no weight`);
+    }
+    plain += line.bite;
+    baited += castLine('sea', 'sturdy_rod', 10, 1, rand, { bait: true }).bite;
+  }
+  assert.ok(Math.abs(baited / plain - TACKLE.bait.bite) < 0.1, 'bait: bites sooner');
+  const rare = (lure) => biting('lobby', 'fishing_rod', 12, lure).filter(([, , r]) => r >= 2).reduce((sum, [, w]) => sum + w, 0);
+  assert.ok(rare(true) > rare(false), 'a lure: rarer fish');
+  assert.deepEqual(cleanLog({ trout: [3, 1200.4], nope: [1, 5], salmon: [0, 9], carp: ['x', 1] }), { trout: [3, 1200] });
+  assert.equal(weightText(85), '85 g');
+  assert.equal(weightText(1460), '1.5 kg');
+  assert.equal(weightText(32400), '32 kg');
+});
+
+await test('a lobby\'s board of its biggest catches: heaviest first, a farmer once, a new heaviest heard of', () => {
+  let board = [];
+  for (const [name, item, g] of [['A', 'trout', 500], ['B', 'carp', 3000], ['A', 'salmon', 2000], ['C', 'trout', 100], ['D', 'trout', 200], ['E', 'trout', 300], ['F', 'trout', 400]]) board = onBoard(board, name, item, g) ?? board;
+  assert.equal(board.length, BOARD_SIZE);
+  assert.deepEqual(board.slice(0, 2), [['B', 'carp', 3000], ['A', 'salmon', 2000]]);
+  assert.equal(onBoard(board, 'A', 'minnow', 10), null, 'lighter than their own');
+  assert.equal(onBoard(board, 'G', 'minnow', 10), null, 'lighter than the lightest on a full board');
+  for (const seed of ['classic', ...Array.from({ length: 20 }, (_, i) => `board-${i}-v${CURRENT_GEN}`)]) {
+    const island = islandFor(seed);
+    const at = new Room({ code: 'B', seed }).party.board;
+    assert.ok(island.isLand(at.x, at.z) && !island.inPond(at.x, at.z), seed);
+    assert.ok(Math.hypot(at.x - island.pond.x, at.z - island.pond.z) < island.pond.r + 7, `${seed}: by the pond`);
+    const sign = signFor(island);
+    assert.ok(Math.hypot(at.x - sign.x, at.z - sign.z) > 5, `${seed}: well away from the signpost`);
+  }
+
+  const room = new Room({ code: 'BOARD', rand: mulberry32(3) });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  assert.deepEqual(a.conn.last(S.WELCOME).board, []);
+  assert.deepEqual(a.conn.last(S.WELCOME).boardAt, room.party.board);
+  const shore = room.island.coastAt(0) - 1.5;
+  const land = (who, n, item, grams) => {
+    who.p.castAt = 0;
+    room.message(who.p, { t: C.STATE, x: shore, y: 0.8, z: 0, yaw: Math.PI / 2, f: 1 });
+    room.message(who.p, { t: C.CAST, n, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+    Object.assign(who.p.line, { item, count: 1, grams, items: undefined, biteAt: Date.now() - 1 });
+    room.update();
+    room.message(who.p, { t: C.REEL });
+  };
+  land(a, 1, 'trout', 900);
+  assert.equal(a.conn.last(S.CAUGHT).grams, 900);
+  assert.deepEqual(b.conn.last(S.BOARD).board, [['A', 'trout', 900]]);
+  assert.ok(!b.conn.all(S.CHAT).some((m) => /biggest catch/.test(m.text)), 'not for the very first');
+  land(b, 1, 'salmon', 4200);
+  assert.deepEqual(a.conn.last(S.BOARD).board, [['B', 'salmon', 4200], ['A', 'trout', 900]]);
+  assert.ok(a.conn.all(S.CHAT).some((m) => m.text === 'B landed a 4.2 kg salmon: the biggest catch on the board!'));
+  // kept with the lobby
+  assert.deepEqual(Room.fromSave(JSON.parse(JSON.stringify(room.toSave()))).board, room.board);
+});
+
+await test('a fishing contest: started at the board by the pond, fished off the arena\'s shore, won by the most weight', () => {
+  const room = new Room({ code: 'DERBY', rand: mulberry32(5) });
+  const [a, b, c] = ['Ann', 'Bo', 'Cy'].map((name) => join(room, name));
+  const stand = (who, x, y, z) => room.message(who.p, { t: C.STATE, x, y, z, yaw: 0, f: 1 });
+  const { sign } = room.party;
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'fishing_contest' });
+  assert.equal(room.party.game, null, 'not at the signpost');
+  assert.match(a.conn.last(S.CHAT).text, /board by the pond/);
+  const board = room.party.board;
+  stand(a, board.x, 0.8, board.z);
+  room.message(a.p, { t: C.GAME_START, game: 'fishing_contest' });
+  assert.match(c.conn.last(S.CHAT).text, /Ann is starting a fishing contest! Join at the board by the pond/);
+  room.message(b.p, { t: C.GAME_JOIN });
+  const now = Date.now();
+  room.update(now + MINIGAMES.gatherMs + 10);
+  const { game } = c.conn.last(S.GAME);
+  const arena = arenaFor('fishing_contest', game.seed);
+  assert.deepEqual(checkArena(arena), []);
+  // off the arena's shore (not the lobby's water): only once it is on
+  const shore = arena.coast.r - 1;
+  stand(a, shore, 0.8, 0);
+  room.message(a.p, { t: C.CAST, n: 1, x: shore + 3, z: 0, rod: 'fishing_rod' });
+  assert.equal(a.conn.last(S.CAUGHT).n, 1, 'not while getting ready');
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20);
+  assert.equal(room.party.game.phase, 'playing');
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 2, x: shore - 3, z: 0, rod: 'fishing_rod' });
+  assert.equal(a.conn.last(S.CAUGHT).n, 2, 'not on the arena\'s land');
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 3, x: shore + 3, z: 0, rod: 'golden_rod', bait: true, lure: true });
+  assert.ok(a.p.line && FISHING.contest.some(([item]) => item === a.p.line.item), 'the contest\'s fish');
+  Object.assign(a.p.line, { item: 'carp', count: 1, grams: 2500, items: undefined, biteAt: Date.now() - 1 });
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + 30);
+  a.p.line.biteAt = Date.now() - 1; // (the room's clock went on: a bite just now)
+  room.message(a.p, { t: C.REEL });
+  assert.equal(a.conn.last(S.CAUGHT).item, 'carp');
+  assert.deepEqual(c.conn.last(S.GAME_SCORE), { t: S.GAME_SCORE, by: a.p.id, score: 2500 });
+  // c is in the lobby: no fishing in the arena's sea from there
+  stand(c, shore, 0.8, 0);
+  room.message(c.p, { t: C.CAST, n: 1, x: shore + 3, z: 0, rod: 'fishing_rod' });
+  assert.equal(c.conn.last(S.CAUGHT)?.n, 1);
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.fishing_contest.ms + 50);
+  const end = c.conn.last(S.GAME_END);
+  assert.equal(end.winner, a.p.id);
+  assert.ok(c.conn.all(S.CHAT).some((m) => m.text === 'Ann won the fishing contest with 2.5 kg of fish!'));
+  assert.equal(a.p.game, 0);
+  assert.equal(a.p.line, null);
+});
+
 console.log('keeping lobbies');
 await test('a saved room comes back as it was: spots, felled trees, broken rocks, clock, seats', () => {
   const room = new Room({ code: 'SAVE01', name: 'Kept', seed: 'mossy-cove-7', inviteOnly: true, maxPlayers: 4 });
@@ -1669,6 +1787,23 @@ await test('a farm room: machines take things in, and whoever is next to one whe
   const honey = ann.conn.last(S.MACHINE);
   assert.equal(honey.got, 'honey');
   assert.ok(honey.state[1] > room.hours() + 23, 'the next jar, a day off');
+  // an aquarium: fish go in, up to how many it holds, and come back out
+  room.message(bo.p, { t: C.BUILD, key: '5,4', piece: 'aquarium' });
+  assert.equal(ann.conn.last(S.BUILT).piece, 'aquarium');
+  room.message(bo.p, { t: C.LOAD, key: '5,4', dish: 'cheese' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'load', 'only fish');
+  room.message(bo.p, { t: C.LOAD, key: '5,4', dish: 'koi' });
+  room.message(bo.p, { t: C.LOAD, key: '5,4', dish: 'trout' });
+  assert.deepEqual(ann.conn.last(S.MACHINE).state[2], { koi: 1, trout: 1 });
+  for (let i = 2; i < AQUARIUM.holds; i++) room.message(bo.p, { t: C.LOAD, key: '5,4', dish: 'koi' });
+  room.message(bo.p, { t: C.LOAD, key: '5,4', dish: 'koi' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'load', 'full');
+  room.message(ann.p, { t: C.COLLECT, key: '5,4', item: 'trout' });
+  assert.deepEqual([bo.conn.last(S.MACHINE).got, bo.conn.last(S.MACHINE).state[2]], ['trout', { koi: AQUARIUM.holds - 1 }]);
+  rooms.write(room);
+  assert.deepEqual(new FarmRoom({ farm: a, admit: () => null }).machines.get('5,4').takes, { koi: AQUARIUM.holds - 1 });
+  room.message(bo.p, { t: C.UNBUILD, key: '5,4' });
+  assert.deepEqual(ann.conn.last(S.UNBUILT).back, { koi: AQUARIUM.holds - 1 }, 'taken down, the fish come back');
   room.close();
 });
 

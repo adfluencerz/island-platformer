@@ -32,18 +32,18 @@ export const C = {
   CHEST_SPEND: 'chestSpend', // { id, items: { item: count } }: use up some of what is in the chest, for what the workbench makes (the owner only); answered with CHEST_SPENT
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture()), and the farm's upgrade `levels`
-  CAST: 'cast', // { n, x, z, rod, level }: cast the line, the bobber landing on the water at x, z (n: the page's count of its casts, said back in BITE and CAUGHT; rod: the one in hand, RODS in shared/balance.js; level: our fishing skill's; in a lobby)
+  CAST: 'cast', // { n, x, z, rod, level, bait?, lure? }: cast the line, the bobber landing on the water at x, z (n: the page's count of its casts, said back in BITE and CAUGHT; rod: the one in hand, RODS in shared/balance.js; level: our fishing skill's; bait, lure: we have some, TACKLE; in a lobby, or its fishing contest)
   REEL: 'reel', // {}: E with the line out: lands what bit if it is in time (BITE), else just reels in
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
   BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
-  LOAD: 'load', // { key, dish? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js)
-  COLLECT: 'collect', // { key }: what the machine on tile key has ready, for the backpack
+  LOAD: 'load', // { key, dish? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js, or the fish going into an aquarium)
+  COLLECT: 'collect', // { key, item? }: what the machine on tile key has ready, for the backpack (item: the fish to take out of an aquarium)
 };
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, game, resumed } (game: as for GAME) (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z, from, wait], ...] (as for DROP); giants: Giants toSave(), shared/giants.js)
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, game, board, boardAt, resumed } (board: as for BOARD; boardAt: where it stands, { x, z, yaw }, shared/fishing.js boardFor) (game: as for GAME) (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z, from, wait], ...] (as for DROP); giants: Giants toSave(), shared/giants.js)
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, game, away }] } (game: the party game id they are off in, 0: in the lobby)
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
@@ -60,10 +60,12 @@ export const S = {
   DROP: 'drop', // { id, item, count, x, y, z, from, wait }: something dropped (knocked loose by a bop, or THROW), for anyone to walk into (but from, the farmer it came from, for wait ms)
   GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire()), whenever that changes
   GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
+  GAME_SCORE: 'gameScore', // { by, score }: player `by` has score now (a fishing contest: grams landed)
   GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (winner: 0, nobody)
   PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
   BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms
-  CAUGHT: 'caught', // { n, item, count, items? }: what we landed on cast n (item null: nothing, it got away; 'chest': a little chest, its items [[item, count], ...])
+  CAUGHT: 'caught', // { n, item, count, grams?, items? }: what we landed on cast n (item null: nothing, it got away; grams: a fish's weight; 'chest': a little chest, its items [[item, count], ...])
+  BOARD: 'board', // { board, by? }: the lobby's board of its biggest catches, [[name, item, grams], ...] (shared/fishing.js onBoard), after player `by` got on it
   DROP_DENY: 'dropDeny', // { id }: that pickup did not count (someone was quicker, or too far)
   THROW_DENY: 'throwDeny', // { item, count }: that could not be dropped here: back into the backpack with it
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)

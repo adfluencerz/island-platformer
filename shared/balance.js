@@ -77,7 +77,21 @@ export const SHOP = {
   rainbow_trout: { sell: 110 },
   glowfish: { sell: 220 },
   golden_carp: { sell: 450 },
+  herring: { sell: 22 },
+  lanternfish: { sell: 75 },
+  tuna: { sell: 260 },
+  swordfish: { sell: 600 },
+  bream: { sell: 35 },
+  goldfish: { sell: 60 },
+  pike: { sell: 190 },
+  carp: { sell: 55 },
+  grayling: { sell: 85 },
+  starfin: { sell: 280 },
+  sturgeon: { sell: 650 },
   old_boot: { sell: 2 },
+  // for the line (TACKLE)
+  bait: { price: 4 },
+  lure: { price: 60, sell: 20 },
   // made by the machines (MACHINES)
   cheese: { sell: 150 },
   mayonnaise: { sell: 65 },
@@ -356,6 +370,7 @@ export const BUILD_COSTS = {
   garden_bench: { wood: 6 },
   planter: { planter: 1 },
   pond: { stone: 30 },
+  aquarium: { wood: 12, stone: 8, seashell: 2 },
   ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, boss]) => [
     [`${id}_portal`, { [boss.key]: boss.pieces }], // (a boss's portal: a full set of its key pieces)
     [boss.statue, { [boss.statue]: 1 }], // (its statue: the one it gave)
@@ -494,25 +509,50 @@ export const CAST_EVERY = 1200; // ms: the fewest between two casts
 // little chest of loot (FISHED_CHEST); wood is driftwood.
 export const FISHING = {
   sea: [
-    ['sardine', 30, 0], ['mackerel', 22, 0], ['sea_bass', 12, 1],
-    ['pufferfish', 4, 2, { rod: 1 }], ['moonfish', 5, 2, { hours: [20, 5] }],
+    ['sardine', 30, 0], ['herring', 20, 0], ['mackerel', 22, 0], ['sea_bass', 12, 1],
+    ['lanternfish', 7, 1, { hours: [18, 23] }], ['pufferfish', 4, 2, { rod: 1 }], ['moonfish', 5, 2, { hours: [20, 5] }],
+    ['tuna', 3, 2, { rod: 1, hours: [5, 12] }], ['swordfish', 1, 3, { rod: 2 }],
     ['seaweed', 6, 0], ['old_boot', 5, 0], ['wood', 4, 0, { count: [2, 4] }],
     ['key', 0.8, 2], ['chest', 1.5, 2],
   ],
   pond: [
-    ['minnow', 30, 0], ['perch', 22, 0], ['sunfish', 10, 1, { hours: [9, 17] }],
-    ['catfish', 10, 1, { hours: [18, 6] }], ['koi', 4, 2, { rod: 1 }],
+    ['minnow', 30, 0], ['perch', 22, 0], ['bream', 16, 0], ['goldfish', 9, 1],
+    ['sunfish', 10, 1, { hours: [9, 17] }], ['catfish', 10, 1, { hours: [18, 6] }],
+    ['koi', 4, 2, { rod: 1 }], ['pike', 3, 2, { rod: 1, hours: [5, 11] }],
     ['old_boot', 4, 0], ['key', 0.6, 2], ['chest', 1, 2],
   ],
   lobby: [
-    ['trout', 26, 0], ['salmon', 18, 1], ['rainbow_trout', 9, 1],
-    ['glowfish', 4, 2, { hours: [21, 4] }], ['golden_carp', 1.2, 3, { rod: 1 }],
+    ['trout', 26, 0], ['carp', 18, 0], ['salmon', 18, 1], ['grayling', 9, 1, { hours: [6, 12] }], ['rainbow_trout', 9, 1],
+    ['glowfish', 4, 2, { hours: [21, 4] }], ['starfin', 3, 2, { rod: 1, hours: [5, 8] }],
+    ['golden_carp', 1.2, 3, { rod: 1 }], ['sturgeon', 0.8, 3, { rod: 2 }],
     ['old_boot', 4, 0], ['key', 1.5, 2], ['chest', 3, 2],
   ],
+  // a lobby's fishing contest (MINIGAMES): fish only, any time, the same for every rod
+  contest: [
+    ['trout', 26, 0], ['carp', 20, 0], ['salmon', 16, 1], ['grayling', 8, 1], ['rainbow_trout', 8, 1], ['golden_carp', 1, 3],
+  ],
 };
+// How heavy each fish comes, in grams: [lightest, heaviest] (the big ones
+// rarer: FISH_HEAVY). Kept in the fishing journal, on a lobby's board of
+// the biggest catches, and the score in a fishing contest.
+export const FISH_WEIGHT = {
+  sardine: [40, 160], herring: [100, 450], mackerel: [200, 900], sea_bass: [800, 4500], lanternfish: [30, 140],
+  pufferfish: [300, 1600], moonfish: [600, 3200], tuna: [4000, 32000], swordfish: [18000, 90000],
+  minnow: [5, 30], perch: [100, 900], bream: [300, 2600], goldfish: [20, 160], sunfish: [100, 650],
+  catfish: [1000, 8500], koi: [500, 5200], pike: [1500, 9500],
+  trout: [300, 2600], carp: [1000, 9000], salmon: [1500, 9500], grayling: [200, 1500], rainbow_trout: [400, 3600],
+  glowfish: [100, 900], starfin: [200, 1300], golden_carp: [1500, 12500], sturgeon: [8000, 65000],
+};
+export const FISH_HEAVY = 2.2; // the higher, the rarer a fish near its heaviest
+// Bait and lures, from the merchant: each cast with one in the backpack uses
+// one up once something is landed. Bait: bites come sooner (`bite`, times
+// the wait). A lure: rarer fish (`luck`, times the rod's).
+export const TACKLE = { bait: { bite: 0.6 }, lure: { luck: 1.6 } };
+// An aquarium built on the farm holds this many fish, to show off
+export const AQUARIUM = { holds: 6 };
 // What is in a little chest fished up: `rolls` things, each from `loot`
 // ([item, weight, min, max], as for the sky isle chests)
-export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1]] };
+export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1], ['lure', 0.1, 1, 2]] };
 // ---------- Skills ----------
 // Five skills that level up by doing (shared/skills.js, src/skills.js), from
 // level 1 to SKILLS.max. `next`: XP from each level to the one after (1 -> 2
@@ -602,6 +642,10 @@ export const MINIGAMES = {
   // Coin rush: the most coins picked up before the time runs out (the coins
   // are the game's, only for the score; the prize is real ones)
   coin_rush: { ms: 60_000, coins: [36, 48], high: 0.3 }, // high: the share of coins up on the hay bales
+  // Fishing contest: the most weight of fish landed (FISHING.contest, a rod
+  // lent to anyone without one), off the shore of a little island. `bite`:
+  // seconds till a bite, for every rod alike
+  fishing_contest: { ms: 180_000, bite: [2.5, 6] },
   // The prize: the winner's coins (more for each other farmer who played) and
   // one roll of loot ([item, weight, min, max]); everyone else who played
   // gets a few coins for joining in

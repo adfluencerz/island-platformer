@@ -10,15 +10,33 @@
 // clock, game hours), takes: { item: count } what went in }. A beehive always
 // has something in it (honey, on its way), and starts again once collected.
 // In the farm's save: machines: [[key, item, at, takes]].
-import { MACHINES, CAMPFIRE_HOURS, DISHES } from './balance.js';
+//
+// An aquarium goes by the same rules, though it makes nothing: the fish put
+// in it (up to AQUARIUM.holds) are its `takes`, there to swim about and be
+// looked at, and it is never ready (item: 'aquarium'). E with a fish in hand
+// puts it in; otherwise E takes one back out.
+import { MACHINES, CAMPFIRE_HOURS, DISHES, AQUARIUM, FISH_WEIGHT } from './balance.js';
 
 export const READY_SLACK = 0.02; // game hours: pages count on their own clocks
-export const MACHINE_PIECES = new Set([...Object.keys(MACHINES), 'campfire']);
+export const TANK = 'aquarium';
+const TANK_AT = 1e9; // (never ready)
+export const MACHINE_PIECES = new Set([...Object.keys(MACHINES), 'campfire', TANK]);
 export const isMachine = (piece) => MACHINE_PIECES.has(piece);
+export const isFish = (item) => Object.hasOwn(FISH_WEIGHT, item ?? '');
+// How many fish are in an aquarium's state
+export const fishIn = (state) => Object.values(state?.takes ?? {}).reduce((sum, n) => sum + n, 0);
 
 // What a machine `piece` holds once loaded at `hours` (dish: what the campfire
-// is to cook), or null if that doesn't go in it
-export function loadFor(piece, hours, dish) {
+// is to cook, or the fish going into an aquarium), or null if that doesn't go
+// in it. now: what is in it already (only an aquarium takes more)
+export function loadFor(piece, hours, dish, now = null) {
+  if (piece === TANK) {
+    if (!isFish(dish) || fishIn(now) >= AQUARIUM.holds) return null;
+    const takes = { ...now?.takes };
+    takes[dish] = (takes[dish] ?? 0) + 1;
+    return { item: TANK, at: TANK_AT, takes };
+  }
+  if (now) return null;
   const m = MACHINES[piece];
   if (piece === 'campfire') {
     const d = Object.hasOwn(DISHES, dish) && DISHES[dish];
@@ -36,6 +54,20 @@ export function fillsItself(piece, hours) {
 }
 
 export const isReady = (state, hours) => !!state && hours >= state.at - READY_SLACK;
+
+// E at a machine with something in it at `hours`: what is in it after, and
+// what comes out ({ state, got }), or null: nothing to collect yet. An
+// aquarium gives back the fish `what` (else the last kind put in).
+export function collectFor(piece, state, hours, what) {
+  if (piece === TANK) {
+    const takes = { ...state?.takes };
+    const fish = takes[what] ? what : Object.keys(takes).at(-1);
+    if (!fish) return null;
+    if (--takes[fish] <= 0) delete takes[fish];
+    return { state: Object.keys(takes).length ? { item: TANK, at: TANK_AT, takes } : null, got: fish };
+  }
+  return isReady(state, hours) ? { state: fillsItself(piece, hours), got: state.item } : null;
+}
 
 // Taken down at `hours`: what comes back, { item: count } (what is ready, or
 // what went in; a beehive's honey only when it is ready)
