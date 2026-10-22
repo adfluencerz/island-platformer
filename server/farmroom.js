@@ -57,7 +57,7 @@ import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES } from '../shared/balance.js';
-import { loadFor, fillsItself, isReady, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
+import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
@@ -339,7 +339,7 @@ export class FarmRoom extends Place {
         // (what goes in came out of the loader's backpack: on a deny it goes back)
         const { key } = msg;
         const at = onFarm(key) && this.covered.get(key);
-        const state = at && !this.machines.has(at) && this.near(p, key) && loadFor(this.built.get(at), this.hours(), msg.dish, msg.n ?? 1);
+        const state = at && this.near(p, key) && loadFor(this.built.get(at), this.hours(), msg.dish, msg.n ?? 1, this.machines.get(at));
         if (!state) return this.deny(p, 'load', key);
         this.setMachine(at, state, p);
         break;
@@ -355,10 +355,9 @@ export class FarmRoom extends Place {
       case C.COLLECT: {
         const { key } = msg;
         const at = onFarm(key) && this.covered.get(key);
-        const state = at && this.machines.get(at);
-        const hours = this.hours();
-        if (!isReady(state, hours) || !this.near(p, key)) return this.deny(p, 'collect', key);
-        this.setMachine(at, fillsItself(this.built.get(at), hours), p, state.item, state.n);
+        const out = at && this.near(p, key) && collectFor(this.built.get(at), this.machines.get(at), this.hours(), msg.item);
+        if (!out) return this.deny(p, 'collect', key);
+        this.setMachine(at, out.state, p, out.got, out.n);
         break;
       }
       case C.CHOP: {

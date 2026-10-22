@@ -176,6 +176,7 @@ export const PIECES = {
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
   pond: { name: 'Fish pond', solid: true, size: [3, 3] }, // (fished in: shared/fishing.js)
+  aquarium: { name: 'Aquarium', solid: true }, // (fish to show off: shared/machines.js)
   // the machines (shared/machines.js; the beehive above is one too)
   cheese_press: { name: 'Cheese press', solid: true },
   mayo_machine: { name: 'Mayonnaise machine', solid: true },
@@ -199,7 +200,7 @@ for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?
 // blocks, climbed; the buildings, that do something; the decorations; the
 // relics; the bosses' portals and statues
 export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics', 'Bosses'];
-const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well', 'pond', 'cheese_press', 'mayo_machine', 'loom', 'campfire']);
+const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well', 'pond', 'aquarium', 'cheese_press', 'mayo_machine', 'loom', 'campfire']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
     : piece.portal || piece.statue ? 'Bosses'
@@ -271,6 +272,11 @@ export const RARE = {
   koi: 'A koi',
   glowfish: 'A glowfish',
   golden_carp: 'A golden carp',
+  tuna: 'A tuna',
+  swordfish: 'A swordfish',
+  pike: 'A pike',
+  starfin: 'A starfin',
+  sturgeon: 'A sturgeon',
 };
 
 // Roll a spot's loot: [item, count]. rand: () => [0, 1)

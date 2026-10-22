@@ -9,6 +9,10 @@ import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './animals.js';
 import { createBuildings, POND_WATER_Y } from './build.js';
 import { createFishing } from './fishing.js';
+import { createFishLog } from './fishlog.js';
+import { createFishBoard } from './fishboard.js';
+import { createFishShadows } from './fishshadows.js';
+import { createRipples } from './ripples.js';
 import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
 import { createArcade } from './arcade.js';
@@ -28,8 +32,8 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
-import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES } from '../shared/balance.js';
-import { isMachine, loadFor, fillsItself, isReady } from '../shared/machines.js';
+import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
+import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
@@ -39,7 +43,7 @@ import { islandFor } from '../shared/worldgen.js';
 import { arenaFor, signFor, SIGN_REACH, GAMES } from '../shared/arenas.js';
 import { arenaMap, buildSignpost } from './arenas.js';
 import { wildsFromWire } from '../shared/wilds.js';
-import { CAST_REACH, waterOn } from '../shared/fishing.js';
+import { CAST_REACH, BOARD_REACH, waterOn } from '../shared/fishing.js';
 import { HOME_HALF } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
@@ -192,6 +196,7 @@ function enterWorld(name, seed, wire) {
     const island = islandFor(seed);
     worlds.wild = buildWorld(wildMap(island), wildsFromWire(wire) ?? undefined);
     worlds.wild.root.add(buildSignpost(signFor(island))); // (where party games start)
+    if (session?.seed === seed && session.boardAt) fishBoard.placeIn(worlds.wild.root, session.boardAt); // (and the fishing board)
     wildsShown = wilds;
   }
   if (name === 'arena' && worlds.arena?.name !== `arena:${seed.kind}:${seed.seed}`) {
@@ -235,6 +240,7 @@ const inventory = createInventory({
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
   renderSkills: (el) => skills.render(el),
+  renderFish: (el) => fishLog.render(el),
 });
 
 // ---------- Skills ----------
@@ -708,7 +714,7 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
-  const hint = atSign() ? signHint() : useHint();
+  const hint = atSign() ? signHint() : atBoard() && !fishing.prompt() ? boardHint() : useHint();
   if (hint) hud.setPrompt(`E  ${hint}`);
   else hud.setPrompt(gatherSpotInReach()?.kind === 'sky_vault' ? 'Locked: an old key would open it' : '');
 }
@@ -1388,10 +1394,11 @@ window.addEventListener('keydown', (e) => {
 // chopping and mining reach USE_HEIGHT up or down (from a step or a platform).
 function useAction() {
   if (!building && bosses.use()) return; // (a boss's portal or arena, or a mount in hand)
-  if (place === 'lobby' && !arenaId && fishing.use()) return;
+  if (place === 'lobby' && (!arenaId || (inContest() && partyGame.phase === 'playing')) && fishing.use()) return;
   if (place === 'lobby') {
     if (arenaId) return weaponInHand() && bop(); // (off in a party game's arena)
     if (atSign()) return useSign();
+    if (atBoard()) return useBoard();
     if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
     if (holding() === 'axe' && swingAxe()) return;
     if (holding() === 'pickaxe' && swingPick()) return;
@@ -2288,6 +2295,10 @@ const touch = new TouchControls(); // (only shown on a touch screen)
 // surface), or null: land. In a lobby, its sea and its pond; on a farm, the
 // sea past its edge and a fish pond built on it.
 function waterAt(x, z) {
+  if (inContest()) {
+    const arena = arenaFor(partyGame.kind, partyGame.seed);
+    return arena && !arena.isLand(x, z) ? { water: 'contest', y: WATER_Y } : null;
+  }
   if (place === 'lobby') {
     const what = wildIsland && waterOn(wildIsland, x, z);
     return what && { water: 'lobby', y: what === 'sea' ? WATER_Y : LOBBY_POND_Y };
@@ -2330,17 +2341,82 @@ const hud = new Hud({
 
 // ---------- Fishing ----------
 // With a rod in hand, E facing the sea or a pond casts (src/fishing.js; in
-// a lobby the room rolls the catch, on a farm the page does).
+// a lobby the room rolls the catch, on a farm the page does). What we land
+// goes in the fishing journal (fishlog.js, the bag's Fish tab), kept in the
+// save beside the backpack. Fish swim about under the water near us
+// (fishshadows.js), coming up now and then with a ripple (ripples.js). In a
+// lobby's fishing contest everyone fishes, a rod lent to anyone without one.
+const fishLog = createFishLog();
+const ripples = createRipples(scene);
+const inContest = () => place === 'lobby' && !!arenaId && partyGame?.kind === 'fishing_contest';
 const fishing = createFishing({
-  scene, farmer, player, inventory, hud, touch,
+  scene, farmer, player, inventory, hud, touch, ripples,
   waterAhead: () => (player.onGround && !menuOpen() && !houseRoom.inside(player.position) ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
   hour: () => dayNight.hour(),
   lobby: () => (place === 'lobby' ? net : null),
-  rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : null),
+  rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : inContest() && !weaponInHand() ? 'fishing_rod' : null),
   skill: () => skills.level('fishing'),
-  landed: () => skills.gain('fishing', SKILLS.xp.fish),
+  landed(item, grams) {
+    skills.gain('fishing', SKILLS.xp.fish);
+    return fishLog.landed(item, grams);
+  },
   sooner: () => boostOf(meal, 'bite'),
 });
+const fishShadows = createFishShadows({ scene, ripples, player, regions: fishRegions });
+
+// Where the fish under the water swim now (fishshadows.js): along the shore
+// of the island we are on (near us), and in its ponds
+function fishRegions() {
+  if (place === 'title' || houseRoom.inside(player.position) || bosses.inArena()) return [];
+  const near = (inside, y) => ({
+    inside,
+    y,
+    near: true,
+    sample(around) {
+      for (let i = 0; i < 60; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = 4 + Math.random() * 14;
+        const x = around.x + Math.cos(a) * d;
+        const z = around.z + Math.sin(a) * d;
+        if (inside(x, z)) return [x, z];
+      }
+      return null;
+    },
+  });
+  const inBox = (cx, cz, hw, hd) => (x, z) => Math.abs(x - cx) < hw && Math.abs(z - cz) < hd;
+  const boxRegion = (key, cx, cz, hw, hd, y, n) => ({
+    key, inside: inBox(cx, cz, hw, hd), y, n,
+    sample: () => [cx + (Math.random() * 2 - 1) * hw * 0.8, cz + (Math.random() * 2 - 1) * hd * 0.8],
+  });
+  // the shallows: sea, with land within a few steps
+  const shore = (isLand) => (x, z) => !isLand(x, z) && [[3, 0], [-3, 0], [0, 3], [0, -3]].some(([dx, dz]) => isLand(x + dx, z + dz));
+  if (place === 'lobby' && arenaId) {
+    const arena = partyGame && arenaFor(partyGame.kind, partyGame.seed);
+    return arena ? [{ key: `arena:${arena.seed}`, n: 12, ...near(shore(arena.isLand), WATER_Y) }] : [];
+  }
+  if (place === 'lobby') {
+    const island = wildIsland; // (this one, even once we are off it)
+    if (!island) return [];
+    const { pond } = island;
+    const inside = (x, z) => [[0, 0], [0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7]].every(([dx, dz]) => island.inPond(x + dx, z + dz));
+    return [
+      { key: `sea:${island.seed}`, n: 8, ...near(shore(island.isLand), WATER_Y) },
+      { key: `pond:${island.seed}`, inside, y: LOBBY_POND_Y, n: 4, sample: () => [pond.x + (Math.random() - 0.5) * pond.r, pond.z + (Math.random() - 0.5) * pond.r] },
+    ];
+  }
+  // the farm: the sea along its edge, and each fish pond built on it
+  const edge = (x, z) => {
+    const m = Math.max(Math.abs(x), Math.abs(z));
+    return m > HOME_HALF + 0.8 && m < HOME_HALF + 4;
+  };
+  const list = [{ key: 'farm-sea', n: 6, ...near(edge, WATER_Y) }];
+  for (const [key, piece] of buildings.list()) {
+    if (piece !== 'pond') continue;
+    const [px, pz] = keyXZ(key);
+    list.push(boxRegion(`pond:${key}`, px, pz - 1, 1, 1, POND_WATER_Y, 2));
+  }
+  return list;
+}
 
 // ---------- The bosses ----------
 // Their portals on the farm, their arenas out past the sea, the fights and
@@ -2608,10 +2684,23 @@ function timeLeft(hours) {
   return `about ${n} hour${n === 1 ? '' : 's'}`;
 }
 
+// An aquarium (shared/machines.js): E with a fish in hand puts it in, if
+// there is room; otherwise E takes the last kind put in back out
+const fishToShow = () => (isFish(inventory.selectedId()) ? inventory.selectedId() : null);
+function tankPrompt(state) {
+  const fish = fishToShow();
+  const n = fishIn(state);
+  if (fish && n < AQUARIUM.holds) return `E  Put the ${ITEMS[fish].name.toLowerCase()} in the aquarium (${n}/${AQUARIUM.holds})`;
+  const last = Object.keys(state?.takes ?? {}).at(-1);
+  if (last) return `E  Take the ${ITEMS[last].name.toLowerCase()} out${fish ? ' (it is full)' : ''}`;
+  return 'Hold a fish to put it in the aquarium';
+}
+
 function machinePrompt(key) {
   const piece = buildings.get(key);
   const state = machines.get(key);
   if (state?.pending) return '';
+  if (piece === TANK) return tankPrompt(state);
   if (state && isReady(state, farmHours())) return `E  Collect ${state.n > 1 ? `${state.n} ` : ''}${ITEMS[state.item].name.toLowerCase()}`;
   if (state) return `${ITEMS[state.item].name} in ${timeLeft(state.at - farmHours())}`;
   if (piece === 'campfire') return 'E  Cook on the campfire';
@@ -2625,6 +2714,14 @@ function useMachine(key) {
   const state = machines.get(key);
   const hours = farmHours();
   if (state?.pending) return;
+  if (piece === TANK) {
+    const fish = fishToShow();
+    if (fish && fishIn(state) < AQUARIUM.holds) {
+      inventory.remove(fish, 1);
+      return loadMachine(key, fish);
+    }
+    return state ? collectMachine(key, state) : inventory.notify('Hold a fish to put it in the aquarium');
+  }
   if (state && isReady(state, hours)) return collectMachine(key, state);
   if (state) return inventory.notify(`${ITEMS[state.item].name} in ${timeLeft(state.at - hours)}`);
   if (piece === 'campfire') return cooking.openCampfire(key);
@@ -2636,20 +2733,26 @@ function useMachine(key) {
 }
 
 // Into the machine on tile key (what it takes is out of the backpack already:
-// took, else what the machine takes; dish: what goes on the campfire, n of it)
+// took, else what the machine takes; dish: what goes on the campfire, n of it,
+// or the fish into an aquarium)
 function loadMachine(key, dish, n = 1, took) {
-  const state = loadFor(buildings.get(key), farmHours(), dish, n);
-  if (!state) return giveItems(took); // (it can't: back it goes)
+  const was = machines.get(key);
+  const state = loadFor(buildings.get(key), farmHours(), dish, n, was);
+  if (!state) {
+    if (isFish(dish)) inventory.add(dish, 1, { quiet: true }); // (the aquarium is full after all)
+    return giveItems(took); // (it can't: back it goes)
+  }
   anim.squash = 0.15;
   steamAt(key);
   if (farmNet) {
-    pendingLoads.set(key, took ?? state.takes);
-    machines.set(key, { ...state, pending: true });
+    pendingLoads.set(key, state.item === TANK ? { [dish]: 1 } : took ?? state.takes);
+    machines.set(key, { ...state, pending: true, was }); // (was: what it goes back to, if the room says no)
     farmNet.send({ t: C.LOAD, key, ...(dish && { dish }), ...(n > 1 && { n }) });
   } else {
     machines.set(key, took ? { ...state, takes: took } : state); // (the very fish that went in)
   }
-  inventory.notify(`${n > 1 ? `${n} × ` : ''}${ITEMS[state.item].name.toLowerCase()} in ${timeLeft(state.at - farmHours())}`);
+  if (state.item === TANK) inventory.notify(`In swims the ${ITEMS[dish].name.toLowerCase()}`);
+  else inventory.notify(`${n > 1 ? `${n} × ` : ''}${ITEMS[state.item].name.toLowerCase()} in ${timeLeft(state.at - farmHours())}`);
 }
 
 // A curl of steam off the machine on tile key (the campfire's dishes)
@@ -2660,15 +2763,17 @@ function steamAt(key) {
 }
 
 function collectMachine(key, state) {
-  if (!inventory.canAdd(state.item, state.n ?? 1)) return inventory.notify('No room in your backpack');
+  const out = collectFor(buildings.get(key), state, farmHours());
+  if (!out) return;
+  if (!inventory.canAdd(out.got, out.n)) return inventory.notify('No room in your backpack');
   anim.squash = 0.15;
   steamAt(key);
   if (farmNet) {
     machines.set(key, { ...state, pending: true });
-    return farmNet.send({ t: C.COLLECT, key });
+    return farmNet.send({ t: C.COLLECT, key, ...(state.item === TANK && { item: out.got }) });
   }
-  inventory.add(state.item, state.n ?? 1);
-  machines.set(key, fillsItself(buildings.get(key), farmHours())); // (a beehive starts on the next jar)
+  inventory.add(out.got, out.n);
+  machines.set(key, out.state); // (a beehive starts on the next jar)
 }
 
 // A recipe card into the backpack is read: into the recipe book it goes. One
@@ -2959,7 +3064,7 @@ async function joinFarm(id) {
   on(S.MACHINE, (m) => {
     if (m.by === myId) pendingLoads.delete(m.key);
     const [item, at, takes, n] = Array.isArray(m.state) ? m.state : [];
-    machines.set(m.key, item && ITEMS[item] ? { item, at, takes: takes ?? {}, ...(n > 1 && { n }) } : null);
+    machines.set(m.key, item && (ITEMS[item] || item === TANK) ? { item, at, takes: takes ?? {}, ...(n > 1 && { n }) } : null);
     if (m.by !== myId) steamAt(m.key);
     // (collected: ours, into the backpack; no room after all, into the chest)
     const got = Number.isInteger(m.n) && m.n > 0 ? m.n : 1;
@@ -2998,7 +3103,8 @@ async function joinFarm(id) {
     } else if (m.op === 'load' && pendingLoads.has(m.key)) {
       giveItems(pendingLoads.get(m.key)); // (it didn't go in after all)
       pendingLoads.delete(m.key);
-      if (machines.get(m.key)?.pending) machines.set(m.key, null);
+      const state = machines.get(m.key);
+      if (state?.pending) machines.set(m.key, state.was ?? null);
     } else if (m.op === 'collect') {
       const state = machines.get(m.key);
       if (state?.pending) machines.set(m.key, { ...state, pending: false });
@@ -3189,11 +3295,20 @@ function signHint() {
   return inParty() ? `Not coming to the ${name} after all` : `Join the ${name}`;
 }
 
-function useSign() {
-  if (!partyGame) net?.send({ t: C.GAME_START, game: PARTY_KIND });
+function useSign(kind = PARTY_KIND) {
+  if (!partyGame) net?.send({ t: C.GAME_START, game: kind });
   else if (partyGame.phase === 'gathering') net?.send({ t: inParty() ? C.GAME_LEAVE : C.GAME_JOIN });
   else inventory.notify('A game is on: wait for the next one');
 }
+
+// The board of the biggest catches by the lobby's pond (fishboard.js, where
+// the lobby says it stands): E there starts a fishing contest, or joins the
+// game gathering
+const fishBoard = createFishBoard();
+const atBoard = () => place === 'lobby' && !arenaId && !!session?.boardAt && footReach() &&
+  Math.hypot(player.position.x - session.boardAt.x, player.position.z - session.boardAt.z) < BOARD_REACH;
+const boardHint = () => (partyGame ? signHint() : `Start a ${GAMES.fishing_contest.name.toLowerCase()}`);
+const useBoard = () => useSign('fishing_contest');
 
 // The farmers drawn: the ones where we are (the lobby's island, or our arena)
 function showRemotes() {
@@ -3207,6 +3322,7 @@ function showParty(game, pos = null) {
   partyHud.show(game, myId);
   const playing = game && game.phase !== 'gathering' && inParty();
   if (playing && arenaId !== game.id) {
+    fishing.reset(); // (a line out in the lobby comes in)
     enterWorld('arena', game);
     arenaId = game.id;
     coinPending.clear();
@@ -3228,6 +3344,7 @@ function showParty(game, pos = null) {
 // Out of the arena, onto the lobby's island (pos: where; else where farmers arrive)
 function backFromArena(pos = null) {
   arenaId = 0;
+  fishing.reset(); // (a line out in a fishing contest comes in)
   coinPending.clear();
   enterWorld('wild', session.seed, session.wilds);
   showLobbyThings(true);
@@ -3247,10 +3364,11 @@ function leaveParty() {
   if (arenaId) backFromArena();
 }
 
-// Every frame in the arena: the countdown, and coins we walk into
+// Every frame in the arena: the countdown, and coins we walk into (or in a
+// fishing contest, what the line is doing)
 function updateArena() {
   partyHud.update();
-  hud.setPrompt('');
+  hud.setPrompt(inContest() && partyGame.phase === 'playing' ? fishing.prompt() : '');
   if (partyGame?.phase === 'ready') {
     const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
     if (left > 0 && left !== readyCount) {
@@ -3328,7 +3446,9 @@ function joinLobby({ name, code }) {
     }
     place = 'lobby';
     enterWorld('wild', m.seed, m.wilds);
-    session = { code: m.code, seed: m.seed, room: m.room, wilds: m.wilds, sign: signFor(islandFor(m.seed)) };
+    session = { code: m.code, seed: m.seed, room: m.room, wilds: m.wilds, sign: signFor(islandFor(m.seed)), boardAt: m.boardAt ?? null };
+    fishBoard.placeIn(worlds.wild.root, session.boardAt);
+    fishBoard.show(m.board ?? []);
     arenaId = 0;
     myId = m.id;
     farmer.setShirt(m.color);
@@ -3369,6 +3489,8 @@ function joinLobby({ name, code }) {
   });
   on(S.GAME, (m) => showParty(m.game));
   on(S.GAME_COIN, (m) => partyCoin(m));
+  on(S.GAME_SCORE, (m) => partyHud.score(m.by, m.score));
+  on(S.BOARD, (m) => fishBoard.show(m.board));
   on(S.GAME_END, (m) => partyOver(m));
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
@@ -3520,7 +3642,7 @@ function showFarm(farm) {
 
 function currentSave() {
   if (farmOnScreen) homeFarm = captureFarm();
-  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
+  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
 }
 
 function saveGame() {
@@ -3562,6 +3684,7 @@ function useSave(save) {
   for (const slot of save.backpack?.slots ?? []) if (slot && UNMADE[slot.id]) unmade[slot.id] = (unmade[slot.id] ?? 0) + Math.max(1, slot.count | 0);
   inventory.restore(save.backpack ?? {});
   skills.restore(save.skills); // (none before v8: everything at level 1)
+  fishLog.restore(save.fishlog); // (none before the journal: nothing landed yet)
   for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
   homeFarm = save.farm ?? null;
   bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
@@ -3685,19 +3808,22 @@ function update(dt) {
 
   playerMesh.position.copy(player.position);
   puffs.update(dt);
-  hoeGroup.visible = holding() === 'hoe'; // only hold a tool while it's selected
-  farmer.axe.visible = holding() === 'axe';
-  farmer.pick.visible = holding() === 'pickaxe';
-  farmer.sword.visible = inventory.selectedId() === 'wooden_sword';
-  farmer.mallet.visible = inventory.selectedId() === 'mallet';
-  farmer.rod.visible = holding() === 'rod';
-  if (farmer.rod.visible) farmer.setRod(ITEMS[inventory.selectedId()].color);
+  const lent = inContest() && holding() !== 'rod' && !weaponInHand(); // (a rod lent for a fishing contest, in place of a tool in hand; a sword still bops)
+  hoeGroup.visible = !lent && holding() === 'hoe'; // only hold a tool while it's selected
+  farmer.axe.visible = !lent && holding() === 'axe';
+  farmer.pick.visible = !lent && holding() === 'pickaxe';
+  farmer.sword.visible = !lent && inventory.selectedId() === 'wooden_sword';
+  farmer.mallet.visible = !lent && inventory.selectedId() === 'mallet';
+  farmer.rod.visible = lent || holding() === 'rod';
+  if (farmer.rod.visible) farmer.setRod(ITEMS[lent ? 'fishing_rod' : inventory.selectedId()].color);
   animateCharacter(dt, moving);
   updateTileCursor(moving);
   updateHover();
 
   const t = clock.elapsedTime;
   fishing.update(t);
+  ripples.update(dt);
+  fishShadows.update(dt, fishing.bobber());
   world.updateTrees(dt);
   if (building && place !== 'home') stopBuilding();
   if (place === 'lobby' && arenaId) {
@@ -3758,7 +3884,7 @@ function update(dt) {
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
   buildings.setNight(dayNight.night(), player.position);
-  machines.update(farmHours(), t);
+  machines.update(farmHours(), t, dt);
   updateMeal(dt);
   houseRoom.setNight(dayNight.night());
   houseRoom.update(t, player.position);
@@ -3814,7 +3940,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

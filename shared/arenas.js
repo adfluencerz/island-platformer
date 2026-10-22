@@ -27,6 +27,7 @@ import { MINIGAMES } from './balance.js';
 // The party games there are, by kind: what they are called and how long they last
 export const GAMES = {
   coin_rush: { name: 'Coin rush', ms: MINIGAMES.coin_rush.ms, blurb: 'Pick up the most coins before the time runs out' },
+  fishing_contest: { name: 'Fishing contest', ms: MINIGAMES.fishing_contest.ms, blurb: 'Land the most weight of fish before the time runs out' },
 };
 
 export const COIN_FLOAT = 0.7; // how high over what it is over a coin floats (a farmer standing there touches it)
@@ -110,6 +111,17 @@ function growCoinRush(seed, attempt) {
   return finishArena({ game: 'coin_rush', seed, half: Math.ceil(coast.r + 3), coast, bales, coins });
 }
 
+// ---------- Fishing contest: a little round island, the sea all round ----------
+// Fished from its shore (shared/fishing.js: the 'contest' water), with a few
+// clumps of reeds along it (the pages') and nothing to climb
+function growFishingContest(seed) {
+  const rng = mulberry32(hashSeed(`fishing_contest/${seed}/coast`));
+  const rand = (min, max) => min + rng() * (max - min);
+  const int = (min, max) => Math.floor(rand(min, max + 1));
+  const coast = { r: round1(rand(9, 11)), waves: [[rand(0.5, 1), int(2, 3), rand(0, 6.3)], [rand(0.2, 0.5), int(4, 6), rand(0, 6.3)]] };
+  return finishArena({ game: 'fishing_contest', seed, half: Math.ceil(coast.r + 3), coast, bales: [], coins: [] });
+}
+
 // The questions everyone asks of an arena
 function finishArena(desc) {
   const { coast, bales } = desc;
@@ -155,7 +167,7 @@ export function checkArena(arena) {
   return problems;
 }
 
-const GROW = { coin_rush: growCoinRush };
+const GROW = { coin_rush: growCoinRush, fishing_contest: growFishingContest };
 
 // The arena a kind of game grows from a seed (the same every time,
 // everywhere), or null for a kind there isn't. A seed whose first tries make

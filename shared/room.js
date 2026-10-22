@@ -35,7 +35,10 @@
 // With a fishing rod a farmer casts into the sea or the pond (CAST): the
 // room rolls what will bite and when (shared/fishing.js), says so when it
 // does (BITE), and if REEL comes in time it is theirs (CAUGHT), the lobby
-// hearing of a rare one. Casting goes on as long as anyone likes.
+// hearing of a rare one. Casting goes on as long as anyone likes. Every fish
+// has its weight, and the heaviest landed go up on the board by the pond
+// (BOARD; one for each farmer at most); a new heaviest the lobby hears of.
+// In a fishing contest (a party game) the line goes into the arena's sea.
 //
 // At the signpost in the stone circle, a farmer can start a party game
 // (shared/minigame.js): whoever joins is off to an arena of its own for a
@@ -51,7 +54,7 @@ import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
-import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn } from './fishing.js';
+import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn, onBoard, weightText } from './fishing.js';
 import { DAY_LENGTH_SECONDS, SKILLS, SHOP, BOOSTS } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
@@ -93,6 +96,7 @@ export class Room extends Place {
     this.drops = new Map(); // id -> { id, item, count, x, y, z, until, from, ownAt } (from: who it was knocked out of, who can't take it back till ownAt)
     this.dropId = 0;
     this.giants = new Giants(rand); // (shared/giants.js)
+    this.board = []; // the biggest catches: [[name, item, grams], ...], heaviest first (shared/fishing.js onBoard)
     this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
     this.party = new Party(this); // (its party games)
@@ -182,6 +186,8 @@ export class Room extends Place {
       clock: (Date.now() - this.createdAt) / 1000,
       giants: this.giants.toSave(),
       game: this.party.wire(),
+      board: this.board,
+      boardAt: this.party.board,
       resumed,
     });
   }
@@ -201,9 +207,12 @@ export class Room extends Place {
       case C.GAME_COIN:
         return this.party.coin(p, msg.id);
     }
-    // (off in a party game's arena: nothing of the lobby's, bar a bop at whoever is there too)
-    if (p.game && msg?.t !== C.BOP) {
+    // (off in a party game's arena: nothing of the lobby's, bar a bop at
+    // whoever is there too, and in a fishing contest, fishing)
+    const fishing = msg?.t === C.CAST || msg?.t === C.REEL;
+    if (p.game && msg?.t !== C.BOP && !(fishing && this.party.fishingFor(p))) {
       if (msg?.t === C.TAKE) this.send(p, { t: S.DENY, id: msg.id });
+      else if (msg?.t === C.CAST) this.send(p, { t: S.CAUGHT, n: Number.isInteger(msg.n) ? msg.n : 0, item: null });
       else if (msg?.t === C.THROW) this.send(p, { t: S.THROW_DENY, item: typeof msg.item === 'string' ? msg.item : null, count: Number.isInteger(msg.count) ? msg.count : 0 });
       return;
     }
@@ -330,8 +339,9 @@ export class Room extends Place {
       case C.CAST: {
         const now = Date.now();
         const rod = Object.hasOwn(RODS, msg.rod ?? '') ? msg.rod : null;
+        const contest = p.game ? this.party.fishingFor(p) : null; // (its sea: the arena's, all round it)
         const ok = rod && finite(msg.x, msg.z) && now - p.castAt >= CAST_EVERY &&
-          Math.hypot(msg.x - p.x, msg.z - p.z) <= CAST_REACH + 0.5 && waterOn(this.island, msg.x, msg.z);
+          Math.hypot(msg.x - p.x, msg.z - p.z) <= CAST_REACH + 0.5 && (contest ? !contest.arena.isLand(msg.x, msg.z) : waterOn(this.island, msg.x, msg.z));
         const n = Number.isInteger(msg.n) ? msg.n : 0;
         p.line = null;
         if (!ok) {
@@ -341,8 +351,9 @@ export class Room extends Place {
         p.castAt = now;
         const level = Number.isInteger(msg.level) ? Math.max(1, Math.min(SKILLS.max, msg.level)) : 1; // (the page keeps the skills)
         const sooner = Number.isFinite(msg.sooner) ? Math.max(Math.min(...BOOSTS.lucky.bite), Math.min(1, msg.sooner)) : 1; // (and the meals)
-        const line = castLine('lobby', rod, this.hour(now), level, this.rand, sooner);
-        p.line = { ...line, n, x: msg.x, z: msg.z, biteAt: now + line.bite * 1000, bit: false };
+        const tackle = { bait: msg.bait === true, lure: msg.lure === true, sooner }; // (the page keeps the backpack)
+        const line = castLine(contest ? 'contest' : 'lobby', rod, this.hour(now), level, this.rand, tackle);
+        p.line = { ...line, n, x: msg.x, z: msg.z, biteAt: now + line.bite * 1000, bit: false, game: p.game };
         break;
       }
       case C.REEL: {
@@ -362,9 +373,11 @@ export class Room extends Place {
             this.say(`${p.name} fished up ${RARE[it].toLowerCase()}!`);
           }
         }
+        if (line.grams) this.weighed(p, line.item, line.grams);
+        if (line.game) this.party.landed(p, line.grams ?? 0);
         this.rosterDirty = true;
         this.changed = true;
-        this.send(p, { t: S.CAUGHT, n: line.n, item: line.item, count: line.count, ...(line.items && { items: line.items }) });
+        this.send(p, { t: S.CAUGHT, n: line.n, item: line.item, count: line.count, ...(line.grams && { grams: line.grams }), ...(line.items && { items: line.items }) });
         break;
       }
       case C.THROW: {
@@ -479,6 +492,20 @@ export class Room extends Place {
     return { ...msg, size: thing.scale ?? thing.size };
   }
 
+  // p landed a fish of `grams`: up on the board, if it is heavy enough (the
+  // whole lobby hears of a new heaviest, bar the first fish of all)
+  weighed(p, item, grams) {
+    const next = onBoard(this.board, p.name, item, grams);
+    if (!next) return;
+    const was = this.board[0];
+    this.board = next;
+    this.changed = true;
+    this.broadcast({ t: S.BOARD, board: this.board, by: p.id });
+    if (was && next[0][0] === p.name && next[0][2] === grams) {
+      this.say(`${p.name} landed a ${weightText(grams)} ${item.replace(/_/g, ' ')}: the biggest catch on the board!`);
+    }
+  }
+
   // The lobby's hour of the day at now (it opens at LOBBY_DAWN), as everyone's pages show it
   hour(now = Date.now()) {
     return (LOBBY_DAWN + ((now - this.createdAt) / 1000 / DAY_LENGTH_SECONDS) * 24) % 24;
@@ -535,6 +562,7 @@ export class Room extends Place {
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
       giants: this.giants.toSave(),
+      board: this.board,
       seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood, stone }) => ({ id, key, name, color, finds, rares, wood, stone })),
     };
   }
@@ -567,6 +595,9 @@ export class Room extends Place {
     room.treeSites = siteMap(save.treeSites, room.wilds.trees.length);
     room.rockSites = siteMap(save.rockSites, room.wilds.rocks.length);
     room.giants = Giants.fromSave(save.giants, room.rand);
+    for (const [name, item, grams] of Array.isArray(save.board) ? save.board : []) {
+      if (typeof name === 'string' && typeof item === 'string' && Number.isFinite(grams)) room.board = onBoard(room.board, name, item, grams) ?? room.board;
+    }
     room.giants.setCounts(room.wilds.trees.length, room.wilds.rocks.length);
     const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
     for (const s of (save.seats ?? []).slice(0, room.maxPlayers)) {

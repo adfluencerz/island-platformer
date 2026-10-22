@@ -19,7 +19,7 @@ import { buzz } from './ui/touch.js';
 // Its Build tab (or B) picks a piece to build on the farm, or taking pieces
 // down: build mode (src/build.js, main.js) pays with the wood and stone in
 // the backpack. Its Skills tab (or K) shows how far each skill has come
-// (src/skills.js).
+// (src/skills.js), its Fish tab (or J) the fishing journal (src/fishlog.js).
 
 export const COLS = 12;
 const LONG_PRESS_MS = 450; // a finger held this long on a slot takes one
@@ -49,6 +49,7 @@ export const CATEGORIES = {
   Recipe: '#8a6a45',
   Relic: '#2f7fa8',
   Fish: '#1f7a8c',
+  Fishing: '#3a6ea5',
   Junk: '#6b6b6b',
   Currency: '#a86e00',
 };
@@ -97,18 +98,18 @@ function iconImg(parent) {
 // buildProblem(): why there is no building here ('' : there is).
 // building(): the piece build mode has now (null: not building).
 // inChest(item): how many the farm's chest has to build with too.
-// renderSkills(el): draws the Skills tab into el.
+// renderSkills(el): draws the Skills tab into el; renderFish(el): the Fish tab.
 // onDrop({ id, count }): put the carried stack down on the ground; true if
 // it went (false: it stays carried, and onDrop has said why).
 // onEat(id): a dish double-clicked in the backpack, to eat one.
-export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
+export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {} } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
   let open = false;
   let held = null; // stack carried on the cursor while the menu is open
   let lastFullNotice = 0;
-  let tab = 'pack'; // 'pack' | 'build' | 'skills'
+  let tab = 'pack'; // 'pack' | 'build' | 'skills' | 'fish'
   let group = BUILD_GROUPS[0]; // the Build tab's group on show
 
   // ---------- DOM ----------
@@ -146,9 +147,13 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   const skillsTab = el('button', 'inv-tab inv-frame', tabsEl);
   skillsTab.textContent = 'Skills';
   skillsTab.title = 'Your skills (K)';
+  const fishTab = el('button', 'inv-tab inv-frame', tabsEl);
+  fishTab.textContent = 'Fish';
+  fishTab.title = 'Your fishing journal (J)';
   const packEl = el('div', 'inv-pack', windowEl);
   const buildEl = el('div', 'inv-build', windowEl);
   const skillsEl = el('div', 'inv-skills', windowEl);
+  const fishEl = el('div', 'inv-skills inv-fish', windowEl);
   const closeBtn = el('button', 'inv-close', windowEl);
   closeBtn.textContent = '×';
   closeBtn.title = 'Close (I / Esc)';
@@ -202,11 +207,14 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
     packTab.classList.toggle('on', tab === 'pack');
     buildTab.classList.toggle('on', tab === 'build');
     skillsTab.classList.toggle('on', tab === 'skills');
+    fishTab.classList.toggle('on', tab === 'fish');
     packEl.hidden = tab !== 'pack';
     buildEl.hidden = tab !== 'build';
     skillsEl.hidden = tab !== 'skills';
+    fishEl.hidden = tab !== 'fish';
     if (open && tab === 'build') renderBuild();
     if (open && tab === 'skills') renderSkills(skillsEl);
+    if (open && tab === 'fish') renderFish(fishEl);
 
     heldEl.hidden = !held;
     if (held) {
@@ -554,6 +562,13 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
         setOpen(true);
       }
     }
+    else if (e.code === 'KeyJ' && !e.repeat) {
+      if (open && tab === 'fish') setOpen(false);
+      else {
+        setTab('fish');
+        setOpen(true);
+      }
+    }
     else if (e.code === 'Escape') setOpen(false);
     else if (!open && HOTBAR_KEYS.includes(e.code)) select(HOTBAR_KEYS.indexOf(e.code));
   });
@@ -635,6 +650,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   packTab.addEventListener('click', () => setTab('pack'));
   buildTab.addEventListener('click', () => setTab('build'));
   skillsTab.addEventListener('click', () => setTab('skills'));
+  fishTab.addEventListener('click', () => setTab('fish'));
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
   // A right click outside the window: put back what is carried, or close.
   // A click (or a tap) outside it with something carried: drop it on the ground.
