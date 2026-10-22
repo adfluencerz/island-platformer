@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { createFarmer } from './character.js';
 import { TICK_DT, INTERP_DELAY } from '../shared/constants.js';
 import { STATEF } from '../shared/protocol.js';
+import { BOSS_IDS } from '../shared/bosses.js';
+import { createMount } from './mounts.js';
+import { createTackle } from './fishing.js';
 
 // ---------- Other players ----------
 // Everyone else in the game, drawn from the room's snapshots. Snapshots come
@@ -84,8 +87,12 @@ function makeNameTag(name, color) {
 }
 
 export class Remotes {
-  constructor(scene) {
+  // waterFrom(x, z, yaw): where the bobber of a farmer there, facing yaw,
+  // floats ({ x, y, z }, or null), as for our own (src/fishing.js)
+  constructor(scene, { waterFrom = () => null } = {}) {
     this.scene = scene;
+    this.waterFrom = waterFrom;
+    this._tip = new THREE.Vector3();
     this.players = new Map(); // id -> remote
     this.myId = 0;
     this.clock = -1; // our estimate of the room's time (s), -1 before the first snapshot
@@ -165,12 +172,30 @@ export class Remotes {
       r.farmer.pick.visible = (s.f & STATEF.PICK) !== 0;
       r.farmer.sword.visible = (s.f & STATEF.SWORD) !== 0;
       r.farmer.mallet.visible = (s.f & STATEF.MALLET) !== 0;
+      r.farmer.rod.visible = (s.f & STATEF.ROD) !== 0;
+      r.farmer.anim.line = r.farmer.rod.visible && (s.f & STATEF.CAST) ? ((s.f & STATEF.BITE) ? 'bite' : 'out') : null;
+      const mount = Math.floor(s.f / STATEF.MOUNT) & 7; // (riding: src/mounts.js)
+      if (mount !== (r.mount ?? 0)) {
+        r.mount = mount;
+        r.farmer.ride(mount ? createMount(BOSS_IDS[mount - 1]) : null);
+      }
       const swinging = (s.f & STATEF.SWING) !== 0;
       if (swinging && !r.wasSwinging) r.farmer.swing();
       r.wasSwinging = swinging;
       r.farmer.anim.facing = s.yaw; // the owner already eased it
       r.farmer.animate(dt, { moving: speed > 0.8, onGround, targetYaw: s.yaw, time });
+      this.showLine(r, s, time);
     }
+  }
+
+  // A farmer's fishing line, out over the water in front of them while they have one out
+  showLine(r, s, time) {
+    if (r.farmer.anim.line && !r.lineAt) r.lineAt = this.waterFrom(s.x, s.z, s.yaw); // (where it landed, kept till it is in)
+    if (!r.farmer.anim.line) r.lineAt = null;
+    if (!r.lineAt) return r.tackle?.hide();
+    r.tackle ??= createTackle(this.scene);
+    r.farmer.rodTip.getWorldPosition(this._tip);
+    r.tackle.show(this._tip, r.lineAt, r.farmer.anim.line === 'bite', time);
   }
 
   swing(id) {
@@ -188,6 +213,7 @@ export class Remotes {
     if (!r) return;
     this.scene.remove(r.farmer.root);
     r.farmer.dispose();
+    r.tackle?.dispose();
     r.tag?.material.map.dispose();
     r.tag?.material.dispose();
     this.players.delete(id);

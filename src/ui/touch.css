@@ -96,6 +96,8 @@ body.in-menu .tc { display: none; }
 .tc-btn.down { transform: translateY(2px); box-shadow: inset 0 4px 0 #a3530c, 0 1px 0 rgba(0, 0, 0, 0.3); }
 .tc-use { right: 0; bottom: 0; width: 78px; height: 78px; font-size: 27px; }
 .tc-use.ready { background: #4f9e3c; box-shadow: inset 0 4px 0 #7ed957, inset 0 -4px 0 #2f6b25, 0 0 0 4px rgba(255, 230, 120, 0.8); }
+.tc-use.bite { background: #ffd84a; color: #3b2412; text-shadow: none; animation: tc-bite 0.35s ease-in-out infinite alternate; }
+@keyframes tc-bite { from { transform: scale(1); } to { transform: scale(1.14); } }
 .tc-jump { right: 86px; bottom: 0; width: 72px; height: 72px; font-size: 26px; }
 .tc-small {
   width: 50px;

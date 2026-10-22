@@ -13,14 +13,25 @@ import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
-import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
+import { FISHING, RODS, SHOP } from '../shared/balance.js';
+import { biting, castLine } from '../shared/fishing.js';
 import { fingerprint } from './seed-fingerprint.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { homeWildsSource } from './wilds.js';
+import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits } from '../shared/bosses.js';
+import { BOSSES } from '../shared/balance.js';
+import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
+import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
+import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
+import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
+import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
+import { arenaFor, checkArena, signFor } from '../shared/arenas.js';
+import { MINIGAMES } from '../shared/balance.js';
 
 // spot kinds only later generations grow (2 and up)
 const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS]);
@@ -67,6 +78,25 @@ function standAt(room, who, id) {
 }
 
 console.log('islands');
+await test('skills level up from their XP, and the overall level unlocks the double jump', () => {
+  assert.deepEqual(levelOf(0), { level: 1, into: 0, need: SKILLS.next[0] });
+  assert.equal(levelOf(SKILLS.next[0] - 1).level, 1);
+  assert.deepEqual(levelOf(SKILLS.next[0] + 5), { level: 2, into: 5, need: SKILLS.next[1] });
+  assert.deepEqual(levelOf(1e9), { level: SKILLS.max, into: 0, need: 0 });
+  const fresh = cleanSkills(null);
+  assert.equal(overallLevel(fresh), 5, 'every skill starts at level 1');
+  assert.deepEqual(cleanSkills({ farming: -3, mining: 'x', woodcutting: 12.7, extra: 9 }), { farming: 0, animals: 0, woodcutting: 12, mining: 0, fishing: 0 });
+  const xpTo = (level) => SKILLS.next.slice(0, level - 1).reduce((a, b) => a + b, 0);
+  const almost = { ...fresh, farming: xpTo(4), animals: xpTo(3), woodcutting: xpTo(4), mining: xpTo(2) };
+  assert.equal(overallLevel(almost), DOUBLE_JUMP.level - 1);
+  assert.ok(!canDoubleJump(almost));
+  assert.ok(canDoubleJump({ ...almost, mining: xpTo(3) }));
+  assert.equal(bonusChance('woodcutting', 1), 0);
+  assert.equal(swingsAt(TREE.hits, SKILLS.fewerSwings - 1), TREE.hits);
+  assert.equal(swingsAt(TREE.hits, SKILLS.fewerSwings), TREE.hits - 1);
+  assert.equal(swingsAt(2, SKILLS.max), 2, 'never under the fewest a lobby allows');
+});
+
 await test('the classic island is as it was made, and sound', () => {
   const classic = islandFor('classic');
   assert.equal(classic.spots.length, 28);
@@ -655,6 +685,178 @@ await test('bopping: the farmer in front, in reach, knocked back; what they gath
   assert.equal(room.drops.size, 0);
 });
 
+console.log('party games');
+// An arena's fingerprint: where its bales and coins are (shared/arenas.js)
+const arenaPrint = (a) => {
+  let h = 0x811c9dc5;
+  for (const ch of JSON.stringify([a.coast, a.bales, a.coins])) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+  return h;
+};
+await test('every seed grows a sound coin rush arena, the same every time', () => {
+  for (let i = 0; i < 200; i++) {
+    const seed = `arena-${i}`;
+    const arena = arenaFor('coin_rush', seed, { cached: false });
+    assert.ok(arena, seed);
+    assert.deepEqual(checkArena(arena), [], seed);
+    const [lo, hi] = MINIGAMES.coin_rush.coins;
+    assert.ok(arena.coins.length >= lo && arena.coins.length <= hi, seed);
+    assert.ok(arena.coins.some(([, y]) => y > 1), `${seed}: coins up on the bales`);
+    assert.equal(arenaPrint(arenaFor('coin_rush', seed, { cached: false })), arenaPrint(arena));
+  }
+  assert.notEqual(arenaPrint(arenaFor('coin_rush', 'a')), arenaPrint(arenaFor('coin_rush', 'b')));
+  assert.equal(arenaFor('hopscotch', 'a'), null);
+});
+
+// Arenas players know must never change: grow a new kind (or generation) instead
+const ARENA_SEEDS = { 'meadow': 2486539853, 'dewy-glade-31': 2502642802, 'amber-hollow-58': 97696243, 'willow-meadow-54': 3570715387 };
+await test('coin rush arenas grow exactly as they always did', () => {
+  for (const [seed, print] of Object.entries(ARENA_SEEDS)) assert.equal(arenaPrint(arenaFor('coin_rush', seed, { cached: false })), print, seed);
+});
+
+await test('the signpost stands in the stone circle, on open ground, clear of where farmers arrive', () => {
+  for (const seed of ['classic', ...Array.from({ length: 30 }, (_, i) => `sign-${i}-v${CURRENT_GEN}`), 'sign-old', 'sign-v3']) {
+    const island = islandFor(seed);
+    const sign = signFor(island);
+    const d = Math.hypot(sign.x - island.spawn.x, sign.z - island.spawn.z);
+    assert.ok(d < STONE_CIRCLE - 0.5 && d > 2.7, `${seed}: ${d}`);
+    assert.ok(island.isLand(sign.x, sign.z) && !island.inPond(sign.x, sign.z) && !island.topOver(sign.x, sign.z, 0.5), seed);
+  }
+});
+
+// A party game on the classic island: a and b in it, c stays in the lobby
+function partyRoom() {
+  const room = new Room({ code: 'PARTY1', rand: mulberry32(7) });
+  const [a, b, c] = ['Ann', 'Bo', 'Cy'].map((name) => join(room, name));
+  const sign = room.party.sign;
+  const stand = (who, x, y, z) => room.message(who.p, { t: C.STATE, x, y, z, yaw: 0, f: 1 });
+  return { room, a, b, c, sign, stand };
+}
+await test('a party game starts at the signpost, gathers whoever joins, and takes them off to its arena', () => {
+  const { room, a, b, c, sign, stand } = partyRoom();
+  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
+  assert.equal(room.party.game, null, 'not away from the signpost');
+  assert.match(a.conn.last(S.CHAT).text, /signpost/);
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'tag' });
+  assert.equal(room.party.game, null, 'not a game there is');
+  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
+  const gathering = c.conn.last(S.GAME).game;
+  assert.equal(gathering.phase, 'gathering');
+  assert.deepEqual(gathering.players, [[a.p.id, 0]]);
+  assert.match(c.conn.last(S.CHAT).text, /Ann is starting a coin rush/);
+  room.message(c.p, { t: C.GAME_START, game: 'coin_rush' });
+  assert.match(c.conn.last(S.CHAT).text, /on already/);
+  room.message(b.p, { t: C.GAME_JOIN }); // (from the pop-up: anywhere in the lobby)
+  room.message(c.p, { t: C.GAME_JOIN });
+  room.message(c.p, { t: C.GAME_LEAVE }); // (not coming after all)
+  assert.deepEqual(c.conn.last(S.GAME).game.players.map(([id]) => id), [a.p.id, b.p.id]);
+
+  const now = Date.now();
+  room.update(now + MINIGAMES.gatherMs + 10);
+  const { game } = c.conn.last(S.GAME);
+  assert.equal(game.phase, 'ready');
+  const arena = arenaFor('coin_rush', game.seed);
+  assert.deepEqual([a.p.x, a.p.z], [arena.start(0, 2).x, arena.start(0, 2).z]);
+  assert.deepEqual([b.p.x, b.p.z], [arena.start(1, 2).x, arena.start(1, 2).z]);
+  assert.ok(a.p.game && b.p.game && !c.p.game);
+  const roster = c.conn.last(S.ROSTER).list;
+  assert.equal(roster.find((p) => p.id === a.p.id).game, game.id, 'pages know who is away');
+  // a reload in the arena comes back to it
+  room.leave(b.p);
+  const b2 = { conn: fakeConn() };
+  room.join(b2.conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bo', key: 'Bo' });
+  assert.equal(b2.conn.last(S.WELCOME).game.phase, 'ready');
+  assert.deepEqual(b2.conn.last(S.WELCOME).pos, { x: b.p.x, y: b.p.y, z: b.p.z });
+});
+
+await test('coin rush: a coin counts once, for whoever is by it, only while it is on; the winner gets the prize', () => {
+  const { room, a, b, c, sign, stand } = partyRoom();
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
+  room.message(b.p, { t: C.GAME_JOIN });
+  const now = Date.now();
+  room.update(now + MINIGAMES.gatherMs + 10);
+  const arena = room.party.game.arena;
+  const [x, y, z] = arena.coins[0];
+  stand(a, x, y + 0.1, z);
+  room.message(a.p, { t: C.GAME_COIN, id: 0 });
+  assert.equal(a.conn.last(S.GAME_COIN), undefined, 'not before it starts');
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20);
+  assert.equal(c.conn.last(S.GAME).game.phase, 'playing');
+  room.message(c.p, { t: C.GAME_COIN, id: 0 });
+  assert.equal(a.conn.last(S.GAME_COIN), undefined, 'not someone back in the lobby');
+  room.message(b.p, { t: C.GAME_COIN, id: 0 });
+  assert.equal(a.conn.last(S.GAME_COIN), undefined, 'not from over there');
+  room.message(a.p, { t: C.GAME_COIN, id: 0 });
+  room.message(a.p, { t: C.GAME_COIN, id: 0 });
+  room.message(a.p, { t: C.GAME_COIN, id: 999 });
+  assert.deepEqual(c.conn.all(S.GAME_COIN), [{ t: S.GAME_COIN, id: 0, by: a.p.id, score: 1 }]);
+  // nothing of the lobby's while away: its spots, and no bopping (or being bopped) from there
+  const spot = spotOf('meadow');
+  standAt(room, a, spot);
+  room.message(a.p, { t: C.TAKE, id: spot });
+  assert.deepEqual(a.conn.last(S.DENY), { t: S.DENY, id: spot });
+  assert.ok(room.spots[spot].item);
+  stand(a, 0, 0.8, -20);
+  stand(c, 0, 0.8, -19);
+  room.message(c.p, { t: C.BOP, weapon: 'mallet', yaw: Math.PI });
+  assert.equal(a.conn.last(S.BOPPED), undefined, 'the lobby cannot bop someone in an arena');
+  // ...but in the arena, playful bops (knocked back, nothing knocked loose)
+  stand(b, 0, 0.8, -21);
+  a.p.bag.wood = 3;
+  room.message(b.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
+  assert.equal(a.conn.last(S.BOPPED).id, a.p.id);
+  assert.equal(a.conn.last(S.BOPPED).drop, null);
+
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
+  const end = c.conn.last(S.GAME_END);
+  assert.equal(end.winner, a.p.id);
+  assert.deepEqual(end.scores, [[a.p.id, 1], [b.p.id, 0]]);
+  const prize = new Map(end.prizes);
+  const { coins, perPlayer, played } = MINIGAMES.prize;
+  assert.deepEqual(prize.get(a.p.id)[0], ['coin', coins + perPlayer]);
+  assert.equal(prize.get(a.p.id).length, 2, 'and a roll of loot');
+  assert.ok(MINIGAMES.prize.loot.some(([item]) => item === prize.get(a.p.id)[1][0]));
+  const [, n] = prize.get(b.p.id)[0];
+  assert.ok(n >= played[0] && n <= played[1]);
+  assert.equal(c.conn.last(S.GAME).game, null);
+  assert.ok(!a.p.game && !b.p.game);
+  assert.ok(Math.hypot(a.p.x - room.island.spawn.x, a.p.z - room.island.spawn.z) < STONE_CIRCLE, 'back where farmers arrive');
+  assert.match(c.conn.last(S.CHAT).text, /Ann won the coin rush with 1 coin!/);
+  // the next one, after a little while
+  stand(b, sign.x, 0.8, sign.z);
+  room.message(b.p, { t: C.GAME_START, game: 'coin_rush' });
+  assert.equal(room.party.game, null);
+});
+
+await test('a party game is called off once everyone in it has gone; nobody scoring means no winner', () => {
+  const { room, a, b, sign, stand } = partyRoom();
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
+  room.message(a.p, { t: C.GAME_LEAVE });
+  assert.equal(room.party.game, null);
+  assert.match(b.conn.last(S.CHAT).text, /called off/);
+  room.party.nextAt = 0;
+  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
+  room.message(b.p, { t: C.GAME_JOIN });
+  const now = Date.now();
+  room.update(now + MINIGAMES.gatherMs + 10);
+  room.message(a.p, { t: C.GAME_LEAVE }); // (back to the lobby from the arena)
+  assert.ok(!a.p.game && b.p.game);
+  assert.ok(Math.hypot(a.p.x - room.island.spawn.x, a.p.z - room.island.spawn.z) < STONE_CIRCLE);
+  room.leave(b.p, { hold: false }); // (headed home)
+  assert.equal(room.party.game, null);
+  room.party.nextAt = 0;
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
+  room.update(now + MINIGAMES.gatherMs * 2 + 10);
+  room.update(now + MINIGAMES.gatherMs * 2 + MINIGAMES.readyMs + 20); // (a phase a tick)
+  room.update(now + MINIGAMES.gatherMs * 2 + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
+  assert.equal(a.conn.last(S.GAME_END).winner, 0);
+  assert.deepEqual(a.conn.last(S.GAME_END).prizes, [[a.p.id, a.conn.last(S.GAME_END).prizes[0][1]]]);
+  assert.equal(a.conn.last(S.GAME_END).prizes[0][1][0][0], 'coin', 'a few coins for playing');
+});
+
 await test('bigger rocks give more stone, within the sizes rocks come in', () => {
   const luck = (r) => () => r;
   assert.equal(stoneFor(ROCK.per, luck(0)), ROCK.stone[0]);
@@ -693,7 +895,7 @@ await test('rare finds are announced when someone takes one', () => {
   assert.ok(room.info().rare > 0, 'the lobby list says rare finds are about');
   standAt(room, a, id);
   room.message(a.p, { t: C.TAKE, id });
-  assert.match(b.conn.last(S.CHAT).text, /^A found (golden seeds|an old key)!$/);
+  assert.match(b.conn.last(S.CHAT).text, /^A found (golden seeds|an old key|a key piece to the .+)!$/);
   assert.equal(a.p.rares, 1);
 });
 
@@ -740,6 +942,68 @@ await test('chat is cleaned and rate limited', () => {
   assert.equal(b.conn.last(S.CHAT).text, 'hi there');
   for (let i = 0; i < 10; i++) room.message(a.p, { t: C.CHAT, text: `spam ${i}` });
   assert.ok(b.conn.all(S.CHAT).filter((m) => m.from === a.p.id).length <= 5);
+});
+
+await test('fishing: what bites where, with which rod, at what hour', () => {
+  for (const [water, table] of Object.entries(FISHING)) {
+    for (const [item] of table) assert.ok(item === 'chest' || item === 'key' || item === 'wood' || SHOP[item]?.sell, `${water}: the merchant buys ${item}`);
+  }
+  const at = (hour, rod = 'fishing_rod') => biting('sea', rod, hour).map(([item]) => item);
+  assert.ok(at(23).includes('moonfish') && !at(12).includes('moonfish'), 'the moonfish only at night');
+  assert.ok(!at(23).includes('pufferfish') && at(23, 'sturdy_rod').includes('pufferfish'), 'the pufferfish takes a sturdy rod');
+  const share = (rod) => {
+    const table = biting('lobby', rod, 23);
+    const total = table.reduce((sum, [, w]) => sum + w, 0);
+    return table.filter(([, , rarity]) => rarity >= 2).reduce((sum, [, w]) => sum + w, 0) / total;
+  };
+  assert.ok(share('golden_rod') > share('sturdy_rod') && share('sturdy_rod') > share('fishing_rod'), 'a better rod, rarer things');
+  const rand = mulberry32(4);
+  for (let i = 0; i < 200; i++) {
+    const line = castLine('pond', 'golden_rod', 12, 1, rand);
+    assert.ok(line.bite >= RODS.golden_rod.bite[0] && line.bite <= RODS.golden_rod.bite[1] && line.window > 0);
+    if (line.item === 'chest') assert.ok(line.items.length >= 1);
+    assert.notEqual(line.item, 'catfish', 'no catfish at noon');
+  }
+});
+
+await test('fishing in a lobby: the room rolls it, a bite in time lands it, a late one gets away', () => {
+  const room = new Room({ code: 'FISH', rand: mulberry32(2) });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  // on the sand, facing the sea
+  const shore = room.island.coastAt(0) - 1.5;
+  room.message(a.p, { t: C.STATE, x: shore, y: 0.8, z: 0, yaw: Math.PI / 2, f: 1 });
+  assert.ok(room.island.isLand(shore, 0) && !room.island.isLand(shore + 2.5, 0));
+  room.message(a.p, { t: C.CAST, n: 1, x: shore - 2, z: 0, rod: 'fishing_rod' });
+  assert.equal(a.conn.last(S.CAUGHT)?.n, 1, 'not on dry land');
+  assert.equal(a.p.line, null);
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 2, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+  assert.ok(a.p.line && !a.p.line.bit);
+  room.message(a.p, { t: C.REEL });
+  assert.equal(a.p.line, null, 'reeled in before a bite: nothing');
+  assert.equal(a.conn.all(S.CAUGHT).length, 1);
+  // a bite, and E in time
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 3, x: shore + 2.5, z: 0, rod: 'golden_rod' });
+  Object.assign(a.p.line, { item: 'golden_carp', count: 1, items: undefined, biteAt: Date.now() - 1 });
+  room.update();
+  assert.deepEqual(a.conn.last(S.BITE), { t: S.BITE, n: 3, window: a.p.line.window });
+  room.message(a.p, { t: C.REEL });
+  assert.equal(a.conn.last(S.CAUGHT).item, 'golden_carp');
+  assert.equal(a.p.rares, 1);
+  assert.ok(b.conn.all(S.CHAT).some((m) => m.text === 'A fished up a golden carp!'), 'the lobby hears of a rare one');
+  assert.equal(a.p.bag.golden_carp, undefined, 'a rare fish is never knocked loose');
+  // too slow
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 4, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+  a.p.line.biteAt = Date.now() - 10_000;
+  a.p.line.bit = true;
+  room.message(a.p, { t: C.REEL });
+  assert.deepEqual(a.conn.last(S.CAUGHT), { t: S.CAUGHT, n: 4, item: null });
+  // and not again straight away
+  room.message(a.p, { t: C.CAST, n: 5, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+  assert.equal(a.conn.last(S.CAUGHT).n, 5, 'casting again too soon');
 });
 
 console.log('keeping lobbies');
@@ -1093,8 +1357,8 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.equal(ann.conn.last(S.FARM_DENY).op, 'unbuild', 'too far');
   room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
   assert.deepEqual(ann.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,3', piece: 'wood_fence', by: bo.p.id });
-  // gates, arches, arbors, low walls, rail and picket fences, hedges, palisades, cobbles, gravel, stepping stones, wells, lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, wattle fences, troughs, stone benches, sundials, wheelbarrows, torches, log fences, mailboxes, birdhouses, flagpoles, cairns, clotheslines and the blocks to climb on are pieces too
-  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar', 'low_stone_wall', 'wood_palisade', 'wood_barrel', 'straw_bale', 'straw_stack', 'log_tower', 'stone_arch', 'cobble_path', 'rail_fence', 'wood_arbor', 'gravel_path', 'mossy_stone_block', 'stone_well', 'box_hedge', 'stepping_stones', 'tree_stump', 'crate_stack', 'stone_lantern', 'scarecrow', 'picket_fence', 'grain_sacks', 'hay_cart', 'beehive', 'birdbath', 'signpost', 'wattle_fence', 'water_trough', 'stone_bench', 'sundial', 'wheelbarrow', 'barrel_stack', 'straw_step', 'torch', 'log_fence', 'mailbox', 'birdhouse', 'flagpole', 'stone_cairn', 'clothesline']) {
+  // gates, arches, arbors, low walls, rail and picket fences, hedges, palisades, cobbles, gravel, stepping stones, wells, lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, wattle fences, troughs, stone benches, sundials, wheelbarrows, torches, log fences, mailboxes, birdhouses, flagpoles, cairns, clotheslines, rope fences, log benches, compost bins, milk churns, dovecotes and the blocks to climb on (boulders too) are pieces too
+  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar', 'low_stone_wall', 'wood_palisade', 'wood_barrel', 'straw_bale', 'straw_stack', 'log_tower', 'stone_arch', 'cobble_path', 'rail_fence', 'wood_arbor', 'gravel_path', 'mossy_stone_block', 'stone_well', 'box_hedge', 'stepping_stones', 'tree_stump', 'crate_stack', 'stone_lantern', 'scarecrow', 'picket_fence', 'grain_sacks', 'hay_cart', 'beehive', 'birdbath', 'signpost', 'wattle_fence', 'water_trough', 'stone_bench', 'sundial', 'wheelbarrow', 'barrel_stack', 'straw_step', 'torch', 'log_fence', 'mailbox', 'birdhouse', 'flagpole', 'stone_cairn', 'clothesline', 'rope_fence', 'boulder', 'log_bench', 'compost_bin', 'milk_churns', 'dovecote']) {
     room.message(bo.p, { t: C.BUILD, key: '5,3', piece });
     assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,3', piece, by: bo.p.id });
     room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
@@ -1276,6 +1540,188 @@ await test('a farm room: machines take things in, and whoever is next to one whe
   assert.equal(honey.got, 'honey');
   assert.ok(honey.state[1] > room.hours() + 23, 'the next jar, a day off');
   room.close();
+});
+
+console.log('bosses');
+await test('a boss sleeps till someone comes, fights, gets tougher with more farmers, and turns friendly when bopped enough', () => {
+  const fight = new BossFight('parsnip', mulberry32(7));
+  const at = ARENAS.parsnip;
+  assert.equal(arenaAt(at.x + 3, at.z), 'parsnip');
+  assert.equal(arenaAt(0, 0), null, 'the farm is no arena');
+  assert.deepEqual(fight.step(0.1, []), [], 'nobody there: asleep');
+  const a = { id: 1, x: at.x, y: GROUND_STAND_Y, z: at.z + 2 };
+  assert.deepEqual(fight.step(0.1, [a]).map((fx) => fx.e), ['wake']);
+  assert.equal(fight.bop(1, 'mallet', a.x, a.y, a.z), null, 'not bopped while it wakes');
+  for (let i = 0; i < 30; i++) fight.step(0.1, [a]);
+  assert.equal(fight.phase, 'fight');
+  const one = fight.max;
+  fight.step(0.05, [a, { ...a, id: 2 }]);
+  assert.ok(fight.max > one && fight.hp > one * 0.99, 'more health with two');
+  // moves: shockwaves and seeds come out, a jump clears them
+  const fx = [];
+  for (let i = 0; i < 400; i++) fx.push(...fight.step(0.05, [a, { ...a, id: 2 }]));
+  assert.ok(fx.some((f) => f.e === 'wave') && fx.some((f) => f.e === 'seeds'), 'it hops and shoots');
+  const wave = { x: 0, z: 0, speed: 7, max: 4.5 };
+  assert.ok(waveHits(wave, 0.5, 3.5, GROUND_STAND_Y, 0) && !waveHits(wave, 0.5, 3.5, GROUND_STAND_Y + 1, 0), 'jumped over');
+  const seeds = { x: 0, z: 0, a0: 0, n: 4, speed: 6 };
+  assert.ok(seedHits(seedAt(seeds, 0, 0.5), 0, GROUND_STAND_Y, 3));
+  // bopped till it is friendly: out of reach doesn't count
+  fight.start('rest', { dur: 1e9 });
+  assert.equal(fight.bop(1, 'mallet', fight.x + 9, GROUND_STAND_Y, fight.z), null, 'too far');
+  assert.equal(fight.bop(1, 'axe', fight.x + 1, GROUND_STAND_Y, fight.z), null, 'not a weapon');
+  let hit;
+  for (let i = 0; i < 200 && !hit?.won; i++) hit = fight.bop(1, 'wooden_sword', fight.x + 1, GROUND_STAND_Y, fight.z);
+  assert.equal(hit.hp, 0);
+  assert.deepEqual(hit.won.sort(), [1, 2], 'everyone who was there');
+  assert.equal(fight.phase, 'friendly');
+  // left alone, back to sleep, fresh
+  for (let i = 0; i < 100; i++) fight.step(0.1, []);
+  assert.equal(fight.phase, 'sleep');
+  assert.equal(fight.hp, BOSSES.parsnip.hp);
+});
+
+await test('a boss fight on a farm with helpers: its portal, the bops, and the portal used up when it is beaten', () => {
+  const room = new FarmRoom({ farm: { id: 'bossfarm', save: null }, admit: () => ({ id: 'bossfarm', owner: true }) });
+  const a = join(room, 'Ann');
+  const b = join(room, 'Bo');
+  const start = arenaStart('parsnip');
+  // a full set of seals builds the portal (paid from the builder's backpack, on the page)
+  assert.deepEqual(PIECES.parsnip_portal.cost, { [BOSSES.parsnip.key]: BOSSES.parsnip.pieces });
+  room.message(a.p, { t: C.STATE, x: 5, y: GROUND_STAND_Y, z: 6, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.BUILD, key: '5,5', piece: 'parsnip_portal' });
+  assert.equal(room.built.get('5,5'), 'parsnip_portal');
+  room.message(a.p, { t: C.BUILD, key: '6,5', piece: 'parsnip_portal' });
+  assert.equal(room.built.get('6,5'), undefined, 'one to a farm');
+  // into the arena: it wakes and fights
+  for (const who of [a, b]) room.message(who.p, { t: C.STATE, x: start.x, y: GROUND_STAND_Y, z: start.z, yaw: 0, f: 1 });
+  let now = Date.now();
+  for (let i = 0; i < 60; i++) room.tickBosses((now += 50));
+  const fight = room.fights.get('parsnip');
+  assert.equal(fight.phase, 'fight');
+  assert.ok(a.conn.all(S.BOSS).length > 5 && b.conn.all(S.BOSS_FX).some((m) => m.fx.e === 'wake'));
+  // not taken down with a fight on through it
+  room.message(a.p, { t: C.STATE, x: 5, y: GROUND_STAND_Y, z: 6, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.UNBUILD, key: '5,5' });
+  assert.equal(room.built.get('5,5'), 'parsnip_portal');
+  // bopped from beside it, never faster than a weapon swings
+  const beside = () => {
+    fight.start('rest', { dur: 1e9 });
+    for (const who of [a, b]) room.message(who.p, { t: C.STATE, x: fight.x + 1, y: GROUND_STAND_Y, z: fight.z, yaw: 0, f: 1 });
+  };
+  beside();
+  room.message(a.p, { t: C.BOSS_BOP, boss: 'parsnip', weapon: 'mallet' });
+  room.message(a.p, { t: C.BOSS_BOP, boss: 'parsnip', weapon: 'mallet' });
+  assert.equal(b.conn.all(S.BOSS_FX).filter((m) => m.fx.e === 'bop').length, 1, 'too fast');
+  room.message(b.p, { t: C.BOSS_BOP, boss: 'lion', weapon: 'mallet' });
+  assert.equal(b.conn.all(S.BOSS_FX).filter((m) => m.fx.e === 'bop').length, 1, 'not that boss here');
+  for (let i = 0; i < 200 && !a.conn.last(S.BOSS_WON); i++) {
+    beside();
+    a.p.bossBopAt = 0;
+    room.message(a.p, { t: C.BOSS_BOP, boss: 'parsnip', weapon: 'mallet' });
+  }
+  const won = b.conn.last(S.BOSS_WON);
+  assert.ok(won, 'beaten');
+  assert.deepEqual(won.won.sort(), [a.p.id, b.p.id].sort(), 'both took part');
+  assert.equal(room.built.get('5,5'), undefined, 'its portal is used up');
+  assert.deepEqual(a.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,5', piece: portalOf('parsnip'), by: 0 }, 'and nobody gets the seals back');
+  room.close();
+});
+
+// ---------- Cards and the arcade ----------
+console.log('cards and the arcade');
+await test('poker hands are told apart and ranked, and the best five of seven found', () => {
+  const name = (cards) => evaluate(cards.split(' ')).name;
+  assert.equal(name('As Ks Qs Js Ts'), 'Straight flush');
+  assert.equal(name('9c 9d 9h 9s 2c'), 'Four of a kind');
+  assert.equal(name('3c 3d 3h 7s 7c'), 'Full house');
+  assert.equal(name('2h 7h 9h Jh Kh'), 'Flush');
+  assert.equal(name('Ac 2d 3h 4s 5c'), 'Straight', 'the wheel');
+  assert.equal(name('Qc Kd Ah 2s 3c'), 'High card', 'no wrapping round');
+  assert.equal(name('5c 5d 5h'), 'Three of a kind');
+  assert.equal(name('8c 8d 4h 4s'), 'Two pair');
+  assert.equal(name('Jc Jd'), 'Pair');
+  assert.deepEqual(evaluate(['Kc', '4d', '9h']).scoring, ['Kc'], 'a high card scores the highest');
+  assert.deepEqual(evaluate(['Jc', '3d', 'Jd', '9s']).scoring, ['Jc', 'Jd']);
+  const v = (cards) => evaluate(cards.split(' ')).value;
+  assert.ok(v('Ac Ad 2h 3s 4c') > v('Kc Kd Qh Js 9c'), 'aces beat kings');
+  assert.ok(v('Ac Ad 9h 3s 4c') > v('Ah As 8h 7s 6c'), 'then the kicker');
+  assert.ok(v('6c 7d 8h 9s Tc') > v('Ac 2d 3h 4s 5c'), 'the wheel is the lowest straight');
+  assert.equal(v('Ac Ad 9h 3s 4c'), v('Ah As 9c 3d 4h'), 'a split pot');
+  const best = bestHand('2c 2d 7h 8h 9h Th Jh'.split(' '));
+  assert.equal(best.name, 'Straight flush');
+  assert.deepEqual(new Set(best.cards), new Set(['7h', '8h', '9h', 'Th', 'Jh']));
+  const deck = shuffle(newDeck(), mulberry32(5));
+  assert.equal(new Set(deck).size, 52);
+});
+
+await test('the arcade: coinflip doubles or loses, blackjack settles by the rules', () => {
+  assert.deepEqual(coinflip(40, 'heads', () => 0.1), { side: 'heads', won: true, payout: 80 });
+  assert.deepEqual(coinflip(40, 'heads', () => 0.9), { side: 'tails', won: false, payout: 0 });
+  assert.deepEqual(handTotal(['As', '6d']), { total: 17, soft: true });
+  assert.deepEqual(handTotal(['As', '6d', '9c']), { total: 16, soft: false });
+  // a hand dealt from a stacked shoe: the dealer's cards come off second and fourth
+  const deal = (cards) => {
+    const rand = mulberry32(1);
+    const game = blackjackDeal(10, rand);
+    game.shoe = [...cards].reverse();
+    Object.assign(game, { player: [], dealer: [], over: false, result: '', payout: 0 });
+    game.player.push(game.shoe.pop());
+    game.dealer.push(game.shoe.pop());
+    game.player.push(game.shoe.pop());
+    game.dealer.push(game.shoe.pop());
+    return game;
+  };
+  let g = blackjackStand(deal(['Ts', '9d', '9c', '8h']));
+  assert.equal(g.result, 'win');
+  assert.equal(g.payout, 20);
+  g = blackjackHit(deal(['Ts', '9d', '6c', '8h', 'Kd']));
+  assert.equal(g.result, 'bust');
+  assert.equal(g.payout, 0);
+  g = blackjackDouble(deal(['5s', '9d', '6c', '7h', 'Td', 'Th']));
+  assert.ok(g.doubled && g.over);
+  assert.equal(g.stake, 20);
+  assert.equal(g.result, 'dealer bust', '21 against the dealer\'s 9 + 7 + 10');
+  assert.equal(g.payout, 40);
+  g = blackjackStand(deal(['Ts', '9d', '7c', '9h']));
+  assert.equal(g.result, 'lose');
+  g = blackjackStand(deal(['Ts', '9d', '7c', '8h']));
+  assert.equal(g.result, 'push');
+  assert.equal(g.payout, 10);
+  // a natural ends the hand as it is dealt
+  let n = 0;
+  for (let seed = 1; seed < 400 && !n; seed++) {
+    const game = blackjackDeal(10, mulberry32(seed));
+    if (game.result === 'blackjack') n = game.payout;
+  }
+  assert.equal(n, 25, 'a blackjack pays 3 to 2');
+});
+
+await test('Lucky Hand: jokers, plays and swaps, and the payout tiers', () => {
+  assert.deepEqual(luckyScore(['Kc', 'Kd']), { cat: 1, name: 'Pair', chips: 30, mult: 2, total: 60, scoring: ['Kc', 'Kd'] });
+  // 10 + 10 + 10 chips, 2 mult; +8 mult with a pair; +3 for a scoring heart; x2 needs three of a kind
+  assert.equal(luckyScore(['Kh', 'Kd', '3c'], ['twin_turnips', 'rosy_heart', 'scarecrow']).total, 30 * 13);
+  assert.equal(luckyScore(['Kh', 'Kd', 'Kc'], ['scarecrow', 'golden_goose']).total, (30 + 30) * 3 * 3);
+  assert.equal(luckyScore(['2h', '3h', '4h', '5h', '6h'], ['garden_path', 'bouquet']).total, (100 + 20) * (8 + 22));
+  for (const id of Object.keys(LUCKY_JOKERS)) assert.ok(jokerText(id).length > 10, id);
+  const game = luckyStart(100, mulberry32(9));
+  assert.equal(game.hand.length, LUCKY.hand);
+  assert.equal(game.offer.length, LUCKY.offer);
+  luckyPlay(game, [0]);
+  assert.equal(game.plays, LUCKY.plays, 'a joker first');
+  luckyPick(game, game.offer[0]);
+  luckyDiscard(game, [0, 1, 2]);
+  assert.equal(game.discards, LUCKY.discards - 1);
+  assert.equal(game.hand.length, LUCKY.hand);
+  luckyPlay(game, [0, 1]);
+  assert.equal(game.offer.length, LUCKY.offer, 'and a second after the first hand');
+  luckyPick(game, game.offer[1]);
+  assert.equal(game.jokers.length, 2);
+  while (!game.over) luckyPlay(game, [0, 1, 2, 3, 4]);
+  assert.equal(game.offer.length, 0, 'no more than two');
+  assert.equal(game.payout, Math.floor(100 * luckyPays(game.score)));
+  assert.equal(luckyPays(0), 0);
+  assert.equal(luckyPays(LUCKY.tiers[1][0]), LUCKY.tiers[1][1]);
+  assert.equal(luckyPays(1e9), LUCKY.tiers.at(-1)[1]);
 });
 
 // ---------- The server, over sockets ----------

@@ -9,7 +9,8 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A day/night cycle with a sun and moon, fireflies and a clock
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, a sword and a mallet for bopping other farmers in lobbies, and machines
+- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, rope fences, log benches, compost bins, milk churns, dovecotes, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, boulders, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, a sword and a mallet for bopping other farmers in lobbies, and machines
+- Fishing with a rod from the workbench: in the sea round any island, in a fish pond built on the farm, and in a lobby's water, where the rarer fish are
 - Machines that turn what your animals give into something worth more (a cheese press, a mayonnaise machine, a loom, and beehives that fill with honey), cooking on a campfire and in the house's kitchen, a recipe book to fill, and dishes that give a little boost when eaten
 - A saved home farm, and online lobbies (up to 8 farmers) you start with friends, where rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
@@ -57,7 +58,7 @@ Without the game server (`npm run dev:client`) the farm stays in the browser unt
 
 **The merchant** keeps a stall just east of the plaza on your farm. Walk up to the counter and press `E` to trade: buy turnip, carrot, flax and sunflower seeds (click: one, `Shift`+click: five), and sell your crops, forage, gems and spare seeds from your backpack (click: the whole stack, right click: one). Tools and the old key aren't for sale. Prices are `price` (buy) and `sell` on each item in `src/items.js`; the item tooltips show what the merchant pays.
 
-**The animals** live in two pens on the farm: the hens in a fenced yard west of the plaza, with a coop, a nest and a trough; the cows and sheep in a pasture south of it, off the path to the shore, with hay bales and a water trough. A new farm comes with two hens, a cow and a sheep (so does a farm saved before there were any), and the merchant sells more: a hen 150g (up to 8), a sheep 350g (up to 6), a cow 500g (up to 4). One sits in the backpack until you stand in her pen with her in hand and press `E`. By day they wander and graze (the hens peck); the hens and sheep scurry off if you run at them, and a cow nudges you aside. Walk up to one and press `E` (or tap her) to pet her, or, when a little picture floats over her, to milk the cow or shear the sheep. A little before dark the hens go up the ramp to roost and the cows and sheep lie down in the grass; they're up again after sunrise.
+**The animals** live in two pens on the farm: the hens in a fenced yard west of the plaza, with a coop, a nest and a trough; the cows and sheep in a pasture south of it, off the path to the shore, with hay bales and a water trough. A new farm comes with two hens, a cow and a sheep (so does a farm saved before there were any), and the merchant sells more: a hen 150g, a sheep 350g, a cow 500g. A pen has room for 8 hens, or 4 cows and 6 sheep; upgraded at the workbench (twice) its fence goes out a little and there is room for 12 and then 16 hens, 6 and 8 cows, 9 and 12 sheep. The yard's coop gets bigger and some eggs are **large eggs** (35%, then 70%); the pasture gets a hay rack and then a barn, and a cow or sheep gives two milk or wool half the time, then every time. Something built or farmed where the bigger fence goes has to go first. One sits in the backpack until you stand in her pen with her in hand and press `E`. By day they wander and graze (the hens peck); the hens and sheep scurry off if you run at them, and a cow nudges you aside. Walk up to one and press `E` (or tap her) to pet her, or, when a little picture floats over her, to milk the cow or shear the sheep. A little before dark the hens go up the ramp to roost and the cows and sheep lie down in the grass; they're up again after sunrise.
 
 What they give comes on the farm's clock, so it keeps coming while you're away:
 - **Eggs** (25g): each hen lays one a day, between mid-morning and the afternoon, where she stands, or in the nest beside the coop if it fell due while she slept or you were off the farm (up to 3 lying about per hen). Walk over an egg to pick it up.
@@ -68,13 +69,13 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 
 **Building.** Wood and stone from the lobbies build things on your farm. Open the backpack's **Build** tab (`B`) and pick a piece: a see-through one shows where it goes (red where it can't), on the tile you point at with the mouse or the one in front of you. `E` puts it down (hold `E` and walk to lay a path), and so does a click or a tap on a tile (the farmer walks over first if it's far). **Done** or `Esc` ends build mode.
 
-- **Wood fence** (2 wood), **rail fence** (3 wood, split rails on squat posts), **picket fence** (3 wood, pale pointed pickets), **wattle fence** (3 wood, withies woven between stakes), **log fence** (3 wood, whole logs laid two high between stumps), **box hedge** (1 wood, 2 flax, clipped bushes), **low stone wall** (2 stone), **stone wall** (3 stone) and **wood palisade** (4 wood, a row of pointed logs) join up with the fences, hedges and walls beside them. A fence, a rail, picket, wattle or log fence, a hedge or a low wall can be hopped over; a stone wall or a palisade can't.
+- **Wood fence** (2 wood), **rail fence** (3 wood, split rails on squat posts), **picket fence** (3 wood, pale pointed pickets), **wattle fence** (3 wood, withies woven between stakes), **log fence** (3 wood, whole logs laid two high between stumps), **rope fence** (2 wood, 1 flax, a rope slung between posts), **box hedge** (1 wood, 2 flax, clipped bushes), **low stone wall** (2 stone), **stone wall** (3 stone) and **wood palisade** (4 wood, a row of pointed logs) join up with the fences, hedges and walls beside them. A fence, a rail, picket, wattle, log or rope fence, a hedge or a low wall can be hopped over; a stone wall or a palisade can't.
 - **Wood path** (1 wood), **stone path** (1 stone), **gravel path** (1 stone), **stepping stones** (1 stone, three flat stones across the grass) and **cobble path** (2 stone) are walked on.
 - A **wood gate** (3 wood) joins up with the fences beside it, like a fence, but is walked through.
 - A **stone arch** (5 stone) or a **wood arbor** (5 wood, posts and rafters with a flowering vine) joins up with the walls and fences beside it the same way, and is walked through too.
 - Blocks to climb on, in heights a step apart:
   - a **wood step** (2 wood), a **tree stump** (2 wood), a **straw step** (2 flax) or a **stone step** (2 stone) is walked up onto;
-  - a **wood crate** (3 wood), a **straw bale** (3 flax), a pile of **grain sacks** (4 flax), a **wood barrel** (4 wood), a **log pile** (4 wood), a **stone block** or a **mossy stone block** (4 stone) takes a hop, or a step in front of it;
+  - a **wood crate** (3 wood), a **straw bale** (3 flax), a pile of **grain sacks** (4 flax), a **wood barrel** (4 wood), a **boulder** (3 stone, worn flat on top), a **log pile** (4 wood), a **stone block** or a **mossy stone block** (4 stone) takes a hop, or a step in front of it;
   - a **wood scaffold** (5 wood, a plank deck on posts), a **crate stack** (6 wood, a low crate on a big one), a **straw stack** (6 flax, bales three high) or a **tall stone block** (6 stone) is a step up from a crate or a block;
   - a **log tower** (8 wood, logs laid crosswise), a **barrel stack** (8 wood, one barrel stood on another) or a **stone pillar** (8 stone) is a step up from those, the tallest things to stand on.
 
@@ -91,6 +92,10 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **stone bench** (4 stone), a slab on two blocks; moss grows on some.
 - A **sundial** (4 stone), a brass dial on a stone pedestal, its gnomon pointing north.
 - A **wheelbarrow** (3 wood, 1 stone), set down at a slant, with stones, logs or earth in it.
+- A **log bench** (3 wood), a split log on two short stumps.
+- A **compost bin** (4 wood), a slatted bin of earth with peelings and greens heaped on top.
+- **Milk churns** (1 wood, 3 stone), two tall tin churns and a short one on a plank; the short one's lid is off on some.
+- A **dovecote** (5 wood, 1 stone), a little house for doves on a post, with doves on its perch and roof.
 - A **torch** (1 wood, 1 flax), a flame on a stick: it burns day and night and lights up what is around it after dark, flickering.
 - A **mailbox** (2 wood), a wooden box with a rounded lid on a post; its red flag is up on some, and a letter pokes out of a few.
 - A **birdhouse** (2 wood), a little house with a round door on a tall pole; a bird sits on the perch of some.
@@ -99,15 +104,24 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **clothesline** (2 wood, 2 flax), a line between two T-posts with a shirt, a sheet and trousers pegged out on it.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
   - a **flower planter** (4 stone, 1 wood), put down from the Build tab like the rest;
-  - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
+  - better tools, each made from the one before: a **sturdy axe** and a **sturdy pickaxe** take three and two swings instead of four and three, and a **wide hoe** tills three tiles side by side; at level 2, **silver** ones (two swings, one swing, five tiles in a row), at level 3 **golden** ones (one swing and an extra log or stone, a patch three by three), for gold, wood, stone and gems;
   - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below);
+  - a **fishing rod** (5 wood, 2 flax), and from it a **sturdy rod** (15 wood, 10 stone, 4 flax), and at level 2 a **golden rod** (500 gold, 20 wood, 2 sky gems): see Fishing, below;
   - the machines: a **cheese press** (20 wood, 10 stone), a **mayonnaise machine** (15 wood, 15 stone) and a **loom** (25 wood, 10 flax), put down from the Build tab (see **Machines and cooking**, below).
+
+  Up top it has the farm's **upgrades**, bought by its farmer with gold, wood and stone (and gems): the workbench itself (three levels, each making more, and drawn fancier: a pegboard and a lantern, then a little roof, an anvil and a grindstone), and the hen yard and the pasture (three levels each: below). A recipe's `level` says which workbench it takes (`RECIPES`, `BENCH_LEVELS`, `PEN_LEVELS` in `shared/balance.js`).
+- A **fish pond** (30 stone), 3 tiles by 3, built from the middle of its front row: still water in a ring of stones, to fish in.
 - A **campfire** (6 wood, 6 stone), to cook on, flickering and lighting the ground round it at night.
 - **Bunting** (2 wood, 1 cloth), a string of little flags between two poles, and a **market awning** (4 wood, 2 cloth), a counter under a striped roof: built with the cloth from the loom.
 - A **farm chest** (8 wood, 2 stone), one to a farm: somewhere to keep things. What your backpack is short of when you build comes out of it.
 - A **house** (500 wood, 200 stone), one to a farm and one more for each helper, 5 tiles across and 4 deep, built from the middle of its front where the door is. `E` at the door (or a tap on the house) goes inside (every house on the farm opens into the same room): a room of 200 tiles (20 by 10) with a bed, a table, a fireplace, a shelf of books and a kitchen to cook in, and a field of earth (8 by 6) to till and plant like the farm's. `E` at the door inside goes back out. Its windows light up at night (`HOUSE_ROOM` in `shared/level.js`, `src/house.js`).
 - **Take down** (in the Build tab) takes a piece away and gives back what it cost.
 - Nothing goes on tilled soil, in the animals' pens, by the stall's counter, where farmers arrive on the plaza, or on someone standing there. What's built is saved with the farm, and on a farm with helpers everyone can build (each pays from their own backpack) and the farm's room keeps it, like the soil (`PIECES` in `shared/level.js`, `src/build.js`).
+
+**Fishing.** With a rod in hand, face the water (the sea past the sand, or a fish pond) and press `E` (**Use** on a phone): the line goes out and the bobber floats. When it dips with a splash and a **!** (on a phone the Use button pulses and the phone buzzes), press `E` again, quickly: the rarer the fish, the less time you have. Too slow and it gets away; `E` before anything bites, or walking off, just reels in.
+- The sea round the farm has sardines, mackerel and sea bass, seaweed, and a moonfish late at night; a pufferfish takes a sturdy rod. A fish pond has minnows and perch, sunfish around midday, catfish in the evening, and a koi for a sturdy rod. A lobby's water has the rarer ones (see the lobbies, below).
+- Now and then it's an old boot, some driftwood, an old key or a little chest of loot.
+- A better rod gets bites sooner and rarer fish on the line. The merchant buys every fish (`FISHING` and `RODS` in `shared/balance.js`, `shared/fishing.js`, `src/fishing.js`).
 
 **Machines and cooking.** Put a machine down on the farm, walk up to it and press `E` (or tap it) to put in what it takes, out of your backpack; a few game hours later (a game hour is a real minute) it is done, and `E` collects what it made. A faint picture over a machine shows what it is making; it bobs, bright, once it is ready. What they make sells for well over what went in:
 - **Cheese press**: milk → **cheese** (4 hours, 150g).
@@ -141,6 +155,7 @@ On a farm with helpers the farm's room keeps what is in each machine: anyone can
 - Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it, and it stays empty.
 - Now and then something rare turns up (golden seeds, an old key) with a golden glint over it, and the whole lobby hears about it in chat. Golden seeds grow a golden turnip at home.
 - **Bopping**: with a wooden sword or a mallet (made at a workbench) in hand, `E` bops the nearest farmer in reach (or tap them to go and bop them). They stumble back and drop a little of what they gathered on this visit, one thing with the sword, two with the mallet, for anyone to walk into: never a rare find or gold. Nobody gets hurt. A farmer just bopped can't be again for a few seconds, and nobody bops or is bopped in the stone circle where you arrive (`WEAPONS` in `shared/balance.js`).
+- **Fishing** works in a lobby too: its sea and its pond have the rarer fish (a rainbow trout, a glowfish late at night, now and then a golden carp), the lobby rolls what bites, and the whole lobby hears about a rare one.
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
@@ -192,7 +207,8 @@ island-platformer/
 │   ├── chest.js         # the farm chest on a farm with helpers, and its window
 │   ├── build.js         # what is built on the farm: fences, gates, walls, paths, blocks, the workbench, decorations
 │   ├── house.js         # inside the house: its room, with a field to farm
-│   ├── workbench.js     # the workbench's window: decorations, sturdy tools, the sword and the mallet, the machines
+│   ├── workbench.js     # the workbench's window: the farm's upgrades, decorations, better tools, the sword, the mallet, the rods and the machines
+│   ├── fishing.js       # casting, the bobber and the line (ours and everyone else's), landing what bit
 │   ├── machines.js      # what is in the farm's machines, and the bubbles over them
 │   ├── cooking.js       # the campfire's and the kitchen's window (the recipe book), and what eating does
 │   ├── foods.js         # the item catalog's machines, what they make, the dishes and the recipe cards
@@ -210,6 +226,7 @@ island-platformer/
 │   ├── constants.js     # tick rate, limits
 │   ├── balance.js       # every balancing number: regrow times, prices, costs, loot, recipes
 │   ├── level.js         # resource spots, rare finds, building pieces
+│   ├── fishing.js       # what bites where, with which rod, at what hour; casting a line
 │   ├── machines.js      # what goes into a machine, when it is done, and what comes back out
 │   └── worldgen.js      # islands from seeds (and the classic island)
 ├── server/

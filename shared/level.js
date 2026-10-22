@@ -4,9 +4,9 @@
 // grow from seeds in shared/worldgen.js. What the worlds look like is the
 // client's business (src/maps.js, src/world.js). The numbers that balance
 // the game (times, costs, what things give) are in shared/balance.js.
-import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS } from './balance.js';
+import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS, BOSSES } from './balance.js';
 import { SKY_STYLES, relicAt } from './skyisles.js';
-export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, STURDY_HITS } from './balance.js';
+export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, TOOL_HITS } from './balance.js';
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
@@ -103,7 +103,7 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // taller than a crate), so step, crate, scaffold, pillar is a stair walked all
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch or a wood arbor joins the walls (or fences)
-// beside it the same way. A low stone wall, a rail, picket, wattle or log
+// beside it the same way. A low stone wall, a rail, picket, wattle, log or rope
 // fence or a box hedge is hopped over like a fence; a palisade, like a stone wall, can't be. A farm has `one`
 // farm chest at most (src/chest.js): built, it stands where it was put; on a
 // farm with helpers there is one by the plaza till then, so the harvest
@@ -162,12 +162,20 @@ export const PIECES = {
   flagpole: { name: 'Flagpole', solid: true },
   stone_cairn: { name: 'Stone cairn', solid: true },
   clothesline: { name: 'Clothesline', solid: true },
+  rope_fence: { name: 'Rope fence', solid: true, joins: true },
+  boulder: { name: 'Boulder', solid: true, block: 0.9 },
+  log_bench: { name: 'Log bench', solid: true },
+  compost_bin: { name: 'Compost bin', solid: true },
+  milk_churns: { name: 'Milk churns', solid: true },
+  dovecote: { name: 'Dovecote', solid: true },
   workbench: { name: 'Workbench', solid: true },
+  arcade: { name: 'Arcade', solid: true, one: true }, // (games for gold: src/arcade.js)
   farm_chest: { name: 'Farm chest', solid: true, one: true },
   house: { name: 'House', solid: true, perHelper: true, size: [5, 4] }, // (one, and one more for each helper: mostPieces)
   lamp_post: { name: 'Lamp post', solid: true },
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
+  pond: { name: 'Fish pond', solid: true, size: [3, 3] }, // (fished in: shared/fishing.js)
   // the machines (shared/machines.js; the beehive above is one too)
   cheese_press: { name: 'Cheese press', solid: true },
   mayo_machine: { name: 'Mayonnaise machine', solid: true },
@@ -177,16 +185,24 @@ export const PIECES = {
   market_awning: { name: 'Market awning', solid: true },
   // a relic from a sky isle on a pedestal, to show it off (`relic`: one of those)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
+  // a boss's portal (`portal`: which boss; shared/bosses.js), from a full set
+  // of its key pieces, one to a farm; and its statue, for beating it
+  ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, { name }]) => [
+    [`${id}_portal`, { name: `${name} portal`, portal: id, one: true }],
+    [`${id}_statue`, { name: `${name} statue`, solid: true, statue: id }],
+  ])),
 };
 for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
 
 // The Build tab's groups, in order, and each piece's `group`: fences, walls
 // and what joins them (gates, arches, arbors, hedges); paths, walked on;
-// blocks, climbed; the buildings, that do something; the decorations; the relics
-export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics'];
-const BUILDINGS = new Set(['workbench', 'farm_chest', 'house', 'stone_well', 'cheese_press', 'mayo_machine', 'loom', 'campfire']);
+// blocks, climbed; the buildings, that do something; the decorations; the
+// relics; the bosses' portals and statues
+export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics', 'Bosses'];
+const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well', 'pond', 'cheese_press', 'mayo_machine', 'loom', 'campfire']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
+    : piece.portal || piece.statue ? 'Bosses'
     : BUILDINGS.has(id) ? 'Buildings'
     : piece.joins ? 'Fences & walls'
     : piece.block ? 'Blocks'
@@ -247,7 +263,14 @@ export const RARE = {
   golden_seeds: 'Golden seeds',
   key: 'An old key',
   recipe_card: 'An old recipe card',
+  ...Object.fromEntries(Object.values(BOSSES).map(({ key, name }) => [key, `A key piece to the ${name.toLowerCase()}`])), // (shared/bosses.js)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, found])), // (the sky isles' relics)
+  // the rarest fish (rarity 2 and up in FISHING, shared/balance.js)
+  pufferfish: 'A pufferfish',
+  moonfish: 'A moonfish',
+  koi: 'A koi',
+  glowfish: 'A glowfish',
+  golden_carp: 'A golden carp',
 };
 
 // Roll a spot's loot: [item, count]. rand: () => [0, 1)
@@ -264,8 +287,11 @@ export function rollSpot(island, kind, x, z, rand = Math.random) {
 }
 
 // What is in a chest of this kind (SKY_CHESTS): [[item, count], ...]
-export function rollChest(kind, rand = Math.random) {
-  const { rolls: [lo, hi], loot } = SKY_CHESTS[kind];
+export const rollChest = (kind, rand = Math.random) => rollBundle(SKY_CHESTS[kind], rand);
+
+// What is in a chest that has `rolls` things from `loot` (the same thing
+// twice is one stack): [[item, count], ...]
+export function rollBundle({ rolls: [lo, hi], loot }, rand = Math.random) {
   const got = new Map();
   for (let n = lo + Math.floor(rand() * (hi - lo + 1)); n > 0; n--) {
     const [item, count] = pick(loot, rand);
@@ -275,7 +301,7 @@ export function rollChest(kind, rand = Math.random) {
 }
 
 // One of loot ([item, weight, min, max], ...) by weight: [item, count]
-function pick(loot, rand) {
+export function pick(loot, rand) {
   let r = rand() * loot.reduce((sum, [, w]) => sum + w, 0);
   for (const [item, w, min, max] of loot) {
     r -= w;

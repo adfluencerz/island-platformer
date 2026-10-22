@@ -6,10 +6,12 @@ import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
 import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
-import { createAnimals, inPen, ANIMAL_KINDS } from './animals.js';
-import { createBuildings } from './build.js';
+import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './animals.js';
+import { createBuildings, POND_WATER_Y } from './build.js';
+import { createFishing } from './fishing.js';
 import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
+import { createArcade } from './arcade.js';
 import { createMachines } from './machines.js';
 import { createCooking, boostFrom, boostOf, boostText, BOOST_NAMES } from './cooking.js';
 import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
@@ -19,24 +21,34 @@ import { showCodeInAddress } from './net/lobby.js';
 import { FarmSync } from './net/farm.js';
 import { PresenceLink } from './net/presence.js';
 import { InvitePopups } from './ui/invite.js';
+import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
-import { STARTER_KIT, GIANT, UNMADE, unmake, DISHES, MACHINES } from '../shared/balance.js';
+import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES } from '../shared/balance.js';
 import { isMachine, loadFor, fillsItself, isReady } from '../shared/machines.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
-import { HOME, wildMap } from './maps.js';
+import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
+import { arenaFor, signFor, SIGN_REACH, GAMES } from '../shared/arenas.js';
+import { arenaMap, buildSignpost } from './arenas.js';
 import { wildsFromWire } from '../shared/wilds.js';
+import { CAST_REACH, waterOn } from '../shared/fishing.js';
+import { HOME_HALF } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
+import { createBosses } from './bosses.js';
+import { BOSSES } from '../shared/balance.js';
+import { portalOf } from '../shared/bosses.js';
+import { createSkills } from './skills.js';
+import { createPuffs } from './puff.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
 
@@ -167,15 +179,25 @@ let wildsShown = null; // (the wild island's trees and rocks, as its lobby sent 
 let world = worlds.home;
 scene.add(world.root);
 
-// name: 'home' or 'wild' (seed: which wild island; wire: its trees and
-// rocks, as its lobby sent them)
+// name: 'home', 'wild' (seed: which wild island; wire: its trees and
+// rocks, as its lobby sent them) or 'arena' (seed: a party game's { kind,
+// seed }, shared/arenas.js; the lobby's island is kept, for going back)
 function enterWorld(name, seed, wire) {
-  let stale = null; // the wild island we will not be back on
+  wildIsland = name === 'wild' ? islandFor(seed) : null;
+  let stale = null; // the wild island (or arena) we will not be back on
   const wilds = name === 'wild' ? JSON.stringify(wire ?? null) : null;
   if (name === 'wild' && (worlds.wild?.name !== `wild:${islandFor(seed).seed}` || wilds !== wildsShown)) {
     stale = worlds.wild;
-    worlds.wild = buildWorld(wildMap(islandFor(seed)), wildsFromWire(wire) ?? undefined);
+    const island = islandFor(seed);
+    worlds.wild = buildWorld(wildMap(island), wildsFromWire(wire) ?? undefined);
+    worlds.wild.root.add(buildSignpost(signFor(island))); // (where party games start)
     wildsShown = wilds;
+  }
+  if (name === 'arena' && worlds.arena?.name !== `arena:${seed.kind}:${seed.seed}`) {
+    stale = worlds.arena;
+    const map = arenaMap(arenaFor(seed.kind, seed.seed));
+    worlds.arena = buildWorld(map);
+    worlds.arena.coins = map.coins; // (a view per coin, by id)
   }
   if (worlds[name] !== world) {
     scene.remove(world.root);
@@ -184,6 +206,8 @@ function enterWorld(name, seed, wire) {
   }
   stale?.dispose(); // (out of the scene by now)
 }
+
+let wildIsland = null; // the wild island we are on, in a lobby (shared/worldgen.js: where its water is)
 
 // The sea around every island; it fades into the fog toward the horizon
 const WATER_Y = SEA_LEVEL;
@@ -207,12 +231,33 @@ const inventory = createInventory({
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
+  renderSkills: (el) => skills.render(el),
 });
+
+// ---------- Skills ----------
+// Farming, animals, woodcutting and mining (and fishing, once there is
+// fishing) level up by doing them (skills.js): each level a little more
+// chance of one more of what they give, and the overall level unlocks the
+// double jump. Yours wherever you farm: saved with the backpack.
+const skills = createSkills({
+  onLevelUp: (title, detail) => {
+    hud.flash(title);
+    inventory.notify(detail);
+  },
+});
+// XP in skill for what was got, and now and then (the skill's bonus) one more of item
+function skilled(skill, xp, item) {
+  skills.gain(skill, xp);
+  if (item && skills.extra(skill) && inventory.canAdd(item, 1)) inventory.add(item, 1);
+}
 
 // The tool in hand, by what it does ('hoe', 'axe' or 'pickaxe': plain or sturdy), or null
 const holding = () => ITEMS[inventory.selectedId()]?.tool ?? null;
-// Swings to fell a tree or break a rock with the tool in hand (a sturdy one takes fewer)
+// Swings to fell a tree or break a rock with the tool in hand (a better one takes fewer)
 const swingsWith = (base) => Math.max(1, (ITEMS[inventory.selectedId()]?.hits ?? base) - boostOf(meal, 'swings')); // (fewer after a hearty meal)
+// The more a tree we felled or a rock we broke (m: FELLED or MINED) gives
+// with the tool in hand, a golden one (not a giant: that is shared out)
+const extraFrom = (tool, m) => (m.by === myId && !m.shares && holding() === tool ? ITEMS[inventory.selectedId()].extra ?? 0 : 0);
 
 // ---------- The merchant ----------
 // Behind the stall on the farm (merchant.js): E at the counter opens the shop
@@ -233,6 +278,9 @@ worlds.home.root.add(animals.root);
 const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
 // (on a friend's farm the eggs, milk and wool are the farmer's)
 const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
+// an egg, milk or wool: into the backpack, with Animals XP
+const collectProduce = (item) => collect(item) && (skilled('animals', SKILLS.xp[item] ?? 0, item), true);
+const pettedOn = new WeakMap(); // animal -> the game day she was last petted (Animals XP once a day)
 
 function letOutAnimal(kind) {
   if (visiting()) return inventory.notify('Only the farmer lets animals out here');
@@ -329,7 +377,10 @@ function harvestAt(x, z) {
     farmNet.send({ t: C.HARVEST, key });
     return true;
   }
-  if (inventory.add(CROPS[crop.cropId].produce)) removeCrop(key);
+  if (inventory.add(CROPS[crop.cropId].produce)) {
+    skilled('farming', SKILLS.xp.harvest[crop.cropId] ?? 0, CROPS[crop.cropId].produce);
+    removeCrop(key);
+  }
   return true;
 }
 
@@ -654,7 +705,7 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
-  const hint = useHint();
+  const hint = atSign() ? signHint() : useHint();
   if (hint) hud.setPrompt(`E  ${hint}`);
   else hud.setPrompt(gatherSpotInReach()?.kind === 'sky_vault' ? 'Locked: an old key would open it' : '');
 }
@@ -673,7 +724,7 @@ const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
 const farmTreeSites = new Map(); // how often each grew back: id -> count (which of its places it is in: shared/level.js nextSite)
 
-const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`);
+const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits, 'woodcutting')}` : ' (hold to keep going)'}`);
 
 // the standing tree within reach, nearest first
 function treeInReach() {
@@ -719,7 +770,7 @@ function updateChopping() {
     if (tree?.state === 'up' && !chop.pending.has(tree.id)) {
       world.shakeTree(tree.id, player.position);
       if (tree.big > 1) hitGiant('tree', tree);
-      else if (++chop.hits >= swingsWith(TREE.hits)) {
+      else if (++chop.hits >= swingsWith(TREE.hits, 'woodcutting')) {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -740,15 +791,20 @@ function resetChopping() {
   chop.pending.clear();
 }
 
+// The world a lobby's or a farm room's trees and rocks are in: the one under
+// our feet, but in a lobby its island even while we are off in a party game's arena
+const wildsWorld = () => (place === 'lobby' ? worlds.wild : world);
+
 // FELLED, from a lobby or a farm's room
 function treeFelled(m) {
   chop.pending.delete(m.id);
   if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
   // it falls away from whoever felled it
-  world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
-  const got = myShare(m);
+  wildsWorld().fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
+  const got = myShare(m) + extraFrom('axe', m);
   if (got) inventory.add('wood', got);
   if (m.shares) giantDown('tree', m.id, got, 'wood');
+  if (got) skilled('woodcutting', m.shares ? SKILLS.xp.giant : SKILLS.xp.tree, 'wood'); // (after: a level up's notice goes over the giant's)
 }
 
 // On a farm played alone: the tree is ours to fell
@@ -774,7 +830,7 @@ const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
 const farmRockSites = new Map(); // (as farmTreeSites)
 
-const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`);
+const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits, 'mining')}` : ' (hold to keep going)'}`);
 
 // the whole rock within reach, nearest first
 function rockInReach() {
@@ -820,7 +876,7 @@ function updateMining() {
     if (rock?.state === 'up' && !mine.pending.has(rock.id)) {
       world.shakeRock(rock.id);
       if (rock.big > 1) hitGiant('rock', rock);
-      else if (++mine.hits >= swingsWith(ROCK.hits)) {
+      else if (++mine.hits >= swingsWith(ROCK.hits, 'mining')) {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -845,10 +901,11 @@ function resetMining() {
 function rockMined(m) {
   mine.pending.delete(m.id);
   if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
-  world.breakRock(m.id);
-  const got = myShare(m);
+  wildsWorld().breakRock(m.id);
+  const got = myShare(m) + extraFrom('pickaxe', m);
   if (got) inventory.add('stone', got);
   if (m.shares) giantDown('rock', m.id, got, 'stone');
+  if (got) skilled('mining', m.shares ? SKILLS.xp.giant : SKILLS.xp.rock, 'stone'); // (after: a level up's notice goes over the giant's)
 }
 
 // On a farm played alone: the rock is ours to break
@@ -904,16 +961,17 @@ function hitGiant(kind, thing) {
 function giantNews(m) {
   if (!GIANT_KINDS.includes(m.kind)) return;
   giantsHere().set(m.kind, m.id, m.hp);
+  const here = wildsWorld();
   if (!m.by) {
-    world.makeGiant(m.kind, m.id);
+    here.makeGiant(m.kind, m.id);
     return;
   }
   // (our own swing shook it already)
   if (m.by !== myId) {
-    if (m.kind === 'tree') world.shakeTree(m.id, remotes.positionOf(m.by));
-    else world.shakeRock(m.id);
+    if (m.kind === 'tree') here.shakeTree(m.id, remotes.positionOf(m.by));
+    else here.shakeRock(m.id);
   }
-  giantBars.show(m.kind, m.id, m.hp, m.max, world.giantTop(m.kind, m.id), clock.elapsedTime);
+  if (here === world) giantBars.show(m.kind, m.id, m.hp, m.max, world.giantTop(m.kind, m.id), clock.elapsedTime);
 }
 
 // A giant came down: no more giants of its kind here
@@ -966,7 +1024,10 @@ function devSkyStyle() {
   const name = place === 'lobby' ? restyleNearest(player.position.x, player.position.z) : null;
   inventory.notify(name ? `Now a ${name.toLowerCase()}` : 'No sky isles here');
 }
-createDevTools({ onGiant: devGiant, onSkyFoot: devSkyFoot, onSkyStyle: devSkyStyle, onKey: () => inventory.add('key', 1) });
+createDevTools({
+  onGiant: devGiant, onSkyFoot: devSkyFoot, onSkyStyle: devSkyStyle, onKey: () => inventory.add('key', 1),
+  onBossKeys: () => Object.values(BOSSES).forEach(({ key, pieces }) => inventory.add(key, pieces)), // (a full set of each boss's key pieces)
+});
 
 // Each morning, on a farm played alone: maybe a giant
 function rollFarmGiants() {
@@ -1038,7 +1099,7 @@ const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
 let bopReady = 0; // (clock time the weapon can swing again)
 
 const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
-const resting = (pos) => Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
+const resting = (pos) => !arenaId && Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
 
 // The nearest other farmer within reach (and not resting in the stone circle): { id, pos }, or null
 function bopTarget() {
@@ -1098,6 +1159,7 @@ function addDrop([id, item, count, x, y, z]) {
   const gem = createItemMesh(item);
   gem.scale.setScalar(0.7);
   group.add(gem);
+  group.visible = !arenaId; // (on the lobby's island: out of sight while we are in an arena)
   scene.add(group);
   drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: 0 });
 }
@@ -1216,12 +1278,14 @@ function updateMenuCamera(t) {
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
-const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || cooking.isOpen();
-const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping();
+let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen();
+const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping() || partyFrozen();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
   if (e.code === 'Space') jumpPressed = true;
+  if (e.code === 'Space' && !e.repeat) jumpTapped = true;
   if (e.code === 'KeyE' && !e.repeat) useAction();
 });
 
@@ -1230,7 +1294,11 @@ window.addEventListener('keydown', (e) => {
 // ripe crop on the tile in front, otherwise use the selected toolbar item. Farming,
 // chopping and mining reach USE_HEIGHT up or down (from a step or a platform).
 function useAction() {
+  if (!building && bosses.use()) return; // (a boss's portal or arena, or a mount in hand)
+  if (place === 'lobby' && !arenaId && fishing.use()) return;
   if (place === 'lobby') {
+    if (arenaId) return weaponInHand() && bop(); // (off in a party game's arena)
+    if (atSign()) return useSign();
     if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
     if (holding() === 'axe' && swingAxe()) return;
     if (holding() === 'pickaxe' && swingPick()) return;
@@ -1246,10 +1314,12 @@ function useAction() {
     return;
   }
   if (building) return buildHere();
+  if (fishing.use()) return;
   if (houseDoorInReach()) return goInside();
   if (houseRoom.exitInReach(player.position)) return goOutside();
   if (chest.inReach(player.position)) return chest.open();
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return workbench.open();
+  if (buildings.nearest('arcade', player.position, BENCH_REACH)) return arcade.open();
   if (houseRoom.kitchenInReach(player.position) || houseRoom.shelfInReach(player.position)) return cooking.openKitchen();
   const machine = machines.nearest(player.position);
   if (machine) return useMachine(machine);
@@ -1269,23 +1339,32 @@ function useAction() {
 // Harvest the ripe crop on the tile at x, z (E: the one in front), else till
 // or plant it with what is in hand
 function tendAnimal(animal) {
-  animals.tend(animal, player.position, collect);
+  let asked = false; // (she was ready: milked or sheared, or the backpack was full)
+  animals.tend(animal, player.position, (item) => ((asked = true), collectProduce(item)));
+  const day = Math.floor(farmHours() / 24);
+  if (!asked && pettedOn.get(animal) !== day) {
+    pettedOn.set(animal, day);
+    skills.gain('animals', SKILLS.xp.pet);
+  }
   anim.squash = 0.15;
 }
 
 // (in the house, just its field)
 const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
 
-// The tiles the hoe in hand tills from x, z: a wide hoe the tiles either side
-// too, across the way the farmer faces (where there is room)
+// The tiles the hoe in hand tills from x, z: a better hoe more round it,
+// `tills` [across, ahead] of the way the farmer faces (where there is room)
 function hoeTiles(x, z) {
-  const across = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing)) ? [0, 1] : [1, 0];
-  const sides = ITEMS[inventory.selectedId()]?.wide ? [-1, 1] : [];
-  const tiles = [[x, z]];
-  for (const k of sides) {
-    const tx = x + across[0] * k * TILE_SIZE;
-    const tz = z + across[1] * k * TILE_SIZE;
-    if (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz)) tiles.push([tx, tz]);
+  const sideways = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing));
+  const across = sideways ? [0, 1] : [1, 0];
+  const ahead = sideways ? [Math.sign(Math.sin(anim.facing)), 0] : [0, Math.sign(Math.cos(anim.facing))];
+  const [wide, deep] = ITEMS[inventory.selectedId()]?.tills ?? [1, 1];
+  const span = (n) => Array.from({ length: n }, (_, i) => i - Math.floor(n / 2));
+  const tiles = [];
+  for (const j of span(deep)) for (const k of span(wide)) {
+    const tx = x + (across[0] * k + ahead[0] * j) * TILE_SIZE;
+    const tz = z + (across[1] * k + ahead[1] * j) * TILE_SIZE;
+    if (!(k || j) || (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz))) tiles.push([tx, tz]);
   }
   return tiles;
 }
@@ -1317,6 +1396,7 @@ function farmHere(x, z) {
   } else if (ITEMS[held]?.plants) {
     if (plantAt(x, z, ITEMS[held].plants)) {
       inventory.consumeSelected();
+      skills.gain('farming', SKILLS.xp.plant);
       anim.squash = 0.15; // little crouch to plant
       if (farmNet) {
         const key = tileKeyFor(x, z);
@@ -1333,6 +1413,8 @@ function farmHere(x, z) {
 // prompt and the touch Use button: '' (nothing). In a lobby: bop, chop, mine
 // or gather; at home: chop, mine, then harvest, till or plant the tile in front.
 function useHint() {
+  const fish = fishing.prompt();
+  if (fish) return fish.replace(/^E {2}/, '');
   if (place === 'lobby') {
     const target = bopTarget();
     if (target && !resting(player.position)) return `Bop ${lobbyNames.get(target.id) ?? 'them'}`;
@@ -1394,6 +1476,20 @@ function jump() {
   player.velocity.y = JUMP_SPEED * boostOf(meal, 'jump');
   player.onGround = false;
   anim.squash = -0.2; // stretch on takeoff
+}
+
+// Just off a ledge you can still jump for a moment (COYOTE_TIME), and with
+// the double jump unlocked (skills.js) once more in the air, off a puff of air.
+const COYOTE_TIME = 0.1; // seconds
+let airTime = 0; // seconds since the farmer was last on the ground
+let airJumps = 0; // jumps left in the air
+const puffs = createPuffs(scene);
+
+function airJump() {
+  airJumps--;
+  player.velocity.y = DOUBLE_JUMP.speed;
+  anim.squash = -0.25;
+  puffs.puff(new THREE.Vector3(player.position.x, player.position.y - player.height / 2, player.position.z));
 }
 
 // ---------- Collision helpers ----------
@@ -1611,7 +1707,8 @@ function tapAt(x, y) {
   if (building) return tapToBuild();
   const target = tappedThing() ?? tappedGround();
   if (!target) return;
-  if (target.kind === 'tile' && buildings.get(tileKeyFor(target.x, target.z)) === 'workbench') target.kind = 'workbench';
+  const built = target.kind === 'tile' && buildings.get(tileKeyFor(target.x, target.z));
+  if (built === 'workbench' || built === 'arcade') target.kind = built;
   if (target.kind === 'tile' && isMachine(buildings.get(tileKeyFor(target.x, target.z)))) Object.assign(target, { kind: 'machine', key: buildings.anchor(tileKeyFor(target.x, target.z)) });
   walk = { best: Infinity, stuck: 0, hopped: false, ...target };
   if (walk.kind === 'tile') {
@@ -1698,6 +1795,7 @@ function arrived(d) {
     case 'farmer': return bopTarget()?.id === walk.id;
     case 'build': return inBuildReach(walk.key) && d < BUILD_REACH - 0.3;
     case 'workbench': return !!buildings.nearest('workbench', player.position, BENCH_REACH);
+    case 'arcade': return !!buildings.nearest('arcade', player.position, BENCH_REACH);
     case 'machine': return machines.nearest(player.position) === walk.key;
     case 'kitchen': return houseRoom.kitchenInReach(player.position);
     default: return d < ARRIVE;
@@ -1711,6 +1809,7 @@ function arrive() {
   if (kind === 'build') {
     if (building) buildAt(key);
   } else if (kind === 'workbench') workbench.open();
+  else if (kind === 'arcade') arcade.open();
   else if (kind === 'machine') useMachine(key);
   else if (kind === 'kitchen') cooking.openKitchen();
   else if (kind === 'stall') shop.open();
@@ -1919,6 +2018,7 @@ function buildProblemAt(key) {
     const piece = buildings.get(key);
     if (!piece || pendingUnbuilds.has(buildings.anchor(key))) return 'Nothing to take down there';
     if (piece === 'farm_chest' && !farmVisit && Object.keys(ownChest).length) return 'Empty the chest first';
+    if (bosses.busy(piece)) return 'Someone is in there, fighting: wait till they are back';
     if (!Object.entries(PIECES[piece].cost).every(([item, n]) => inventory.canAdd(item, n))) return 'No room in the backpack for what it gives back';
     return '';
   }
@@ -1932,6 +2032,7 @@ function buildProblemAt(key) {
   }
   if (buildings.size() >= MAX_PIECES) return 'The farm can\'t hold any more';
   const short = Object.entries(piece.cost).find(([item, n]) => buildStock(item) < n);
+  if (short && piece.portal) return `Its portal takes ${piece.cost[short[0]]} ${ITEMS[short[0]].name.toLowerCase()}s: find them in lobbies and on sky isles`;
   if (short && PIECES[short[0]]?.relic) return `Find another ${ITEMS[short[0]].name.toLowerCase()} on a sky isle first`;
   if (short) return ITEMS[short[0]].piece ? `Make a ${ITEMS[short[0]].name.toLowerCase()} at a workbench first` : `Not enough ${ITEMS[short[0]].name.toLowerCase()}`;
   return '';
@@ -2078,14 +2179,50 @@ let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone, helpe
 let farmJoining = 0; // (each joinFarm's number: a newer one wins)
 const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
 const visiting = () => !!farmVisit && !farmVisit.mine; // on a friend's farm
-let session = null; // { code, room } once a lobby has welcomed us
+let session = null; // { code, seed, room, wilds, sign } once a lobby has welcomed us (sign: where its signpost stands)
 let myId = 0;
+let partyGame = null; // the lobby's party game as it last said (shared/minigame.js wire()), or null
+let arenaId = 0; // the party game whose arena we are in (0: on the lobby's island)
+let lobbyRoster = []; // (as the lobby last sent it: remotes shows those where we are)
 let sendTimer = 0;
 let farmOnScreen = false; // the home farm's soil and crops are in the scene
 // (a lobby's day starts mid-morning, in good light: LOBBY_DAWN, shared/giants.js)
 
-const remotes = new Remotes(scene);
+const remotes = new Remotes(scene, { waterFrom });
 const touch = new TouchControls(); // (only shown on a touch screen)
+
+// The water at x, z, to fish in: { water, y } (which FISHING table, and its
+// surface), or null: land. In a lobby, its sea and its pond; on a farm, the
+// sea past its edge and a fish pond built on it.
+function waterAt(x, z) {
+  if (place === 'lobby') {
+    const what = wildIsland && waterOn(wildIsland, x, z);
+    return what && { water: 'lobby', y: what === 'sea' ? WATER_Y : LOBBY_POND_Y };
+  }
+  if (Math.max(Math.abs(x), Math.abs(z)) > HOME_HALF + 0.5) return { water: 'sea', y: WATER_Y };
+  const pond = buildings.get(tileKeyFor(x, z)) === 'pond' && buildings.anchor(tileKeyFor(x, z));
+  if (!pond) return null;
+  const [px, pz] = keyXZ(pond);
+  return Math.abs(x - px) < 1.1 && Math.abs(z - (pz - 1)) < 1.1 ? { water: 'pond', y: POND_WATER_Y } : null; // (the water, inside its stones)
+}
+
+// Where a bobber cast from x, z facing yaw lands: a little way out on the
+// first water in front, within CAST_REACH ({ x, y, z, water }), or null
+function waterFrom(x0, z0, yaw) {
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  for (let d = 1; d <= CAST_REACH; d += 0.25) {
+    if (!waterAt(x0 + fx * d, z0 + fz * d)) continue;
+    const out = Math.min(d + 1.2, CAST_REACH);
+    for (const at of [out, d]) {
+      const x = x0 + fx * at;
+      const z = z0 + fz * at;
+      const w = waterAt(x, z);
+      if (w) return { x, z, ...w };
+    }
+  }
+  return null;
+}
 const hud = new Hud({
   onTravel: () => splash.show({ page: 'online' }),
   onMenu: () => splash.show(),
@@ -2096,6 +2233,55 @@ const hud = new Hud({
   isBlocked: () => menuOpen() || !splash.hidden,
   onPrompt: (text) => touch.setReady(!!text),
   onStopBuilding: () => stopBuilding(),
+});
+
+// ---------- Fishing ----------
+// With a rod in hand, E facing the sea or a pond casts (src/fishing.js; in
+// a lobby the room rolls the catch, on a farm the page does).
+const fishing = createFishing({
+  scene, farmer, player, inventory, hud, touch,
+  waterAhead: () => (player.onGround && !menuOpen() && !houseRoom.inside(player.position) ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
+  hour: () => dayNight.hour(),
+  lobby: () => (place === 'lobby' ? net : null),
+  rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : null),
+  skill: () => skills.level('fishing'),
+  landed: () => skills.gain('fishing', SKILLS.xp.fish),
+});
+
+// ---------- The bosses ----------
+// Their portals on the farm, their arenas out past the sea, the fights and
+// what they give (bosses.js; shared/bosses.js has the rules)
+const bosses = createBosses({
+  world: worlds.home,
+  player,
+  farmer,
+  inventory,
+  hud,
+  giantBars,
+  buildings,
+  myId: () => myId,
+  net: () => farmNet,
+  atHome: () => place === 'home',
+  weapon: () => weaponInHand(),
+  putDown,
+  arrival: () => arrival(),
+  knock(dx, dz, speed) {
+    stopWalking();
+    knock.set(dx * speed, 0, dz * speed);
+    player.velocity.y = 5;
+    player.onGround = false;
+    anim.squash = -0.2;
+  },
+  // (played alone, a beaten boss's portal goes: its key pieces are used up)
+  removePortal(boss) {
+    const key = buildings.find(portalOf(boss));
+    if (!key) return;
+    buildings.remove(key);
+    placeChest();
+  },
+  farmIsOurs: () => place === 'home' && farmOnScreen && (!farmVisit || farmVisit.mine),
+  addShiny: (kind) => !!animals.addShiny(kind),
+  save: () => saveGame(),
 });
 // (after the HUD: its key handler goes first, see shop.js)
 const shop = createShop({
@@ -2177,7 +2363,65 @@ function pourOwnChest(theirs) {
 
 // The workbench (workbench.js): built in build mode, and E next to one opens it
 const BENCH_REACH = 1.7; // from its middle
-const workbench = createWorkbench({ inventory, onOpenChange: (open) => (open ? keys.clear() : saveGame()) });
+const workbench = createWorkbench({
+  inventory,
+  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  upgrades: { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade },
+});
+
+// The arcade (arcade.js): built in build mode too, and E next to it opens
+// it; every game won or lost is saved
+const arcade = createArcade({ inventory, onOpenChange: (open) => (open ? keys.clear() : saveGame()), onChange: () => saveGame() });
+
+// ---------- The farm's upgrades ----------
+// Bought at the workbench (workbench.js), and saved with the farm (`levels`):
+// the workbench's level, and the hen yard's and the pasture's
+// (PEN_LEVELS, BENCH_LEVELS in shared/balance.js). On a farm with helpers
+// they go to the room with the animals (ANIMALS), and come with the farm
+// (FARM) to whoever arrives.
+const FIRST_LEVELS = { workbench: 1, yard: 1, pasture: 1 };
+const LEVELS_OF = { workbench: BENCH_LEVELS, yard: PEN_LEVELS.yard, pasture: PEN_LEVELS.pasture };
+let farmLevels = { ...FIRST_LEVELS };
+
+// The farm's levels as saved (missing or odd: the first). The animals are let
+// out again after, by whoever calls this, if the pens changed.
+function useLevels(saved) {
+  farmLevels = Object.fromEntries(Object.entries(FIRST_LEVELS).map(([id, first]) => {
+    const level = Math.floor(saved?.[id]);
+    return [id, level >= 1 && level <= LEVELS_OF[id].length ? level : first];
+  }));
+  setPenLevels(farmLevels);
+  buildings.setBenchLevel(farmLevels.workbench);
+}
+
+// Why the farm can't have the next level of id right now ('': it can, what it costs aside)
+function upgradeProblem(id) {
+  if (visiting()) return 'Only the farmer can upgrade their farm';
+  if (id === 'workbench') return '';
+  // a bigger pen: nothing built or farmed where its fence goes out to
+  const [now, next] = [penRect(id, farmLevels[id]), penRect(id, farmLevels[id] + 1)];
+  const within = (r, x, z) => x > r.minX - 0.55 && x < r.maxX + 0.55 && z > r.minZ - 0.55 && z < r.maxZ + 0.55;
+  for (let gx = Math.floor(next.minX - 1); gx <= Math.ceil(next.maxX + 1); gx++) {
+    for (let gz = Math.floor(next.minZ - 1); gz <= Math.ceil(next.maxZ + 1); gz++) {
+      const [x, z] = [gx * TILE_SIZE, gz * TILE_SIZE];
+      if (!within(next, x, z) || within(now, x, z)) continue;
+      const key = tileKeyFor(x, z);
+      const piece = buildings.get(key);
+      const where = id === 'yard' ? 'the bigger yard' : 'the bigger pasture';
+      if (piece) return `Take down the ${PIECES[piece].name.toLowerCase()} where ${where} goes first`;
+      if (farmTiles.has(key)) return `There's farmed soil where ${where} goes: let it go back to grass first`;
+    }
+  }
+  return '';
+}
+
+function upgrade(id) {
+  if (upgradeProblem(id)) return;
+  const animalsNow = animals.capture();
+  useLevels({ ...farmLevels, [id]: farmLevels[id] + 1 });
+  if (id !== 'workbench') animals.restore(animalsNow, farmHours()); // (out in the bigger pen)
+  saveGame();
+}
 
 // ---------- Machines and cooking ----------
 // The machines built on the farm (machines.js; what each takes and makes:
@@ -2412,6 +2656,7 @@ function forgetLocalFarm() {
 
 function putDown({ x, y, z }) {
   stopWalking();
+  fishing.reset();
   player.position.set(x, y, z);
   player.velocity.set(0, 0, 0);
   snapCamera();
@@ -2486,6 +2731,7 @@ async function joinFarm(id) {
     myId = m.id;
     farmer.setShirt(m.color);
     showRoomFarm(m);
+    bosses.welcome(m.bosses);
     farmOnScreen = m.mine;
     if (m.mine) farmSync.handedToRoom();
     chest.setOwner(m.mine, m.farm.owner);
@@ -2551,8 +2797,11 @@ async function joinFarm(id) {
     if (m.got && m.by === myId && !inventory.add(m.got)) farmNet.send({ t: C.CHEST_PUT, item: m.got, count: 1 });
   });
   on(S.HARVESTED, (m) => {
+    const crop = crops.get(m.key);
     removeCrop(m.key);
-    if (m.by === myId) inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
+    if (m.by !== myId) return;
+    inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
+    skilled('farming', SKILLS.xp.harvest[crop?.cropId] ?? 0, m.item); // (a bonus one comes to the backpack)
   });
   on(S.FARM_DENY, (m) => {
     const crop = crops.get(m.key);
@@ -2611,6 +2860,9 @@ async function joinFarm(id) {
     chest.refresh();
   });
   on(S.FARM_CLOCK, (m) => syncFarmClock(m.hours));
+  on(S.BOSS, bosses.onBoss);
+  on(S.BOSS_FX, bosses.onFx);
+  on(S.BOSS_WON, bosses.onWon);
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
@@ -2650,6 +2902,7 @@ function leaveFarm() {
   pendingLoads.clear();
   resetChopping();
   resetMining();
+  bosses.welcome(); // (a fight there was the room's: any from here on is ours)
   remotes.clear();
   keys.clear();
   myId = 0;
@@ -2684,6 +2937,7 @@ function showRoomFarm(m) {
   for (const [key, cropId, at] of m.crops) {
     if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
   }
+  useLevels(m.animals?.levels);
   animals.restore(Object.keys(m.animals ?? {}).length ? m.animals : null, farmHours());
 }
 
@@ -2708,6 +2962,10 @@ function sendFarmClock(ff, t) {
 function leaveLobbyWorld() {
   session = null;
   myId = 0;
+  partyGame = null;
+  arenaId = 0;
+  partyHud.clear();
+  lobbyRoster = [];
   clearSpots();
   clearDrops();
   resetChopping();
@@ -2717,6 +2975,152 @@ function leaveLobbyWorld() {
   remotes.clear();
   keys.clear();
   showCodeInAddress('');
+}
+
+// ---------- Party games ----------
+// At the signpost in a lobby's stone circle (shared/arenas.js signFor), E
+// starts a party game (shared/minigame.js), or joins the one gathering; the
+// card at the top (src/ui/party.js) has Join too. Whoever is in it goes off
+// to its arena (src/arenas.js) once it has gathered, a moment to look about
+// (standing still), then the game; and back on the lobby's island when it is
+// over, with the prize. While we are in the arena the lobby's island is kept
+// as it was (its spots and drops out of sight), and only the farmers in the
+// same place as us are drawn.
+const PARTY_KIND = 'coin_rush'; // (the one game there is so far)
+const partyHud = new PartyHud({
+  onJoin: () => net?.send({ t: C.GAME_JOIN }),
+  onLeave: () => leaveParty(),
+  nameOf: (id) => lobbyNames.get(id) ?? 'Someone',
+});
+const coinPending = new Map(); // coin id -> when we said we picked it up (performance.now())
+let readyCount = 0; // the last number of the countdown shown
+const inParty = () => !!partyGame?.players.some(([id]) => id === myId);
+const partyFrozen = () => !!arenaId && partyGame?.phase === 'ready';
+const atSign = () => place === 'lobby' && !arenaId && !!session && footReach() &&
+  Math.hypot(player.position.x - session.sign.x, player.position.z - session.sign.z) < SIGN_REACH;
+
+function signHint() {
+  if (!partyGame) return `Start a ${GAMES[PARTY_KIND].name.toLowerCase()}`;
+  const name = GAMES[partyGame.kind]?.name.toLowerCase() ?? 'party game';
+  if (partyGame.phase !== 'gathering') return '';
+  return inParty() ? `Not coming to the ${name} after all` : `Join the ${name}`;
+}
+
+function useSign() {
+  if (!partyGame) net?.send({ t: C.GAME_START, game: PARTY_KIND });
+  else if (partyGame.phase === 'gathering') net?.send({ t: inParty() ? C.GAME_LEAVE : C.GAME_JOIN });
+  else inventory.notify('A game is on: wait for the next one');
+}
+
+// The farmers drawn: the ones where we are (the lobby's island, or our arena)
+function showRemotes() {
+  remotes.setRoster(lobbyRoster.filter((p) => (p.game ?? 0) === arenaId), myId);
+}
+
+// The lobby's party game as it is now (null: none). pos: where the lobby has
+// us (a WELCOME's: back in the arena after a reload)
+function showParty(game, pos = null) {
+  partyGame = game;
+  partyHud.show(game, myId);
+  const playing = game && game.phase !== 'gathering' && inParty();
+  if (playing && arenaId !== game.id) {
+    enterWorld('arena', game);
+    arenaId = game.id;
+    coinPending.clear();
+    world.coins.forEach((coin, id) => (coin.visible = !game.taken.includes(id)));
+    showLobbyThings(false);
+    showRemotes();
+    const i = game.players.findIndex(([id]) => id === myId);
+    putDown(pos ?? arenaFor(game.kind, game.seed).start(i, game.players.length));
+    readyCount = 0;
+    hud.setPrompt('');
+  }
+  if (playing && game.phase === 'playing' && readyCount !== -1) {
+    readyCount = -1;
+    hud.flash('Go!');
+  }
+  if (!playing && arenaId) backFromArena(); // (it was called off, or we are out of it)
+}
+
+// Out of the arena, onto the lobby's island (pos: where; else where farmers arrive)
+function backFromArena(pos = null) {
+  arenaId = 0;
+  coinPending.clear();
+  enterWorld('wild', session.seed, session.wilds);
+  showLobbyThings(true);
+  showRemotes();
+  putDown(pos ?? arrival());
+}
+
+// The lobby's spots and drops (in the scene, not the island's world): out of sight in an arena
+function showLobbyThings(on) {
+  for (const spot of spots.values()) spot.view.group.visible = on;
+  for (const drop of drops.values()) drop.group.visible = on && !drop.pending;
+}
+
+// Not playing after all: out of the gathering, or back to the lobby from the arena
+function leaveParty() {
+  net?.send({ t: C.GAME_LEAVE });
+  if (arenaId) backFromArena();
+}
+
+// Every frame in the arena: the countdown, and coins we walk into
+function updateArena() {
+  partyHud.update();
+  hud.setPrompt('');
+  if (partyGame?.phase === 'ready') {
+    const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
+    if (left > 0 && left !== readyCount) {
+      readyCount = left;
+      hud.flash(String(left));
+    }
+    return;
+  }
+  if (partyGame?.phase !== 'playing') return;
+  const now = performance.now();
+  world.coins.forEach((coin, id) => {
+    const at = coinPending.get(id);
+    if (at !== undefined) {
+      if (now - at < 1500) return;
+      coinPending.delete(id); // (the lobby never said: it didn't count, it is still there)
+      coin.visible = !partyGame.taken.includes(id);
+    }
+    if (!coin.visible || player.position.distanceTo(coin.position) > TOUCH_RADIUS + 0.3) return;
+    coin.visible = false; // (at once, so it feels instant: GAME_COIN settles it)
+    coinPending.set(id, now);
+    net?.send({ t: C.GAME_COIN, id });
+  });
+}
+
+// GAME_COIN: someone picked a coin up
+function partyCoin(m) {
+  if (!partyGame) return;
+  partyGame.taken.push(m.id);
+  partyHud.score(m.by, m.score);
+  if (arenaId) {
+    coinPending.delete(m.id);
+    if (world.coins[m.id]) world.coins[m.id].visible = false;
+    if (m.by === myId) hud.flash(`${m.score}`);
+  }
+}
+
+// GAME_END: it is over. Our prize into the backpack, and back to the lobby if we played.
+function partyOver(m) {
+  const played = m.pos.find(([id]) => id === myId);
+  const got = m.prizes.find(([id]) => id === myId)?.[1] ?? null;
+  partyGame = null;
+  if (played && arenaId) backFromArena({ x: played[1], y: played[2], z: played[3] });
+  for (const [item, count] of got ?? []) if (ITEMS[item]) inventory.add(item, count);
+  if (played) {
+    const named = (item, count) => {
+      const name = (ITEMS[item]?.name ?? item).toLowerCase();
+      return count > 1 && !name.endsWith('s') ? `${name}s` : name;
+    };
+    partyHud.results(m, got, named);
+    if (m.winner === myId) hud.flash('You won!');
+  } else {
+    partyHud.show(null, myId);
+  }
 }
 
 function joinLobby({ name, code }) {
@@ -2741,7 +3145,8 @@ function joinLobby({ name, code }) {
     }
     place = 'lobby';
     enterWorld('wild', m.seed, m.wilds);
-    session = { code: m.code, seed: m.seed, room: m.room };
+    session = { code: m.code, seed: m.seed, room: m.room, wilds: m.wilds, sign: signFor(islandFor(m.seed)) };
+    arenaId = 0;
     myId = m.id;
     farmer.setShirt(m.color);
     putDown(m.pos);
@@ -2761,7 +3166,8 @@ function joinLobby({ name, code }) {
     for (const drop of m.drops ?? []) addDrop(drop);
     lobbyNames.clear();
     for (const p of m.roster) lobbyNames.set(p.id, p.name);
-    remotes.setRoster(m.roster, myId);
+    lobbyRoster = m.roster;
+    showRemotes();
     // one time of day for everyone in the lobby, counted from when it opened
     dayNight.setTime(LOBBY_DAWN + (m.clock / DAY_LENGTH_SECONDS) * 24);
     showCodeInAddress(m.code);
@@ -2769,13 +3175,18 @@ function joinLobby({ name, code }) {
     hud.showLobby(session, myId);
     touch.setPlace('lobby');
     hud.setRoster(m.roster);
+    showParty(m.game, m.pos);
     if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
   });
   on(S.ROSTER, (m) => {
     hud.setRoster(m.list);
-    remotes.setRoster(m.list, myId);
+    lobbyRoster = m.list;
+    showRemotes();
     for (const p of m.list) lobbyNames.set(p.id, p.name);
   });
+  on(S.GAME, (m) => showParty(m.game));
+  on(S.GAME_COIN, (m) => partyCoin(m));
+  on(S.GAME_END, (m) => partyOver(m));
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
     const spot = spots.get(m.id);
@@ -2803,13 +3214,15 @@ function joinLobby({ name, code }) {
     showSpot(spot);
   });
   on(S.FELLED, treeFelled);
-  on(S.REGROWN, (m) => world.regrowTree(m.id, { n: m.n ?? 0 }));
+  on(S.REGROWN, (m) => wildsWorld().regrowTree(m.id, { n: m.n ?? 0 }));
   on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
   on(S.MINED, rockMined);
-  on(S.RESURFACED, (m) => world.regrowRock(m.id, { n: m.n ?? 0 }));
+  on(S.RESURFACED, (m) => wildsWorld().regrowRock(m.id, { n: m.n ?? 0 }));
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.GIANT, giantNews);
   on(S.BOPPED, (m) => bopped(m));
+  on(S.BITE, (m) => fishing.bit(m));
+  on(S.CAUGHT, (m) => fishing.caught(m));
   on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z]));
   on(S.PICKED, (m) => {
     removeDrop(m.id);
@@ -2847,7 +3260,9 @@ function sendState(dt, conn = net) {
     x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
     f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0) |
       (farmer.axe.visible ? STATEF.AXE : 0) | (farmer.pick.visible ? STATEF.PICK : 0) | (anim.swing >= 0 ? STATEF.SWING : 0) |
-      (farmer.sword.visible ? STATEF.SWORD : 0) | (farmer.mallet.visible ? STATEF.MALLET : 0),
+      (farmer.sword.visible ? STATEF.SWORD : 0) | (farmer.mallet.visible ? STATEF.MALLET : 0) |
+      (farmer.rod.visible ? STATEF.ROD : 0) | (fishing.state() ? STATEF.CAST : 0) | (fishing.state() === 'bite' ? STATEF.BITE : 0) |
+      bosses.mountBits() * STATEF.MOUNT,
   });
 }
 
@@ -2865,7 +3280,7 @@ function sendState(dt, conn = net) {
 // is brought up to date, and one from a newer version of the game is left
 // alone: nothing is saved until the page is reloaded with that version.
 const SAVE_STORE = 'tp.save';
-const SAVE_VERSION = 7; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs; v5: cows and sheep; v6: the pickaxe; v7: building
+const SAVE_VERSION = 8; // v2: flax seeds joined the starter kit; v3: the axe; v4: hens and eggs; v5: cows and sheep; v6: the pickaxe; v7: building; v8: the farm's upgrades
 let homeFarm = null; // the farm as last seen at home (it is not on screen in a lobby)
 let saving = true; // (false: the save is from a newer version of the game, or the farm is open on another device)
 const farmSync = new FarmSync({
@@ -2895,6 +3310,7 @@ function captureFarm() {
     rockSites: [...farmRockSites],
     giants: farmGiants.toSave(),
     chest: { ...ownChest }, // (on a farm with helpers, what didn't fit in the room's)
+    levels: { ...farmLevels }, // (its upgrades)
     ...animals.capture(), // hens, cows, sheep, eggs
   };
 }
@@ -2903,6 +3319,7 @@ function captureFarm() {
 function showFarm(farm) {
   resetFarm();
   ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
+  useLevels(farm?.levels);
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
@@ -2926,13 +3343,13 @@ function showFarm(farm) {
 
 function currentSave() {
   if (farmOnScreen) homeFarm = captureFarm();
-  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
+  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
 }
 
 function saveGame() {
   if (!saving) return;
   // (on our farm with its helpers: the animals are ours to keep, the rest is the room's)
-  if (farmVisit?.mine) farmNet?.send({ t: C.ANIMALS, state: animals.capture() });
+  if (farmVisit?.mine) farmNet?.send({ t: C.ANIMALS, state: { ...animals.capture(), levels: { ...farmLevels } } });
   const save = currentSave();
   try {
     localStorage.setItem(SAVE_STORE, JSON.stringify(save));
@@ -2967,8 +3384,10 @@ function useSave(save) {
   const unmade = {};
   for (const slot of save.backpack?.slots ?? []) if (slot && UNMADE[slot.id]) unmade[slot.id] = (unmade[slot.id] ?? 0) + Math.max(1, slot.count | 0);
   inventory.restore(save.backpack ?? {});
+  skills.restore(save.skills); // (none before v8: everything at level 1)
   for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
   homeFarm = save.farm ?? null;
+  bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
   learned.clear();
   for (const dish of Array.isArray(save.recipes) ? save.recipes : []) if (DISHES[dish]?.cook === 'kitchen') learned.add(dish);
   const [dish, left] = Array.isArray(save.meal) ? save.meal : [];
@@ -3049,13 +3468,22 @@ function update(dt) {
 
   const moveVec = new THREE.Vector3(moveX, 0, moveZ);
   const moving = moveVec.lengthSq() > 0;
-  if (moving) moveVec.multiplyScalar((MOVE_SPEED * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length());
+  if (moving) moveVec.multiplyScalar((MOVE_SPEED * bosses.speed() * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length()); // (dizzy from a boss: slower; after a meal, maybe faster)
   player.velocity.x = moveVec.x + knock.x;
   player.velocity.z = moveVec.z + knock.z;
   knock.multiplyScalar(Math.exp(-dt * 5)); // (a bop's stumble fades)
 
-  if ((keys.has('Space') || jumpPressed) && player.onGround && !inputBlocked()) jump();
+  if (player.onGround) {
+    airTime = 0;
+    airJumps = skills.canDoubleJump() ? 1 : 0;
+  } else airTime += dt;
+  if (!inputBlocked()) {
+    const offLedge = airTime < COYOTE_TIME && player.velocity.y <= 0;
+    if ((keys.has('Space') || jumpPressed) && (player.onGround || offLedge)) jump();
+    else if (jumpTapped && airJumps > 0) airJump();
+  }
   jumpPressed = false;
+  jumpTapped = false;
 
   // Gravity
   player.velocity.y += GRAVITY * dt;
@@ -3079,23 +3507,32 @@ function update(dt) {
   }
 
   playerMesh.position.copy(player.position);
+  puffs.update(dt);
   hoeGroup.visible = holding() === 'hoe'; // only hold a tool while it's selected
   farmer.axe.visible = holding() === 'axe';
   farmer.pick.visible = holding() === 'pickaxe';
   farmer.sword.visible = inventory.selectedId() === 'wooden_sword';
   farmer.mallet.visible = inventory.selectedId() === 'mallet';
+  farmer.rod.visible = holding() === 'rod';
+  if (farmer.rod.visible) farmer.setRod(ITEMS[inventory.selectedId()].color);
   animateCharacter(dt, moving);
   updateTileCursor(moving);
   updateHover();
 
   const t = clock.elapsedTime;
+  fishing.update(t);
   world.updateTrees(dt);
   if (building && place !== 'home') stopBuilding();
-  if (place === 'lobby') {
+  if (place === 'lobby' && arenaId) {
+    updateArena(dt);
+    sendState(dt);
+    remotes.update(dt, t);
+  } else if (place === 'lobby') {
     updateChopping();
     updateMining();
     updateSpots(dt, t);
     updateDrops(dt, t);
+    partyHud.update();
     sendState(dt);
     remotes.update(dt, t);
   } else {
@@ -3115,6 +3552,7 @@ function update(dt) {
   farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: !inputBlocked(), at: player.position });
   regrowFarm();
   rollFarmGiants();
+  bosses.update(dt, t);
   giantBars.update(t);
   windTime.value = t;
   _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
@@ -3149,7 +3587,7 @@ function update(dt) {
     animals.update(dt, t, {
       hours: farmHours(),
       player: { pos: player.position, moving, onGround: player.onGround },
-      collect,
+      collect: collectProduce, // (the eggs)
     });
   }
 
@@ -3160,7 +3598,12 @@ function update(dt) {
 // What E does here at home, for the prompt
 function homePrompt() {
   if (menuOpen()) return '';
+  const boss = bosses.prompt();
+  if (boss || bosses.inArena()) return boss;
+  const fish = fishing.prompt();
+  if (fish) return fish;
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
+  if (buildings.nearest('arcade', player.position, BENCH_REACH)) return 'E  Play at the arcade';
   if (houseRoom.kitchenInReach(player.position)) return 'E  Cook in the kitchen';
   if (houseRoom.shelfInReach(player.position)) return 'E  Read your recipe book';
   const machine = machines.nearest(player.position);
@@ -3192,7 +3635,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, machines, learned, useMachine, cooking, get meal() { return meal; }, dayNight, saveGame, camera, farmSync, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

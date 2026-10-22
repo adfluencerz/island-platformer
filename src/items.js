@@ -1,4 +1,4 @@
-import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
+import { SHOP, COIN_VALUE, TOOL_HITS, TOOL_EXTRA, HOE_TILLS } from '../shared/balance.js';
 import { RELICS } from './relics.js';
 import { FOODS } from './foods.js';
 
@@ -12,10 +12,11 @@ import { FOODS } from './foods.js';
 // `plants` names the crop (see crops.js) a seed grows into.
 // `price` is what the merchant at the farm stall asks for it; `sell` is what
 // the merchant pays for one. No `sell`: not for sale. `tool` says what a tool
-// does (the sturdy ones from the workbench do the same as the plain ones,
-// better: `hits` swings fell a tree or break a rock, a `wide` hoe tills three
-// tiles at once). Prices, a coin's worth and the sturdy tools' hits are set
-// in shared/balance.js (see the end of the catalog). `piece`: a thing made at the
+// does (the sturdy, silver and golden ones from the workbench do the same as
+// the plain ones, better: `hits` swings fell a tree or break a rock, and it
+// gives `extra` more; a hoe `tills` [across, ahead] tiles at once). Prices, a
+// coin's worth and the better tools' hits are set in shared/balance.js (see
+// the end of the catalog). `piece`: a thing made at the
 // workbench to be put down on the farm in build mode (PIECES, shared/level.js).
 
 // Seed packets share one drawing; only the picture on the front changes color.
@@ -540,6 +541,32 @@ export const ITEMS = {
       '................',
     ],
   },
+  large_egg: {
+    name: 'Large egg',
+    category: 'Produce',
+    description: 'A big brown egg, from a hen in a well kept yard. Worth more than an ordinary one.',
+    maxStack: 999,
+    color: 0xd9a46a,
+    palette: { o: '#5b3a1e', w: '#d9a46a', W: '#f2cfa0', s: '#b07a45', d: '#8f5a2f' },
+    sprite: [
+      '......oooo......',
+      '.....oWWwwo.....',
+      '....oWWwwwwo....',
+      '...oWWwwwwwwo...',
+      '...oWwwwdwwwo...',
+      '..oWwwwwwwwwso..',
+      '..owwdwwwwwwso..',
+      '..owwwwwwwdwso..',
+      '..owwwwwwwwsso..',
+      '..owwwwdwwwsso..',
+      '..owwwwwwwssso..',
+      '...owwwwwssso...',
+      '...owwwwsssso...',
+      '....osssssso....',
+      '.....oooooo.....',
+      '................',
+    ],
+  },
   hen: {
     name: 'Hen',
     category: 'Animal',
@@ -827,30 +854,21 @@ ITEMS.golden_turnip = {
 };
 
 // ---------- Made at the workbench (src/workbench.js) ----------
-// The sturdy tools: the plain ones' drawings with blue steel heads
+// The better tools: the plain ones' drawings with blue steel heads (sturdy),
+// then silver, then gold
 const STEEL = { m: '#2f4a6b', M: '#5b84b1', L: '#a8c8ec' };
-ITEMS.wide_hoe = {
-  ...ITEMS.hoe,
-  name: 'Wide hoe',
-  description: 'A broad blade that tills three tiles side by side in one go. Use with E.',
-  wide: true,
-  palette: { ...ITEMS.hoe.palette, ...STEEL },
-  sprite: [...ITEMS.hoe.sprite],
-};
-ITEMS.sturdy_axe = {
-  ...ITEMS.axe,
-  name: 'Sturdy axe',
-  description: 'Fells a tree in two swings. Swing with E (or hold it).',
-  palette: { ...ITEMS.axe.palette, ...STEEL },
-  sprite: [...ITEMS.axe.sprite],
-};
-ITEMS.sturdy_pickaxe = {
-  ...ITEMS.pickaxe,
-  name: 'Sturdy pickaxe',
-  description: 'Breaks a rock in two swings. Swing with E (or hold it).',
-  palette: { ...ITEMS.pickaxe.palette, ...STEEL },
-  sprite: [...ITEMS.pickaxe.sprite],
-};
+const SILVER = { m: '#6b7380', M: '#b4bcc8', L: '#f2f5fa' };
+const GOLD = { m: '#8a5a12', M: '#e0a82e', L: '#ffe58a' };
+const better = (plain, name, description, metal) => ({ ...ITEMS[plain], name, description, palette: { ...ITEMS[plain].palette, ...metal }, sprite: [...ITEMS[plain].sprite] });
+ITEMS.wide_hoe = better('hoe', 'Wide hoe', 'A broad blade that tills three tiles side by side in one go. Use with E.', STEEL);
+ITEMS.sturdy_axe = better('axe', 'Sturdy axe', 'Fells a tree in three swings. Swing with E (or hold it).', STEEL);
+ITEMS.sturdy_pickaxe = better('pickaxe', 'Sturdy pickaxe', 'Breaks a rock in two swings. Swing with E (or hold it).', STEEL);
+ITEMS.silver_hoe = better('hoe', 'Silver hoe', 'Tills five tiles in a row in one go. Use with E.', SILVER);
+ITEMS.silver_axe = better('axe', 'Silver axe', 'Fells a tree in two swings. Swing with E (or hold it).', SILVER);
+ITEMS.silver_pickaxe = better('pickaxe', 'Silver pickaxe', 'Breaks a rock in one swing. Swing with E (or hold it).', SILVER);
+ITEMS.golden_hoe = better('hoe', 'Golden hoe', 'Tills a patch three by three in one go. Use with E.', GOLD);
+ITEMS.golden_axe = better('axe', 'Golden axe', 'Fells a tree in one swing, and gets an extra log out of it. Swing with E (or hold it).', GOLD);
+ITEMS.golden_pickaxe = better('pickaxe', 'Golden pickaxe', 'Breaks a rock in one swing, and gets an extra stone out of it. Swing with E (or hold it).', GOLD);
 
 // For bopping other farmers in lobbies (WEAPONS in shared/level.js): a bop
 // knocks them back and shakes loose a little of what they gathered there.
@@ -937,6 +955,256 @@ ITEMS.planter = {
   ],
 };
 
+// ---------- Fishing (shared/fishing.js, src/fishing.js) ----------
+// The rods, made at the workbench, each from the one before: the better the
+// rod, the sooner a bite and the rarer what bites (RODS in shared/balance.js).
+// Then what is fished up: one drawing for most fish, in each one's colors.
+const ROD_SPRITE = [
+    '............oo..',
+    '...........oWo..',
+    '..........oWwol.',
+    '.........oWwo.l.',
+    '........oWwo..l.',
+    '.......oWwo...l.',
+    '......oWwo....l.',
+    '.....oWwo.....l.',
+    '....oWwo......l.',
+    '.ooodwo......oro',
+    '.oMmoo.......oRo',
+    '.oMmo.........o.',
+    'oddo............',
+    'odo.............',
+    'oo..............',
+    '................',
+  ];
+const rod = (name, description, color, pole) => ({
+  name,
+  category: 'Tool',
+  tool: 'rod',
+  description,
+  maxStack: 1,
+  trashable: false,
+  color,
+  palette: { o: '#3b2412', d: '#7a4f28', M: '#a9b3c1', m: '#5d6470', l: '#e8edf3', r: '#e0475b', R: '#ffffff', ...pole },
+  sprite: [...ROD_SPRITE],
+});
+ITEMS.fishing_rod = rod('Fishing rod', 'Cast with E facing the sea or a pond, then press E again when the bobber dips.', 0xb0743a, { W: '#d99b57', w: '#b0743a' });
+ITEMS.sturdy_rod = rod('Sturdy rod', 'Bites come sooner, and rarer fish take an interest. Cast with E facing water.', 0x5b84b1, { W: '#a8c8ec', w: '#5b84b1' });
+ITEMS.golden_rod = rod('Golden rod', 'The fish practically queue up, the rarest among them. Cast with E facing water.', 0xffd700, { W: '#fff6b0', w: '#e0a800' });
+
+const FISH_SPRITE = [
+    '................',
+    '................',
+    '................',
+    '.......oooo.....',
+    '......offffo....',
+    '.oo..obbbbbbo...',
+    '.ofo.obbbbbbbbo.',
+    '.offobbbbbbbwebo',
+    '.offobBbbbbbbbbo',
+    '.ofo.oBBBBBBBBo.',
+    '.oo...oBBBBBoo..',
+    '.......offfo....',
+    '........ooo.....',
+    '................',
+    '................',
+    '................',
+  ];
+// b/B = back and belly, f = fins
+const fish = (name, description, color, b, B, f) => ({
+  name,
+  category: 'Fish',
+  description,
+  maxStack: 999,
+  color,
+  palette: { o: '#24323f', w: '#ffffff', e: '#111111', b, B, f },
+  sprite: [...FISH_SPRITE],
+});
+Object.assign(ITEMS, {
+  // the sea round the farm
+  sardine: fish('Sardine', 'Small, silver and in a hurry. From the sea.', 0x8fb3cc, '#8fb3cc', '#e3edf2', '#5f87a3'),
+  mackerel: fish('Mackerel', 'Stripy and full of beans. From the sea.', 0x3f8f8a, '#3f8f8a', '#d9eee6', '#2a6662'),
+  sea_bass: fish('Sea bass', 'A fine, heavy fish. The merchant likes these.', 0x7d8a96, '#7d8a96', '#dfe4e8', '#57626c'),
+  moonfish: fish('Moonfish', 'Only bites late at night, and glows a little in the dark.', 0xc9c3f0, '#c9c3f0', '#f6f3ff', '#9a8fd9'),
+  // a pond on the farm
+  minnow: fish('Minnow', 'Tiny, quick, and always somewhere in a pond.', 0x9fae8a, '#9fae8a', '#e8eedc', '#76845f'),
+  perch: fish('Perch', 'Green and gold, with a spiky fin. From a pond.', 0x8fae3c, '#8fae3c', '#f1e7a8', '#c25a12'),
+  sunfish: fish('Sunfish', 'Comes up to bask in the middle of the day.', 0xf0a03a, '#f0a03a', '#ffe6a8', '#d26e1c'),
+  catfish: fish('Catfish', 'Whiskery. Wakes up in the evening.', 0x7a6a52, '#7a6a52', '#d9cdb4', '#55493a'),
+  koi: fish('Koi', 'Orange and white, and very proud of it. Takes a sturdy rod.', 0xff7a3a, '#ff7a3a', '#ffffff', '#ffffff'),
+  // a lobby's water
+  trout: fish('Trout', 'Speckled and lively. From the wild islands.', 0x8a8a52, '#8a8a52', '#efe7c8', '#66663a'),
+  salmon: fish('Salmon', 'Pink, strong, and worth a bit. From the wild islands.', 0xe88a8a, '#e88a8a', '#ffe4dc', '#b85c5c'),
+  rainbow_trout: fish('Rainbow trout', 'Every colour along its side. From the wild islands.', 0x7fbf9f, '#7fbf9f', '#ffb3c8', '#c77dff'),
+  glowfish: fish('Glowfish', 'Lights up the water on a wild island, late at night.', 0x5ff0e8, '#5ff0e8', '#d8fffb', '#2ec4b6'),
+  golden_carp: fish('Golden carp', 'The rarest thing in the water. Takes a sturdy rod and a lot of luck.', 0xffd700, '#ffd700', '#fff6b0', '#e0a800'),
+});
+ITEMS.pufferfish = {
+  name: 'Pufferfish',
+  category: 'Fish',
+  description: 'Puffs up when surprised. Rare, and only for a sturdy rod.',
+  maxStack: 999,
+  color: 0xe8c547,
+  palette: { o: '#4a3a12', b: '#e8c547', B: '#fff1b8', f: '#c9a12a', w: '#ffffff', e: '#111111', m: '#e07a5f' },
+  sprite: [
+    '................',
+    '.....o..o..o....',
+    '....oooooooooo..',
+    '..oobbbbbbbbbbo.',
+    '.obbbbbbbbbwweo.',
+    '.obbbbbbbbbweeo.',
+    'oobbbbbbbbbbbbbo',
+    'ofobBbbbbbbbbbmo',
+    'offobBBbbbbbbbbo',
+    'ofo.obBBBBBBBbo.',
+    '.o...oBBBBBBBo..',
+    '.....ooooooooo..',
+    '.....o..o..o....',
+    '................',
+    '................',
+    '................',
+  ],
+};
+ITEMS.seaweed = {
+  name: 'Seaweed',
+  category: 'Forage',
+  description: 'Slippery. Caught on the line in the sea.',
+  maxStack: 999,
+  color: 0x4f9e3c,
+  palette: { o: '#1f3d1c', g: '#4f9e3c', G: '#7ed957' },
+  sprite: [
+    '................',
+    '.......o........',
+    '......ogo...o...',
+    '......ogo..ogo..',
+    '.o....oGgo.ogo..',
+    'ogo....ogo.oGgo.',
+    'ogo...oGgo..ogo.',
+    'oGgo..ogo..oGgo.',
+    '.ogo..oGgo.ogo..',
+    '.oGgo.ogo.oGgo..',
+    '..ogooGgo.ogo...',
+    '..oGgoogo.ogo...',
+    '...ogoogooGgo...',
+    '...oGgoGgoogo...',
+    '....oooooooo....',
+    '................',
+  ],
+};
+ITEMS.old_boot = {
+  name: 'Old boot',
+  category: 'Junk',
+  description: 'Somebody lost this a long time ago. The merchant will take it, just.',
+  maxStack: 99,
+  color: 0x6b4a2b,
+  palette: { o: '#2a1a0e', b: '#6b4a2b', B: '#8a6340', L: '#a08a6a', d: '#3d2a18' },
+  sprite: [
+    '................',
+    '................',
+    '....ooooooo.....',
+    '....oLLLLLo.....',
+    '....obbbbbo.....',
+    '....obBbbbo.....',
+    '....obBbbbo.....',
+    '....obbbbbo.....',
+    '....obbbbbooooo.',
+    '....obbbbbbbbbbo',
+    '...obbBbbbbbbbbo',
+    '...obbbbbbbbbbbo',
+    '...odddddddddddd',
+    '...ooooooooooooo',
+    '................',
+    '................',
+  ],
+};
+
+// ---------- The bosses (shared/bosses.js) ----------
+// The evil parsnip's key pieces (BOSSES in shared/balance.js: a full set
+// builds its portal), its statue, and the friendly parsnip to ride
+ITEMS.parsnip_seal = {
+  name: 'Parsnip Seal',
+  category: 'Key Item',
+  description: 'A purple wax seal, stamped with a grumpy parsnip. Three of them build the evil parsnip\'s portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0xb06fd0,
+  palette: { o: '#3d1f4a', R: '#8e4fb0', r: '#b06fd0', g: '#4f9e3c', G: '#7cc95a', c: '#f0e2b0', C: '#fff6d8' },
+  sprite: [
+    '................',
+    '.....oooooo.....',
+    '...ooRRRRRRoo...',
+    '..oRRrrrrrrRRo..',
+    '..oRrrrgGrrrRo..',
+    '.oRrrrgGgGrrrRo.',
+    '.oRrrrrcCrrrrRo.',
+    '.oRrrrcCCcrrrRo.',
+    '.oRrrrcCCcrrrRo.',
+    '.oRrrrrcCrrrrRo.',
+    '.oRrrrrcrrrrrRo.',
+    '..oRrrrrrrrrRo..',
+    '..oRRrrrrrrRRo..',
+    '...ooRRRRRRoo...',
+    '.....oooooo.....',
+    '................',
+  ],
+};
+ITEMS.parsnip_statue = {
+  name: 'Parsnip Statue',
+  category: 'Decor',
+  description: 'The evil parsnip, in stone, looking only a little grumpy. For beating it. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'parsnip_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#7d8a6a', G: '#a3b08f' },
+  sprite: [
+    '......g.g.......',
+    '.....gGgGg......',
+    '......gGg.......',
+    '.....oLLLo......',
+    '....oLLMMLo.....',
+    '....oLMMMdo.....',
+    '.....oLMdo......',
+    '.....oLMdo......',
+    '......oMdo......',
+    '......oMo.......',
+    '.......o........',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oddddddddo...',
+    '...oooooooooo...',
+  ],
+};
+// `mount`: which boss it is (src/mounts.js draws it). Just for show: it goes
+// no faster, and you get off to use anything else.
+ITEMS.parsnip_mount = {
+  name: 'Parsnip Steed',
+  category: 'Mount',
+  description: 'The evil parsnip, friends now and happy to carry you about. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'parsnip',
+  color: 0xf0e2b0,
+  palette: { o: '#4a3418', c: '#f0e2b0', C: '#fff6d8', d: '#c9b07a', g: '#4f9e3c', G: '#7cc95a', r: '#b5483a', R: '#d9604f', b: '#6e4a2b' },
+  sprite: [
+    '.......gG.g.....',
+    '......gGgGg.....',
+    '.......ggg......',
+    '.....ocCCco.....',
+    '....ocCCCCco....',
+    '...orrRRrrcco...',
+    '...oRRRRRRcdo...',
+    '....occccccdo...',
+    '....occcccdo....',
+    '.....occcdo.....',
+    '.....occdo......',
+    '......oo........',
+    '....oo...oo.....',
+    '....bo...bo.....',
+    '...bbo..bbo.....',
+    '................',
+  ],
+};
+
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
 // What the machines make, the machines, the dishes and the recipes (src/foods.js)
@@ -949,7 +1217,9 @@ for (const [id, { price, sell }] of Object.entries(SHOP)) {
   if (sell) ITEMS[id].sell = sell;
 }
 ITEMS.coin.currency = COIN_VALUE;
-for (const [id, hits] of Object.entries(STURDY_HITS)) ITEMS[id].hits = hits;
+for (const [id, hits] of Object.entries(TOOL_HITS)) ITEMS[id].hits = hits;
+for (const [id, extra] of Object.entries(TOOL_EXTRA)) ITEMS[id].extra = extra;
+for (const [id, tills] of Object.entries(HOE_TILLS)) ITEMS[id].tills = tills;
 
 // Render a sprite to a data URL once and reuse it for every <img>. Keyed by the
 // item, since items may share a drawing with different palettes.
@@ -2071,6 +2341,132 @@ export const PIECE_ICONS = {
       'oooo........oooo',
     ],
   },
+  rope_fence: {
+    palette: { ...WOOD, t: '#8a6a3a', T: '#c9a64e' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '.oo..........oo.',
+      'oWdo........oWdo',
+      'oWdo........oWdo',
+      'oTTToo....ooTTTo',
+      'oWdoTToooTTToWdo',
+      'oWdo.ooTTTo..Wdo',
+      'oWdo...ooo..oWdo',
+      'oWdo........oWdo',
+      'oWdo........oWdo',
+      'oWdo........oWdo',
+      'oWdo........oWdo',
+      'oooo........oooo',
+      '................',
+    ],
+  },
+  boulder: {
+    palette: { ...STONE, g: '#b8b46a', G: '#6f9a3e' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '....oooooooo....',
+      '...oLLLggLLMo...',
+      '..oLLMMgGMMMMo..',
+      '.oLMMMMMMMMMMdo.',
+      '.oMLMMMMMMMMddo.',
+      'oMLMMMMMMMMMMddo',
+      'oLMMMMMdMMMMMddo',
+      'oMMMMMMdMMMMddo.',
+      'oMMMMMdMMMMMMddo',
+      '.odMMMMMMMMMddo.',
+      '.oddddMMMMddddo.',
+      '..oooooooooooo..',
+      '................',
+    ],
+  },
+  log_bench: {
+    palette: { ...WOOD, e: '#e0b57a', E: '#c9955a' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.oooooooooooooo.',
+      'oEEEEEEEEEEEEEeo',
+      'odwwdwwwdwwdwoeo',
+      'owdwwwdwwwdwwoeo',
+      'odddddddddddddoo',
+      '.oooooooooooooo.',
+      '...owdo...owdo..',
+      '...odwo...odwo..',
+      '...owdo...owdo..',
+      '...oooo...oooo..',
+      '................',
+    ],
+  },
+  compost_bin: {
+    palette: { ...WOOD, s: '#5b3a1e', g: '#4f9e3c', G: '#5a9a42', c: '#e0a23a' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '.....gGc.g......',
+      '...ssgsssGcss...',
+      '..osssssgsssso..',
+      '.oWWWWWWWWWWWWo.',
+      '.odsssssssssdo..',
+      '.owwwwwwwwwwwwo.',
+      '.odsssssssssdo..',
+      '.oWWWWWWWWWWWWo.',
+      '.odsssssssssdo..',
+      '.owwwwwwwwwwwwo.',
+      '.odddddddddddo..',
+      '.oooooooooooooo.',
+      '................',
+    ],
+  },
+  milk_churns: {
+    palette: { ...WOOD, t: '#bcc4ca', T: '#e6ebee', k: '#7f8a92' },
+    sprite: [
+      '................',
+      '...okko..okko...',
+      '...oTto..oTto...',
+      '..okkkko.okkkko.',
+      '.oTttttooTtttto.',
+      '.okkkkkooTtttto.',
+      '.oTttttoookkkko.',
+      '.oTtokkoootttto.',
+      '.oTokTtkooTtttto',
+      '.oTotTttkoTtttto',
+      '.oTotTttkoTtttto',
+      '.okokkkkkookkkko',
+      '.oTookkkkooTttto',
+      'oWWWWWWWWWWWWWWo',
+      'oddddddddddddddo',
+      'oooooooooooooooo',
+    ],
+  },
+  dovecote: {
+    palette: { ...WOOD, r: '#a8492f', R: '#83361f', p: '#f0e2c4', h: '#2a1a0e', v: '#eceae4', V: '#a3a8ae' },
+    sprite: [
+      '.......oo.......',
+      '......orro......',
+      '.....orrrRo.....',
+      '....orrrrrRo....',
+      '...orrrrrrrRo...',
+      '..oRRRRRRRRRRo..',
+      '...oppppppppo...',
+      '...ophhpphhpo...',
+      '...ophhpphhpo...',
+      '.vVoWWWWWWWWo...',
+      '.vvoopppppppo...',
+      '..ooddddddddo...',
+      '.......oWo......',
+      '.......oWo......',
+      '.......oWo......',
+      '......ooooo.....',
+    ],
+  },
   workbench: {
     palette: { ...WOOD, i: '#5d6470', I: '#a9b3c1' },
     sprite: [
@@ -2090,6 +2486,27 @@ export const PIECE_ICONS = {
       '.oddooooooooddo.',
       '.odo........odo.',
       '.ooo........ooo.',
+    ],
+  },
+  arcade: {
+    palette: { ...WOOD, r: '#b5483a', c: '#f2ede0', g: '#e0b23a', y: '#ffe7a3' },
+    sprite: [
+      '..oooooooooooo..',
+      '..oyrrrrrrrryo..',
+      '..oooooooooooo..',
+      '.oooooooooooooo.',
+      'orrccrrccrrccrro',
+      'orrccrrccrrccrro',
+      'oooooooooooooooo',
+      '.od....oo....do.',
+      '.od...oggo...do.',
+      '.od...oggo...do.',
+      '.od....oo....do.',
+      'oooooooooooooooo',
+      'oWWWWWWWWWWWWWWo',
+      'orrccrrccrrccrro',
+      'orrccrrccrrccrro',
+      'oooooooooooooooo',
     ],
   },
   farm_chest: {
@@ -2174,6 +2591,49 @@ export const PIECE_ICONS = {
       '.odo........odo.',
       '.odo........odo.',
       '.ooo........ooo.',
+    ],
+  },
+  // a boss's portal (shared/bosses.js): a stone arch round a purple swirl
+  parsnip_portal: {
+    palette: { o: '#2a2238', S: '#a9a79f', p: '#7a3fa0', P: '#b06fd0', w: '#f4e8ff' },
+    sprite: [
+      '................',
+      '.....oooooo.....',
+      '...ooSSSSSSoo...',
+      '..oSSppppppSSo..',
+      '..oSpPPPPPPpSo..',
+      '.oSpPwwwwwwPpSo.',
+      '.oSpPwPPPPwPpSo.',
+      '.oSpPwPwwPwPpSo.',
+      '.oSpPwPwPPwPpSo.',
+      '.oSpPwPPwwwPpSo.',
+      '.oSpPwwwPPPPpSo.',
+      '.oSpPPPPPPPPpSo.',
+      '.oSppppppppppSo.',
+      '.oSSSSSSSSSSSSo.',
+      '.oooooooooooooo.',
+      '................',
+    ],
+  },
+  pond: {
+    palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', w: '#3d7fa8', W: '#9fd3ef', g: '#3f7f34', G: '#6fb04a' },
+    sprite: [
+      '................',
+      '................',
+      '....oooooooo....',
+      '..ooLMLMLMLMoo..',
+      '.oLMwwwwwwwwMLo.',
+      '.oMwWwwwwwwwwMo.',
+      'oLwwwwwgGgwwwwLo',
+      'oMwwwwgGGgwWwwMo',
+      'oLwwwwwggwwwwwLo',
+      'oMwwWwwwwwwwwwMo',
+      '.oLwwwwwwwwWwLo.',
+      '.oMLwwwwwwwwLMo.',
+      '..ooMLMLMLMLoo..',
+      '....oooooooo....',
+      '................',
+      '................',
     ],
   },
   campfire: {

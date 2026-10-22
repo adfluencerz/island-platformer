@@ -10,7 +10,8 @@
 //
 // What uses each part: the item catalog (src/items.js), the world and its
 // lobbies (shared/level.js, shared/room.js), the workbench (src/workbench.js),
-// the animals (src/animals.js), the farm's finds (src/finds.js) and a new
+// the animals (src/animals.js), the farm's finds (src/finds.js), fishing
+// (shared/fishing.js), the arcade's games (shared/arcade.js) and a new
 // farmer's backpack (src/main.js).
 
 // ---------- Time ----------
@@ -56,8 +57,27 @@ export const SHOP = {
   cow: { price: 500, sell: 100},
   sheep: { price: 350, sell: 70 },
   egg: { sell: 25 },
+  large_egg: { sell: 45 },
   milk: { sell: 60 },
   wool: { sell: 120 },
+  // fished up (see Fishing)
+  sardine: { sell: 18 },
+  mackerel: { sell: 30 },
+  sea_bass: { sell: 55 },
+  pufferfish: { sell: 130 },
+  moonfish: { sell: 160 },
+  seaweed: { sell: 8 },
+  minnow: { sell: 15 },
+  perch: { sell: 28 },
+  sunfish: { sell: 50 },
+  catfish: { sell: 65 },
+  koi: { sell: 150 },
+  trout: { sell: 40 },
+  salmon: { sell: 70 },
+  rainbow_trout: { sell: 110 },
+  glowfish: { sell: 220 },
+  golden_carp: { sell: 450 },
+  old_boot: { sell: 2 },
   // made by the machines (MACHINES)
   cheese: { sell: 150 },
   mayonnaise: { sell: 65 },
@@ -105,14 +125,49 @@ export const ANIMALS = {
 export const LAY_HOURS = [8, 16];
 export const EGGS_PER_HEN = 3;
 
+// ---------- Upgrades ----------
+// Bought at the workbench by the farmer, for the whole farm (a helper works
+// with what the farm has). Each list is the levels in order: a farm starts on
+// the first, and `cost` is what the next one up costs (`gold`, and items).
+// The pens: `room`, how many of each kind live there (the fence goes out a
+// little each level: shared/farmland.js), and what they give: `largeEgg`,
+// the chance an egg is a large one; `second`, the chance a cow or sheep gives
+// two milk or wool instead of one.
+export const PEN_LEVELS = {
+  yard: [
+    { room: { hen: 8 }, largeEgg: 0 },
+    { room: { hen: 12 }, largeEgg: 0.35, cost: { gold: 1200, wood: 80, stone: 40 } },
+    { room: { hen: 16 }, largeEgg: 0.7, cost: { gold: 3000, wood: 160, stone: 100 } },
+  ],
+  pasture: [
+    { room: { cow: 4, sheep: 6 }, second: 0 },
+    { room: { cow: 6, sheep: 9 }, second: 0.5, cost: { gold: 2500, wood: 120, stone: 60 } },
+    { room: { cow: 8, sheep: 12 }, second: 1, cost: { gold: 6000, wood: 240, stone: 150 } },
+  ],
+};
+// The workbench: each level makes what the ones below it do and more (a
+// recipe's `level`, in RECIPES)
+export const BENCH_LEVELS = [
+  {},
+  { cost: { gold: 2000, wood: 100, stone: 100 } },
+  { cost: { gold: 5000, wood: 200, stone: 200, gem: 3 } },
+];
+
 // ---------- Trees and rocks ----------
-// `hits`: swings to fell one or break one up (STURDY_HITS with a sturdy tool).
+// `hits`: swings to fell one or break one up (TOOL_HITS with a better tool).
 // `regrow`: seconds until it is back (somewhere else; see shared/level.js).
 // `wood`: logs from a tree of size 1 (bigger trees give more). `stone`: from
 // a rock of size `per` (a fist-sized one; the big boulders give the most).
 export const TREE_BALANCE = { hits: 4, regrow: [600, 600], wood: [2, 4] };
 export const ROCK_BALANCE = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4 };
-export const STURDY_HITS = { sturdy_axe: 3, sturdy_pickaxe: 2 };
+// The workbench's tools, a tier to each of its levels (sturdy, silver,
+// golden): swings to fell a tree or break a rock with each; `TOOL_EXTRA`: one
+// more log or stone a tree or rock gives with it; `HOE_TILLS`: the tiles a hoe
+// tills in one go, [across, ahead] (centred on the one in front, the plain
+// hoe's: [1, 1]).
+export const TOOL_HITS = { sturdy_axe: 3, silver_axe: 2, golden_axe: 1, sturdy_pickaxe: 2, silver_pickaxe: 1, golden_pickaxe: 1 };
+export const TOOL_EXTRA = { golden_axe: 1, golden_pickaxe: 1 };
+export const HOE_TILLS = { wide_hoe: [3, 1], silver_hoe: [5, 1], golden_hoe: [3, 3] };
 
 // ---------- Giant trees and rocks ----------
 // Each game morning a lobby or farm without a giant tree may get one (one
@@ -124,6 +179,44 @@ export const STURDY_HITS = { sturdy_axe: 3, sturdy_pickaxe: 2 };
 // (`rockMin`: a giant rock is at least this big, even a pebble's). The health
 // bar over it shows `barSeconds` after the last swing.
 export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockScale: 2.5, rockMin: 1.6, barSeconds: 4 };
+
+// ---------- Bosses ----------
+// Four big grumps live out past the sea, each behind a portal: fought in any
+// order, alone or with the friends on your farm (shared/bosses.js). Nobody
+// gets hurt: a boss is bopped (WEAPONS) until it is dizzy and turns friendly.
+// Each needs its own set of `pieces` key pieces (the `key` item), found in
+// lobbies (LOBBY_SPOTS, a whole set's worth of luck) and up on the sky isles
+// (SKY_CHESTS): a full set builds its portal on a farm (BUILD_COSTS), and it
+// is used up when the boss is beaten. `hp`: its health with one farmer, and
+// `perPlayer` times that more for each farmer past the first. `pause`:
+// seconds it takes between moves ([min, max]; `quicken` shorter for each
+// farmer past the first). The rest are its moves' (shared/bosses.js).
+// Beating one gives everyone who fought: its statue and its mount the first
+// time (`statue`, `mount`: items), and a shiny animal for the farm every time.
+// (Only the parsnip is in so far.)
+export const BOSSES = {
+  parsnip: {
+    name: 'Evil Parsnip', key: 'parsnip_seal', pieces: 3, hp: 40, perPlayer: 0.7, pause: [1.3, 2.1], quicken: 0.12,
+    hop: { windup: 0.5, air: 0.8, height: 4, reach: 7, hops: [2, 3], wave: 7, waveMax: 4.5 }, // a hop at someone, and a shockwave where it lands
+    roll: { windup: 0.8, speed: 10, time: 1.8, dizzy: 1.4 }, // a roll at someone, bouncing off the arena's edge, then a moment's dizzy
+    seeds: { windup: 0.6, count: 10, perPlayer: 2, speed: 6, volleys: 2, gap: 0.6 }, // seeds shot all round
+    walk: 1.6, // its pace, between moves
+    statue: 'parsnip_statue', mount: 'parsnip_mount',
+  },
+};
+// What every boss fight shares. `hitsOut`: a farmer the boss bops this many
+// times is sent back to the arena's start (and can go again). `dizzy`:
+// seconds a bopped farmer wobbles (slower, no swinging); `knock`: how hard
+// they are knocked back; `grace`: seconds after a bop before the next can
+// land. `damage`: what one bop of each weapon takes off. `sleep`: seconds an
+// empty arena waits before its boss goes back to sleep, fresh. `shiny`: the
+// kinds a shiny animal can be.
+export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage: { wooden_sword: 1, mallet: 2 }, sleep: 4, shiny: ['hen', 'cow', 'sheep'] };
+
+// [[key item, weight, 1, 1], ...]: one of each boss's key pieces, for a loot list
+function bossPieces(weight) {
+  return Object.values(BOSSES).map((boss) => [boss.key, weight, 1, 1]);
+}
 
 // ---------- Lobby spots ----------
 // What a lobby's resource spots turn up. `regrow`: seconds until an emptied
@@ -141,12 +234,12 @@ export const LOBBY_SPOTS = {
   seashell: { regrow: [30, 45], loot: [['seashell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 9)
   meadow: {
     regrow: [30, 50],
-    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.04, 1, 1]],
+    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.04, 1, 1], ...bossPieces(0.025)],
   },
   // up on the sky isles (generation 10): finds lying about, and on the steps up
   sky: {
     regrow: [40, 60],
-    loot: [['coin', 0.5, 2, 4], ['gem', 0.22, 1, 1], ['sunflower_seeds', 0.12, 2, 3], ['carrot_seeds', 0.1, 2, 4], ['golden_seeds', 0.05, 1, 1], ['key', 0.1, 1, 1]],
+    loot: [['coin', 0.5, 2, 4], ['gem', 0.22, 1, 1], ['sunflower_seeds', 0.12, 2, 3], ['carrot_seeds', 0.1, 2, 4], ['golden_seeds', 0.05, 1, 1], ['key', 0.1, 1, 1], ...bossPieces(0.07)],
   },
   // (the relic and the chests up there: what is on them is rolled their own way, SKY_CHESTS)
   relic: { regrow: [0, 0], loot: [] },
@@ -154,7 +247,7 @@ export const LOBBY_SPOTS = {
   sky_vault: { regrow: [0, 0], loot: [] },
   ledge: {
     regrow: [40, 60],
-    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.08, 1, 1]],
+    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.08, 1, 1], ...bossPieces(0.05)],
   },
 };
 
@@ -170,8 +263,8 @@ export const SKY_ISLES = { count: [1, 3], radius: [5, 7.5], top: [9, 15], firstS
 // are in one, each from `loot` ([item, weight, min, max], as for the spots;
 // the same thing twice is one stack).
 export const SKY_CHESTS = {
-  sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.06, 1, 1]] },
-  sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5]] },
+  sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.06, 1, 1], ...bossPieces(0.06)] },
+  sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5], ...bossPieces(0.2)] },
 };
 
 // ---------- Finds on the farm ----------
@@ -248,13 +341,25 @@ export const BUILD_COSTS = {
   flagpole: { wood: 3, flax: 2 },
   stone_cairn: { stone: 3 },
   clothesline: { wood: 2, flax: 2 },
+  rope_fence: { wood: 2, flax: 1 },
+  boulder: { stone: 3 },
+  log_bench: { wood: 3 },
+  compost_bin: { wood: 4 },
+  milk_churns: { wood: 1, stone: 3 },
+  dovecote: { wood: 5, stone: 1 },
   workbench: { wood: 10, stone: 5 },
+  arcade: { wood: 30, stone: 10, flax: 6 },
   farm_chest: { wood: 8, stone: 2 },
   house: { wood: 500, stone: 200 },
   lamp_post: { wood: 3, stone: 2 },
   ...Object.fromEntries(RELICS.map((relic) => [relic, { [relic]: 1 }])), // (a relic on its pedestal: the relic itself)
   garden_bench: { wood: 6 },
   planter: { planter: 1 },
+  pond: { stone: 30 },
+  ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, boss]) => [
+    [`${id}_portal`, { [boss.key]: boss.pieces }], // (a boss's portal: a full set of its key pieces)
+    [boss.statue, { [boss.statue]: 1 }], // (its statue: the one it gave)
+  ])),
   // the machines: the one made at the workbench (RECIPES)
   cheese_press: { cheese_press: 1 },
   mayo_machine: { mayo_machine: 1 },
@@ -267,7 +372,8 @@ export const BUILD_COSTS = {
 
 // ---------- The workbench ----------
 // What can be made, in the order it is listed. `needs`: items used up (a
-// tool among them is swapped for the one made, in its slot).
+// tool among them is swapped for the one made, in its slot), and `gold` paid.
+// `level`: the workbench level it takes (BENCH_LEVELS; none: the first).
 export const RECIPES = [
   { makes: 'planter', needs: { stone: 4, wood: 1 } },
   { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
@@ -278,6 +384,18 @@ export const RECIPES = [
   { makes: 'cheese_press', needs: { wood: 20, stone: 10 } },
   { makes: 'mayo_machine', needs: { wood: 15, stone: 15 } },
   { makes: 'loom', needs: { wood: 25, flax: 10 } },
+  // level 2
+  { makes: 'silver_axe', level: 2, needs: { sturdy_axe: 1, gold: 400, wood: 20, stone: 30, gem: 1 } },
+  { makes: 'silver_pickaxe', level: 2, needs: { sturdy_pickaxe: 1, gold: 400, wood: 30, stone: 20, gem: 1 } },
+  { makes: 'silver_hoe', level: 2, needs: { wide_hoe: 1, gold: 400, wood: 25, stone: 25, gem: 1 } },
+  // level 3
+  { makes: 'golden_axe', level: 3, needs: { silver_axe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
+  { makes: 'golden_pickaxe', level: 3, needs: { silver_pickaxe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
+  { makes: 'golden_hoe', level: 3, needs: { silver_hoe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
+  // fishing rods (shared/fishing.js), each from the one before
+  { makes: 'fishing_rod', needs: { wood: 5, flax: 2 } },
+  { makes: 'sturdy_rod', needs: { fishing_rod: 1, wood: 15, stone: 10, flax: 4 } },
+  { makes: 'golden_rod', level: 2, needs: { sturdy_rod: 1, gold: 500, wood: 20, gem: 2 } },
 ];
 
 // ---------- Machines ----------
@@ -352,6 +470,147 @@ export const WEAPONS = {
 export const BOP_GRACE = 2500; // ms a farmer who was just bopped can't be again
 export const SAFE_CIRCLE = 3.5; // nobody bops or is bopped this close to where farmers arrive
 export const DROP_MS = 45_000; // a drop nobody picks up fades after this (ms)
+
+// ---------- Fishing ----------
+// With a rod in hand, E facing water casts; a while later the bobber dips,
+// and E again in time lands what bit (in a lobby the server rolls it). `bite`:
+// seconds [min, max] from the cast till something bites, with each rod.
+// `luck`: how much likelier a rarer catch is with it (for each step of rarity,
+// times this). The rods are made at the workbench, each from the one before.
+export const RODS = {
+  fishing_rod: { bite: [6, 13], luck: 1 },
+  sturdy_rod: { bite: [4, 9], luck: 1.5 },
+  golden_rod: { bite: [2.5, 6], luck: 2 },
+};
+// ms to press E once the bobber dips, by how rare what bit is (0 common .. 3 the rarest)
+export const BITE_WINDOW = [1300, 1000, 750, 550];
+export const CAST_EVERY = 1200; // ms: the fewest between two casts
+// What bites where: the sea round your farm, a pond built on it, and any
+// water in a lobby (its sea and its pond: rarer things). Each [item, weight,
+// rarity, { rod, hours, count }]: `rod` the least rod it bites for (1: a
+// sturdy one, 2: golden), `hours` [from, to] of game time it bites in (past
+// midnight if from > to), `count` [min, max] of it (else one). 'chest': a
+// little chest of loot (FISHED_CHEST); wood is driftwood.
+export const FISHING = {
+  sea: [
+    ['sardine', 30, 0], ['mackerel', 22, 0], ['sea_bass', 12, 1],
+    ['pufferfish', 4, 2, { rod: 1 }], ['moonfish', 5, 2, { hours: [20, 5] }],
+    ['seaweed', 6, 0], ['old_boot', 5, 0], ['wood', 4, 0, { count: [2, 4] }],
+    ['key', 0.8, 2], ['chest', 1.5, 2],
+  ],
+  pond: [
+    ['minnow', 30, 0], ['perch', 22, 0], ['sunfish', 10, 1, { hours: [9, 17] }],
+    ['catfish', 10, 1, { hours: [18, 6] }], ['koi', 4, 2, { rod: 1 }],
+    ['old_boot', 4, 0], ['key', 0.6, 2], ['chest', 1, 2],
+  ],
+  lobby: [
+    ['trout', 26, 0], ['salmon', 18, 1], ['rainbow_trout', 9, 1],
+    ['glowfish', 4, 2, { hours: [21, 4] }], ['golden_carp', 1.2, 3, { rod: 1 }],
+    ['old_boot', 4, 0], ['key', 1.5, 2], ['chest', 3, 2],
+  ],
+};
+// What is in a little chest fished up: `rolls` things, each from `loot`
+// ([item, weight, min, max], as for the sky isle chests)
+export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1]] };
+// ---------- Skills ----------
+// Five skills that level up by doing (shared/skills.js, src/skills.js), from
+// level 1 to SKILLS.max. `next`: XP from each level to the one after (1 -> 2
+// first). `xp`: what each thing done is worth (`harvest` by crop). `bonus`:
+// the chance, for each level past 1, of one more of what it gives (an extra
+// crop, egg, milk, wool, log or stone; fishing's: bites that much sooner).
+// From level `fewerSwings` a tree or rock takes one
+// swing less (never under `leastSwings`: a lobby turns down two felled within
+// a second). The overall level is all five added up; at DOUBLE_JUMP.level it
+// unlocks one jump more in the air, at `speed`.
+export const SKILLS = {
+  max: 10,
+  next: [40, 100, 170, 245, 325, 415, 505, 605, 705],
+  xp: {
+    plant: 1,
+    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10 },
+    pet: 3, // (once a game day for each animal)
+    egg: 6,
+    milk: 10,
+    wool: 12,
+    tree: 8,
+    rock: 7,
+    giant: 40, // (a giant tree or rock you helped bring down)
+    fish: 6,
+  },
+  bonus: { farming: 0.04, animals: 0.03, fishing: 0.04, woodcutting: 0.05, mining: 0.05 },
+  fewerSwings: 5,
+  leastSwings: 2,
+};
+export const DOUBLE_JUMP = { level: 15, speed: 9.5 };
+// ---------- The arcade (shared/arcade.js) ----------
+// Games against the house for gold, built on the farm. Stakes have no limit
+// (whatever is in the backpack). Payouts are what comes back for each 1g
+// staked, the stake included (2: double; 0: lost). The house keeps a small
+// edge, a gentle gold sink.
+export const COINFLIP = { pays: 2 }; // heads or tails, even odds
+// Blackjack: the dealer draws to 17 and stands on any 17; a blackjack (an ace
+// and a ten in the first two cards) pays 3 to 2. A hand can be doubled on its
+// first two cards; there is no splitting. A shoe of `decks` is shuffled for
+// every hand. (Played well, about 97% comes back.)
+export const BLACKJACK = { decks: 6, natural: 2.5, win: 2, push: 1 };
+// Lucky Hand: a short card game after Balatro. Draw `hand` cards; `plays`
+// times, play up to five as a poker hand, which scores (chips) x (mult): the
+// hand's own (LUCKY_HANDS), plus each scoring card's chips (LUCKY_CARD_CHIPS),
+// then whatever the jokers add. `discards` times, swap cards instead. A
+// joker is picked from `offer` before the first play, and another after it.
+// The total after the last play pays by `tiers`: [score, payout], the highest
+// one reached. (Played as well as can be, about 97% of what is staked comes
+// back; half the games reach the 1x tier.)
+export const LUCKY = {
+  hand: 8, plays: 3, discards: 3, offer: 3, picks: 2,
+  tiers: [[1250, 0.5], [1850, 1], [2450, 1.5], [3000, 2.5], [4000, 5], [6000, 15]],
+};
+// [chips, mult] for each poker hand (shared/cards.js HANDS, in order)
+export const LUCKY_HANDS = [[5, 1], [10, 2], [20, 2], [30, 3], [30, 4], [35, 4], [40, 4], [60, 7], [100, 8]];
+// what a scoring card adds to the chips: its number, 10 for a face, 11 for an ace
+export const LUCKY_CARD_CHIPS = { T: 10, J: 10, Q: 10, K: 10, A: 11 };
+// The jokers. `needs`: only when the hand played has a rank 2 or 3 times
+// (a pair, a three of a kind; in a bigger hand too), or is a 'straight' or a
+// 'flush'. `suit`, `face`: for each scoring card of that suit, or that is a
+// jack, queen or king. Then +chips, +mult, and last x`times` the mult.
+export const LUCKY_JOKERS = {
+  sunflower: { name: 'Sunflower', mult: 4 },
+  twin_turnips: { name: 'Twin turnips', needs: 2, mult: 8 },
+  hay_bale: { name: 'Hay bale', needs: 2, chips: 50 },
+  scarecrow: { name: 'Scarecrow', needs: 3, times: 2 },
+  garden_path: { name: 'Garden path', needs: 'straight', mult: 12 },
+  bouquet: { name: 'Bouquet', needs: 'flush', mult: 10 },
+  rosy_heart: { name: 'Rosy heart', suit: 'h', mult: 3 },
+  dewdrop: { name: 'Dewdrop', suit: 'd', mult: 3 },
+  clover: { name: 'Four-leaf clover', suit: 'c', mult: 3 },
+  trowel: { name: 'Garden trowel', suit: 's', mult: 3 },
+  royal_hen: { name: 'Royal hen', face: true, chips: 20 },
+  golden_goose: { name: 'Golden goose', times: 1.5 },
+};
+
+// ---------- Party games (lobbies: shared/minigame.js, shared/arenas.js) ----------
+// E at the signpost in the stone circle starts one: everyone in the lobby
+// hears, and has gatherMs to join (at the sign, or from the pop-up). Then
+// whoever joined is off to an arena grown from a seed, readyMs to look about
+// before it starts, and back to the lobby once it is over. The next game can
+// start cooldownMs later. (ms throughout)
+export const MINIGAMES = {
+  gatherMs: 20_000,
+  readyMs: 3000,
+  cooldownMs: 10_000,
+  // Coin rush: the most coins picked up before the time runs out (the coins
+  // are the game's, only for the score; the prize is real ones)
+  coin_rush: { ms: 60_000, coins: [36, 48], high: 0.3 }, // high: the share of coins up on the hay bales
+  // The prize: the winner's coins (more for each other farmer who played) and
+  // one roll of loot ([item, weight, min, max]); everyone else who played
+  // gets a few coins for joining in
+  prize: {
+    coins: 12,
+    perPlayer: 3,
+    loot: [['carrot_seeds', 0.35, 2, 4], ['sunflower_seeds', 0.3, 2, 3], ['gem', 0.25, 1, 1], ['golden_seeds', 0.1, 1, 1]],
+    played: [1, 2],
+  },
+};
 
 // ---------- Room to keep things ----------
 export const CHEST = { stack: 999, kinds: 64 }; // the most of one item in a farm chest, and of different items
