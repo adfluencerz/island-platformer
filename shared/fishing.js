@@ -15,6 +15,7 @@
 // rods, are numbers in shared/balance.js (FISHING, RODS).
 import { RODS, BITE_WINDOW, FISHING, FISHED_CHEST } from './balance.js';
 import { pick, rollBundle } from './level.js';
+import { bonusChance } from './skills.js';
 
 export { RODS, CAST_EVERY } from './balance.js';
 export const CAST_REACH = 4.5; // the farthest out a bobber lands, from the farmer
@@ -35,9 +36,10 @@ export function biting(water, rod, hour) {
 
 // One cast: { bite, window, item, count, items? }: seconds till something
 // bites, ms to land it in, and what it is ('chest': a little chest of loot,
-// what is in it as items [[item, count], ...]). rand: () => [0, 1)
-export function castLine(water, rod, hour, rand = Math.random) {
-  const [lo, hi] = RODS[rod].bite;
+// what is in it as items [[item, count], ...]). level: the farmer's fishing
+// skill (shared/skills.js: bites that much sooner). rand: () => [0, 1)
+export function castLine(water, rod, hour, level = 1, rand = Math.random) {
+  const [lo, hi] = RODS[rod].bite.map((s) => s * (1 - bonusChance('fishing', level)));
   const table = biting(water, rod, hour);
   const [item, count] = pick(table.map(([it, w, , [min, max]]) => [it, w, min, max]), rand);
   const rarity = table.find(([it]) => it === item)[2];

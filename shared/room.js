@@ -48,7 +48,7 @@ import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn } from './fishing.js';
-import { DAY_LENGTH_SECONDS } from './balance.js';
+import { DAY_LENGTH_SECONDS, SKILLS } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
@@ -305,7 +305,8 @@ export class Room extends Place {
           return;
         }
         p.castAt = now;
-        const line = castLine('lobby', rod, this.hour(now), this.rand);
+        const level = Number.isInteger(msg.level) ? Math.max(1, Math.min(SKILLS.max, msg.level)) : 1; // (the page keeps the skills)
+        const line = castLine('lobby', rod, this.hour(now), level, this.rand);
         p.line = { ...line, n, x: msg.x, z: msg.z, biteAt: now + line.bite * 1000, bit: false };
         break;
       }

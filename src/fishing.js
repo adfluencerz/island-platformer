@@ -117,8 +117,9 @@ export function createTackle(scene) {
 // waterAhead(): the water in front of us to cast into, { x, y, z, water } or
 // null. hour(): the time of day, in game hours. lobby(): the lobby's
 // connection while we are in one (null: on a farm, where the page rolls).
-// rodInHand(): the rod's item id, or null.
-export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand }) {
+// rodInHand(): the rod's item id, or null. skill(): our fishing level
+// (src/skills.js). landed(): something came up on the line (for the XP).
+export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed }) {
   const tackle = createTackle(scene);
   const tip = new THREE.Vector3();
   let line = null; // { n, rod, at, from, phase: 'out' | 'bite' | 'wait', conn, local, biteAt, closeAt }
@@ -137,9 +138,9 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     const conn = lobby();
     line = { n: ++casts, rod, at, from: { x: player.position.x, z: player.position.z }, phase: 'out', conn, local: null };
     if (conn) {
-      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod });
+      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill() });
     } else {
-      line.local = castLine(at.water, rod, hour());
+      line.local = castLine(at.water, rod, hour(), skill());
       line.biteAt = now + line.local.bite * 1000;
     }
     farmer.swing(); // (a flick of the rod)
@@ -168,6 +169,7 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
       inventory.notify('It got away…');
       return;
     }
+    landed();
     if (items) {
       for (const [it, n] of items) inventory.add(it, n);
       const rare = items.find(([it]) => RARE[it]);

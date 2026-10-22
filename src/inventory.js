@@ -15,7 +15,8 @@ import { buzz } from './ui/touch.js';
 //
 // Its Build tab (or B) picks a piece to build on the farm, or taking pieces
 // down: build mode (src/build.js, main.js) pays with the wood and stone in
-// the backpack.
+// the backpack. Its Skills tab (or K) shows how far each skill has come
+// (src/skills.js).
 
 export const COLS = 12;
 const ROWS = 3;
@@ -88,14 +89,15 @@ function iconImg(parent) {
 // buildProblem(): why there is no building here ('' : there is).
 // building(): the piece build mode has now (null: not building).
 // inChest(item): how many the farm's chest has to build with too.
-export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null, inChest = () => 0 } = {}) {
+// renderSkills(el): draws the Skills tab into el.
+export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
   let open = false;
   let held = null; // stack carried on the cursor while the menu is open
   let lastFullNotice = 0;
-  let tab = 'pack'; // 'pack' | 'build'
+  let tab = 'pack'; // 'pack' | 'build' | 'skills'
   let group = BUILD_GROUPS[0]; // the Build tab's group on show
 
   // ---------- DOM ----------
@@ -130,8 +132,12 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   const buildTab = el('button', 'inv-tab inv-frame', tabsEl);
   buildTab.textContent = 'Build';
   buildTab.title = 'Build on the farm (B)';
+  const skillsTab = el('button', 'inv-tab inv-frame', tabsEl);
+  skillsTab.textContent = 'Skills';
+  skillsTab.title = 'Your skills (K)';
   const packEl = el('div', 'inv-pack', windowEl);
   const buildEl = el('div', 'inv-build', windowEl);
+  const skillsEl = el('div', 'inv-skills', windowEl);
   const closeBtn = el('button', 'inv-close', windowEl);
   closeBtn.textContent = '×';
   closeBtn.title = 'Close (I / Esc)';
@@ -184,9 +190,12 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
 
     packTab.classList.toggle('on', tab === 'pack');
     buildTab.classList.toggle('on', tab === 'build');
+    skillsTab.classList.toggle('on', tab === 'skills');
     packEl.hidden = tab !== 'pack';
     buildEl.hidden = tab !== 'build';
+    skillsEl.hidden = tab !== 'skills';
     if (open && tab === 'build') renderBuild();
+    if (open && tab === 'skills') renderSkills(skillsEl);
 
     heldEl.hidden = !held;
     if (held) {
@@ -524,6 +533,13 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
         setOpen(true);
       }
     }
+    else if (e.code === 'KeyK' && !e.repeat) {
+      if (open && tab === 'skills') setOpen(false);
+      else {
+        setTab('skills');
+        setOpen(true);
+      }
+    }
     else if (e.code === 'Escape') setOpen(false);
     else if (!open && HOTBAR_KEYS.includes(e.code)) select(HOTBAR_KEYS.indexOf(e.code));
   });
@@ -562,6 +578,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   closeBtn.addEventListener('click', () => setOpen(false));
   packTab.addEventListener('click', () => setTab('pack'));
   buildTab.addEventListener('click', () => setTab('build'));
+  skillsTab.addEventListener('click', () => setTab('skills'));
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
   // A right click outside the window: put down what is carried, or close
   menuEl.addEventListener('mousedown', (e) => {

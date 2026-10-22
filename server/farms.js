@@ -557,6 +557,6 @@ Object.assign(Farms.prototype, {
   },
 });
 
-// What the page saves (src/main.js): { v, farm, backpack }. The server goes no
+// What the page saves (src/main.js): { v, farm, backpack, skills }. The server goes no
 // further than the shape; what is in it is the page's business.
 const validSave = (save) => !!save && typeof save === 'object' && !Array.isArray(save) && Number.isInteger(save.v) && save.v >= 1;
