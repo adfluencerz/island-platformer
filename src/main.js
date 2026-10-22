@@ -24,7 +24,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
-import { STARTER_KIT, GIANT, UNMADE, unmake, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js';
+import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
@@ -35,6 +35,8 @@ import { wildsFromWire } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
+import { createSkills } from './skills.js';
+import { createPuffs } from './puff.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
 
@@ -204,7 +206,25 @@ const inventory = createInventory({
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
+  renderSkills: (el) => skills.render(el),
 });
+
+// ---------- Skills ----------
+// Farming, animals, woodcutting and mining (and fishing, once there is
+// fishing) level up by doing them (skills.js): each level a little more
+// chance of one more of what they give, and the overall level unlocks the
+// double jump. Yours wherever you farm: saved with the backpack.
+const skills = createSkills({
+  onLevelUp: (title, detail) => {
+    hud.flash(title);
+    inventory.notify(detail);
+  },
+});
+// XP in skill for what was got, and now and then (the skill's bonus) one more of item
+function skilled(skill, xp, item) {
+  skills.gain(skill, xp);
+  if (item && skills.extra(skill) && inventory.canAdd(item, 1)) inventory.add(item, 1);
+}
 
 // The tool in hand, by what it does ('hoe', 'axe' or 'pickaxe': plain or sturdy), or null
 const holding = () => ITEMS[inventory.selectedId()]?.tool ?? null;
@@ -233,6 +253,9 @@ worlds.home.root.add(animals.root);
 const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
 // (on a friend's farm the eggs, milk and wool are the farmer's)
 const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
+// an egg, milk or wool: into the backpack, with Animals XP
+const collectProduce = (item) => collect(item) && (skilled('animals', SKILLS.xp[item] ?? 0, item), true);
+const pettedOn = new WeakMap(); // animal -> the game day she was last petted (Animals XP once a day)
 
 function letOutAnimal(kind) {
   if (visiting()) return inventory.notify('Only the farmer lets animals out here');
@@ -329,7 +352,10 @@ function harvestAt(x, z) {
     farmNet.send({ t: C.HARVEST, key });
     return true;
   }
-  if (inventory.add(CROPS[crop.cropId].produce)) removeCrop(key);
+  if (inventory.add(CROPS[crop.cropId].produce)) {
+    skilled('farming', SKILLS.xp.harvest[crop.cropId] ?? 0, CROPS[crop.cropId].produce);
+    removeCrop(key);
+  }
   return true;
 }
 
@@ -672,7 +698,7 @@ const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
 const farmTreeSites = new Map(); // how often each grew back: id -> count (which of its places it is in: shared/level.js nextSite)
 
-const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits)}` : ' (hold to keep going)'}`);
+const chopPrompt = (tree) => (tree.big > 1 ? giantPrompt('tree', tree) : `Chop${chop.id === tree.id && chop.hits ? `  ${chop.hits}/${swingsWith(TREE.hits, 'woodcutting')}` : ' (hold to keep going)'}`);
 
 // the standing tree within reach, nearest first
 function treeInReach() {
@@ -718,7 +744,7 @@ function updateChopping() {
     if (tree?.state === 'up' && !chop.pending.has(tree.id)) {
       world.shakeTree(tree.id, player.position);
       if (tree.big > 1) hitGiant('tree', tree);
-      else if (++chop.hits >= swingsWith(TREE.hits)) {
+      else if (++chop.hits >= swingsWith(TREE.hits, 'woodcutting')) {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -748,6 +774,7 @@ function treeFelled(m) {
   const got = myShare(m) + extraFrom('axe', m);
   if (got) inventory.add('wood', got);
   if (m.shares) giantDown('tree', m.id, got, 'wood');
+  if (got) skilled('woodcutting', m.shares ? SKILLS.xp.giant : SKILLS.xp.tree, 'wood'); // (after: a level up's notice goes over the giant's)
 }
 
 // On a farm played alone: the tree is ours to fell
@@ -773,7 +800,7 @@ const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
 const farmRockSites = new Map(); // (as farmTreeSites)
 
-const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits)}` : ' (hold to keep going)'}`);
+const minePrompt = (rock) => (rock.big > 1 ? giantPrompt('rock', rock) : `Mine${mine.id === rock.id && mine.hits ? `  ${mine.hits}/${swingsWith(ROCK.hits, 'mining')}` : ' (hold to keep going)'}`);
 
 // the whole rock within reach, nearest first
 function rockInReach() {
@@ -819,7 +846,7 @@ function updateMining() {
     if (rock?.state === 'up' && !mine.pending.has(rock.id)) {
       world.shakeRock(rock.id);
       if (rock.big > 1) hitGiant('rock', rock);
-      else if (++mine.hits >= swingsWith(ROCK.hits)) {
+      else if (++mine.hits >= swingsWith(ROCK.hits, 'mining')) {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
@@ -848,6 +875,7 @@ function rockMined(m) {
   const got = myShare(m) + extraFrom('pickaxe', m);
   if (got) inventory.add('stone', got);
   if (m.shares) giantDown('rock', m.id, got, 'stone');
+  if (got) skilled('mining', m.shares ? SKILLS.xp.giant : SKILLS.xp.rock, 'stone'); // (after: a level up's notice goes over the giant's)
 }
 
 // On a farm played alone: the rock is ours to break
@@ -1215,12 +1243,15 @@ function updateMenuCamera(t) {
 // title screen, the backpack, the chat line or the pause menu.
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
+let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen();
 const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen();
 const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
   if (e.code === 'Space') jumpPressed = true;
+  if (e.code === 'Space' && !e.repeat) jumpTapped = true;
   if (e.code === 'KeyE' && !e.repeat) useAction();
 });
 
@@ -1263,7 +1294,13 @@ function useAction() {
 // Harvest the ripe crop on the tile at x, z (E: the one in front), else till
 // or plant it with what is in hand
 function tendAnimal(animal) {
-  animals.tend(animal, player.position, collect);
+  let asked = false; // (she was ready: milked or sheared, or the backpack was full)
+  animals.tend(animal, player.position, (item) => ((asked = true), collectProduce(item)));
+  const day = Math.floor(farmHours() / 24);
+  if (!asked && pettedOn.get(animal) !== day) {
+    pettedOn.set(animal, day);
+    skills.gain('animals', SKILLS.xp.pet);
+  }
   anim.squash = 0.15;
 }
 
@@ -1314,6 +1351,7 @@ function farmHere(x, z) {
   } else if (ITEMS[held]?.plants) {
     if (plantAt(x, z, ITEMS[held].plants)) {
       inventory.consumeSelected();
+      skills.gain('farming', SKILLS.xp.plant);
       anim.squash = 0.15; // little crouch to plant
       if (farmNet) {
         const key = tileKeyFor(x, z);
@@ -1388,6 +1426,20 @@ function jump() {
   player.velocity.y = JUMP_SPEED;
   player.onGround = false;
   anim.squash = -0.2; // stretch on takeoff
+}
+
+// Just off a ledge you can still jump for a moment (COYOTE_TIME), and with
+// the double jump unlocked (skills.js) once more in the air, off a puff of air.
+const COYOTE_TIME = 0.1; // seconds
+let airTime = 0; // seconds since the farmer was last on the ground
+let airJumps = 0; // jumps left in the air
+const puffs = createPuffs(scene);
+
+function airJump() {
+  airJumps--;
+  player.velocity.y = DOUBLE_JUMP.speed;
+  anim.squash = -0.25;
+  puffs.puff(new THREE.Vector3(player.position.x, player.position.y - player.height / 2, player.position.z));
 }
 
 // ---------- Collision helpers ----------
@@ -2447,8 +2499,11 @@ async function joinFarm(id) {
     if (m.by === myId) giveBack(m.piece);
   });
   on(S.HARVESTED, (m) => {
+    const crop = crops.get(m.key);
     removeCrop(m.key);
-    if (m.by === myId) inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
+    if (m.by !== myId) return;
+    inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
+    skilled('farming', SKILLS.xp.harvest[crop?.cropId] ?? 0, m.item); // (a bonus one comes to the backpack)
   });
   on(S.FARM_DENY, (m) => {
     const crop = crops.get(m.key);
@@ -2814,7 +2869,7 @@ function showFarm(farm) {
 
 function currentSave() {
   if (farmOnScreen) homeFarm = captureFarm();
-  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize() };
+  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize() };
 }
 
 function saveGame() {
@@ -2855,6 +2910,7 @@ function useSave(save) {
   const unmade = {};
   for (const slot of save.backpack?.slots ?? []) if (slot && UNMADE[slot.id]) unmade[slot.id] = (unmade[slot.id] ?? 0) + Math.max(1, slot.count | 0);
   inventory.restore(save.backpack ?? {});
+  skills.restore(save.skills); // (none before v8: everything at level 1)
   for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
   homeFarm = save.farm ?? null;
   if (save.v < 2) gift('flax_seeds', 5);
@@ -2938,8 +2994,17 @@ function update(dt) {
   player.velocity.z = moveVec.z + knock.z;
   knock.multiplyScalar(Math.exp(-dt * 5)); // (a bop's stumble fades)
 
-  if ((keys.has('Space') || jumpPressed) && player.onGround && !inputBlocked()) jump();
+  if (player.onGround) {
+    airTime = 0;
+    airJumps = skills.canDoubleJump() ? 1 : 0;
+  } else airTime += dt;
+  if (!inputBlocked()) {
+    const offLedge = airTime < COYOTE_TIME && player.velocity.y <= 0;
+    if ((keys.has('Space') || jumpPressed) && (player.onGround || offLedge)) jump();
+    else if (jumpTapped && airJumps > 0) airJump();
+  }
   jumpPressed = false;
+  jumpTapped = false;
 
   // Gravity
   player.velocity.y += GRAVITY * dt;
@@ -2963,6 +3028,7 @@ function update(dt) {
   }
 
   playerMesh.position.copy(player.position);
+  puffs.update(dt);
   hoeGroup.visible = holding() === 'hoe'; // only hold a tool while it's selected
   farmer.axe.visible = holding() === 'axe';
   farmer.pick.visible = holding() === 'pickaxe';
@@ -3031,7 +3097,7 @@ function update(dt) {
     animals.update(dt, t, {
       hours: farmHours(),
       player: { pos: player.position, moving, onGround: player.onGround },
-      collect,
+      collect: collectProduce, // (the eggs)
     });
   }
 

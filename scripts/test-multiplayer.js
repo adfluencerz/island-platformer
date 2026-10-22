@@ -21,6 +21,8 @@ import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { homeWildsSource } from './wilds.js';
+import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
+import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
 import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
 import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
 import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
@@ -70,6 +72,25 @@ function standAt(room, who, id) {
 }
 
 console.log('islands');
+await test('skills level up from their XP, and the overall level unlocks the double jump', () => {
+  assert.deepEqual(levelOf(0), { level: 1, into: 0, need: SKILLS.next[0] });
+  assert.equal(levelOf(SKILLS.next[0] - 1).level, 1);
+  assert.deepEqual(levelOf(SKILLS.next[0] + 5), { level: 2, into: 5, need: SKILLS.next[1] });
+  assert.deepEqual(levelOf(1e9), { level: SKILLS.max, into: 0, need: 0 });
+  const fresh = cleanSkills(null);
+  assert.equal(overallLevel(fresh), 5, 'every skill starts at level 1');
+  assert.deepEqual(cleanSkills({ farming: -3, mining: 'x', woodcutting: 12.7, extra: 9 }), { farming: 0, animals: 0, woodcutting: 12, mining: 0, fishing: 0 });
+  const xpTo = (level) => SKILLS.next.slice(0, level - 1).reduce((a, b) => a + b, 0);
+  const almost = { ...fresh, farming: xpTo(4), animals: xpTo(3), woodcutting: xpTo(4), mining: xpTo(2) };
+  assert.equal(overallLevel(almost), DOUBLE_JUMP.level - 1);
+  assert.ok(!canDoubleJump(almost));
+  assert.ok(canDoubleJump({ ...almost, mining: xpTo(3) }));
+  assert.equal(bonusChance('woodcutting', 1), 0);
+  assert.equal(swingsAt(TREE.hits, SKILLS.fewerSwings - 1), TREE.hits);
+  assert.equal(swingsAt(TREE.hits, SKILLS.fewerSwings), TREE.hits - 1);
+  assert.equal(swingsAt(2, SKILLS.max), 2, 'never under the fewest a lobby allows');
+});
+
 await test('the classic island is as it was made, and sound', () => {
   const classic = islandFor('classic');
   assert.equal(classic.spots.length, 28);

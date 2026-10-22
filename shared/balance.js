@@ -314,6 +314,36 @@ export const BOP_GRACE = 2500; // ms a farmer who was just bopped can't be again
 export const SAFE_CIRCLE = 3.5; // nobody bops or is bopped this close to where farmers arrive
 export const DROP_MS = 45_000; // a drop nobody picks up fades after this (ms)
 
+// ---------- Skills ----------
+// Five skills that level up by doing (shared/skills.js, src/skills.js), from
+// level 1 to SKILLS.max. `next`: XP from each level to the one after (1 -> 2
+// first). `xp`: what each thing done is worth (`harvest` by crop). `bonus`:
+// the chance, for each level past 1, of one more of what it gives (an extra
+// crop, egg, milk, wool, log or stone; fishing's: bites that much sooner,
+// once there is fishing). From level `fewerSwings` a tree or rock takes one
+// swing less (never under `leastSwings`: a lobby turns down two felled within
+// a second). The overall level is all five added up; at DOUBLE_JUMP.level it
+// unlocks one jump more in the air, at `speed`.
+export const SKILLS = {
+  max: 10,
+  next: [40, 100, 170, 245, 325, 415, 505, 605, 705],
+  xp: {
+    plant: 1,
+    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10 },
+    pet: 3, // (once a game day for each animal)
+    egg: 6,
+    milk: 10,
+    wool: 12,
+    tree: 8,
+    rock: 7,
+    giant: 40, // (a giant tree or rock you helped bring down)
+    fish: 6,
+  },
+  bonus: { farming: 0.04, animals: 0.03, fishing: 0.04, woodcutting: 0.05, mining: 0.05 },
+  fewerSwings: 5,
+  leastSwings: 2,
+};
+export const DOUBLE_JUMP = { level: 15, speed: 9.5 };
 // ---------- The arcade (shared/arcade.js) ----------
 // Games against the house for gold, built on the farm. Stakes have no limit
 // (whatever is in the backpack). Payouts are what comes back for each 1g
