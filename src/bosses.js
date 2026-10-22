@@ -4,7 +4,7 @@ import { GROUND_STAND_Y } from '../shared/level.js';
 import { C } from '../shared/protocol.js';
 import {
   BossFight, BOSS_IDS, BODY_R, arenaAt, arenaStart, arenaExit, portalOf, portalBoss, bossFromWire,
-  rollHits, waveHits, seedAt, seedHits,
+  rollHits, waveHits, seedAt, seedHits, swarmAt, swarmHits,
 } from '../shared/bosses.js';
 import { ITEMS } from './items.js';
 import { createArenas } from './arena.js';
@@ -124,7 +124,7 @@ export function createBosses(ctx) {
   function onFx(id, fx) {
     const boss = bosses.get(id);
     const ours = here() === id;
-    if (fx.e === 'wave' || fx.e === 'seeds') boss.view.addFx(fx);
+    if (fx.e === 'wave' || fx.e === 'seeds' || fx.e === 'swarm') boss.view.addFx(fx);
     else if (fx.e === 'bop') {
       boss.view.flinch();
       if (fx.by === me()) hud.flash('Bop!');
@@ -165,6 +165,11 @@ export function createBosses(ctx) {
     for (const s of view.seeds) {
       for (let i = 0; i < s.fx.n; i++) {
         if (seedHits(seedAt(s.fx, i, s.age, _seed), x, y, z)) return caught(s.fx.x, s.fx.z);
+      }
+    }
+    for (const s of view.swarms) {
+      for (let i = 0; i < s.fx.a.length; i++) {
+        if (swarmHits(swarmAt(s.fx, i, s.age, _seed), x, y, z)) return caught(_seed.x - Math.sin(s.fx.a[i]), _seed.z - Math.cos(s.fx.a[i]));
       }
     }
   }

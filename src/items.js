@@ -1288,6 +1288,89 @@ ITEMS.lion_mount = {
   ],
 };
 
+// The bee queen's key pieces, statue and mount
+ITEMS.honey_drop = {
+  name: 'Royal Honey Drop',
+  category: 'Key Item',
+  description: 'A golden drop of the bee queen\'s own honey, sealed in wax. Three of them build her portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0xffc93c,
+  palette: { o: '#5a3a00', h: '#ffc93c', H: '#fff0a0', d: '#d99a10', w: '#f4e2b0' },
+  sprite: [
+    '................',
+    '.......oo.......',
+    '......ohHo......',
+    '......ohHo......',
+    '.....ohhHho.....',
+    '.....ohhhHo.....',
+    '....ohhhhhHo....',
+    '...ohhhhhhhHo...',
+    '...ohhhhhhhHo...',
+    '..ohhhhhhhhhHo..',
+    '..ohHhhhhhhhdo..',
+    '..ohHHhhhhhhdo..',
+    '...ohhhhhhhdo...',
+    '...owwwwwwwwo...',
+    '....oooooooo....',
+    '................',
+  ],
+};
+ITEMS.bee_statue = {
+  name: 'Bee Queen Statue',
+  category: 'Decor',
+  description: 'The bee queen, in stone, crown and all. For beating her. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'bee_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', y: '#e0c060' },
+  sprite: [
+    '.....y.y.y......',
+    '.....yyyyy......',
+    '..oo.oLLLo.oo...',
+    '.oLLooLdLdoLLo..',
+    '.oLLLoLLLLoLLo..',
+    '..oLLoMLLMoLo...',
+    '....oMMMMMMo....',
+    '....oddddddo....',
+    '....oMMMMMMo....',
+    '....oddddddo....',
+    '.....oMMMMo.....',
+    '......oooo......',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oooooooooo...',
+  ],
+};
+ITEMS.bee_mount = {
+  name: 'Bee Steed',
+  category: 'Mount',
+  description: 'The bee queen, friends now, buzzing along just over the grass with you on her back. With her in hand, E gets on (or off). Just for show: she is no faster, and you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'bee',
+  color: 0xffc93c,
+  palette: { o: '#3a2a14', y: '#ffc93c', Y: '#ffe08a', s: '#3a2a14', w: '#eaf6ff', r: '#d6453a', g: '#ffd84a' },
+  sprite: [
+    '................',
+    '....ww....ww....',
+    '...wwww..wwww...',
+    '....wwwoowww....',
+    '.....orrRo......',
+    '...oyysyysyyo...',
+    '..oyysyysyyyYo..',
+    '..oyysyysyyyYoo.',
+    '..oyysyysyyygYo.',
+    '...oyysyysyyYo..',
+    '....oooooooo....',
+    '.....o..o.......',
+    '................',
+    '................',
+    '................',
+    '................',
+  ].map((row) => row.replace('R', 'r')),
+};
+
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
 // What the machines make, the machines, the dishes and the recipes (src/foods.js)
@@ -2806,3 +2889,5 @@ export const PIECE_ICONS = {
 };
 // (the super lion's portal: the parsnip's arch, round an orange swirl)
 PIECE_ICONS.lion_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#c0661f', P: '#f0a050', w: '#fff0d8' } };
+// (the bee queen's: a golden swirl)
+PIECE_ICONS.bee_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#c99a10', P: '#ffd84a', w: '#fff8d0' } };

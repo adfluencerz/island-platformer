@@ -23,7 +23,7 @@ import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { homeWildsSource } from './wilds.js';
-import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits } from '../shared/bosses.js';
+import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits } from '../shared/bosses.js';
 import { BOSSES } from '../shared/balance.js';
 import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
 import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
@@ -1727,6 +1727,29 @@ await test('the super lion pounces and roars rings of shockwaves, in an arena of
   assert.ok(fx.some((f) => f.e === 'wave' && !f.roar && f.max === BOSSES.lion.pounce.waveMax), 'a pounce lands');
   assert.deepEqual(PIECES.lion_portal.cost, { mane_tuft: 3 });
   assert.equal(PIECES.lion_statue.statue, 'lion');
+});
+
+await test('the bee queen sends swarms at everyone in her arena, and dashes', () => {
+  const fight = new BossFight('bee', mulberry32(5));
+  const at = ARENAS.bee;
+  assert.equal(arenaAt(at.x, at.z), 'bee');
+  const a = { id: 1, x: at.x, y: GROUND_STAND_Y, z: at.z + 6 };
+  const b = { id: 2, x: at.x - 6, y: GROUND_STAND_Y, z: at.z };
+  const fx = [];
+  const moves = new Set();
+  for (let i = 0; i < 600; i++) {
+    fx.push(...fight.step(0.05, [a, b]));
+    moves.add(fight.move);
+  }
+  assert.ok(moves.has('swarm') && moves.has('roll') && moves.has('dizzy'), 'swarms, dashes, and a dizzy sit-down after');
+  const swarm = fx.find((f) => f.e === 'swarm');
+  assert.equal(swarm.a.length, BOSSES.bee.swarm.count + BOSSES.bee.swarm.perPlayer, 'one more swarm for the second farmer');
+  // a swarm flies off along its line, and a jump clears it
+  const flat = { x: 0, z: 0, a: [0], speed: 4, life: 3 };
+  const at1 = swarmAt(flat, 0, 1);
+  assert.ok(Math.abs(at1.z - 4) < 1e-9 && Math.abs(at1.x) <= 0.9);
+  assert.ok(swarmHits(at1, at1.x, GROUND_STAND_Y, at1.z) && !swarmHits(at1, at1.x, GROUND_STAND_Y + 1.2, at1.z));
+  assert.deepEqual(PIECES.bee_portal.cost, { honey_drop: 3 });
 });
 
 await test('a boss fight on a farm with helpers: its portal, the bops, and the portal used up when it is beaten', () => {

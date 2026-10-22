@@ -63,6 +63,8 @@ const MATS = {
   portalLight: mat(0xd9a8ff, { emissive: 0xc58cf0, emissiveIntensity: 1 }),
   lionPortal: mat(0xb8561a, { emissive: 0xc0661f, emissiveIntensity: 0.9 }), // (the super lion's: orange)
   lionPortalLight: mat(0xffd08a, { emissive: 0xf0a050, emissiveIntensity: 1 }),
+  beePortal: mat(0xc99a10, { emissive: 0xd9a520, emissiveIntensity: 0.9 }), // (the bee queen's: gold)
+  beePortalLight: mat(0xfff0a0, { emissive: 0xffe070, emissiveIntensity: 1 }),
   sackDark: mat(0xbfa26c),
   crow: mat(0x26262c),
   beak: mat(0xe0a23a),
@@ -90,7 +92,7 @@ const MATS = {
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
 // a boss's portal's swirl, by its boss: [deep, light]
-const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight] };
+const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
 const box = new THREE.BoxGeometry(1, 1, 1);
 const flag = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
@@ -1418,6 +1420,17 @@ function model(id, gx, gz, joined) {
     part(g, ball, MATS.stoneLight, 0, 1.2, 0.14, 0.42, 0.42, 0.38); // head
     part(g, ball, MATS.stoneDark, 0, 1.14, 0.33, 0.1, 0.07, 0.06); // nose
     part(g, box, MATS.stone, 0.26, 0.5, -0.28, 0.08, 0.08, 0.3).rotation.y = 0.6; // tail
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
+  } else if (PIECES[id]?.statue === 'bee') {
+    // The bee queen's statue: hovering (on a little stalk) over a plinth, her crown on
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    part(g, box, MATS.stoneDark, 0, 0.6, 0, 0.08, 0.4, 0.08);
+    part(g, ball, MATS.stoneLight, 0, 1.0, -0.1, 0.55, 0.5, 0.65); // abdomen
+    for (const z of [-0.02, -0.22]) part(g, box, MATS.stoneDark, 0, 1.0, z, 0.5, 0.42, 0.05);
+    part(g, ball, MATS.stoneLight, 0, 1.18, 0.3, 0.4, 0.4, 0.38); // head
+    part(g, shaft, MATS.lichen, 0, 1.42, 0.3, 0.22, 0.1, 0.22); // crown
+    for (const sx of [-1, 1]) part(g, ball, MATS.stone, sx * 0.32, 1.28, -0.05, 0.42, 0.04, 0.26).rotation.z = sx * 0.4; // wings
     solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
   } else if (PIECES[id]?.statue) {
     // A boss's statue: the evil parsnip in stone, on a plinth

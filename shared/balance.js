@@ -193,7 +193,7 @@ export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockSca
 // farmer past the first). The rest are its moves' (shared/bosses.js).
 // Beating one gives everyone who fought: its statue and its mount the first
 // time (`statue`, `mount`: items), and a shiny animal for the farm every time.
-// (The parsnip and the lion are in so far.)
+// (The parsnip, the lion and the bee queen are in so far.)
 export const BOSSES = {
   parsnip: {
     name: 'Evil Parsnip', key: 'parsnip_seal', pieces: 3, hp: 40, perPlayer: 0.7, pause: [1.3, 2.1], quicken: 0.12,
@@ -211,6 +211,14 @@ export const BOSSES = {
     walk: 2.2,
     moves: ['pounce', 'roar'],
     statue: 'lion_statue', mount: 'lion_mount',
+  },
+  bee: {
+    name: 'Bee Queen', key: 'honey_drop', pieces: 3, hp: 45, perPlayer: 0.7, pause: [1.3, 2.0], quicken: 0.12,
+    swarm: { windup: 0.8, count: 3, perPlayer: 1, spread: 0.35, speed: 4.5, life: 3.5 }, // little swarms zig-zagging off at farmers
+    roll: { windup: 0.7, speed: 11, time: 1.1, dizzy: 1.8 }, // a buzzing dash across the arena (as the parsnip's roll), then a sit-down, dizzy
+    walk: 2.4,
+    moves: ['swarm', 'roll'],
+    statue: 'bee_statue', mount: 'bee_mount',
   },
 };
 // What every boss fight shares. `hitsOut`: a farmer the boss bops this many

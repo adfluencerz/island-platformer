@@ -149,7 +149,55 @@ function lion() {
   };
 }
 
-const MOUNTS = { parsnip, lion };
+// The bee queen, friends now: buzzing along just over the grass, a saddle
+// between her wings, her crown still on
+const BEE = { fuzz: mat(0xffc93c), fuzzLight: mat(0xffe08a), stripe: mat(0x3a2a14), gold: mat(0xffd84a),
+  wing: new THREE.MeshStandardMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.6, roughness: 0.2 }) };
+function bee() {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 0.75;
+  root.add(body);
+  part(body, ball, BEE.fuzz, [0, 0, -0.25], [0.8, 0.7, 1.0]);
+  for (const z of [-0.15, -0.45]) part(body, ball, BEE.stripe, [0, 0, z], [0.78, 0.68, 0.14]);
+  part(body, ball, BEE.fuzzLight, [0, 0.02, 0.3], [0.6, 0.6, 0.55]);
+  part(body, box, MATS.saddle, [0, 0.33, 0], [0.5, 0.08, 0.5]);
+  for (const sx of [-1, 1]) part(body, box, MATS.saddleDark, [sx * 0.3, 0.1, 0], [0.04, 0.36, 0.1]);
+  const head = new THREE.Group();
+  head.position.set(0, 0.12, 0.62);
+  body.add(head);
+  part(head, ball, BEE.fuzz, [0, 0, 0], [0.48, 0.45, 0.42]);
+  for (const sx of [-1, 1]) {
+    part(head, ball, MATS.white, [sx * 0.1, 0.05, 0.18], [0.1, 0.12, 0.05]);
+    part(head, ball, MATS.dark, [sx * 0.1, 0.04, 0.21], [0.05, 0.07, 0.03]);
+    part(head, ball, MATS.blush, [sx * 0.16, -0.06, 0.16], [0.07, 0.035, 0.03]);
+  }
+  part(head, ring, BEE.gold, [0, 0.24, 0], [0.13, 0.13, 0.08]).rotation.x = Math.PI / 2; // (her crown)
+  const wings = [-1, 1].map((sx) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.22, 0.32, -0.25);
+    body.add(pivot);
+    const w = part(pivot, ball, BEE.wing, [sx * 0.4, 0.05, 0], [0.8, 0.03, 0.4]);
+    w.castShadow = false;
+    return { pivot, sx };
+  });
+  let flap = 0;
+  return {
+    root,
+    seat: 0.75 + 0.37,
+    animate(dt, walk, t) {
+      flap += dt * 45;
+      for (const w of wings) w.pivot.rotation.z = w.sx * Math.sin(flap) * 0.5;
+      body.position.y = 0.75 + Math.sin(t * 3) * 0.06 + walk * 0.04;
+      body.rotation.x = walk * 0.12;
+    },
+    dispose() {
+      root.traverse((obj) => obj.isMesh && obj.geometry !== ball && obj.geometry !== box && obj.geometry !== cone && obj.geometry !== ring && obj.geometry.dispose());
+    },
+  };
+}
+
+const MOUNTS = { parsnip, lion, bee };
 
 // A new mount of this kind (a boss's id), or null for one this page doesn't know
 export const createMount = (kind) => MOUNTS[kind]?.() ?? null;

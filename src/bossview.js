@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BOSSES } from '../shared/balance.js';
-import { seedAt, seedsOver, waveOver, SEED_Y, ARENA_R, ARENAS } from '../shared/bosses.js';
+import { seedAt, seedsOver, waveOver, SEED_Y, ARENA_R, ARENAS, swarmAt, swarmsOver, SWARM_Y } from '../shared/bosses.js';
 import { damp } from './character.js';
 
 // ---------- A boss, as it is drawn ----------
@@ -20,6 +20,17 @@ const seedGeo = new THREE.IcosahedronGeometry(0.5, 0);
 const waveGeo = new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2);
 const shadowGeo = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
 const seedMat = mat(0x8a5a32);
+// a little bee, of a swarm: buzzing round where its swarm is
+const BEE = { yellow: mat(0xffd23f), black: mat(0x2a1a10), wing: new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, roughness: 0.3 }) };
+function littleBee(parent) {
+  const g = new THREE.Group();
+  parent.add(g);
+  part(g, ballGeo, BEE.yellow, [0, 0, 0], [0.18, 0.15, 0.22]);
+  part(g, boxGeo, BEE.black, [0, 0, -0.02], [0.19, 0.16, 0.04]);
+  for (const sx of [-1, 1]) part(g, ballGeo, BEE.wing, [sx * 0.08, 0.09, 0], [0.14, 0.02, 0.09]).castShadow = false;
+  return g;
+}
+const SWARM_BEES = 6;
 const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
 
 function part(parent, geo, material, [x, y, z], [sx, sy, sz], rotation) {
@@ -284,7 +295,93 @@ function buildLion() {
   return { root, skins: [coat, coatLight], top: 2.8, pose };
 }
 
-const MODELS = { parsnip: buildParsnip, lion: buildLion };
+// The bee queen: a big fuzzy bee in a little gold crown, hovering on four
+// buzzing wings. She shakes and buzzes louder to send her swarms, leans in to
+// dash across the arena, sits down dizzy after, and sleeps sat on the grass.
+function buildBee() {
+  const fuzz = mat(0xffc93c);
+  const fuzzLight = mat(0xffe08a);
+  const stripe = mat(0x3a2a14);
+  const gold = mat(0xffd84a, { metalness: 0.5, roughness: 0.35, emissive: 0x6b4a00, emissiveIntensity: 0.2 });
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.6, roughness: 0.2 });
+  const white = mat(0xffffff, { roughness: 0.4 });
+  const dark = mat(0x2a1a10, { roughness: 0.4 });
+  const blushMat = mat(0xf28cb1);
+
+  const root = new THREE.Group(); // on the ground under her
+  const hover = new THREE.Group(); // up in the air (down on the grass asleep, or dizzy)
+  root.add(hover);
+  const body = new THREE.Group(); // leans in to dash
+  hover.add(body);
+  // her abdomen, striped, behind; her thorax; her head in front
+  part(body, ballGeo, fuzz, [0, 0, -0.55], [1.25, 1.15, 1.5]);
+  for (const z of [-0.35, -0.75]) part(body, ballGeo, stripe, [0, 0, z], [1.22, 1.12, 0.22]);
+  part(body, ballGeo, fuzzLight, [0, 0.05, 0.35], [0.95, 0.95, 0.85]);
+  const head = new THREE.Group();
+  head.position.set(0, 0.3, 0.95);
+  body.add(head);
+  part(head, ballGeo, fuzz, [0, 0, 0], [0.9, 0.85, 0.8]);
+  const eyes = [-1, 1].map((sx) => {
+    const eye = new THREE.Group();
+    eye.position.set(sx * 0.2, 0.08, 0.34);
+    head.add(eye);
+    part(eye, ballGeo, white, [0, 0, 0], [0.2, 0.24, 0.1]);
+    part(eye, ballGeo, dark, [-sx * 0.015, -0.01, 0.05], [0.11, 0.14, 0.05]);
+    return eye;
+  });
+  const brows = [-1, 1].map((sx) => part(head, boxGeo, dark, [sx * 0.2, 0.27, 0.36], [0.24, 0.05, 0.05]));
+  const mouth = part(head, new THREE.TorusGeometry(0.1, 0.025, 6, 12, Math.PI), dark, [0, -0.15, 0.4], [1, 1, 1]);
+  const blush = [-1, 1].map((sx) => part(head, ballGeo, blushMat, [sx * 0.3, -0.08, 0.3], [0.14, 0.07, 0.05]));
+  // antennae, and her crown
+  for (const sx of [-1, 1]) {
+    const stalk = part(head, boxGeo, dark, [sx * 0.14, 0.5, 0.1], [0.03, 0.35, 0.03]);
+    stalk.rotation.z = -sx * 0.4;
+    part(head, ballGeo, dark, [sx * 0.22, 0.68, 0.1], [0.08, 0.08, 0.08]);
+  }
+  part(head, new THREE.CylinderGeometry(0.22, 0.26, 0.14, 10), gold, [0, 0.42, -0.02], [1, 1, 1]);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    part(head, new THREE.ConeGeometry(0.06, 0.16, 5), gold, [Math.sin(a) * 0.2, 0.55, -0.02 + Math.cos(a) * 0.2], [1, 1, 1]);
+  }
+  // four wings
+  const wings = [[-1, 0.05], [1, 0.05], [-1, -0.35], [1, -0.35]].map(([sx, z], i) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.3, 0.5, z);
+    body.add(pivot);
+    const w = part(pivot, ballGeo, wingMat, [sx * 0.55, 0.05, 0], [1.1, 0.04, i < 2 ? 0.55 : 0.4]);
+    w.castShadow = false;
+    return { pivot, sx };
+  });
+  // little legs, dangling
+  for (const sx of [-1, 1]) for (const z of [0.2, 0.5]) part(body, boxGeo, dark, [sx * 0.25, -0.5, z], [0.05, 0.35, 0.05]);
+
+  let flap = 0;
+  function pose(dt, t, b, def, { asleep, friendly, dizzy, flash }) {
+    const fighting = b.phase === 'fight' && !dizzy;
+    const dashing = fighting && b.move === 'roll';
+    const swarming = fighting && b.move === 'swarm' && b.mt < def.swarm.windup;
+    const down = asleep || dizzy;
+    hover.position.y += ((down ? 0.6 : 1.7 + Math.sin(t * 3) * 0.15) - hover.position.y) * damp(6, dt);
+    body.rotation.x = dashing ? (b.mt < def.roll.windup ? -0.3 : 0.5) : 0;
+    body.rotation.z = dizzy ? Math.sin(t * 7) * 0.2 : swarming ? Math.sin(t * 40) * 0.05 : 0;
+    // wings: buzzing (louder to swarm or dash), slow and drowsy dizzy, still asleep
+    flap += dt * (asleep ? 0 : dizzy ? 8 : swarming || dashing ? 70 : 45);
+    for (const w of wings) w.pivot.rotation.z = asleep ? w.sx * -0.3 : w.sx * Math.sin(flap) * 0.6;
+    for (const eye of eyes) eye.scale.y = asleep ? 0.12 : dizzy ? 0.5 : friendly ? 0.7 : 1;
+    brows.forEach((brow, i) => {
+      const s = i ? 1 : -1;
+      brow.visible = !asleep;
+      brow.rotation.z = friendly ? s * -0.2 : s * 0.35;
+    });
+    mouth.rotation.z = friendly ? Math.PI : 0;
+    for (const b2 of blush) b2.visible = friendly;
+    const sy = (1 + (swarming ? Math.sin(t * 30) * 0.04 : 0)) * (1 - flash * 0.12);
+    root.scale.set(1 + (1 - sy) * 0.5, sy, 1 + (1 - sy) * 0.5);
+  }
+  return { root, skins: [fuzz, fuzzLight], top: 3.3, pose };
+}
+
+const MODELS = { parsnip: buildParsnip, lion: buildLion, bee: buildBee };
 
 export function createBossView(parent, id) {
   const def = BOSSES[id];
@@ -305,6 +402,7 @@ export function createBossView(parent, id) {
 
   const waves = []; // { fx, age, mesh }
   const seeds = []; // { fx, age, meshes }
+  const swarms = []; // { fx, age, groups: a group of little bees for each of its swarms }
   const hearts = []; // { sprite, age }
   let flash = 0;
   let heartAt = 0;
@@ -314,7 +412,8 @@ export function createBossView(parent, id) {
     group,
     waves,
     seeds,
-    // A shockwave or a volley of seeds (its fx: shared/bosses.js step())
+    swarms,
+    // A shockwave, a volley of seeds or a swarming (its fx: shared/bosses.js step())
     addFx(fx) {
       if (fx.e === 'wave') {
         const mesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: fx.roar ? 0xffb35a : 0xf3e6c0, transparent: true, opacity: 0.85, depthWrite: false }));
@@ -328,6 +427,14 @@ export function createBossView(parent, id) {
           return mesh;
         });
         seeds.push({ fx, age: 0, meshes });
+      } else if (fx.e === 'swarm') {
+        const groups = fx.a.map(() => {
+          const group = new THREE.Group();
+          parent.add(group);
+          for (let k = 0; k < SWARM_BEES; k++) littleBee(group);
+          return group;
+        });
+        swarms.push({ fx, age: 0, groups });
       }
     },
 
@@ -406,6 +513,24 @@ export function createBossView(parent, id) {
           seeds.splice(i, 1);
         }
       }
+      for (let i = swarms.length - 1; i >= 0; i--) {
+        const s = swarms[i];
+        s.age += dt;
+        s.groups.forEach((group, k) => {
+          swarmAt(s.fx, k, s.age, _at);
+          group.position.set(_at.x, SWARM_Y, _at.z);
+          group.visible = Math.hypot(_at.x - ax, _at.z - az) < ARENA_R + 0.2;
+          group.children.forEach((bee, j) => {
+            const a = t * 7 + j * 1.9 + k;
+            bee.position.set(Math.cos(a) * 0.35, Math.sin(t * 11 + j) * 0.15, Math.sin(a * 1.3) * 0.35);
+            bee.rotation.y = a + Math.PI / 2;
+          });
+        });
+        if (swarmsOver(s.fx, s.age)) {
+          for (const group of s.groups) parent.remove(group);
+          swarms.splice(i, 1);
+        }
+      }
     },
 
     // its moves' shockwaves and seeds go (it went back to sleep, or we left)
@@ -415,8 +540,9 @@ export function createBossView(parent, id) {
         w.mesh.material.dispose();
       }
       for (const s of seeds) for (const mesh of s.meshes) parent.remove(mesh);
+      for (const s of swarms) for (const group of s.groups) parent.remove(group);
       for (const h of hearts) parent.remove(h.sprite);
-      waves.length = seeds.length = hearts.length = 0;
+      waves.length = seeds.length = swarms.length = hearts.length = 0;
     },
   };
 }
