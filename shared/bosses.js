@@ -43,7 +43,7 @@ export const portalOf = (id) => `${id}_portal`;
 export const portalBoss = (piece) => (typeof piece === 'string' && piece.endsWith('_portal') && BOSSES[piece.slice(0, -7)] ? piece.slice(0, -7) : null);
 
 const PHASES = ['sleep', 'wake', 'fight', 'friendly'];
-const MOVES = ['rest', 'hop', 'roll', 'dizzy', 'seeds', 'pounce', 'roar']; // (as numbers on the wire: only ever added to)
+const MOVES = ['rest', 'hop', 'roll', 'dizzy', 'seeds', 'pounce', 'roar', 'swarm', 'swoop', 'gust']; // (as numbers on the wire: only ever added to)
 
 export class BossFight {
   // rand: () => [0, 1)
@@ -91,7 +91,8 @@ export class BossFight {
   // z }]. Returns what happened, for the pages ([fx]): { e: 'wake' }, { e:
   // 'sleep' } (back to sleep, fresh: the arena stood empty), { e: 'wave', x,
   // z, speed, max } (a shockwave), { e: 'seeds', x, z, a0, n, speed } (n
-  // seeds flying out, the first at angle a0)
+  // seeds flying out, the first at angle a0), { e: 'swarm', x, z, a, speed,
+  // life } (little swarms off along the angles a)
   step(dt, here) {
     const fx = [];
     if (!here.length) {
@@ -184,15 +185,58 @@ export class BossFight {
       case 'dizzy':
         if (this.mt >= m.dur) this.rest(here);
         break;
-      case 'roar': {
-        // rings of shockwave, one after another, out to the arena's edge
-        const { windup, count, gap, speed, max } = d.roar;
+      case 'roar':
+      case 'gust': {
+        // rings of shockwave (or wind), one after another, out to the arena's edge
+        const { windup, count, gap, speed, max } = d[this.move];
         if (this.mt < windup) this.face(this.nearest(here));
         while (m.fired < count && this.mt >= windup + m.fired * gap) {
-          fx.push({ e: 'wave', x: ROUND(this.x), z: ROUND(this.z), speed, max, roar: true });
+          fx.push({ e: 'wave', x: ROUND(this.x), z: ROUND(this.z), speed, max, [this.move]: true });
           m.fired++;
         }
         if (this.mt >= windup + count * gap + 0.3) this.rest(here);
+        break;
+      }
+      case 'swoop': {
+        // up into the sky; a moment's aim at someone; down through where they
+        // stand and on low along the grass, landing at the end
+        const { rise, aim, dive, height } = d.swoop;
+        if (this.mt < rise) {
+          this.y = height * (this.mt / rise);
+        } else if (this.mt < rise + aim) {
+          this.y = height;
+          if (!m.target) m.target = here[Math.floor(this.rand() * here.length)];
+          this.face(m.target);
+          m.from = { x: this.x, z: this.z };
+          m.to = this.inside(this.x + 2 * (m.target.x - this.x), this.z + 2 * (m.target.z - this.z));
+        } else {
+          const k = Math.min(1, (this.mt - rise - aim) / dive);
+          this.x = m.from.x + (m.to.x - m.from.x) * k;
+          this.z = m.from.z + (m.to.z - m.from.z) * k;
+          this.y = k < 0.5 ? 0.4 + (height - 0.4) * (1 - 2 * k) ** 2 : 0.4 * (2 - 2 * k);
+          if (k >= 1) {
+            this.y = 0;
+            if (--m.left > 0) this.start('swoop', { left: m.left });
+            else this.rest(here);
+          }
+        }
+        break;
+      }
+      case 'swarm': {
+        // little swarms off at the farmers, a few to each (spread round where they stand)
+        const { windup, count, perPlayer, spread, speed, life } = d.swarm;
+        if (this.mt < windup) this.face(this.nearest(here));
+        else if (!m.fired) {
+          m.fired = true;
+          const a = [];
+          for (let i = 0; i < count + perPlayer * (here.length - 1); i++) {
+            const t = here[i % here.length];
+            const k = Math.floor(i / here.length);
+            a.push(ROUND(Math.atan2(t.x - this.x, t.z - this.z) + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * spread));
+          }
+          fx.push({ e: 'swarm', x: ROUND(this.x), z: ROUND(this.z), a, speed, life });
+        }
+        if (this.mt >= windup + 0.6) this.rest(here);
         break;
       }
       case 'seeds': {
@@ -218,6 +262,13 @@ export class BossFight {
       this.hopAt(here, lo + Math.floor(this.rand() * (hi - lo + 1)), move);
     } else if (move === 'roar') {
       this.start('roar', { fired: 0 });
+    } else if (move === 'gust') {
+      this.start('gust', { fired: 0 });
+    } else if (move === 'swoop') {
+      const [lo, hi] = this.def.swoop.swoops;
+      this.start('swoop', { left: lo + Math.floor(this.rand() * (hi - lo + 1)) });
+    } else if (move === 'swarm') {
+      this.start('swarm', { fired: false });
     } else if (move === 'roll') {
       this.start('roll', { dir: this.yaw });
     } else {
@@ -317,6 +368,10 @@ const low = (y, over) => y - GROUND_STAND_Y < over;
 export const rollHits = (b, def, x, y, z) => b.phase === 'fight' && b.move === 'roll' && b.mt >= def.roll.windup &&
   Math.hypot(x - b.x, z - b.z) < BODY_R + 0.45 && low(y, 1.6);
 
+// The crow, swooping low through them (the low part of its dive)
+export const swoopHits = (b, def, x, y, z) => b.phase === 'fight' && b.move === 'swoop' && b.mt >= def.swoop.rise + def.swoop.aim &&
+  b.y < 1.4 && Math.hypot(x - b.x, z - b.z) < BODY_R + 0.45 && low(y, 1.6);
+
 // A shockwave (as its fx), `age` seconds after it went out. Over: it has gone as far as it goes.
 export const waveOver = (w, age) => w.speed * age > w.max + 0.6;
 export const waveHits = (w, age, x, y, z) => !waveOver(w, age) && low(y, 0.35) &&
@@ -332,3 +387,17 @@ export function seedAt(s, i, age, out = {}) {
 export const seedsOver = (s, age) => s.speed * age > ARENA_R * 2;
 export const SEED_Y = 0.55; // how high the seeds fly
 export const seedHits = (at, x, y, z) => Math.hypot(x - at.x, z - at.z) < 0.55 && low(y, 0.9);
+
+// Swarm i of a swarming (as its fx), `age` seconds after it went out: where it
+// is (off along its line, zig-zagging). Over: it has buzzed off.
+export const SWARM_Y = 0.9; // how high the swarms fly
+export function swarmAt(s, i, age, out = {}) {
+  const a = s.a[i];
+  const along = s.speed * age;
+  const wiggle = Math.sin(age * 5 + i * 1.7) * 0.9;
+  out.x = s.x + Math.sin(a) * along + Math.cos(a) * wiggle;
+  out.z = s.z + Math.cos(a) * along - Math.sin(a) * wiggle;
+  return out;
+}
+export const swarmsOver = (s, age) => age > s.life;
+export const swarmHits = (at, x, y, z) => Math.hypot(x - at.x, z - at.z) < 0.75 && low(y, 1.0);

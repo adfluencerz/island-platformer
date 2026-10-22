@@ -29,7 +29,7 @@ const MATS = {
   wood: mat(0xa8713f),
   sign: mat(0xe8c98f),
 };
-// each boss's arena its own colors (the parsnip's a green meadow, the lion's golden savanna grass)
+// each boss's arena its own colors (the parsnip's a green meadow, the lion's golden savanna grass, the bee queen's a bright spring meadow, the crow's an autumn field)
 const LOOKS = {
   parsnip: { grass: MATS.grass, grassDark: MATS.grassDark, swirl: MATS.swirl, swirlLight: MATS.swirlLight },
   lion: {
@@ -37,6 +37,18 @@ const LOOKS = {
     grassDark: mat(0xbfa548),
     swirl: mat(0xb8561a, { emissive: 0xc0661f, emissiveIntensity: 0.9 }),
     swirlLight: mat(0xffd08a, { emissive: 0xf0a050, emissiveIntensity: 1 }),
+  },
+  bee: {
+    grass: mat(0x8fd46a),
+    grassDark: mat(0x6fbf55),
+    swirl: mat(0xc99a10, { emissive: 0xd9a520, emissiveIntensity: 0.9 }),
+    swirlLight: mat(0xfff0a0, { emissive: 0xffe070, emissiveIntensity: 1 }),
+  },
+  crow: {
+    grass: mat(0xa8b85a),
+    grassDark: mat(0x8c9c48),
+    swirl: mat(0x2f3f8a, { emissive: 0x3a4fa0, emissiveIntensity: 0.9 }),
+    swirlLight: mat(0xa8c0ff, { emissive: 0x8fa8f0, emissiveIntensity: 1 }),
   },
 };
 const box = new THREE.BoxGeometry(1, 1, 1);
