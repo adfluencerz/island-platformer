@@ -472,7 +472,7 @@ function itemBadge(id) {
   return new THREE.SpriteMaterial({ map: tex, depthWrite: false });
 }
 const badgeMats = {};
-const badgeMat = (id) => (badgeMats[id] ??= itemBadge(id));
+export const badgeMat = (id) => (badgeMats[id] ??= itemBadge(id)); // (the machines show theirs too: src/machines.js)
 
 // ---------- Eggs ----------
 const eggGeo = new THREE.SphereGeometry(1, 10, 8);

@@ -1,5 +1,6 @@
 import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
 import { RELICS } from './relics.js';
+import { FOODS } from './foods.js';
 
 // ---------- Item catalog ----------
 // Shared by the world (pickup meshes use `color`) and the inventory UI.
@@ -938,6 +939,8 @@ ITEMS.planter = {
 
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
+// What the machines make, the machines, the dishes and the recipes (src/foods.js)
+Object.assign(ITEMS, FOODS);
 
 // What things cost and are worth (shared/balance.js)
 for (const [id, { price, sell }] of Object.entries(SHOP)) {
@@ -2171,6 +2174,69 @@ export const PIECE_ICONS = {
       '.odo........odo.',
       '.odo........odo.',
       '.ooo........ooo.',
+    ],
+  },
+  campfire: {
+    palette: { ...STONE, w: '#b0743a', d: '#7a4f28', f: '#ff8a2a', F: '#ffd060', r: '#e0362c' },
+    sprite: [
+      '................',
+      '.......F........',
+      '......FfF.......',
+      '.....FfrfF..F...',
+      '....FfrrfF.FfF..',
+      '....FfrrrfFfrF..',
+      '...FfrrFrrfrrfF.',
+      '...FfrFFFrrrrfF.',
+      '....oowwwwwwoo..',
+      '..oowdoowwdodwo.',
+      '.oLoowwddwwooMo.',
+      'oLMMoooooooooMdo',
+      'oMMdo.......oddo',
+      '.ooo.........oo.',
+      '................',
+      '................',
+    ],
+  },
+  bunting: {
+    palette: { ...WOOD, r: '#d96a6a', y: '#f2c84b', b: '#6a9ad9', t: '#f4efe4' },
+    sprite: [
+      '................',
+      '.oo..........oo.',
+      '.oWttttttttttWo.',
+      '.oWorrooyyoobWo.',
+      '.oWorroyyyobbWo.',
+      '.oW.oro.yo.obWo.',
+      '.oW..o...o..oWo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.od..........do.',
+      '.oo..........oo.',
+    ],
+  },
+  market_awning: {
+    palette: { ...WOOD, r: '#d96a6a', R: '#f29a9a', t: '#f4efe4' },
+    sprite: [
+      '................',
+      '..oooooooooooo..',
+      '.orrttrrttrrtto.',
+      'orrttrrttrrttrro',
+      'oRRttRRttRRttRRo',
+      'oooooooooooooooo',
+      '.oRo.oRo.oRo.oo.',
+      '..o...o...o.....',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.oW..........Wo.',
+      '.od..........do.',
+      '.oo..........oo.',
     ],
   },
   remove: {

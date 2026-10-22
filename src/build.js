@@ -12,7 +12,7 @@ import { createItemMesh } from './itemmesh.js';
 // log towers, stone blocks, mossy or not, and pillars), wells, stone
 // lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water
 // troughs, stone benches, sundials, wheelbarrows, torches, log fences,
-// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, the workbench and what it makes for the farm, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, campfires, bunting and market awnings, the workbench and what it makes for the farm (the machines among it: a cheese press, a mayonnaise machine and a loom), the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -71,6 +71,11 @@ const MATS = {
   withyDark: mat(0x7a5a34),
   brass: mat(0xb8893a, { roughness: 0.5, metalness: 0.5 }),
   linen: mat(0xf2ede0),
+  cheese: mat(0xf2c84b),
+  mayo: mat(0xfff6d8),
+  glass: mat(0xcfe8f0, { transparent: true, opacity: 0.45, roughness: 0.2 }),
+  tin: mat(0xd8d6ce, { roughness: 0.45, metalness: 0.35 }),
+  ash: mat(0x4a4038),
   blueCloth: mat(0x4a78b5),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
@@ -94,9 +99,10 @@ const GLOWS = {
   stone_lantern: [0, 1.03, 0],
   house: [0, 0, 0], // (set below: the lamp over the door)
   torch: [0, 1.5, 0],
+  campfire: [0, 0.4, 0],
   ...Object.fromEntries(Object.keys(PIECES).filter((id) => PIECES[id].relic).map((id) => [id, [0, 1.2, 0]])), // (a relic)
 };
-const FLICKERS = new Set(['torch']); // (a flame, not a lamp: its light flickers)
+const FLICKERS = new Set(['torch', 'campfire']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
 const GLOW_REACH = 9;
 
@@ -828,6 +834,7 @@ function model(id, gx, gz, joined) {
     const flame = part(g, tip, MATS.flame, 0, 1.5, 0, 0.2, 0.32, 0.2);
     flame.castShadow = false;
     flame.name = 'flame';
+    flame.userData.h = 0.32;
     part(g, tip, MATS.flameCore, 0, 1.46, 0, 0.1, 0.18, 0.1).castShadow = false;
     solids.push({ x: 0, y: 0.7, z: 0, w: 0.2, h: 1.4, d: 0.2 });
   } else if (id === 'signpost') {
@@ -1139,6 +1146,104 @@ function model(id, gx, gz, joined) {
       part(g, ball, MATS.petals[(i + Math.floor(r * 4)) % 4], x, 0.5 + h, z, 0.12, 0.08, 0.12);
     }
     solids.push({ x: 0, y: 0.25, z: 0, w: 0.8, h: 0.5, d: 0.8 });
+  } else if (id === 'cheese_press') {
+    // a press on a stout wooden base: two posts and a crossbeam, an iron
+    // screw turned by a bar, down onto the board over a round mould
+    part(g, box, MATS.plankB, 0, 0.12, 0, 0.9, 0.24, 0.7);
+    for (const s of [-1, 1]) part(g, box, MATS.post, s * 0.38, 0.8, 0, 0.12, 1.3, 0.14);
+    part(g, box, MATS.post, 0, 1.4, 0, 0.92, 0.14, 0.18);
+    part(g, shaft, MATS.iron, 0, 1.16, 0, 0.07, 0.86, 0.07);
+    part(g, box, MATS.iron, 0, 1.62, 0, 0.6, 0.04, 0.04); // the bar
+    part(g, ball, MATS.iron, 0, 1.58, 0, 0.1, 0.1, 0.1);
+    part(g, barrel, MATS.stave, 0, 0.44, 0, 0.48, 0.4, 0.48); // the mould
+    part(g, barrel, MATS.cheese, 0, 0.65, 0, 0.42, 0.04, 0.42).castShadow = false;
+    part(g, barrel, MATS.plankA, 0, 0.74, 0, 0.44, 0.06, 0.44); // the board pressing down
+    solids.push({ x: 0, y: 0.75, z: 0, w: 0.9, h: 1.5, d: 0.7 });
+  } else if (id === 'mayo_machine') {
+    // a tin box on a little wooden stand with a crank on its side, and a
+    // glass jar on top with the mayonnaise in it
+    for (const [x, z] of [[-0.3, -0.22], [0.3, -0.22], [-0.3, 0.22], [0.3, 0.22]]) part(g, box, MATS.post, x, 0.15, z, 0.07, 0.3, 0.07);
+    part(g, box, MATS.plankA, 0, 0.32, 0, 0.74, 0.06, 0.6);
+    part(g, box, MATS.tin, 0, 0.6, 0, 0.56, 0.5, 0.48);
+    part(g, box, MATS.iron, 0, 0.36, 0, 0.6, 0.04, 0.52).castShadow = false;
+    part(g, barrel, MATS.mayo, 0, 0.98, 0, 0.3, 0.24, 0.3).castShadow = false;
+    part(g, barrel, MATS.glass, 0, 1.0, 0, 0.36, 0.32, 0.36).castShadow = false;
+    part(g, barrel, MATS.iron, 0, 1.18, 0, 0.38, 0.05, 0.38);
+    part(g, box, MATS.iron, 0.31, 0.7, 0, 0.06, 0.06, 0.06); // the crank
+    part(g, box, MATS.iron, 0.35, 0.8, 0, 0.04, 0.24, 0.04);
+    part(g, box, MATS.post, 0.39, 0.9, 0.05, 0.05, 0.05, 0.14);
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.74, h: 1.2, d: 0.6 });
+  } else if (id === 'loom') {
+    // an upright frame, the warp threads strung top to bottom and the
+    // cloth woven so far at the bottom of them, the beater bar in front
+    for (const s of [-1, 1]) {
+      part(g, box, MATS.post, s * 0.42, 0.75, 0, 0.1, 1.5, 0.1);
+      part(g, box, MATS.post, s * 0.42, 0.05, 0, 0.12, 0.1, 0.6); // its foot
+    }
+    part(g, shaft, MATS.rail, 0, 1.36, 0, 0.1, 0.84, 0.1).rotation.z = Math.PI / 2;
+    part(g, shaft, MATS.rail, 0, 0.36, 0, 0.1, 0.84, 0.1).rotation.z = Math.PI / 2;
+    for (let i = 0; i < 9; i++) part(g, box, MATS.linen, -0.32 + i * 0.08, 0.96, 0, 0.015, 0.8, 0.015).castShadow = false;
+    part(g, box, MATS.cloth, 0, 0.56, 0.01, 0.72, 0.36, 0.03);
+    for (const y of [0.48, 0.64]) part(g, box, MATS.linen, 0, y, 0.03, 0.72, 0.04, 0.01).castShadow = false;
+    part(g, box, MATS.post, 0, 0.8, 0.12, 0.86, 0.06, 0.06); // the beater
+    for (const s of [-1, 1]) part(g, box, MATS.post, s * 0.4, 0.8, 0.06, 0.04, 0.04, 0.12);
+    solids.push({ x: 0, y: 0.75, z: 0, w: 0.96, h: 1.5, d: 0.6 });
+  } else if (id === 'campfire') {
+    // a ring of stones round the ashes, logs leant together and a fire in
+    // them (it flickers, and lights the ground round it at night), and a
+    // spit over it on two forked sticks
+    const r = hash(gx, gz);
+    part(g, flag, MATS.ash, 0, 0.01, 0, 0.6, 0.02, 0.6).castShadow = false;
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + r;
+      part(g, ball, i % 3 ? MATS.stone : MATS.stoneDark, Math.cos(a) * 0.36, 0.07, Math.sin(a) * 0.36, 0.2, 0.15, 0.18).rotation.y = -a;
+    }
+    for (let k = 0; k < 3; k++) {
+      const l = part(g, log, MATS.bark, 0, 0.14, 0, 0.08, 0.5, 0.08);
+      l.rotation.z = Math.PI / 2 - 0.3;
+      l.rotation.y = (k * Math.PI) / 3 + r * 2;
+    }
+    const flame = part(g, tip, MATS.flame, 0, 0.36, 0, 0.26, 0.4, 0.26);
+    flame.castShadow = false;
+    flame.name = 'flame';
+    flame.userData.h = 0.4;
+    part(g, tip, MATS.flameCore, 0, 0.3, 0, 0.13, 0.22, 0.13).castShadow = false;
+    for (const s of [-1, 1]) {
+      part(g, box, MATS.post, s * 0.44, 0.3, 0, 0.04, 0.6, 0.04);
+      part(g, box, MATS.post, s * 0.44, 0.62, 0, 0.12, 0.04, 0.04).rotation.z = 0.5;
+    }
+    part(g, shaft, MATS.post, 0, 0.6, 0, 0.03, 0.96, 0.03).rotation.z = Math.PI / 2;
+    solids.push({ x: 0, y: 0.15, z: 0, w: 0.86, h: 0.3, d: 0.86 });
+  } else if (id === 'bunting') {
+    // two poles with a string of little flags between them
+    const flags = [MATS.cloth, MATS.straw, MATS.blueCloth, MATS.linen];
+    const r = Math.floor(hash(gx, gz) * 4);
+    for (const s of [-1, 1]) {
+      part(g, shaft, MATS.post, s * 0.42, 0.8, 0, 0.07, 1.6, 0.07);
+      part(g, ball, MATS.post, s * 0.42, 1.62, 0, 0.09, 0.09, 0.09);
+      solids.push({ x: s * 0.42, y: 0.8, z: 0, w: 0.1, h: 1.6, d: 0.1 });
+    }
+    part(g, box, MATS.twine, 0, 1.5, 0, 0.84, 0.02, 0.02).castShadow = false;
+    for (let i = 0; i < 5; i++) {
+      const pennant = part(g, tip, flags[(i + r) % 4], -0.3 + i * 0.15, 1.39, 0, 0.12, 0.2, 0.02);
+      pennant.rotation.z = Math.PI;
+    }
+  } else if (id === 'market_awning') {
+    // a little stall: a counter under a striped cloth roof on four posts,
+    // a few things on show on it
+    for (const [x, z] of [[-0.42, -0.36], [0.42, -0.36], [-0.42, 0.36], [0.42, 0.36]]) part(g, box, MATS.post, x, 0.78, z, 0.07, 1.56, 0.07);
+    for (let i = 0; i < 6; i++) {
+      const x = -0.375 + i * 0.15;
+      part(g, box, i % 2 ? MATS.linen : MATS.cloth, x, 1.6, 0, 0.15, 0.04, 0.92).rotation.x = 0.18;
+      part(g, tip, i % 2 ? MATS.linen : MATS.cloth, x, 1.44, 0.46, 0.15, 0.12, 0.02).rotation.z = Math.PI;
+    }
+    part(g, box, MATS.plankA, 0, 0.5, 0.12, 0.9, 0.06, 0.5);
+    part(g, box, MATS.crate, 0, 0.24, 0.36, 0.86, 0.48, 0.04);
+    part(g, box, MATS.crateDark, 0, 0.24, -0.1, 0.86, 0.48, 0.04);
+    part(g, ball, MATS.cheese, -0.24, 0.58, 0.14, 0.18, 0.1, 0.18);
+    part(g, barrel, MATS.mayo, 0.02, 0.6, 0.08, 0.1, 0.14, 0.1);
+    for (const [x, z, k] of [[0.22, 0.04, 0], [0.3, 0.2, 1], [0.16, 0.22, 2]]) part(g, ball, MATS.petals[k], x, 0.58, z, 0.1, 0.1, 0.1);
+    solids.push({ x: 0, y: 0.8, z: 0, w: 0.9, h: 1.6, d: 0.8 });
   }
   return { group: g, solids };
 }
@@ -1297,7 +1402,7 @@ export function createBuildings(world) {
       MATS.flameCore.emissiveIntensity = 0.8 + night * 1.4;
       // the torches' flames dance a little, day and night
       for (const glow of glows.values()) {
-        if (glow.flame) glow.flame.scale.y = 0.32 * (1 + 0.12 * Math.sin(t * 9 + glow.seed) + 0.06 * Math.sin(t * 23 + glow.seed * 3));
+        if (glow.flame) glow.flame.scale.y = glow.flame.userData.h * (1 + 0.12 * Math.sin(t * 9 + glow.seed) + 0.06 * Math.sin(t * 23 + glow.seed * 3));
       }
       // the relics turn slowly and bob over their pedestals
       for (const relic of relics.values()) {

@@ -125,6 +125,12 @@ export class Hud {
 
     this.prompt = el('div', 'ui-prompt', root);
     this.prompt.hidden = true;
+    // a meal's boost while it lasts (setBoost)
+    this.boost = el('div', 'ui-boost', root);
+    this.boost.hidden = true;
+    this.boostIcon = el('img', 'inv-icon', this.boost);
+    this.boostIcon.alt = '';
+    this.boostText = el('span', '', this.boost);
 
     // ---- build mode ----
     this.buildBar = el('div', 'ui-build inv-frame', root);
@@ -286,6 +292,15 @@ export class Hud {
     this.prompt.textContent = text;
     this.prompt.hidden = !text;
     this.onPrompt?.(text);
+  }
+
+  // The boost from the last meal: its dish's picture and what it does
+  // (icon: an image URL; text: '' when there is none)
+  setBoost(icon, text) {
+    this.boost.hidden = !text;
+    if (!text) return;
+    if (this.boostIcon.src !== icon) this.boostIcon.src = icon;
+    if (this.boostText.textContent !== text) this.boostText.textContent = text;
   }
 
   // Build mode: what is being built (null: not building), and a note (what

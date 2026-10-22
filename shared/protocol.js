@@ -28,6 +28,8 @@ export const C = {
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture())
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
+  LOAD: 'load', // { key, dish? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js)
+  COLLECT: 'collect', // { key }: what the machine on tile key has ready, for the backpack
 };
 
 // lobby -> client
@@ -52,20 +54,21 @@ export const S = {
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, felled, mined, treeSites, rockSites, giants, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
   //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
-  //   chest: { item: count }. hours: the farm's clock, in game hours since it began)
+  //   machines: [[key, item, at, takes], ...] (shared/machines.js). chest: { item: count }. hours: the farm's clock, in game hours since it began)
   TILLED: 'tilled', // { key, by }
   UNTILLED: 'untilled', // { key }: left bare too long (SOIL_BARE_HOURS), back to grass
   PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
   HARVESTED: 'harvested', // { key, by, item }
   BUILT: 'built', // { key, piece, by }
-  UNBUILT: 'unbuilt', // { key, piece, by }: taken down; `by` gets the cost back
-  FARM_DENY: 'farmDeny', // { op, key, crop, piece }: that did not count (crop: a seed to give back; piece: a piece whose cost goes back)
+  UNBUILT: 'unbuilt', // { key, piece, by, back? }: taken down; `by` gets the cost back (and back: { item: count }, what was in a machine)
+  FARM_DENY: 'farmDeny', // { op, key, crop, piece }: that did not count (crop: a seed to give back; piece: a piece whose cost goes back; op 'load': what went in comes back)
   CHEST: 'chest', // { items: { item: count } }
   CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
+  MACHINE: 'machine', // { key, state, by, got? }: what is in the machine on tile key now ([item, at, takes], or null: empty), after player `by` loaded or collected it (got: the item collected, for `by`'s backpack)
 };
 
 // Presence (server/presence.js): every logged in page keeps one more socket,
