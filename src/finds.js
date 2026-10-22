@@ -113,5 +113,12 @@ export function createFarmFinds({ scene, freeSpot, onPickUp, isItem = () => true
     }
   }
 
-  return { update, clear, drop, dropped, restoreDropped, list: () => finds };
+  // (the developer tools: one now, whatever the odds; true if there was somewhere for it)
+  function spawnNow() {
+    const before = finds.length;
+    spawn();
+    return finds.length > before;
+  }
+
+  return { update, clear, drop, dropped, restoreDropped, spawnNow, list: () => finds };
 }

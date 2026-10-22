@@ -26,7 +26,7 @@ import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
-import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS } from '../shared/constants.js';
+import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES } from '../shared/balance.js';
 import { isMachine, loadFor, fillsItself, isReady } from '../shared/machines.js';
@@ -48,6 +48,7 @@ import { createBosses } from './bosses.js';
 import { BOSSES, SHOP } from '../shared/balance.js';
 import { portalOf } from '../shared/bosses.js';
 import { createSkills } from './skills.js';
+import { SKILL_LIST } from '../shared/skills.js';
 import { createPuffs } from './puff.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
@@ -996,38 +997,104 @@ function showGiants(giants, save, island) {
 // Developer tools (devtools.js): the standing tree or rock nearest us grows
 // into a giant now (its lobby or farm's room says so to everyone)
 function devGiant(kind) {
-  if (place !== 'home' && place !== 'lobby') return;
-  if (giantsHere()[kind]) return inventory.notify(`There is a giant ${kind} here already`);
+  if (place !== 'home' && place !== 'lobby') return 'Not on the title screen';
+  if (giantsHere()[kind]) return `There is a giant ${kind} here already`;
   let best = null;
   let bestD = Infinity;
   for (const thing of kind === 'tree' ? world.trees : world.rocks) {
     const d = Math.hypot(thing.x - player.position.x, thing.z - player.position.z);
     if (thing.state === 'up' && d < bestD) [best, bestD] = [thing, d];
   }
-  if (!best) return inventory.notify(`No ${kind} standing here`);
+  if (!best) return `No ${kind} standing here`;
   const conn = place === 'lobby' ? net : farmNet;
-  if (conn) return conn.send({ t: C.DEV_GIANT, kind, id: best.id });
-  if (farmVisit) return;
+  if (conn) {
+    conn.send({ t: C.DEV_GIANT, kind, id: best.id });
+    return `A giant ${kind}, coming up`;
+  }
+  if (farmVisit) return 'Not here';
   farmGiants.setCounts(worlds.home.trees.length, worlds.home.rocks.length);
-  if (!farmGiants.grow(kind, best.id)) return;
+  if (!farmGiants.grow(kind, best.id)) return `No giant ${kind} here today`;
   worlds.home.makeGiant(kind, best.id);
-  inventory.notify(`A giant ${kind} has grown on the farm!`);
+  return `A giant ${kind} has grown on the farm!`;
 }
 // ...and on a lobby's sky isles (generation 10): hop to the foot of the
 // nearest one's stair, or draw the nearest one in the next style
 function devSkyFoot() {
   const foot = place === 'lobby' ? stairFoot(player.position.x, player.position.z) : null;
-  if (!foot) return inventory.notify('No sky isles here');
+  if (!foot) return 'No sky isles here';
   player.position.set(foot.x, GROUND_STAND_Y + 0.5, foot.z);
   player.velocity.set(0, 0, 0);
+  return 'At the foot of a stair';
 }
 function devSkyStyle() {
   const name = place === 'lobby' ? restyleNearest(player.position.x, player.position.z) : null;
-  inventory.notify(name ? `Now a ${name.toLowerCase()}` : 'No sky isles here');
+  return name ? `Now a ${name.toLowerCase()}` : 'No sky isles here';
+}
+// ...and the rest of its buttons. The farm's ones are for our own farm played
+// alone (on a farm with helpers, or in a lobby, the room has the say).
+let devSpeed = 1; // how much faster we walk
+let devJump = 0; // game hours the clock was just put on: the frame counts them as passed (crops grow, as they do fast-forwarded)
+const soloFarm = () => place === 'home' && !farmVisit && farmOnScreen;
+const NOT_SOLO = 'Only on your own farm, played alone';
+const devGive = (id, n) => (inventory.add(id, n) ? `${n} × ${ITEMS[id].name}` : 'No room in the backpack');
+function devLater(hours) {
+  if (!soloFarm()) return NOT_SOLO;
+  dayNight.setTime(farmHours() + hours);
+  devJump += hours;
+  saveGame();
+  return `Day ${dayNight.day()}, ${String(Math.floor(dayNight.hour())).padStart(2, '0')}:${String(Math.floor((dayNight.hour() % 1) * 60)).padStart(2, '0')}`;
 }
 createDevTools({
-  onGiant: devGiant, onSkyFoot: devSkyFoot, onSkyStyle: devSkyStyle, onKey: () => inventory.add('key', 1),
-  onBossKeys: () => Object.values(BOSSES).forEach(({ key, pieces }) => inventory.add(key, pieces)), // (a full set of each boss's key pieces)
+  giant: devGiant,
+  skyFoot: devSkyFoot,
+  skyStyle: devSkyStyle,
+  find: () => (!soloFarm() ? NOT_SOLO : farmFinds.spawnNow() ? 'Something turned up on the grass' : 'Nowhere free for one just now'),
+  regrow() {
+    if (!soloFarm()) return NOT_SOLO;
+    const n = farmFelled.size + farmMined.size;
+    for (const list of [farmFelled, farmMined]) for (const id of list.keys()) list.set(id, 0); // (regrowFarm, next frame)
+    return n ? `${n} coming back` : 'Nothing is down';
+  },
+  items: () => Object.entries(ITEMS).filter(([, def]) => !def.currency).map(([id, def]) => [id, def.name]),
+  give: devGive,
+  gold(n) {
+    inventory.earn(n);
+    return `+${n.toLocaleString('en')} gold`;
+  },
+  seeds() {
+    const seeds = Object.keys(ITEMS).filter((id) => ITEMS[id].plants);
+    for (const id of seeds) if (!inventory.add(id, 20)) return 'No room for them all';
+    return `Twenty each of ${seeds.length} seeds`;
+  },
+  oldKey: () => devGive('key', 1),
+  bossKeys() {
+    for (const { key, pieces } of Object.values(BOSSES)) if (!inventory.add(key, pieces)) return 'No room in the backpack';
+    return 'A full set of each boss\'s key pieces';
+  },
+  speed: (n) => (n === undefined ? devSpeed : (devSpeed = n)),
+  plaza() {
+    if (place === 'title') return 'Not on the title screen';
+    putDown(arrival());
+    return 'Back at the plaza';
+  },
+  skills(xp) {
+    for (const { id } of SKILL_LIST) skills.gain(id, xp === Infinity ? 1e9 : xp);
+    saveGame();
+    return `Overall level ${skills.overall()}${skills.canDoubleJump() ? ', with the double jump' : ''}`;
+  },
+  clock: (hour) => devLater((((hour - dayNight.hour()) % 24) + 24) % 24 || 24),
+  later: devLater,
+  info: () => [
+    ['Where', place === 'lobby' ? `Lobby ${session?.code ?? ''}${arenaId ? ' (a party game)' : ''}` : farmVisit ? `${farmVisit.name}${farmVisit.mine ? ' (yours, with helpers)' : ''}` : place === 'home' ? 'Your farm' : 'The title screen'],
+    ['Position', ['x', 'y', 'z'].map((k) => player.position[k].toFixed(1)).join(', ')],
+    ['Farmers here', place === 'title' ? '–' : remotes.players.size + 1],
+    ['Time', `Day ${dayNight.day()}, ${String(Math.floor(dayNight.hour())).padStart(2, '0')}:${String(Math.floor((dayNight.hour() % 1) * 60)).padStart(2, '0')}`],
+    ['Skills', `Overall level ${skills.overall()}`],
+    ['Gold', inventory.gold().toLocaleString('en')],
+    ['Things dropped', place === 'home' && !farmVisit ? farmFinds.dropped().length : drops.size],
+    ['Walking speed', `${devSpeed}×`],
+    ['Protocol', `v${PROTOCOL_VERSION}`],
+  ],
 });
 
 // Each morning, on a farm played alone: maybe a giant
@@ -3553,7 +3620,7 @@ function update(dt) {
 
   const moveVec = new THREE.Vector3(moveX, 0, moveZ);
   const moving = moveVec.lengthSq() > 0;
-  if (moving) moveVec.multiplyScalar((MOVE_SPEED * bosses.speed() * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length()); // (dizzy from a boss: slower; after a meal, maybe faster)
+  if (moving) moveVec.multiplyScalar((MOVE_SPEED * devSpeed * bosses.speed() * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length()); // (dizzy from a boss: slower; after a meal, maybe faster)
   player.velocity.x = moveVec.x + knock.x;
   player.velocity.z = moveVec.z + knock.z;
   knock.multiplyScalar(Math.exp(-dt * 5)); // (a bop's stumble fades)
@@ -3654,7 +3721,8 @@ function update(dt) {
   const atHome = place !== 'lobby' && !farmVisit;
   presence.where(place === 'lobby' ? 'lobby' : farmVisit ? 'farm' : 'home'); // (for friends' lists)
   const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
-  const hoursBefore = dayNight.day() * 24 + dayNight.hour();
+  const hoursBefore = dayNight.day() * 24 + dayNight.hour() - devJump; // (and the developer tools' jump, as if it passed now)
+  devJump = 0;
   dayNight.update(dt, {
     paused: atHome && (menuOpen() || !splash.hidden),
     fastForward,
