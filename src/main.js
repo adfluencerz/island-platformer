@@ -1155,6 +1155,8 @@ function bopped(m) {
 }
 
 // ---- What gets dropped: a little bobbing treasure, for anyone to walk into ----
+// (in a lobby, or on a farm with helpers: its room keeps them. On our own
+// farm, alone, what we drop is finds.js's)
 function addDrop([id, item, count, x, y, z, from = 0, wait = 0]) {
   if (!ITEMS[item] || drops.has(id)) return;
   const group = new THREE.Group();
@@ -1181,6 +1183,23 @@ function clearDrops() {
   knock.set(0, 0, 0);
 }
 
+// What a room (a lobby's, or a farm's with helpers) says of its drops
+function onDrops(on) {
+  on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z, m.from, m.wait]));
+  on(S.PICKED, (m) => {
+    removeDrop(m.id);
+    if (m.by === myId) inventory.add(m.item, m.count);
+  });
+  on(S.THROW_DENY, (m) => {
+    if (!ITEMS[m.item] || !(m.count > 0)) return;
+    inventory.notify(inventory.add(m.item, m.count) ? 'That couldn\'t be dropped here: it is back in your backpack' : 'That couldn\'t be dropped here, and your backpack is full');
+  });
+  on(S.DROP_DENY, (m) => {
+    const drop = drops.get(m.id);
+    if (drop) Object.assign(drop, { pending: false, retryAt: performance.now() + 500 });
+  });
+}
+
 function updateDrops(dt, t) {
   for (const drop of drops.values()) {
     const gem = drop.group.children[0];
@@ -1191,7 +1210,7 @@ function updateDrops(dt, t) {
     if (!drop.away) drop.away = !near;
     if (!near || !drop.away || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count)) continue;
     drop.pending = true;
-    net?.send({ t: C.PICKUP, id: drop.id });
+    (place === 'lobby' ? net : farmNet)?.send({ t: C.PICKUP, id: drop.id });
   }
 }
 
@@ -2314,10 +2333,10 @@ function freeFarmSpot() {
 const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (item, count) => inventory.add(item, count), isItem: (id) => !!ITEMS[id] });
 
 // Put down what the backpack's window carries (inventory.js onDrop), at our
-// feet: in a lobby the room has it, for anyone to walk into (THROW); on our
-// own farm, alone, it lies there (finds.js), kept with the farm. Only what has
-// a price (never a tool), and not on a farm with helpers (its room has the say
-// over what is on it: the farm chest is for sharing). True if it went.
+// feet: in a lobby, or on a farm with helpers, its room has it, for anyone to
+// walk into (THROW); on our own farm, alone, it lies there (finds.js). On a
+// farm either way it is kept with the farm. Only what has a price (never a
+// tool). True if it went.
 function dropFromBackpack(id, count) {
   const def = ITEMS[id];
   const no = (text) => (inventory.notify(text), false);
@@ -2327,11 +2346,14 @@ function dropFromBackpack(id, count) {
     net.send({ t: C.THROW, item: id, count });
     return true;
   }
+  if (place === 'home' && farmVisit && farmNet) {
+    farmNet.send({ t: C.THROW, item: id, count });
+    return true;
+  }
   if (place === 'home' && !farmVisit && farmOnScreen) {
     farmFinds.drop(id, count, player.position.x, player.position.y - player.height / 2, player.position.z);
     return true;
   }
-  if (place === 'home' && farmVisit) return no('Nothing is dropped on a farm with helpers: the farm chest is for sharing');
   return no('You can\'t drop things here');
 }
 // The farm's chest (chest.js): where its piece is built; on a farm with
@@ -2814,6 +2836,7 @@ async function joinFarm(id) {
     setFarmRoster(m.list);
   });
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
+  onDrops(on);
   on(S.TILLED, (m) => {
     pendingTills.delete(m.key);
     tillTileAt(...keyXZ(m.key)); // (ours is there already)
@@ -2953,6 +2976,9 @@ async function joinFarm(id) {
 // page); a friend's goes.
 function leaveFarm() {
   const was = farmVisit;
+  // (on our own farm, what lies about on it is ours to keep from here: finds.js)
+  if (was?.mine) farmFinds.restoreDropped([...drops.values()].map((d) => [d.item, d.count, d.x, d.y - GROUND_STAND_Y, d.z]));
+  clearDrops();
   if (was?.mine) saveGame(); // (the animals, to the room)
   for (const done of [...spending.values()]) done(false); // (nobody left to ask)
   farmNet?.leave();
@@ -2987,6 +3013,9 @@ const ageAt = (plantedAt) => Math.max(0, ((farmHours() - plantedAt) * DAY_LENGTH
 // The farm as its room has it (FARM)
 function showRoomFarm(m) {
   resetFarm();
+  farmFinds.restoreDropped(null); // (what is dropped on it is the room's)
+  clearDrops();
+  for (const drop of m.drops ?? []) addDrop(drop);
   dayNight.setTime(m.hours);
   for (const t of m.tilled) {
     const [key, bare, life] = Array.isArray(t) ? t : [t, 0];
@@ -3285,19 +3314,7 @@ function joinLobby({ name, code }) {
   on(S.BOPPED, (m) => bopped(m));
   on(S.BITE, (m) => fishing.bit(m));
   on(S.CAUGHT, (m) => fishing.caught(m));
-  on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z, m.from, m.wait]));
-  on(S.PICKED, (m) => {
-    removeDrop(m.id);
-    if (m.by === myId) inventory.add(m.item, m.count);
-  });
-  on(S.THROW_DENY, (m) => {
-    if (!ITEMS[m.item] || !(m.count > 0)) return;
-    inventory.notify(inventory.add(m.item, m.count) ? 'That couldn\'t be dropped here: it is back in your backpack' : 'That couldn\'t be dropped here, and your backpack is full');
-  });
-  on(S.DROP_DENY, (m) => {
-    const drop = drops.get(m.id);
-    if (drop) Object.assign(drop, { pending: false, retryAt: performance.now() + 500 });
-  });
+  onDrops(on);
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
@@ -3612,6 +3629,7 @@ function update(dt) {
       hud.setPrompt(building ? updateBuilding() : homePrompt());
     }
     if (farmVisit) {
+      updateDrops(dt, t);
       sendState(dt, farmNet);
       remotes.update(dt, t);
     }
@@ -3703,7 +3721,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();
