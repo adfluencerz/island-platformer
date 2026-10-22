@@ -1262,7 +1262,6 @@ function updateMenuCamera(t) {
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
 let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
-const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen();
 const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen();
 const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping() || partyFrozen();
 window.addEventListener('keydown', (e) => {
