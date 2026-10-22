@@ -12,7 +12,7 @@ import { createItemMesh } from './itemmesh.js';
 // (how often, how likely, and what: FARM_FINDS in shared/balance.js)
 const { every: CHECK_EVERY, chance: CHANCE, two: TWO, most: MOST, loot: FINDS } = FARM_FINDS;
 const FLOAT_Y = 0.6; // over the ground
-const REACH = 0.7; // from the farmer's middle, to pick one up
+const REACH = 1.1; // from the farmer's middle, to pick one up
 const GROW = 0.4; // seconds to pop up
 
 function roll() {

@@ -441,7 +441,7 @@ function updateCrops(dt, growDt, t) {
 // meadow and up on the ledges to walk into. The lobby rolls what is on each
 // spot and decides who got there first; the page draws them and asks.
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
-const TOUCH_RADIUS = 0.6;
+const TOUCH_RADIUS = 1; // (walking into a treasure, or a drop: a little more for those)
 const GATHER_REACH = 1.6;
 const USE_HEIGHT = 1.2; // how far above or below the feet E reaches (from a step or a platform)
 // Standing (not mid-jump) with the feet within USE_HEIGHT of y (crops, trees and rocks: the ground's 0)
@@ -3119,7 +3119,7 @@ function updateArena() {
       coinPending.delete(id); // (the lobby never said: it didn't count, it is still there)
       coin.visible = !partyGame.taken.includes(id);
     }
-    if (!coin.visible || player.position.distanceTo(coin.position) > TOUCH_RADIUS + 0.3) return;
+    if (!coin.visible || player.position.distanceTo(coin.position) > 0.9) return; // (a race: kept tight)
     coin.visible = false; // (at once, so it feels instant: GAME_COIN settles it)
     coinPending.set(id, now);
     net?.send({ t: C.GAME_COIN, id });
