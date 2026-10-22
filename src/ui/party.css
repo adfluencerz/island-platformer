@@ -17,6 +17,7 @@
 }
 .ui-party-title { font-size: 24px; line-height: 1.1; }
 .ui-party-line { font-size: 18px; line-height: 1.15; }
+.ui-party[hidden] { display: none; } /* (the display: flex above would win over hidden) */
 .ui-party .ui-row:empty { display: none; }
 .ui-party.playing .ui-party-title { font-size: 26px; }
 @keyframes ui-party-in {
