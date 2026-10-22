@@ -43,12 +43,14 @@ export function biting(water, rod, hour, lure = false) {
 // something bites, ms to land it in, what it is, and a fish's weight ('chest':
 // a little chest of loot, what is in it as items [[item, count], ...]).
 // level: the farmer's fishing skill (shared/skills.js: bites that much
-// sooner). tackle: { bait, lure } in the backpack (TACKLE). In a contest
-// every rod is alike, and bites come quickly. rand: () => [0, 1)
-export function castLine(water, rod, hour, level = 1, rand = Math.random, { bait = false, lure = false } = {}) {
+// sooner). tackle: { bait, lure } in the backpack (TACKLE); sooner: a lucky
+// meal's (BOOSTS.lucky.bite), the wait times this. In a contest every rod is
+// alike (and every farmer: no tackle or meals), and bites come quickly.
+// rand: () => [0, 1)
+export function castLine(water, rod, hour, level = 1, rand = Math.random, { bait = false, lure = false, sooner = 1 } = {}) {
   const contest = water === 'contest';
-  const sooner = contest ? 1 : (1 - bonusChance('fishing', level)) * (bait ? TACKLE.bait.bite : 1);
-  const [lo, hi] = (contest ? MINIGAMES.fishing_contest.bite : RODS[rod].bite).map((s) => s * sooner);
+  const quicker = contest ? 1 : (1 - bonusChance('fishing', level)) * (bait ? TACKLE.bait.bite : 1) * sooner;
+  const [lo, hi] = (contest ? MINIGAMES.fishing_contest.bite : RODS[rod].bite).map((s) => s * quicker);
   const table = biting(water, contest ? 'fishing_rod' : rod, hour, lure && !contest);
   const [item, count] = pick(table.map(([it, w, , [min, max]]) => [it, w, min, max]), rand);
   const rarity = table.find(([it]) => it === item)[2];

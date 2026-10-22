@@ -101,7 +101,8 @@ function iconImg(parent) {
 // renderSkills(el): draws the Skills tab into el; renderFish(el): the Fish tab.
 // onDrop({ id, count }): put the carried stack down on the ground; true if
 // it went (false: it stays carried, and onDrop has said why).
-export function createInventory({ onOpenChange, onBuild, onAdd, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {} } = {}) {
+// onEat(id): a dish double-clicked in the backpack, to eat one.
+export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {} } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
@@ -594,6 +595,14 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onDrop = () => f
     else if (e.button === 2) rightClick(i, e.shiftKey);
     render();
     showTooltip(held ? null : slots[i], e.clientX, e.clientY);
+  });
+
+  // A double click on a dish eats one (the two clicks before it picked the
+  // stack up and put it back)
+  gridEl.addEventListener('dblclick', (e) => {
+    const slot = e.target.closest('[data-index]');
+    const stack = slot && !held && slots[Number(slot.dataset.index)];
+    if (stack && ITEMS[stack.id]?.dish) onEat?.(stack.id);
   });
 
   // A touchscreen: a tap is a left click, and a finger held on a slot takes

@@ -55,7 +55,7 @@ import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn, onBoard, weightText } from './fishing.js';
-import { DAY_LENGTH_SECONDS, SKILLS, SHOP } from './balance.js';
+import { DAY_LENGTH_SECONDS, SKILLS, SHOP, BOOSTS } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 
@@ -350,7 +350,8 @@ export class Room extends Place {
         }
         p.castAt = now;
         const level = Number.isInteger(msg.level) ? Math.max(1, Math.min(SKILLS.max, msg.level)) : 1; // (the page keeps the skills)
-        const tackle = { bait: msg.bait === true, lure: msg.lure === true }; // (the page keeps the backpack)
+        const sooner = Number.isFinite(msg.sooner) ? Math.max(Math.min(...BOOSTS.lucky.bite), Math.min(1, msg.sooner)) : 1; // (and the meals)
+        const tackle = { bait: msg.bait === true, lure: msg.lure === true, sooner }; // (the page keeps the backpack)
         const line = castLine(contest ? 'contest' : 'lobby', rod, this.hour(now), level, this.rand, tackle);
         p.line = { ...line, n, x: msg.x, z: msg.z, biteAt: now + line.bite * 1000, bit: false, game: p.game };
         break;

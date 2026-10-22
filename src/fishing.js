@@ -122,8 +122,9 @@ export function createTackle(scene) {
 // rodInHand(): the rod's item id, or null. skill(): our fishing level
 // (src/skills.js). landed(item, grams): something came up on the line (for
 // the XP, and the journal: says { first, record }, a fish's first or its
-// heaviest). ripples: src/ripples.js.
-export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed, ripples }) {
+// heaviest). ripples: src/ripples.js. sooner(): a lucky meal's factor on the
+// wait for a bite (1: none).
+export function createFishing({ scene, farmer, player, inventory, hud, touch, waterAhead, hour, lobby, rodInHand, skill, landed, ripples, sooner = () => 1 }) {
   const tackle = createTackle(scene);
   const tip = new THREE.Vector3();
   let line = null; // { n, rod, at, from, phase: 'out' | 'bite' | 'wait', conn, local, biteAt, closeAt }
@@ -144,9 +145,9 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     const hooked = { bait: at.water !== 'contest' && inventory.count('bait') > 0, lure: at.water !== 'contest' && inventory.count('lure') > 0 };
     line = { n: ++casts, rod, at, from: { x: player.position.x, z: player.position.z }, phase: 'out', conn, local: null, hooked };
     if (conn) {
-      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill(), ...(hooked.bait && { bait: true }), ...(hooked.lure && { lure: true }) });
+      conn.send({ t: C.CAST, n: line.n, x: round2(at.x), z: round2(at.z), rod, level: skill(), ...(hooked.bait && { bait: true }), ...(hooked.lure && { lure: true }), ...(sooner() < 1 && { sooner: sooner() }) });
     } else {
-      line.local = castLine(at.water, rod, hour(), skill(), Math.random, hooked);
+      line.local = castLine(at.water, rod, hour(), skill(), Math.random, { ...hooked, sooner: sooner() });
       line.biteAt = now + line.local.bite * 1000;
     }
     farmer.swing(); // (a flick of the rod)
