@@ -4,7 +4,7 @@
 // grow from seeds in shared/worldgen.js. What the worlds look like is the
 // client's business (src/maps.js, src/world.js). The numbers that balance
 // the game (times, costs, what things give) are in shared/balance.js.
-import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS } from './balance.js';
+import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS, BOSSES } from './balance.js';
 import { SKY_STYLES, relicAt } from './skyisles.js';
 export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, TOOL_HITS } from './balance.js';
 
@@ -171,16 +171,24 @@ export const PIECES = {
   planter: { name: 'Flower planter', solid: true },
   // a relic from a sky isle on a pedestal, to show it off (`relic`: one of those)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
+  // a boss's portal (`portal`: which boss; shared/bosses.js), from a full set
+  // of its key pieces, one to a farm; and its statue, for beating it
+  ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, { name }]) => [
+    [`${id}_portal`, { name: `${name} portal`, portal: id, one: true }],
+    [`${id}_statue`, { name: `${name} statue`, solid: true, statue: id }],
+  ])),
 };
 for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
 
 // The Build tab's groups, in order, and each piece's `group`: fences, walls
 // and what joins them (gates, arches, arbors, hedges); paths, walked on;
-// blocks, climbed; the buildings, that do something; the decorations; the relics
-export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics'];
+// blocks, climbed; the buildings, that do something; the decorations; the
+// relics; the bosses' portals and statues
+export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics', 'Bosses'];
 const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
+    : piece.portal || piece.statue ? 'Bosses'
     : BUILDINGS.has(id) ? 'Buildings'
     : piece.joins ? 'Fences & walls'
     : piece.block ? 'Blocks'
@@ -240,6 +248,7 @@ export function keptClear(gx, gz) {
 export const RARE = {
   golden_seeds: 'Golden seeds',
   key: 'An old key',
+  ...Object.fromEntries(Object.values(BOSSES).map(({ key, name }) => [key, `A key piece to the ${name.toLowerCase()}`])), // (shared/bosses.js)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, found])), // (the sky isles' relics)
 };
 

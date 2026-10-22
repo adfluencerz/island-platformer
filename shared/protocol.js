@@ -28,6 +28,7 @@ export const C = {
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture()), and the farm's upgrade `levels`
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
+  BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
 };
 
 // lobby -> client
@@ -66,6 +67,9 @@ export const S = {
   CHEST: 'chest', // { items: { item: count } }
   CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
+  BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
+  BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp } a bop that landed
+  BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
 };
 
 // Presence (server/presence.js): every logged in page keeps one more socket,
@@ -101,6 +105,7 @@ export const STATEF = {
   PICK: 16, // has the pickaxe in hand
   SWORD: 32, // has the wooden sword in hand
   MALLET: 64, // has the mallet in hand
+  MOUNT: 256, // riding: (f / MOUNT) & 7 is which mount, 1 + its boss's place in BOSS_IDS (shared/bosses.js); 0 on foot
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;

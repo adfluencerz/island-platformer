@@ -954,6 +954,93 @@ ITEMS.planter = {
   ],
 };
 
+// ---------- The bosses (shared/bosses.js) ----------
+// The evil parsnip's key pieces (BOSSES in shared/balance.js: a full set
+// builds its portal), its statue, and the friendly parsnip to ride
+ITEMS.parsnip_seal = {
+  name: 'Parsnip Seal',
+  category: 'Key Item',
+  description: 'A purple wax seal, stamped with a grumpy parsnip. Three of them build the evil parsnip\'s portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0xb06fd0,
+  palette: { o: '#3d1f4a', R: '#8e4fb0', r: '#b06fd0', g: '#4f9e3c', G: '#7cc95a', c: '#f0e2b0', C: '#fff6d8' },
+  sprite: [
+    '................',
+    '.....oooooo.....',
+    '...ooRRRRRRoo...',
+    '..oRRrrrrrrRRo..',
+    '..oRrrrgGrrrRo..',
+    '.oRrrrgGgGrrrRo.',
+    '.oRrrrrcCrrrrRo.',
+    '.oRrrrcCCcrrrRo.',
+    '.oRrrrcCCcrrrRo.',
+    '.oRrrrrcCrrrrRo.',
+    '.oRrrrrcrrrrrRo.',
+    '..oRrrrrrrrrRo..',
+    '..oRRrrrrrrRRo..',
+    '...ooRRRRRRoo...',
+    '.....oooooo.....',
+    '................',
+  ],
+};
+ITEMS.parsnip_statue = {
+  name: 'Parsnip Statue',
+  category: 'Decor',
+  description: 'The evil parsnip, in stone, looking only a little grumpy. For beating it. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'parsnip_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#7d8a6a', G: '#a3b08f' },
+  sprite: [
+    '......g.g.......',
+    '.....gGgGg......',
+    '......gGg.......',
+    '.....oLLLo......',
+    '....oLLMMLo.....',
+    '....oLMMMdo.....',
+    '.....oLMdo......',
+    '.....oLMdo......',
+    '......oMdo......',
+    '......oMo.......',
+    '.......o........',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oddddddddo...',
+    '...oooooooooo...',
+  ],
+};
+// `mount`: which boss it is (src/mounts.js draws it). Just for show: it goes
+// no faster, and you get off to use anything else.
+ITEMS.parsnip_mount = {
+  name: 'Parsnip Steed',
+  category: 'Mount',
+  description: 'The evil parsnip, friends now and happy to carry you about. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'parsnip',
+  color: 0xf0e2b0,
+  palette: { o: '#4a3418', c: '#f0e2b0', C: '#fff6d8', d: '#c9b07a', g: '#4f9e3c', G: '#7cc95a', r: '#b5483a', R: '#d9604f', b: '#6e4a2b' },
+  sprite: [
+    '.......gG.g.....',
+    '......gGgGg.....',
+    '.......ggg......',
+    '.....ocCCco.....',
+    '....ocCCCCco....',
+    '...orrRRrrcco...',
+    '...oRRRRRRcdo...',
+    '....occccccdo...',
+    '....occcccdo....',
+    '.....occcdo.....',
+    '.....occdo......',
+    '......oo........',
+    '....oo...oo.....',
+    '....bo...bo.....',
+    '...bbo..bbo.....',
+    '................',
+  ],
+};
+
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
 
@@ -2212,6 +2299,28 @@ export const PIECE_ICONS = {
       '.odo........odo.',
       '.odo........odo.',
       '.ooo........ooo.',
+    ],
+  },
+  // a boss's portal (shared/bosses.js): a stone arch round a purple swirl
+  parsnip_portal: {
+    palette: { o: '#2a2238', S: '#a9a79f', p: '#7a3fa0', P: '#b06fd0', w: '#f4e8ff' },
+    sprite: [
+      '................',
+      '.....oooooo.....',
+      '...ooSSSSSSoo...',
+      '..oSSppppppSSo..',
+      '..oSpPPPPPPpSo..',
+      '.oSpPwwwwwwPpSo.',
+      '.oSpPwPPPPwPpSo.',
+      '.oSpPwPwwPwPpSo.',
+      '.oSpPwPwPPwPpSo.',
+      '.oSpPwPPwwwPpSo.',
+      '.oSpPwwwPPPPpSo.',
+      '.oSpPPPPPPPPpSo.',
+      '.oSppppppppppSo.',
+      '.oSSSSSSSSSSSSo.',
+      '.oooooooooooooo.',
+      '................',
     ],
   },
   remove: {
