@@ -197,7 +197,61 @@ function bee() {
   };
 }
 
-const MOUNTS = { parsnip, lion, bee };
+// The giant crow, friends now: hopping along, its wings folded round the
+// saddle, its scarf flying
+const CROW = { plume: mat(0x2a2f45), plumeLight: mat(0x445078), beak: mat(0xf2a516), scarf: mat(0xd6453a) };
+function crow() {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 0.85;
+  root.add(body);
+  part(body, ball, CROW.plume, [0, 0, -0.05], [0.85, 0.75, 1.2]);
+  part(body, ball, CROW.plumeLight, [0, -0.12, 0.2], [0.6, 0.5, 0.6]);
+  part(body, box, MATS.saddle, [0, 0.36, -0.05], [0.5, 0.08, 0.5]);
+  for (const sx of [-1, 1]) {
+    part(body, ball, CROW.plume, [sx * 0.4, 0.05, -0.15], [0.12, 0.5, 0.9]); // folded wings
+    part(body, box, MATS.saddleDark, [sx * 0.3, 0.12, -0.05], [0.04, 0.4, 0.1]);
+  }
+  part(body, ball, CROW.plume, [0, 0.1, -0.7], [0.4, 0.06, 0.5]); // tail
+  const head = new THREE.Group();
+  head.position.set(0, 0.4, 0.55);
+  body.add(head);
+  part(head, ball, CROW.plume, [0, 0, 0], [0.5, 0.48, 0.48]);
+  const beak = part(head, cone, CROW.beak, [0, -0.04, 0.38], [0.25, 0.25, 0.22]);
+  beak.rotation.y = Math.PI; // (the cone points back: turned to point ahead)
+  for (const sx of [-1, 1]) {
+    part(head, ball, MATS.white, [sx * 0.12, 0.07, 0.19], [0.1, 0.11, 0.05]);
+    part(head, ball, MATS.dark, [sx * 0.12, 0.06, 0.22], [0.05, 0.06, 0.03]);
+    part(head, ball, MATS.blush, [sx * 0.19, -0.04, 0.16], [0.07, 0.035, 0.03]);
+  }
+  part(head, ring, CROW.scarf, [0, -0.25, -0.02], [0.24, 0.24, 0.1]).rotation.x = Math.PI / 2;
+  const scarfTail = part(body, box, CROW.scarf, [0.15, 0.32, 0.4], [0.1, 0.04, 0.4]);
+  const legs = [-1, 1].map((sx, i) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.2, 0.5, 0.05);
+    root.add(pivot);
+    part(pivot, box, CROW.beak, [0, -0.25, 0], [0.06, 0.5, 0.06]);
+    part(pivot, box, CROW.beak, [0, -0.5, 0.08], [0.12, 0.04, 0.22]);
+    return { pivot, phase: i * Math.PI };
+  });
+  let phase = 0;
+  return {
+    root,
+    seat: 0.85 + 0.4,
+    animate(dt, walk, t) {
+      phase += dt * 11 * walk;
+      for (const leg of legs) leg.pivot.rotation.x = Math.sin(phase + leg.phase) * 0.5 * walk;
+      body.position.y = 0.85 + Math.abs(Math.sin(phase)) * 0.1 * walk + Math.sin(t * 2.2) * 0.01;
+      head.rotation.x = Math.sin(t * 2.5 + phase) * 0.08;
+      scarfTail.rotation.x = -0.3 * walk + Math.sin(t * 9) * 0.1 * walk;
+    },
+    dispose() {
+      root.traverse((obj) => obj.isMesh && obj.geometry !== ball && obj.geometry !== box && obj.geometry !== cone && obj.geometry !== ring && obj.geometry.dispose());
+    },
+  };
+}
+
+const MOUNTS = { parsnip, lion, bee, crow };
 
 // A new mount of this kind (a boss's id), or null for one this page doesn't know
 export const createMount = (kind) => MOUNTS[kind]?.() ?? null;

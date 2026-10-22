@@ -4,7 +4,7 @@ import { GROUND_STAND_Y } from '../shared/level.js';
 import { C } from '../shared/protocol.js';
 import {
   BossFight, BOSS_IDS, BODY_R, arenaAt, arenaStart, arenaExit, portalOf, portalBoss, bossFromWire,
-  rollHits, waveHits, seedAt, seedHits, swarmAt, swarmHits,
+  rollHits, swoopHits, waveHits, seedAt, seedHits, swarmAt, swarmHits,
 } from '../shared/bosses.js';
 import { ITEMS } from './items.js';
 import { createArenas } from './arena.js';
@@ -159,7 +159,7 @@ export function createBosses(ctx) {
     if (b.phase !== 'fight' || now < graceUntil || outAt) return;
     const { x, y, z } = player.position;
     const def = BOSSES[id];
-    if (rollHits(b, def, x, y, z)) return caught(b.x, b.z);
+    if (rollHits(b, def, x, y, z) || swoopHits(b, def, x, y, z)) return caught(b.x, b.z);
     const { view } = bosses.get(id);
     for (const w of view.waves) if (waveHits(w.fx, w.age, x, y, z)) return caught(w.fx.x, w.fx.z);
     for (const s of view.seeds) {

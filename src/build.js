@@ -65,6 +65,8 @@ const MATS = {
   lionPortalLight: mat(0xffd08a, { emissive: 0xf0a050, emissiveIntensity: 1 }),
   beePortal: mat(0xc99a10, { emissive: 0xd9a520, emissiveIntensity: 0.9 }), // (the bee queen's: gold)
   beePortalLight: mat(0xfff0a0, { emissive: 0xffe070, emissiveIntensity: 1 }),
+  crowPortal: mat(0x2f3f8a, { emissive: 0x3a4fa0, emissiveIntensity: 0.9 }), // (the giant crow's: midnight blue)
+  crowPortalLight: mat(0xa8c0ff, { emissive: 0x8fa8f0, emissiveIntensity: 1 }),
   sackDark: mat(0xbfa26c),
   crow: mat(0x26262c),
   beak: mat(0xe0a23a),
@@ -92,7 +94,7 @@ const MATS = {
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
 // a boss's portal's swirl, by its boss: [deep, light]
-const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight] };
+const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight], crow: [MATS.crowPortal, MATS.crowPortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
 const box = new THREE.BoxGeometry(1, 1, 1);
 const flag = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
@@ -1431,6 +1433,17 @@ function model(id, gx, gz, joined) {
     part(g, ball, MATS.stoneLight, 0, 1.18, 0.3, 0.4, 0.4, 0.38); // head
     part(g, shaft, MATS.lichen, 0, 1.42, 0.3, 0.22, 0.1, 0.22); // crown
     for (const sx of [-1, 1]) part(g, ball, MATS.stone, sx * 0.32, 1.28, -0.05, 0.42, 0.04, 0.26).rotation.z = sx * 0.4; // wings
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
+  } else if (PIECES[id]?.statue === 'crow') {
+    // The giant crow's statue: perched on a plinth, wings folded, its scarf on
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    for (const x of [-0.1, 0.1]) part(g, box, MATS.stoneDark, x, 0.52, 0.05, 0.05, 0.18, 0.05); // legs
+    part(g, ball, MATS.stoneLight, 0, 0.88, -0.05, 0.55, 0.55, 0.7); // body
+    part(g, ball, MATS.stone, 0, 0.82, -0.4, 0.3, 0.08, 0.5).rotation.x = 0.4; // tail
+    part(g, box, MATS.stone, 0, 1.1, 0.12, 0.42, 0.08, 0.3); // scarf
+    part(g, ball, MATS.stoneLight, 0, 1.28, 0.16, 0.38, 0.36, 0.36); // head
+    part(g, tip, MATS.lichen, 0, 1.25, 0.42, 0.1, 0.25, 0.1).rotation.x = Math.PI / 2; // beak
     solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
   } else if (PIECES[id]?.statue) {
     // A boss's statue: the evil parsnip in stone, on a plinth

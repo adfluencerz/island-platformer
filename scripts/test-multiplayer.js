@@ -23,7 +23,7 @@ import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { homeWildsSource } from './wilds.js';
-import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits } from '../shared/bosses.js';
+import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { BOSSES } from '../shared/balance.js';
 import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
 import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
@@ -1750,6 +1750,34 @@ await test('the bee queen sends swarms at everyone in her arena, and dashes', ()
   assert.ok(Math.abs(at1.z - 4) < 1e-9 && Math.abs(at1.x) <= 0.9);
   assert.ok(swarmHits(at1, at1.x, GROUND_STAND_Y, at1.z) && !swarmHits(at1, at1.x, GROUND_STAND_Y + 1.2, at1.z));
   assert.deepEqual(PIECES.bee_portal.cost, { honey_drop: 3 });
+});
+
+await test('the giant crow swoops down from the sky (out of reach up there) and beats up gusts', () => {
+  assert.deepEqual(BOSS_IDS, ['parsnip', 'lion', 'bee', 'crow'], 'all four');
+  const fight = new BossFight('crow', mulberry32(9));
+  const at = ARENAS.crow;
+  assert.equal(arenaAt(at.x, at.z), 'crow');
+  const a = { id: 1, x: at.x, y: GROUND_STAND_Y, z: at.z + 6 };
+  const fx = [];
+  let high = 0;
+  let low = 0;
+  let caught = 0;
+  let outOfReach = false;
+  for (let i = 0; i < 800; i++) {
+    fx.push(...fight.step(0.05, [a]));
+    if (fight.move !== 'swoop') continue;
+    if (fight.y >= BOSSES.crow.swoop.height - 1e-6) {
+      high++;
+      outOfReach ||= fight.bop(1, 'mallet', fight.x + 1, GROUND_STAND_Y, fight.z) === null;
+    }
+    if (fight.y > 0 && fight.y < 1) low++;
+    const b = bossFromWire(fight.toWire());
+    if (swoopHits(b, BOSSES.crow, b.x, GROUND_STAND_Y, b.z)) caught++;
+  }
+  assert.ok(high && low && caught, 'up high, then down low through them');
+  assert.ok(outOfReach, 'no bopping it up in the sky');
+  assert.ok(fx.some((f) => f.e === 'wave' && f.gust), 'a gust');
+  assert.deepEqual(PIECES.crow_portal.cost, { crow_feather: 3 });
 });
 
 await test('a boss fight on a farm with helpers: its portal, the bops, and the portal used up when it is beaten', () => {

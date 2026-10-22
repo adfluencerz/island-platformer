@@ -1371,6 +1371,89 @@ ITEMS.bee_mount = {
   ].map((row) => row.replace('R', 'r')),
 };
 
+// The giant crow's key pieces, statue and mount
+ITEMS.crow_feather = {
+  name: 'Giant Crow Feather',
+  category: 'Key Item',
+  description: 'A long glossy feather, blue-black and taller than a turnip. Three of them build the giant crow\'s portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0x2a2f45,
+  palette: { o: '#0e1018', f: '#2a2f45', F: '#5a6894', q: '#c9b07a' },
+  sprite: [
+    '............oo..',
+    '...........oFfo.',
+    '..........oFffo.',
+    '.........oFfffo.',
+    '........oFfffo..',
+    '.......oFfffo...',
+    '......oFfffo....',
+    '.....oFfffo.....',
+    '....oFfffo......',
+    '...oFfffo.......',
+    '...oFffo........',
+    '..oFffo.........',
+    '..oFfo..........',
+    '.oqoo...........',
+    'oqo.............',
+    '.o..............',
+  ],
+};
+ITEMS.crow_statue = {
+  name: 'Giant Crow Statue',
+  category: 'Decor',
+  description: 'The giant crow, in stone, perched on a plinth with its scarf on. For beating it. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'crow_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', y: '#e0c060' },
+  sprite: [
+    '................',
+    '......oooo......',
+    '.....oLLLLo.....',
+    '.....oLdLLyy....',
+    '.....oLLLLo.....',
+    '....oMMMMMMo....',
+    '...oLLLLLLLMo...',
+    '..oLLLLLLLLMo...',
+    '..oLLLLLLLMMo...',
+    '...oMLLLLMMo....',
+    '....ooyooyo.....',
+    '......y..y......',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oooooooooo...',
+  ],
+};
+ITEMS.crow_mount = {
+  name: 'Crow Steed',
+  category: 'Mount',
+  description: 'The giant crow, friends now, hopping along with you on its back and its scarf flying. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'crow',
+  color: 0x2a2f45,
+  palette: { o: '#0e1018', f: '#2a2f45', F: '#5a6894', y: '#f2a516', r: '#d6453a', w: '#ffffff' },
+  sprite: [
+    '................',
+    '.........ooo....',
+    '........offfo...',
+    '........ofwffyy.',
+    '........offfo...',
+    '...ooooorrro....',
+    '..offfrrfffo....',
+    '.offFFFFfffo....',
+    'offfFFFFffo.....',
+    '.offfffffo......',
+    '..oooooooo......',
+    '.....y..y.......',
+    '.....y..y.......',
+    '....yy.yy.......',
+    '................',
+    '................',
+  ],
+};
+
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
 // What the machines make, the machines, the dishes and the recipes (src/foods.js)
@@ -2891,3 +2974,5 @@ export const PIECE_ICONS = {
 PIECE_ICONS.lion_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#c0661f', P: '#f0a050', w: '#fff0d8' } };
 // (the bee queen's: a golden swirl)
 PIECE_ICONS.bee_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#c99a10', P: '#ffd84a', w: '#fff8d0' } };
+// (the giant crow's: a midnight-blue swirl)
+PIECE_ICONS.crow_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#2f3f8a', P: '#7a90e0', w: '#e0e8ff' } };

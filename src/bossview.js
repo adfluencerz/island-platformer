@@ -381,7 +381,112 @@ function buildBee() {
   return { root, skins: [fuzz, fuzzLight], top: 3.3, pose };
 }
 
-const MODELS = { parsnip: buildParsnip, lion: buildLion, bee: buildBee };
+// The giant crow: big, glossy blue-black, in a red scarf, with an orange beak
+// and orange feet. It hops about on the grass, rises into the sky on great
+// flapping wings, swoops down with them swept back, beats them wide to raise
+// a gust, and sleeps with its head tucked in.
+function buildCrow() {
+  const plume = mat(0x2a2f45);
+  const plumeLight = mat(0x445078);
+  const beakMat = mat(0xf2a516);
+  const scarf = mat(0xd6453a);
+  const white = mat(0xffffff, { roughness: 0.4 });
+  const dark = mat(0x111111, { roughness: 0.4 });
+  const blushMat = mat(0xf28cb1);
+
+  const root = new THREE.Group(); // at its feet (or in the air)
+  const rig = new THREE.Group(); // hops, tips in to dive
+  root.add(rig);
+  const body = new THREE.Group();
+  body.position.y = 1.5;
+  rig.add(body);
+  part(body, ballGeo, plume, [0, 0, 0], [1.6, 1.5, 2.0]);
+  part(body, ballGeo, plumeLight, [0, -0.2, 0.35], [1.1, 1.0, 1.1]);
+  part(body, new THREE.TorusGeometry(0.45, 0.12, 6, 14), scarf, [0, 0.55, 0.62], [1, 1, 1]).rotation.x = Math.PI / 2 - 0.4;
+  const scarfTail = part(body, boxGeo, scarf, [0.3, 0.3, 0.95], [0.2, 0.5, 0.06]);
+  // the tail fan
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.2, -0.95);
+  body.add(tail);
+  for (const a of [-0.35, 0, 0.35]) {
+    const feather = part(tail, ballGeo, plume, [Math.sin(a) * 0.3, 0, -0.35], [0.3, 0.08, 0.8]);
+    feather.rotation.y = a;
+  }
+  // the head
+  const head = new THREE.Group();
+  head.position.set(0, 0.85, 0.75);
+  body.add(head);
+  part(head, ballGeo, plume, [0, 0, 0], [0.95, 0.9, 0.9]);
+  const beak = part(head, new THREE.ConeGeometry(0.16, 0.6, 8), beakMat, [0, -0.08, 0.6], [1, 1, 1]);
+  beak.rotation.x = Math.PI / 2;
+  const eyes = [-1, 1].map((sx) => {
+    const eye = new THREE.Group();
+    eye.position.set(sx * 0.24, 0.12, 0.34);
+    head.add(eye);
+    part(eye, ballGeo, white, [0, 0, 0], [0.2, 0.22, 0.1]);
+    part(eye, ballGeo, dark, [-sx * 0.015, -0.01, 0.05], [0.1, 0.12, 0.05]);
+    return eye;
+  });
+  const brows = [-1, 1].map((sx) => part(head, boxGeo, dark, [sx * 0.24, 0.3, 0.36], [0.26, 0.06, 0.05]));
+  const blush = [-1, 1].map((sx) => part(head, ballGeo, blushMat, [sx * 0.36, -0.05, 0.28], [0.14, 0.07, 0.05]));
+  // the wings
+  const wings = [-1, 1].map((sx) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.65, 0.3, 0);
+    body.add(pivot);
+    part(pivot, ballGeo, plume, [sx * 0.9, 0, -0.1], [1.9, 0.12, 1.1]);
+    part(pivot, ballGeo, plumeLight, [sx * 1.5, -0.02, -0.25], [0.8, 0.1, 0.7]);
+    return { pivot, sx };
+  });
+  // legs and feet
+  const legs = [-1, 1].map((sx, i) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.35, 0.85, 0.1);
+    rig.add(pivot);
+    part(pivot, boxGeo, beakMat, [0, -0.4, 0], [0.08, 0.8, 0.08]);
+    for (const a of [-0.4, 0, 0.4]) part(pivot, boxGeo, beakMat, [Math.sin(a) * 0.12, -0.8, Math.cos(a) * 0.12], [0.06, 0.05, 0.28]).rotation.y = a;
+    return { pivot, phase: i * Math.PI };
+  });
+
+  let flap = 0;
+  function pose(dt, t, b, def, { asleep, friendly, dizzy, flash }) {
+    const fighting = b.phase === 'fight' && !dizzy;
+    const swooping = fighting && b.move === 'swoop';
+    const diving = swooping && b.mt >= def.swoop.rise + def.swoop.aim;
+    const gusting = fighting && b.move === 'gust';
+    const flying = b.y > 0.2;
+    // the wings: still and folded on the ground, flapping in the air, swept back to dive, beating wide to gust
+    flap += dt * (diving ? 0 : flying ? 9 : gusting ? 14 : friendly ? 3 : 0);
+    for (const w of wings) {
+      w.pivot.rotation.z = diving ? w.sx * 0.15
+        : flying || gusting || friendly ? w.sx * Math.sin(flap) * (gusting ? 0.9 : 0.7)
+        : w.sx * -0.9; // (folded down along its sides)
+      w.pivot.rotation.y = diving ? -w.sx * 0.9 : 0;
+    }
+    // tipped in to dive; a hop walking on the ground; head tucked asleep
+    rig.rotation.x = diving && b.y > 0.5 ? 0.5 : 0;
+    rig.rotation.z = dizzy ? Math.sin(t * 7) * 0.2 : b.phase === 'wake' ? Math.sin(t * 30) * 0.05 : 0;
+    const hopping = !flying && b.move === 'rest' && !asleep && !friendly;
+    rig.position.y = hopping ? Math.abs(Math.sin(t * 7)) * 0.25 : 0;
+    for (const leg of legs) leg.pivot.rotation.x = flying ? 0.8 : 0;
+    head.position.set(0, asleep ? 0.45 : 0.85, asleep ? 0.55 : 0.75);
+    head.rotation.x = asleep ? 0.5 : gusting && b.mt < def.gust.windup ? -0.3 : 0;
+    for (const eye of eyes) eye.scale.y = asleep ? 0.12 : dizzy ? 0.5 : friendly ? 0.7 : 1;
+    brows.forEach((brow, i) => {
+      const s = i ? 1 : -1;
+      brow.visible = !asleep;
+      brow.rotation.z = friendly ? s * -0.2 : s * 0.4;
+    });
+    for (const b2 of blush) b2.visible = friendly;
+    tail.rotation.x = Math.sin(t * 2) * 0.08 + (diving ? -0.3 : 0);
+    scarfTail.rotation.x = flying ? -0.8 + Math.sin(t * 20) * 0.15 : 0;
+    const sy = (1 + (asleep ? Math.sin(t * 1.8) * 0.03 : 0)) * (1 - flash * 0.12);
+    root.scale.set(1 + (1 - sy) * 0.5, sy, 1 + (1 - sy) * 0.5);
+  }
+  return { root, skins: [plume, plumeLight], top: 3.2, pose };
+}
+
+const MODELS = { parsnip: buildParsnip, lion: buildLion, bee: buildBee, crow: buildCrow };
 
 export function createBossView(parent, id) {
   const def = BOSSES[id];
@@ -416,7 +521,7 @@ export function createBossView(parent, id) {
     // A shockwave, a volley of seeds or a swarming (its fx: shared/bosses.js step())
     addFx(fx) {
       if (fx.e === 'wave') {
-        const mesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: fx.roar ? 0xffb35a : 0xf3e6c0, transparent: true, opacity: 0.85, depthWrite: false }));
+        const mesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: fx.roar ? 0xffb35a : fx.gust ? 0xdcecff : 0xf3e6c0, transparent: true, opacity: 0.85, depthWrite: false }));
         mesh.position.set(fx.x, 0.05, fx.z);
         parent.add(mesh);
         waves.push({ fx, age: 0, mesh });
