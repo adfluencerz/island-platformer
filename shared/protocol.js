@@ -3,19 +3,18 @@
 // message is a JSON object whose `t` field is one of these; the comments list
 // the other fields. JOIN, STATE, CHAT and PING (and ROSTER, SNAP, CHAT and
 // PONG back) are the same in both.
-import { PIN_LENGTH } from './constants.js';
+import { PIN_LENGTH, MAX_NAME } from './constants.js';
 
 // client -> lobby
 export const C = {
-  JOIN: 'join', // { v, name, key, back }: the first message on a socket
+  JOIN: 'join', // { v, name, key, back, color, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name and color are the ones that count; name, color: as the page has them)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
-  TAKE: 'take', // { id }: gathered (or walked into) what is on spot id
-  CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale)
-  MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: its scale)
+  TAKE: 'take', // { id, key? }: gathered (or walked into) what is on spot id (key: true, an old key opens a sky_vault, and is used up)
+  CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale; the room goes by its own, shared/wilds.js)
+  MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: as for CHOP)
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
   PICKUP: 'pickup', // { id }: walked into drop id
-  COUNT: 'count', // { trees, rocks }: how many there are where we are (the page knows; a giant is one of them: shared/giants.js)
-  HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: its own scale; tool: the item in hand)
+  HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
@@ -26,18 +25,19 @@ export const C = {
   CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
-  ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture())
+  ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture()), and the farm's upgrade `levels`
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
+  BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
 };
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, felled, mined, drops, roster, pos, clock, giants, resumed } (seed: the island's, shared/worldgen.js; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, resumed } (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
   ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
-  TAKEN: 'taken', // { id, by, item, count }: spot id was emptied by player `by`
+  TAKEN: 'taken', // { id, by, item, count, items? }: spot id was emptied by player `by` (items: a sky isle chest's [[item, count], ...]; its item is 'chest')
   DENY: 'deny', // { id }: that did not count (someone got there first, or too far)
   FELLED: 'felled', // { id, by, count, at, shares }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms; shares: a giant's, [[player id, count]], each player's wood)
   REGROWN: 'regrown', // { id, n }: tree id has grown back, in its place n (shared/level.js nextSite)
@@ -67,6 +67,31 @@ export const S = {
   CHEST: 'chest', // { items: { item: count } }
   CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
+  BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
+  BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp } a bop that landed
+  BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
+};
+
+// Presence (server/presence.js): every logged in page keeps one more socket,
+// /ws?presence, wherever it is, so friends can invite it to a lobby.
+// page -> server
+export const PC = {
+  HELLO: 'hello', // { v, auth }: the first message (auth: "<farm id>.<token>", a farm with an account)
+  WHERE: 'where', // { place }: 'home', 'lobby' or 'farm' (for the friends list)
+  PARTY: 'party', // { invite: [friend farm ids] }: start a lobby, inviting them (the lobby opens PARTY_MS later)
+  CANCEL: 'cancel', // {}: the party we started is called off
+  ANSWER: 'answer', // { party, yes }: to an invitation
+  INVITE: 'invite', // { code, invite: [friend farm ids] }: to the lobby we are in, now
+};
+// server -> page
+export const PS = {
+  READY: 'ready', // { id, name }: we are online (our farm id and name)
+  INVITED: 'invited', // { party, from, color, ms, late }: friend `from` invites us; it lapses in ms (late: to a lobby already running)
+  PARTY: 'party', // { party, ms, friends: [[id, name, state]] }: our party: it opens in ms; state 'waiting', 'yes' or 'no'
+  GO: 'go', // { party, code }: off to lobby code
+  GONE: 'gone', // { party }: that invitation is over for us (it lapsed, or another tab answered it)
+  CALLED_OFF: 'calledOff', // { party, why }: the party was called off
+  FRIENDS: 'friends', // {}: our friends changed (one came online, went off, moved, asked, said yes, or unfriended): ask for them again
 };
 
 // spots in WELCOME: [[id, kind, x, y, z, item, count], ...] (item null: nothing there right now)
@@ -80,6 +105,7 @@ export const STATEF = {
   PICK: 16, // has the pickaxe in hand
   SWORD: 32, // has the wooden sword in hand
   MALLET: 64, // has the mallet in hand
+  MOUNT: 256, // riding: (f / MOUNT) & 7 is which mount, 1 + its boss's place in BOSS_IDS (shared/bosses.js); 0 on foot
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;
@@ -89,6 +115,29 @@ export function cleanText(s, max) {
 }
 
 export const finite = (...xs) => xs.every((x) => typeof x === 'number' && Number.isFinite(x));
+
+// ---------- Accounts (server/farms.js) ----------
+// A username is the farmer's name in lobbies too, and one of a kind on the
+// server the way farm names are (usernameKey). A password is any 6 to 64
+// characters. There is no getting a forgotten one back.
+export const PASSWORD_LENGTH = [6, 64];
+export const usernameKey = (name) => farmNameKey(name);
+
+// Why this username won't do, or '' when it will
+export function usernameProblem(name) {
+  const clean = cleanText(name, MAX_NAME + 1);
+  if (clean.length > MAX_NAME) return `A username is at most ${MAX_NAME} characters.`;
+  if (!usernameKey(clean)) return 'A username needs at least 3 letters or digits.';
+  return '';
+}
+
+// Why this password won't do, or '' when it will
+export function passwordProblem(password) {
+  const n = typeof password === 'string' ? password.length : 0;
+  if (n < PASSWORD_LENGTH[0]) return `A password is at least ${PASSWORD_LENGTH[0]} characters.`;
+  if (n > PASSWORD_LENGTH[1]) return `A password is at most ${PASSWORD_LENGTH[1]} characters.`;
+  return '';
+}
 
 // ---------- Farm names and PINs (server/farms.js: getting a farm back) ----------
 // A farm's name is how it is found again, so it is one of a kind on a server,

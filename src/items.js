@@ -1,4 +1,5 @@
-import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
+import { SHOP, COIN_VALUE, TOOL_HITS, TOOL_EXTRA, HOE_TILLS } from '../shared/balance.js';
+import { RELICS } from './relics.js';
 
 // ---------- Item catalog ----------
 // Shared by the world (pickup meshes use `color`) and the inventory UI.
@@ -10,10 +11,11 @@ import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
 // `plants` names the crop (see crops.js) a seed grows into.
 // `price` is what the merchant at the farm stall asks for it; `sell` is what
 // the merchant pays for one. No `sell`: not for sale. `tool` says what a tool
-// does (the sturdy ones from the workbench do the same as the plain ones,
-// better: `hits` swings fell a tree or break a rock, a `wide` hoe tills three
-// tiles at once). Prices, a coin's worth and the sturdy tools' hits are set
-// in shared/balance.js (see the end of the catalog). `piece`: a thing made at the
+// does (the sturdy, silver and golden ones from the workbench do the same as
+// the plain ones, better: `hits` swings fell a tree or break a rock, and it
+// gives `extra` more; a hoe `tills` [across, ahead] tiles at once). Prices, a
+// coin's worth and the better tools' hits are set in shared/balance.js (see
+// the end of the catalog). `piece`: a thing made at the
 // workbench to be put down on the farm in build mode (PIECES, shared/level.js).
 
 // Seed packets share one drawing; only the picture on the front changes color.
@@ -538,6 +540,32 @@ export const ITEMS = {
       '................',
     ],
   },
+  large_egg: {
+    name: 'Large egg',
+    category: 'Produce',
+    description: 'A big brown egg, from a hen in a well kept yard. Worth more than an ordinary one.',
+    maxStack: 999,
+    color: 0xd9a46a,
+    palette: { o: '#5b3a1e', w: '#d9a46a', W: '#f2cfa0', s: '#b07a45', d: '#8f5a2f' },
+    sprite: [
+      '......oooo......',
+      '.....oWWwwo.....',
+      '....oWWwwwwo....',
+      '...oWWwwwwwwo...',
+      '...oWwwwdwwwo...',
+      '..oWwwwwwwwwso..',
+      '..owwdwwwwwwso..',
+      '..owwwwwwwdwso..',
+      '..owwwwwwwwsso..',
+      '..owwwwdwwwsso..',
+      '..owwwwwwwssso..',
+      '...owwwwwssso...',
+      '...owwwwsssso...',
+      '....osssssso....',
+      '.....oooooo.....',
+      '................',
+    ],
+  },
   hen: {
     name: 'Hen',
     category: 'Animal',
@@ -825,30 +853,21 @@ ITEMS.golden_turnip = {
 };
 
 // ---------- Made at the workbench (src/workbench.js) ----------
-// The sturdy tools: the plain ones' drawings with blue steel heads
+// The better tools: the plain ones' drawings with blue steel heads (sturdy),
+// then silver, then gold
 const STEEL = { m: '#2f4a6b', M: '#5b84b1', L: '#a8c8ec' };
-ITEMS.wide_hoe = {
-  ...ITEMS.hoe,
-  name: 'Wide hoe',
-  description: 'A broad blade that tills three tiles side by side in one go. Use with E.',
-  wide: true,
-  palette: { ...ITEMS.hoe.palette, ...STEEL },
-  sprite: [...ITEMS.hoe.sprite],
-};
-ITEMS.sturdy_axe = {
-  ...ITEMS.axe,
-  name: 'Sturdy axe',
-  description: 'Fells a tree in two swings. Swing with E (or hold it).',
-  palette: { ...ITEMS.axe.palette, ...STEEL },
-  sprite: [...ITEMS.axe.sprite],
-};
-ITEMS.sturdy_pickaxe = {
-  ...ITEMS.pickaxe,
-  name: 'Sturdy pickaxe',
-  description: 'Breaks a rock in two swings. Swing with E (or hold it).',
-  palette: { ...ITEMS.pickaxe.palette, ...STEEL },
-  sprite: [...ITEMS.pickaxe.sprite],
-};
+const SILVER = { m: '#6b7380', M: '#b4bcc8', L: '#f2f5fa' };
+const GOLD = { m: '#8a5a12', M: '#e0a82e', L: '#ffe58a' };
+const better = (plain, name, description, metal) => ({ ...ITEMS[plain], name, description, palette: { ...ITEMS[plain].palette, ...metal }, sprite: [...ITEMS[plain].sprite] });
+ITEMS.wide_hoe = better('hoe', 'Wide hoe', 'A broad blade that tills three tiles side by side in one go. Use with E.', STEEL);
+ITEMS.sturdy_axe = better('axe', 'Sturdy axe', 'Fells a tree in three swings. Swing with E (or hold it).', STEEL);
+ITEMS.sturdy_pickaxe = better('pickaxe', 'Sturdy pickaxe', 'Breaks a rock in two swings. Swing with E (or hold it).', STEEL);
+ITEMS.silver_hoe = better('hoe', 'Silver hoe', 'Tills five tiles in a row in one go. Use with E.', SILVER);
+ITEMS.silver_axe = better('axe', 'Silver axe', 'Fells a tree in two swings. Swing with E (or hold it).', SILVER);
+ITEMS.silver_pickaxe = better('pickaxe', 'Silver pickaxe', 'Breaks a rock in one swing. Swing with E (or hold it).', SILVER);
+ITEMS.golden_hoe = better('hoe', 'Golden hoe', 'Tills a patch three by three in one go. Use with E.', GOLD);
+ITEMS.golden_axe = better('axe', 'Golden axe', 'Fells a tree in one swing, and gets an extra log out of it. Swing with E (or hold it).', GOLD);
+ITEMS.golden_pickaxe = better('pickaxe', 'Golden pickaxe', 'Breaks a rock in one swing, and gets an extra stone out of it. Swing with E (or hold it).', GOLD);
 
 // For bopping other farmers in lobbies (WEAPONS in shared/level.js): a bop
 // knocks them back and shakes loose a little of what they gathered there.
@@ -907,60 +926,6 @@ ITEMS.mallet = {
 };
 
 // Things for the farm: put down in build mode (the Build tab)
-ITEMS.lamp_post = {
-  name: 'Lamp post',
-  category: 'Decor',
-  description: 'Lights up by itself when the sun goes down. Put it down from the Build tab.',
-  maxStack: 20,
-  piece: 'lamp_post',
-  color: 0x5d6470,
-  palette: { o: '#2a2a30', i: '#4a4f58', I: '#7d8591', y: '#ffd166', Y: '#fff3b0' },
-  sprite: [
-    '................',
-    '......oooo......',
-    '.....oIIIIo.....',
-    '....oiyYYyio....',
-    '....oiYYYYio....',
-    '....oiyYYyio....',
-    '.....oiiiio.....',
-    '......oIio......',
-    '......oIio......',
-    '......oIio......',
-    '......oIio......',
-    '......oIio......',
-    '......oIio......',
-    '.....oiIIio.....',
-    '....oiiiiiio....',
-    '....oooooooo....',
-  ],
-};
-ITEMS.garden_bench = {
-  name: 'Garden bench',
-  category: 'Decor',
-  description: 'Somewhere to sit and watch the crops grow. Put it down from the Build tab.',
-  maxStack: 20,
-  piece: 'garden_bench',
-  color: 0xb0743a,
-  palette: { o: '#3b2412', W: '#d99b57', d: '#9a6a3a' },
-  sprite: [
-    '................',
-    '................',
-    '................',
-    '................',
-    '..oooooooooooo..',
-    '..oWWWWWWWWWWo..',
-    '..oddddddddddo..',
-    '..oooooooooooo..',
-    '..odo......odo..',
-    'oooooooooooooooo',
-    'oWWWWWWWWWWWWWWo',
-    'oddddddddddddddo',
-    'oooooooooooooooo',
-    '.odo........odo.',
-    '.odo........odo.',
-    '.ooo........ooo.',
-  ],
-};
 ITEMS.planter = {
   name: 'Flower planter',
   category: 'Decor',
@@ -989,6 +954,96 @@ ITEMS.planter = {
   ],
 };
 
+// ---------- The bosses (shared/bosses.js) ----------
+// The evil parsnip's key pieces (BOSSES in shared/balance.js: a full set
+// builds its portal), its statue, and the friendly parsnip to ride
+ITEMS.parsnip_seal = {
+  name: 'Parsnip Seal',
+  category: 'Key Item',
+  description: 'A purple wax seal, stamped with a grumpy parsnip. Three of them build the evil parsnip\'s portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0xb06fd0,
+  palette: { o: '#3d1f4a', R: '#8e4fb0', r: '#b06fd0', g: '#4f9e3c', G: '#7cc95a', c: '#f0e2b0', C: '#fff6d8' },
+  sprite: [
+    '................',
+    '.....oooooo.....',
+    '...ooRRRRRRoo...',
+    '..oRRrrrrrrRRo..',
+    '..oRrrrgGrrrRo..',
+    '.oRrrrgGgGrrrRo.',
+    '.oRrrrrcCrrrrRo.',
+    '.oRrrrcCCcrrrRo.',
+    '.oRrrrcCCcrrrRo.',
+    '.oRrrrrcCrrrrRo.',
+    '.oRrrrrcrrrrrRo.',
+    '..oRrrrrrrrrRo..',
+    '..oRRrrrrrrRRo..',
+    '...ooRRRRRRoo...',
+    '.....oooooo.....',
+    '................',
+  ],
+};
+ITEMS.parsnip_statue = {
+  name: 'Parsnip Statue',
+  category: 'Decor',
+  description: 'The evil parsnip, in stone, looking only a little grumpy. For beating it. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'parsnip_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#7d8a6a', G: '#a3b08f' },
+  sprite: [
+    '......g.g.......',
+    '.....gGgGg......',
+    '......gGg.......',
+    '.....oLLLo......',
+    '....oLLMMLo.....',
+    '....oLMMMdo.....',
+    '.....oLMdo......',
+    '.....oLMdo......',
+    '......oMdo......',
+    '......oMo.......',
+    '.......o........',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oddddddddo...',
+    '...oooooooooo...',
+  ],
+};
+// `mount`: which boss it is (src/mounts.js draws it). Just for show: it goes
+// no faster, and you get off to use anything else.
+ITEMS.parsnip_mount = {
+  name: 'Parsnip Steed',
+  category: 'Mount',
+  description: 'The evil parsnip, friends now and happy to carry you about. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'parsnip',
+  color: 0xf0e2b0,
+  palette: { o: '#4a3418', c: '#f0e2b0', C: '#fff6d8', d: '#c9b07a', g: '#4f9e3c', G: '#7cc95a', r: '#b5483a', R: '#d9604f', b: '#6e4a2b' },
+  sprite: [
+    '.......gG.g.....',
+    '......gGgGg.....',
+    '.......ggg......',
+    '.....ocCCco.....',
+    '....ocCCCCco....',
+    '...orrRRrrcco...',
+    '...oRRRRRRcdo...',
+    '....occccccdo...',
+    '....occcccdo....',
+    '.....occcdo.....',
+    '.....occdo......',
+    '......oo........',
+    '....oo...oo.....',
+    '....bo...bo.....',
+    '...bbo..bbo.....',
+    '................',
+  ],
+};
+
+// The sky isles' relics (src/relics.js)
+Object.assign(ITEMS, RELICS);
+
 // What things cost and are worth (shared/balance.js)
 for (const [id, { price, sell }] of Object.entries(SHOP)) {
   if (!ITEMS[id]) continue;
@@ -996,7 +1051,9 @@ for (const [id, { price, sell }] of Object.entries(SHOP)) {
   if (sell) ITEMS[id].sell = sell;
 }
 ITEMS.coin.currency = COIN_VALUE;
-for (const [id, hits] of Object.entries(STURDY_HITS)) ITEMS[id].hits = hits;
+for (const [id, hits] of Object.entries(TOOL_HITS)) ITEMS[id].hits = hits;
+for (const [id, extra] of Object.entries(TOOL_EXTRA)) ITEMS[id].extra = extra;
+for (const [id, tills] of Object.entries(HOE_TILLS)) ITEMS[id].tills = tills;
 
 // Render a sprite to a data URL once and reuse it for every <img>. Keyed by the
 // item, since items may share a drawing with different palettes.
@@ -1992,6 +2049,132 @@ export const PIECE_ICONS = {
       '......oooo......',
     ],
   },
+  log_fence: {
+    palette: { ...WOOD, b: '#6e4a2b', B: '#9a6a3a', e: '#e0b57a' },
+    sprite: [
+      '................',
+      '................',
+      '.oo....oo....oo.',
+      'oeeo..oeeo..oeeo',
+      'obBo..obBo..obBo',
+      'oooooooooooooooo',
+      'oBbBBbBBBbBBbBBo',
+      'oooooooooooooooo',
+      'obBo..obBo..obBo',
+      'oooooooooooooooo',
+      'obbBbbbbBbbbbBbo',
+      'obbbbBbbbbbBbbbo',
+      'oooooooooooooooo',
+      'obBo..obBo..obBo',
+      'obBo..obBo..obBo',
+      'oooo..oooo..oooo',
+    ],
+  },
+  mailbox: {
+    palette: { ...WOOD, r: '#b5483a', R: '#8a3229', i: '#5d6470' },
+    sprite: [
+      '................',
+      '.....ooooooo....',
+      '....oWWWWWWWo.o.',
+      '...oWWWWWWWWworo',
+      '...oWddddddWworo',
+      '...oWdwwwwdWwrro',
+      '...oWdwiiwdWwoRo',
+      '...oWdwwwwdWwo.o',
+      '...oWddddddwwo..',
+      '...oooooooooooo.',
+      '.....oooooooo...',
+      '........owdo....',
+      '........owdo....',
+      '........owdo....',
+      '........owdo....',
+      '.......oooooo...',
+    ],
+  },
+  birdhouse: {
+    palette: { ...WOOD, r: '#a8492f', R: '#83361f', k: '#2a1a0e', b: '#8a5a3a', B: '#d99a6a', y: '#e0a23a' },
+    sprite: [
+      '.......oo.......',
+      '......orRo......',
+      '.....orrrRo.....',
+      '....orrrrrRo....',
+      '...orrrrrrrRo...',
+      '..oooooooooooo..',
+      '...oWWWWWWWwo...',
+      '...oWWWkkWWwo...',
+      '...oWWkkkkWwo...',
+      '...oWWWkkWWwob..',
+      '...oWWoooWWwobBy',
+      '...oWWWWWWWwobb.',
+      '...oddddddddo...',
+      '....oooooooo....',
+      '.......owdo.....',
+      '.......owdo.....',
+    ],
+  },
+  flagpole: {
+    palette: { ...WOOD, ...STONE, y: '#d9a441', r: '#b5483a', R: '#8a3229', f: '#f2ede0' },
+    sprite: [
+      '...oo...........',
+      '..oyyo..........',
+      '..owdooooooooo..',
+      '..owdorrrrrrrro.',
+      '..owdoffffffffo.',
+      '..owdorrrrrrro..',
+      '..owdoRRRRRoo...',
+      '..owdooooooo....',
+      '..owdo..........',
+      '..owdo..........',
+      '..owdo..........',
+      '..owdo..........',
+      '..owdo..........',
+      '.ooLMMdoo.......',
+      'oLLLMMMMddo.....',
+      'ooooooooooo.....',
+    ],
+  },
+  stone_cairn: {
+    palette: { ...STONE, g: '#6f9a3e' },
+    sprite: [
+      '................',
+      '................',
+      '......oooo......',
+      '.....oLLMdo.....',
+      '......oooo......',
+      '....oLLLMMdo....',
+      '.....oooooo.....',
+      '...oLLMMMMMdo...',
+      '....oooooooo....',
+      '..oLLLLMMMMddo..',
+      '...oooooooooo...',
+      '.oLLLMMMMMMMMdo.',
+      '..oooooooooooo..',
+      'oLLLLMMMMMMMMddo',
+      '.ogggoooooooooo.',
+      '................',
+    ],
+  },
+  clothesline: {
+    palette: { ...WOOD, r: '#b5483a', b: '#4a78b5', f: '#f2ede0', t: '#8a6a3a' },
+    sprite: [
+      '................',
+      'oooo........oooo',
+      'oWWo........oWWo',
+      '.owttttttttttwo.',
+      '.owrrrrfffbbbwo.',
+      '.owrrrrfffbbbwo.',
+      '.ow.rr.fffb.bwo.',
+      '.ow.rr.fffb.bwo.',
+      '.ow....fffb.bwo.',
+      '.ow.......b.bwo.',
+      '.ow..........wo.',
+      '.ow..........wo.',
+      '.ow..........wo.',
+      '.ow..........wo.',
+      '.od..........do.',
+      'oooo........oooo',
+    ],
+  },
   rope_fence: {
     palette: { ...WOOD, t: '#8a6a3a', T: '#c9a64e' },
     sprite: [
@@ -2139,6 +2322,27 @@ export const PIECE_ICONS = {
       '.ooo........ooo.',
     ],
   },
+  arcade: {
+    palette: { ...WOOD, r: '#b5483a', c: '#f2ede0', g: '#e0b23a', y: '#ffe7a3' },
+    sprite: [
+      '..oooooooooooo..',
+      '..oyrrrrrrrryo..',
+      '..oooooooooooo..',
+      '.oooooooooooooo.',
+      'orrccrrccrrccrro',
+      'orrccrrccrrccrro',
+      'oooooooooooooooo',
+      '.od....oo....do.',
+      '.od...oggo...do.',
+      '.od...oggo...do.',
+      '.od....oo....do.',
+      'oooooooooooooooo',
+      'oWWWWWWWWWWWWWWo',
+      'orrccrrccrrccrro',
+      'orrccrrccrrccrro',
+      'oooooooooooooooo',
+    ],
+  },
   farm_chest: {
     palette: { ...WOOD, i: '#5d6470', g: '#e0b23a' },
     sprite: [
@@ -2178,6 +2382,70 @@ export const PIECE_ICONS = {
       '..oppppDDppppo..',
       '.oooooooooooooo.',
       '................',
+      '................',
+    ],
+  },
+  lamp_post: {
+    palette: { o: '#2a2a30', i: '#4a4f58', I: '#7d8591', y: '#ffd166', Y: '#fff3b0' },
+    sprite: [
+      '................',
+      '......oooo......',
+      '.....oIIIIo.....',
+      '....oiyYYyio....',
+      '....oiYYYYio....',
+      '....oiyYYyio....',
+      '.....oiiiio.....',
+      '......oIio......',
+      '......oIio......',
+      '......oIio......',
+      '......oIio......',
+      '......oIio......',
+      '......oIio......',
+      '.....oiIIio.....',
+      '....oiiiiiio....',
+      '....oooooooo....',
+    ],
+  },
+  garden_bench: {
+    palette: { o: '#3b2412', W: '#d99b57', d: '#9a6a3a' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '..oooooooooooo..',
+      '..oWWWWWWWWWWo..',
+      '..oddddddddddo..',
+      '..oooooooooooo..',
+      '..odo......odo..',
+      'oooooooooooooooo',
+      'oWWWWWWWWWWWWWWo',
+      'oddddddddddddddo',
+      'oooooooooooooooo',
+      '.odo........odo.',
+      '.odo........odo.',
+      '.ooo........ooo.',
+    ],
+  },
+  // a boss's portal (shared/bosses.js): a stone arch round a purple swirl
+  parsnip_portal: {
+    palette: { o: '#2a2238', S: '#a9a79f', p: '#7a3fa0', P: '#b06fd0', w: '#f4e8ff' },
+    sprite: [
+      '................',
+      '.....oooooo.....',
+      '...ooSSSSSSoo...',
+      '..oSSppppppSSo..',
+      '..oSpPPPPPPpSo..',
+      '.oSpPwwwwwwPpSo.',
+      '.oSpPwPPPPwPpSo.',
+      '.oSpPwPwwPwPpSo.',
+      '.oSpPwPwPPwPpSo.',
+      '.oSpPwPPwwwPpSo.',
+      '.oSpPwwwPPPPpSo.',
+      '.oSpPPPPPPPPpSo.',
+      '.oSppppppppppSo.',
+      '.oSSSSSSSSSSSSo.',
+      '.oooooooooooooo.',
       '................',
     ],
   },

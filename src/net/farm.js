@@ -3,11 +3,13 @@
 // (src/main.js) and sends it along every PUSH_EVERY and when it is left; the
 // server's copy is the one a page starts from.
 //
-// This browser's farm is { id, token, rev, name } in localStorage (tp.farm): rev is
-// the server's revision of the farm this browser last saw. At start the page
-// opens the farm, and holds it from then on:
-// - no farm on the server yet: one is made from the save this browser has
-//   (so a farm played before there was a server copy comes along)
+// This browser's farm is { id, token, rev, name, username, color } in
+// localStorage (tp.farm): rev is the server's revision of the farm this
+// browser last saw; username and color, its account's (none: no account yet).
+// A browser gets its farm by making an account (register: on a new farm made
+// from the save this browser has, so a farm played before comes along) or by
+// logging in (login: the account's farm, which the page then reloads to play).
+// At start the page opens the farm, and holds it from then on:
 // - the server is at the rev we last saw: ours is as new or newer; it is sent
 // - another rev: another device has played since; the page starts from that
 // A page that no longer holds the farm (it was opened somewhere else since) is
@@ -81,10 +83,10 @@ export class FarmSync {
     try {
       if (this.farm) {
         try {
-          const { save, rev, roomRev = 0, helpers = 0, name } = await call('POST', '/api/farms/me/open', { farm: this.farm });
+          const { save, rev, roomRev = 0, helpers = 0, name, username = null, color = null } = await call('POST', '/api/farms/me/open', { farm: this.farm });
           const elsewhere = rev !== this.farm.rev;
           const tended = roomRev !== (this.farm.roomRev ?? 0);
-          Object.assign(this.farm, { rev, roomRev, helpers, name });
+          Object.assign(this.farm, { rev, roomRev, helpers, name, username, color });
           keep(this.farm);
           this.ready = true;
           if (elsewhere || tended) {
@@ -96,13 +98,10 @@ export class FarmSync {
           return null;
         } catch (e) {
           if (e.status !== 401) throw e;
-          // the server doesn't know this farm (it was started over): make it again from ours
+          // the server doesn't know this farm (it was started over): log in or make an account again
+          this.forget();
         }
       }
-      const { id, token, rev } = await call('POST', '/api/farms', { body: { save: local } });
-      this.farm = { id, token, rev, roomRev: 0, helpers: 0, name: '' };
-      keep(this.farm);
-      this.ready = true;
     } catch {
       // no server: the farm stays in this browser for now
     }
@@ -136,6 +135,49 @@ export class FarmSync {
     } finally {
       this.sending = false;
     }
+  }
+
+  // ---------- The account ----------
+  // { username, color }, or null with none (or no farm on the server yet)
+  account() {
+    return this.farm?.username ? { username: this.farm.username, color: this.farm.color } : null;
+  }
+
+  // Make an account: on this browser's farm, or on a new one made from local (the save)
+  async register(username, password, color, local) {
+    const farm = this.ready ? this.farm : null;
+    const out = await call('POST', '/api/account/register', { body: { username, password, color, save: local }, farm }).catch((e) => {
+      throw e.status ? e : new Error(NO_SERVER);
+    });
+    if (out.token) {
+      this.farm = { id: out.id, token: out.token, rev: out.rev, roomRev: 0, helpers: 0, name: '' };
+      this.ready = true;
+    }
+    Object.assign(this.farm, { username: out.username, color: out.color });
+    keep(this.farm);
+    return this.account();
+  }
+
+  // Log in: this browser plays the account's farm from now on (the page reloads to open it)
+  async login(username, password) {
+    await this.adopt(call('POST', '/api/account/login', { body: { username, password } }));
+  }
+
+  async setColor(color) {
+    const out = await this.me('/api/account/color', { color }, 'PUT');
+    this.farm.color = out.color;
+    keep(this.farm);
+    return this.account();
+  }
+
+  // Log out: this browser forgets the farm (its save goes too: src/main.js)
+  forget() {
+    this.ready = false;
+    this.pending = null;
+    this.farm = null;
+    try {
+      localStorage.removeItem(FARM_STORE);
+    } catch {}
   }
 
   // A pairing code for another device: { code, expiresIn }
@@ -212,10 +254,28 @@ export class FarmSync {
     return (await this.me('/api/farms/me/helping')).farms;
   }
 
+  // Friends (an account's): { friends: [{ id, name, color, online, where }], asks: [{ id, name }] }
+  friends() {
+    return this.me('/api/friends');
+  }
+
+  // Ask the farmer with this username to be friends: { name, friends } (friends: they had asked us, so now we are)
+  addFriend(username) {
+    return this.me('/api/friends/add', { username });
+  }
+
+  answerFriend(id, yes) {
+    return this.me('/api/friends/answer', { id, yes });
+  }
+
+  removeFriend(id) {
+    return this.me('/api/friends/remove', { id });
+  }
+
   // A call about this browser's farm (it needs one on the server)
-  me(path, body = {}) {
+  me(path, body = {}, method = 'POST') {
     if (!this.ready) return Promise.reject(new Error(`${NO_SERVER} Your farm is only in this browser for now.`));
-    return call('POST', path, { body, farm: this.farm }).catch((e) => {
+    return call(method, path, { body, farm: this.farm }).catch((e) => {
       throw e.status ? e : new Error(NO_SERVER);
     });
   }
@@ -252,7 +312,7 @@ export class FarmSync {
     }
     this.ready = false;
     this.pending = null;
-    this.farm = { id: got.id, token: got.token, rev: null, name: got.name ?? '' };
+    this.farm = { id: got.id, token: got.token, rev: null, name: got.name ?? '', username: got.username, color: got.color };
     keep(this.farm);
   }
 }

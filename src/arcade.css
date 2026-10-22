@@ -1,0 +1,173 @@
+/* The arcade: built from the backpack's pieces (inventory.css), like the workbench */
+.arcade-window {
+  width: min(640px, calc(100vw - 24px));
+  margin-top: 30px; /* room for the tabs */
+}
+
+/* ---------- The stake ---------- */
+.arc-stake {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 2px 36px 10px 0; /* (clear of the close button) */
+  font-size: 22px;
+}
+.arc-stake-label { font-weight: 700; font-size: 24px; }
+.arc-stake-in {
+  width: 7.5ch;
+  padding: 3px 8px;
+  border: 3px solid var(--inv-outline);
+  border-radius: 4px;
+  background: #fff8e8;
+  color: var(--inv-ink);
+  font: 700 24px var(--inv-font);
+  text-align: right;
+}
+.arc-stake-in:disabled { opacity: 0.7; }
+.arc-stake.short .arc-stake-in { color: var(--inv-red); }
+.arc-coin-icon { width: 24px; height: 24px; margin-left: -4px; }
+.arc-funds { margin-left: auto; opacity: 0.8; font-size: 20px; }
+
+.arc-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-height: 300px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 4px;
+  background: #3f7a4a; /* the green baize */
+  box-shadow: inset 3px 3px 0 #2d5a36, inset -2px -2px 0 #5c9a66;
+}
+.arc-say {
+  max-width: 100%;
+  padding: 6px 12px;
+  background: #fff3d6;
+  border: 3px solid var(--inv-outline);
+  border-radius: 10px;
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+}
+.arc-say.good { background: #fff1a8; }
+.arc-muted { opacity: 0.75; color: #e8f2e0; font-size: 18px; }
+.arc-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+/* ---------- Cards ---------- */
+.arc-hand { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.arc-card {
+  position: relative;
+  width: 52px;
+  height: 74px;
+  border: 3px solid var(--inv-outline);
+  border-radius: 6px;
+  background: #fffaf0;
+  color: #2a2a33;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s;
+  flex: none;
+}
+.arc-card.red { color: #c8302a; }
+.arc-card.back {
+  background: repeating-linear-gradient(45deg, #b5483a 0 6px, #f2ede0 6px 12px);
+}
+.arc-card-corner { position: absolute; left: 5px; top: 2px; font-size: 20px; font-weight: 700; line-height: 1; }
+.arc-card-pip { position: absolute; inset: 22px 0 0; text-align: center; font-size: 34px; line-height: 1; }
+.arc-card.pickable { cursor: pointer; }
+.arc-card.pickable:hover { transform: translateY(-3px); }
+.arc-card.picked { transform: translateY(-12px); box-shadow: 0 0 0 3px #ffd84a, 0 3px 0 rgba(0, 0, 0, 0.3); }
+.arc-card.picked.scoring { box-shadow: 0 0 0 3px #ffd84a, 0 0 12px 3px #ffe37a; }
+
+/* ---------- Coinflip ---------- */
+.arc-coin {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  margin: 14px 0;
+  transform-style: preserve-3d;
+}
+.arc-coin.tails { transform: rotateY(180deg); }
+.arc-coin.flipping.heads { animation: arc-flip-heads 1.1s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+.arc-coin.flipping.tails { animation: arc-flip-tails 1.1s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+@keyframes arc-flip-heads {
+  0% { transform: translateY(0) rotateY(0); }
+  45% { transform: translateY(-40px) rotateY(1080deg); }
+  100% { transform: translateY(0) rotateY(1800deg); }
+}
+@keyframes arc-flip-tails {
+  0% { transform: translateY(0) rotateY(0); }
+  45% { transform: translateY(-40px) rotateY(1080deg); }
+  100% { transform: translateY(0) rotateY(1980deg); }
+}
+.arc-coin-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 5px solid #8a5a12;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe58a, #e0b23a 60%, #b8862a);
+  box-shadow: inset 0 0 0 6px #f2c84e;
+  color: #8a5a12;
+  font-size: 64px;
+  font-weight: 700;
+  backface-visibility: hidden;
+}
+.arc-coin-face.tails { transform: rotateY(180deg); }
+
+/* ---------- Blackjack ---------- */
+.arc-table { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+.arc-hand-row { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.arc-hand-label { color: #fff8e8; font-size: 22px; font-weight: 700; text-shadow: 0 2px 0 #23452a; }
+
+/* ---------- Lucky Hand ---------- */
+.arc-lucky-top { display: flex; gap: 10px; width: 100%; align-items: flex-start; justify-content: space-between; }
+.arc-jokers { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.arc-offer { justify-content: center; flex: none; }
+.arc-joker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 130px;
+  padding: 6px 8px;
+  border: 3px solid var(--inv-outline);
+  border-radius: 6px;
+  background: #f4e1ff;
+  color: #4a2160;
+  font: 17px var(--inv-font);
+  line-height: 1.05;
+  text-align: left;
+}
+.arc-joker b { font-size: 20px; }
+.arc-joker.pick { cursor: pointer; width: 160px; padding: 10px; font-size: 19px; }
+.arc-joker.pick:hover { background: #ead0ff; transform: translateY(-2px); }
+.arc-ladder {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  color: #e8f2e0;
+  font-size: 17px;
+}
+.arc-tier { display: flex; justify-content: space-between; gap: 12px; opacity: 0.8; }
+.arc-tier.past { opacity: 0.5; }
+.arc-tier.on { opacity: 1; color: #ffe37a; }
+.arc-lucky-stats { display: flex; gap: 18px; color: #fff8e8; font-size: 22px; font-weight: 700; text-shadow: 0 2px 0 #23452a; }
+
+/* A phone held upright: smaller cards, so the hand fits on two rows */
+@media (max-width: 520px) {
+  .arcade-window .inv-tabs { right: 44px; }
+  .arcade-window .inv-tabs .inv-tab { padding: 4px 8px 8px; font-size: 20px; white-space: nowrap; }
+  .arc-card { width: 40px; height: 58px; }
+  .arc-card-corner { font-size: 17px; }
+  .arc-card-pip { inset: 18px 0 0; font-size: 26px; }
+  .arc-lucky-top { flex-direction: column; }
+  .arc-joker { width: 110px; }
+  .arc-joker.pick { width: 100%; }
+  .arc-offer { flex-direction: column; width: 100%; }
+}

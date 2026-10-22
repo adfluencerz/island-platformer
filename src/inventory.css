@@ -307,6 +307,19 @@
 /* (as wide as the backpack's grid, or the screen, less the window's padding) */
 .inv-build { width: min(calc(12 * var(--inv-slot) + 33px), calc(100vw - 76px)); }
 .inv-build-note { font-size: 20px; margin-bottom: 10px; opacity: 0.8; }
+.inv-build-groups { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.inv-build-group {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 3px;
+  background: var(--inv-paper-dark);
+  box-shadow: inset -2px -2px 0 var(--inv-slot-shade);
+  font: 600 20px var(--inv-font);
+  color: var(--inv-ink);
+  cursor: pointer;
+}
+.inv-build-group:hover:not(.on) { background: #ffdca4; }
+.inv-build-group.on { background: var(--inv-red); color: #fff7e8; box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.25); cursor: default; }
 .inv-build-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

@@ -103,8 +103,9 @@ export class Place {
     const base = cleanText(msg.name, MAX_NAME) || 'Farmer';
     let name = base;
     for (let k = 2; names.has(name); k++) name = `${base.slice(0, MAX_NAME - 3)}#${k}`;
+    // their own shirt color (picked with their account); else the first nobody wears
     const worn = new Set([...this.players.values()].map((p) => p.color));
-    const color = PLAYER_COLORS.find((c) => !worn.has(c)) ?? PLAYER_COLORS[0];
+    const color = PLAYER_COLORS.includes(msg.color) ? msg.color : PLAYER_COLORS.find((c) => !worn.has(c)) ?? PLAYER_COLORS[0];
 
     const p = this.seat({ id: this.nextId++, conn, key, name, color, ...extra });
     this.welcome(p, false);
@@ -163,7 +164,7 @@ export class Place {
         p.y = y;
         p.z = z;
         p.yaw = yaw;
-        p.f = msg.f & 0xff;
+        p.f = msg.f & 0x7ff;
         break;
       }
       case C.CHAT: {

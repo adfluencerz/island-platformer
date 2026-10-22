@@ -1,6 +1,6 @@
 import './inventory.css';
 import { ITEMS, PIECE_ICONS, spriteURL } from './items.js';
-import { PIECES } from '../shared/level.js';
+import { PIECES, BUILD_GROUPS } from '../shared/level.js';
 import { buzz } from './ui/touch.js';
 
 // ---------- Slot-based inventory (Stardew Valley style) ----------
@@ -15,7 +15,8 @@ import { buzz } from './ui/touch.js';
 //
 // Its Build tab (or B) picks a piece to build on the farm, or taking pieces
 // down: build mode (src/build.js, main.js) pays with the wood and stone in
-// the backpack.
+// the backpack. Its Skills tab (or K) shows how far each skill has come
+// (src/skills.js).
 
 export const COLS = 12;
 const ROWS = 3;
@@ -38,6 +39,7 @@ export const CATEGORIES = {
   Material: '#7a4a22',
   Mineral: '#7b3fb0',
   'Key Item': '#b8257a',
+  Relic: '#2f7fa8',
   Currency: '#a86e00',
 };
 const CATEGORY_ORDER = Object.keys(CATEGORIES);
@@ -85,14 +87,16 @@ function iconImg(parent) {
 // buildProblem(): why there is no building here ('' : there is).
 // building(): the piece build mode has now (null: not building).
 // inChest(item): how many the farm's chest has to build with too.
-export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null, inChest = () => 0 } = {}) {
+// renderSkills(el): draws the Skills tab into el.
+export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
   let open = false;
   let held = null; // stack carried on the cursor while the menu is open
   let lastFullNotice = 0;
-  let tab = 'pack'; // 'pack' | 'build'
+  let tab = 'pack'; // 'pack' | 'build' | 'skills'
+  let group = BUILD_GROUPS[0]; // the Build tab's group on show
 
   // ---------- DOM ----------
   function makeSlot(parent, index, label) {
@@ -126,8 +130,12 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   const buildTab = el('button', 'inv-tab inv-frame', tabsEl);
   buildTab.textContent = 'Build';
   buildTab.title = 'Build on the farm (B)';
+  const skillsTab = el('button', 'inv-tab inv-frame', tabsEl);
+  skillsTab.textContent = 'Skills';
+  skillsTab.title = 'Your skills (K)';
   const packEl = el('div', 'inv-pack', windowEl);
   const buildEl = el('div', 'inv-build', windowEl);
+  const skillsEl = el('div', 'inv-skills', windowEl);
   const closeBtn = el('button', 'inv-close', windowEl);
   closeBtn.textContent = '×';
   closeBtn.title = 'Close (I / Esc)';
@@ -180,9 +188,12 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
 
     packTab.classList.toggle('on', tab === 'pack');
     buildTab.classList.toggle('on', tab === 'build');
+    skillsTab.classList.toggle('on', tab === 'skills');
     packEl.hidden = tab !== 'pack';
     buildEl.hidden = tab !== 'build';
+    skillsEl.hidden = tab !== 'skills';
     if (open && tab === 'build') renderBuild();
+    if (open && tab === 'skills') renderSkills(skillsEl);
 
     heldEl.hidden = !held;
     if (held) {
@@ -201,8 +212,24 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     const problem = buildProblem();
     const note = el('div', 'inv-build-note', buildEl);
     note.textContent = problem || 'Pick something to build. E puts it where the see-through one is (the tile you point at, or in front of you), or click or tap a tile. What your backpack is short of comes out of your farm\'s chest. Taking a piece down gives back what it cost.';
+    // (a relic or a boss's statue shows once there is one to put on show, a
+    // boss's portal once there is a piece of its key; their groups, once there is one)
+    const shown = (id) => (PIECES[id].portal ? Object.keys(PIECES[id].cost).some((item) => toBuild(item) > 0)
+      : !(PIECES[id].relic || PIECES[id].statue) || toBuild(id) > 0);
+    const groups = BUILD_GROUPS.filter((g) => Object.keys(PIECES).some((id) => PIECES[id].group === g && shown(id)));
+    if (!groups.includes(group)) group = groups[0];
+    const tabsRow = el('div', 'inv-build-groups', buildEl);
+    for (const g of groups) {
+      const btn = el('button', 'inv-build-group' + (g === group ? ' on' : ''), tabsRow);
+      btn.type = 'button';
+      btn.textContent = g;
+      btn.addEventListener('click', () => {
+        group = g;
+        renderBuild();
+      });
+    }
     const cards = el('div', 'inv-build-cards', buildEl);
-    for (const id of [...Object.keys(PIECES), 'remove']) {
+    for (const id of [...Object.keys(PIECES).filter((id) => PIECES[id].group === group && shown(id)), 'remove']) {
       const def = PIECES[id];
       const short = def ? Object.entries(def.cost).find(([item, n]) => toBuild(item) < n) : null;
       const made = ITEMS[id]?.piece === id; // (a decoration, made at the workbench)
@@ -479,6 +506,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     if (next === open) return;
     if (!next && !putBack()) return;
     open = next;
+    if (open && PIECES[building()]) group = PIECES[building()].group; // (the Build tab opens where the piece in hand is)
     menuEl.hidden = !open;
     hotbarEl.hidden = open;
     tooltipEl.hidden = true;
@@ -494,11 +522,21 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   // ---------- Input ----------
   window.addEventListener('keydown', (e) => {
     if (e.target.closest?.('input, textarea, select')) return; // typing a name or a chat line
-    if (e.code === 'KeyI' && !e.repeat) setOpen(!open);
+    if (e.code === 'KeyI' && !e.repeat) {
+      if (!open) setTab('pack'); // (the bag opens on the backpack, even after the Build tab)
+      setOpen(!open);
+    }
     else if (e.code === 'KeyB' && !e.repeat) {
       if (open && tab === 'build') setOpen(false);
       else {
         setTab('build');
+        setOpen(true);
+      }
+    }
+    else if (e.code === 'KeyK' && !e.repeat) {
+      if (open && tab === 'skills') setOpen(false);
+      else {
+        setTab('skills');
         setOpen(true);
       }
     }
@@ -512,7 +550,9 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     select((selected + Math.sign(e.deltaY) + COLS) % COLS);
   }, { passive: true });
 
-  hotbarEl.addEventListener('mousedown', (e) => {
+  // (pointerdown: a second finger, while the thumb holds the stick, gets no mousedown)
+  hotbarEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     const slot = e.target.closest('[data-index]');
     if (slot) select(Number(slot.dataset.index));
   });
@@ -538,6 +578,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
   closeBtn.addEventListener('click', () => setOpen(false));
   packTab.addEventListener('click', () => setTab('pack'));
   buildTab.addEventListener('click', () => setTab('build'));
+  skillsTab.addEventListener('click', () => setTab('skills'));
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
   // A right click outside the window: put down what is carried, or close
   menuEl.addEventListener('mousedown', (e) => {

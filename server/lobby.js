@@ -7,20 +7,17 @@
 // whoever opens one may name the seed (the same seed, the same island),
 // otherwise it gets a fresh one.
 //
-// Public lobbies are listed (Browse) and are where Quick join puts you;
-// invite-only ones are reached only by their link. An empty lobby goes dormant
-// after IDLE_MS (long enough for a reload, or for whoever made it to share the
-// link before they join): it stops running, but is kept for DORMANT_MS, and
-// joining by its code (or from the list, or looking at its invite card)
-// wakes it up as it was, with whatever regrew in the meantime. Browse lists
-// the most recent QUIET_LISTED public dormant ones too, after the busy ones,
-// as quiet lobbies with nobody there, so there is somewhere to go back to
-// even when nobody else is about.
+// A lobby is a match: a farmer starts one, most often with friends they
+// invited (server/presence.js gathers them first), anyone may drop in while
+// it runs, and nothing on it grows back. Once the last farmer has left (and
+// IDLE_MS more, for a reload) it is thrown away. Public lobbies are listed
+// (Browse) and are where Quick join puts you; invite-only ones are reached
+// only by their link.
 //
-// Given a store (server/store.js), the lobbies, running and dormant, are saved
-// every few seconds when something has changed (and by flush(), when the
-// server stops), and put back when it starts: a restart is a short drop for
-// everyone, whose seats are held for RESTART_HOLD_MS so the pages get back in.
+// Given a store (server/store.js), the running lobbies are saved every few
+// seconds when something has changed (and by flush(), when the server stops),
+// and put back when it starts: a restart is a short drop for everyone, whose
+// seats are held for RESTART_HOLD_MS so the pages get back in.
 import { randomInt } from 'node:crypto';
 import { Room } from '../shared/room.js';
 import { MAX_PLAYERS } from '../shared/constants.js';
@@ -31,11 +28,8 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // (no 0 / O, 1 / I)
 const PUBLIC_CODE = 6;
 const PRIVATE_CODE = 10;
 export const CODE_RE = /^[A-Z2-9]{6,10}$/;
-const IDLE_MS = 90_000;
+const IDLE_MS = 30_000; // an empty lobby is thrown away after this
 const MAX_GAMES = 200;
-const DORMANT_MS = 7 * 24 * 3600_000;
-const MAX_DORMANT = 1000; // (past this the longest-dormant ones go)
-const QUIET_LISTED = 20; // dormant public lobbies Browse shows, the most recently left first
 const RESTART_HOLD_MS = 60_000;
 const SAVE_EVERY = 2000;
 // Per address: a few lobbies in a row, then one a minute
@@ -47,7 +41,6 @@ export class Lobby {
     this.log = log;
     this.store = store;
     this.rooms = new Map(); // code -> Room
-    this.dormant = new Map(); // code -> { room: its save, since }, the longest-dormant first
     this.changed = false; // (a room came or went; the rooms say for themselves what happened in them)
     this.creates = new Map(); // address -> { tokens, at }
     setInterval(() => this.reap(), 5000).unref();
@@ -61,7 +54,7 @@ export class Lobby {
     for (;;) {
       let code = '';
       for (let i = 0; i < length; i++) code += CODE_CHARS[randomInt(CODE_CHARS.length)];
-      if (!this.rooms.has(code) && !this.dormant.has(code)) return code;
+      if (!this.rooms.has(code)) return code;
     }
   }
 
@@ -90,31 +83,9 @@ export class Lobby {
     return room;
   }
 
-  // a lobby by its code; a dormant one wakes up
+  // a running lobby by its code (or null)
   find(code) {
-    return this.rooms.get(code) ?? this.wake(code);
-  }
-
-  wake(code) {
-    const d = this.dormant.get(code);
-    if (!d) return null;
-    this.dormant.delete(code);
-    try {
-      const room = this.add(Room.fromSave(d.room, { log: this.log }));
-      this.log(`lobby ${code} woke up (dormant ${Math.round((Date.now() - d.since) / 60_000)} min)`);
-      return room;
-    } catch (e) {
-      this.log(`lobby ${code} could not be woken: ${e.message}`);
-      this.changed = true;
-      return null;
-    }
-  }
-
-  sleep(code, room, since = Date.now()) {
-    room.close();
-    this.rooms.delete(code);
-    this.dormant.set(code, { room: room.toSave(), since });
-    this.changed = true;
+    return this.rooms.get(code) ?? null;
   }
 
   // Dev mode: create a lobby with a specific code for testing. Its island's
@@ -147,17 +118,9 @@ export class Lobby {
     return best ?? this.make({ name: 'Open meadow' });
   }
 
-  // The public lobbies: the running ones, then the quiet (dormant) ones
+  // The public lobbies running now
   list() {
-    const running = [...this.rooms.values()].filter((r) => !r.inviteOnly).map((r) => r.info());
-    const quiet = [];
-    for (const [code, { room, since }] of [...this.dormant].reverse()) {
-      if (quiet.length >= QUIET_LISTED) break;
-      if (room.inviteOnly) continue;
-      const max = room.maxPlayers || MAX_PLAYERS;
-      quiet.push({ code, name: room.name, seed: room.seed, players: 0, max, full: false, inviteOnly: false, rare: 0, quiet: true, since });
-    }
-    return [...running, ...quiet];
+    return [...this.rooms.values()].filter((r) => !r.inviteOnly).map((r) => r.info());
   }
 
   allowCreate(address) {
@@ -175,14 +138,10 @@ export class Lobby {
     const now = Date.now();
     for (const [code, room] of this.rooms) {
       if (room.players.size || now - room.emptySince < IDLE_MS) continue;
-      this.sleep(code, room, now);
-      this.log(`lobby ${code} went dormant (empty)`);
-    }
-    for (const [code, d] of this.dormant) {
-      if (now - d.since < DORMANT_MS && this.dormant.size <= MAX_DORMANT) break; // (oldest first: the rest are younger)
-      this.dormant.delete(code);
+      room.close();
+      this.rooms.delete(code);
       this.changed = true;
-      this.log(`lobby ${code} closed (dormant ${Math.round((now - d.since) / 3600_000)} h)`);
+      this.log(`lobby ${code} is over (everyone left)`);
     }
     for (const [address, a] of this.creates) {
       if (now - a.at > CREATE_BURST * CREATE_EVERY * 1000) this.creates.delete(address);
@@ -201,8 +160,7 @@ export class Lobby {
       rooms.push(room.toSave());
       room.changed = false;
     }
-    const dormant = [...this.dormant].map(([, d]) => d);
-    this.store.save({ savedAt: Date.now(), rooms, dormant });
+    this.store.save({ savedAt: Date.now(), rooms });
     this.changed = false;
   }
 
@@ -211,22 +169,14 @@ export class Lobby {
     this.save(true);
   }
 
-  // The lobbies as the store had them. Running ones with players in them run
-  // again, their seats held for the players to come back; the rest lie dormant.
+  // The lobbies as the store had them. Ones with players in them run again,
+  // their seats held for the players to come back; empty ones were over.
   restore(data) {
     if (!data) return;
     const now = Date.now();
     let running = 0;
-    for (const d of data.dormant ?? []) {
-      if (CODE_RE.test(d?.room?.code) && Number.isFinite(d.since) && now - d.since < DORMANT_MS) this.dormant.set(d.room.code, d);
-    }
     for (const save of data.rooms ?? []) {
-      if (!CODE_RE.test(save?.code)) continue;
-      this.dormant.delete(save.code);
-      if (!save.seats?.length) {
-        this.dormant.set(save.code, { room: save, since: now });
-        continue;
-      }
+      if (!CODE_RE.test(save?.code) || !save.seats?.length) continue;
       try {
         this.add(Room.fromSave(save, { log: this.log, holdUntil: now + RESTART_HOLD_MS }));
         running++;
@@ -235,6 +185,6 @@ export class Lobby {
       }
     }
     this.changed = false;
-    this.log(`lobbies put back: ${running} running, ${this.dormant.size} dormant`);
+    this.log(`lobbies put back: ${running} running`);
   }
 }

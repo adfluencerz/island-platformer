@@ -13,9 +13,24 @@ import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, woodFor, stoneFor, mostStone } from '../shared/level.js';
-import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths } from '../shared/worldgen.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
+import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
+import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
 import { fingerprint } from './seed-fingerprint.js';
+import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
+import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
+import { HOME_WILDS } from '../shared/homewilds.js';
+import { homeWildsSource } from './wilds.js';
+import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits } from '../shared/bosses.js';
+import { BOSSES } from '../shared/balance.js';
+import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
+import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
+import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
+import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
+import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
+
+// spot kinds only later generations grow (2 and up)
+const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS]);
 
 let passed = 0;
 async function test(name, fn) {
@@ -49,12 +64,35 @@ const join = (room, name, key = name) => {
 // the first spot of a kind (rooms are on the classic island unless told otherwise)
 const spotOf = (kind) => islandFor('classic').spots.findIndex(([k]) => k === kind);
 // tell the room we stand right on spot id
+// tree or rock id where the room has it (shared/wilds.js), as a page says it in a CHOP or MINE
+const treeOf = (wilds, id) => ({ id, x: wilds.trees[id].x, z: wilds.trees[id].z });
+const rockOf = (wilds, id) => ({ id, x: wilds.rocks[id].x, z: wilds.rocks[id].z, size: wilds.rocks[id].size });
+const FARM_WILDS = wildsFromWire(HOME_WILDS);
 function standAt(room, who, id) {
   const { x, y, z } = room.spots[id];
   room.message(who.p, { t: C.STATE, x, y: Math.max(y, 0.8), z, yaw: 0, f: 1 });
 }
 
 console.log('islands');
+await test('skills level up from their XP, and the overall level unlocks the double jump', () => {
+  assert.deepEqual(levelOf(0), { level: 1, into: 0, need: SKILLS.next[0] });
+  assert.equal(levelOf(SKILLS.next[0] - 1).level, 1);
+  assert.deepEqual(levelOf(SKILLS.next[0] + 5), { level: 2, into: 5, need: SKILLS.next[1] });
+  assert.deepEqual(levelOf(1e9), { level: SKILLS.max, into: 0, need: 0 });
+  const fresh = cleanSkills(null);
+  assert.equal(overallLevel(fresh), 5, 'every skill starts at level 1');
+  assert.deepEqual(cleanSkills({ farming: -3, mining: 'x', woodcutting: 12.7, extra: 9 }), { farming: 0, animals: 0, woodcutting: 12, mining: 0, fishing: 0 });
+  const xpTo = (level) => SKILLS.next.slice(0, level - 1).reduce((a, b) => a + b, 0);
+  const almost = { ...fresh, farming: xpTo(4), animals: xpTo(3), woodcutting: xpTo(4), mining: xpTo(2) };
+  assert.equal(overallLevel(almost), DOUBLE_JUMP.level - 1);
+  assert.ok(!canDoubleJump(almost));
+  assert.ok(canDoubleJump({ ...almost, mining: xpTo(3) }));
+  assert.equal(bonusChance('woodcutting', 1), 0);
+  assert.equal(swingsAt(TREE.hits, SKILLS.fewerSwings - 1), TREE.hits);
+  assert.equal(swingsAt(TREE.hits, SKILLS.fewerSwings), TREE.hits - 1);
+  assert.equal(swingsAt(2, SKILLS.max), 2, 'never under the fewest a lobby allows');
+});
+
 await test('the classic island is as it was made, and sound', () => {
   const classic = islandFor('classic');
   assert.equal(classic.spots.length, 28);
@@ -89,6 +127,7 @@ await test('old seeds (generation 1) grow exactly the islands they always did', 
 
 // Generations 2 and 3 are as settled as generation 1 now: pinned the same way.
 const LATER_SEEDS = {
+  9: {"mossy-cove-7-v9":163191364,"dewy-glade-31-v9":2456990911,"sunny-knoll-5-v9":1189004014,"golden-fen-0-v9":1161798591,"quiet-ridge-88-v9":2581909254,"willow-isle-12-v9":746226636,"pebble-nook-64-v9":502613636,"honey-grove-3-v9":3163829055},
   8: {"mossy-cove-7-v8":2495688328,"dewy-glade-31-v8":1583329832,"sunny-knoll-5-v8":186462849,"golden-fen-0-v8":2840815162,"quiet-ridge-88-v8":901564798,"willow-isle-12-v8":3187697367,"pebble-nook-64-v8":1809298910,"honey-grove-3-v8":596487143},
   7: {"mossy-cove-7-v7":861000100,"dewy-glade-31-v7":2645773252,"sunny-knoll-5-v7":3262897498,"golden-fen-0-v7":2913660827,"quiet-ridge-88-v7":1012903713,"willow-isle-12-v7":142691819,"pebble-nook-64-v7":2979833659,"honey-grove-3-v7":702780834},
   2: { 'mossy-cove-7-v2': 119939977, 'dewy-glade-31-v2': 2076144126, 'sunny-knoll-5-v2': 4173192289, 'golden-fen-0-v2': 1296267364, 'quiet-ridge-88-v2': 2011619196, 'willow-isle-12-v2': 4045709457, 'pebble-nook-64-v2': 869828886, 'honey-grove-3-v2': 2547208232 },
@@ -97,7 +136,7 @@ const LATER_SEEDS = {
   4: {"mossy-cove-7-v4":1587304027,"dewy-glade-31-v4":2535534902,"sunny-knoll-5-v4":4282641216,"golden-fen-0-v4":2506278968,"quiet-ridge-88-v4":1283944460,"willow-isle-12-v4":2433746912,"pebble-nook-64-v4":2936599587,"honey-grove-3-v4":3566523821},
   3: { 'mossy-cove-7-v3': 2325607642, 'dewy-glade-31-v3': 395772194, 'sunny-knoll-5-v3': 1431089034, 'golden-fen-0-v3': 572641172, 'quiet-ridge-88-v3': 2526362288, 'willow-isle-12-v3': 1353456352, 'pebble-nook-64-v3': 3529699339, 'honey-grove-3-v3': 2551931431 },
 };
-await test('generation 2 to 8 seeds grow exactly the islands they did, with nothing newer', () => {
+await test('generation 2 to 9 seeds grow exactly the islands they did, with nothing newer', () => {
   for (const [gen, seeds] of Object.entries(LATER_SEEDS)) {
     for (const [seed, print] of Object.entries(seeds)) {
       assert.equal(genOf(seed), Number(gen), seed);
@@ -107,7 +146,8 @@ await test('generation 2 to 8 seeds grow exactly the islands they did, with noth
       if (Number(gen) < 6) assert.ok(!islandFor(seed).field && !islandFor(seed).spots.some(([k]) => k === 'sunflower'), `"${seed}" grew generation 6 things`);
       if (Number(gen) < 7) assert.ok(!islandFor(seed).patch && !islandFor(seed).spots.some(([k]) => k === 'pumpkin'), `"${seed}" grew generation 7 things`);
       if (Number(gen) < 8) assert.ok(!islandFor(seed).glen && !islandFor(seed).spots.some(([k]) => k === 'fern'), `"${seed}" grew generation 8 things`);
-      assert.ok(!islandFor(seed).dunes && !islandFor(seed).spots.some(([k]) => k === 'seashell'), `"${seed}" grew generation 9 things`);
+      if (Number(gen) < 9) assert.ok(!islandFor(seed).dunes && !islandFor(seed).spots.some(([k]) => k === 'seashell'), `"${seed}" grew generation 9 things`);
+      assert.ok(!islandFor(seed).sky && !islandFor(seed).spots.some(([k]) => SKY_KINDS.includes(k)), `"${seed}" grew generation 10 things`);
     }
   }
 });
@@ -116,7 +156,7 @@ await test('generation 4 islands are generation 3 islands with a reed marsh and 
   assert.equal(genOf('dewy-glade-31-v4'), 4);
   let marshes = 0;
   for (let i = 0; i < 60; i++) {
-    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v4');
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v4');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
@@ -134,7 +174,7 @@ await test('generation 5 islands are generation 4 islands with a bluebell glade'
   assert.equal(genOf('dewy-glade-31-v5'), 5);
   let glades = 0;
   for (let i = 0; i < 60; i++) {
-    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v5');
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v5');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
@@ -152,7 +192,7 @@ await test('generation 6 islands are generation 5 islands with a sunflower field
   assert.equal(genOf('dewy-glade-31-v6'), 6);
   let fields = 0;
   for (let i = 0; i < 60; i++) {
-    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v6');
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v6');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
@@ -170,7 +210,7 @@ await test('generation 7 islands are generation 6 islands with a pumpkin patch',
   assert.equal(genOf('dewy-glade-31-v7'), 7);
   let patches = 0;
   for (let i = 0; i < 60; i++) {
-    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v7');
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v7');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
@@ -190,7 +230,7 @@ for (const [gen, name, area, kind, ground] of [[8, 'a fern glen', 'glen', 'fern'
     assert.equal(genOf(`dewy-glade-31-v${gen}`), gen);
     let found = 0;
     for (let i = 0; i < 60; i++) {
-      const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, `-v${gen}`);
+      const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, `-v${gen}`);
       const island = islandFor(seed);
       assert.deepEqual(checkIsland(island), [], seed);
       assert.equal(island.half, 68, `${seed}: as wide as generation 3`);
@@ -206,6 +246,97 @@ for (const [gen, name, area, kind, ground] of [[8, 'a fern glen', 'glen', 'fern'
   });
 }
 
+// Generation 10: sky isles, each up its own stair, with its relic and its two chests
+await test('generation 10 islands are generation 9 islands with sky isles overhead', () => {
+  assert.equal(genOf('dewy-glade-31-v10'), 10);
+  assert.equal(genOf('dewy-glade-31-v1'), 1);
+  let isles = 0;
+  const styles = new Set();
+  for (let i = 0; i < 60; i++) {
+    const seed = randomSeed(mulberry32(i));
+    assert.match(seed, /-v10$/);
+    const island = islandFor(seed);
+    assert.deepEqual(checkIsland(island), [], seed);
+    assert.ok(!islandFor(seed.replace(/-v10$/, '-v9')).sky, `${seed}: generation 9 has none`);
+    // the sky's spots come after the ground's, so those keep their ids
+    const first = island.spots.findIndex(([k]) => SKY_KINDS.includes(k));
+    if (first >= 0) assert.ok(island.spots.slice(first).every(([k]) => SKY_KINDS.includes(k)), `${seed}: the sky's spots come last`);
+    const sky = island.sky ?? [];
+    assert.ok(sky.length <= 3, seed);
+    assert.equal(new Set(sky.map((isle) => isle.style)).size, sky.length, `${seed}: each isle a style of its own`);
+    for (const isle of sky) {
+      isles++;
+      styles.add(isle.style);
+      assert.ok(isle.top >= 9 && isle.steps.length >= 6, seed);
+      const on = island.spots.filter(([, x, , z]) => onIsle(isle, x, z));
+      for (const kind of ['relic', 'sky_chest', 'sky_vault']) assert.equal(on.filter(([k]) => k === kind).length, 1, `${seed}: one ${kind} on each isle`);
+      const [, rx, , rz] = on.find(([k]) => k === 'relic');
+      assert.equal(relicAt(island, rx, rz), SKY_STYLES[isle.style].relic, seed);
+    }
+  }
+  assert.ok(isles >= 90, `most gen 10 islands have more than one sky isle (${isles} on 60)`);
+  assert.ok(styles.size >= 15, `the isles go round the styles (${styles.size} of ${SKY_STYLES.length})`);
+});
+
+await test('a sky isle chest opens once, for what is in it; the locked one takes a key; the relic is announced', () => {
+  const seed = randomSeed(mulberry32(3));
+  const room = new Room({ code: 'SKY', seed, rand: mulberry32(7) });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const [chest, vault, relic] = ['sky_chest', 'sky_vault', 'relic'].map((kind) => room.spots.findIndex((s) => s.kind === kind));
+  assert.equal(room.spots[chest].item, 'chest');
+  const inChest = room.spots[chest].bundle;
+  assert.ok(inChest.length >= 1 && room.spots[vault].bundle.length >= 1);
+  // the chest: whoever is there first, everything in it at once
+  standAt(room, a, chest);
+  room.message(a.p, { t: C.TAKE, id: chest });
+  const taken = b.conn.last(S.TAKEN);
+  assert.equal(taken.by, a.p.id);
+  assert.deepEqual(taken.items, inChest);
+  for (const [item, count] of inChest) if (item !== 'coin' && !RARE[item]) assert.ok(a.p.bag[item] >= count, `${item} in the bag (a bop could knock it loose)`);
+  standAt(room, b, chest);
+  room.message(b.p, { t: C.TAKE, id: chest });
+  assert.equal(b.conn.last(S.DENY)?.id, chest, 'already open');
+  // the locked one: not without a key
+  standAt(room, b, vault);
+  room.message(b.p, { t: C.TAKE, id: vault });
+  assert.equal(b.conn.last(S.DENY)?.id, vault, 'locked');
+  room.message(b.p, { t: C.TAKE, id: vault, key: true });
+  assert.equal(a.conn.last(S.TAKEN).id, vault);
+  assert.ok(a.conn.all(S.CHAT).some((m) => /unlocked/.test(m.text)), 'the lobby hears');
+  // the relic: its isle's, rare, and everyone hears who found it
+  const { item, x, z } = room.spots[relic];
+  assert.ok(RARE[item], 'a relic is a rare find');
+  assert.equal(item, relicAt(room.island, x, z));
+  assert.ok(room.island.sky.some((isle) => SKY_STYLES[isle.style].relic === item));
+  standAt(room, a, relic);
+  room.message(a.p, { t: C.TAKE, id: relic });
+  assert.equal(b.conn.last(S.TAKEN).item, item);
+  assert.ok(b.conn.all(S.CHAT).some((m) => m.text === `A found ${RARE[item].toLowerCase()}!`));
+});
+
+await test('every lobby has an old key somewhere, on a spot a save keeps it on', () => {
+  const hasKey = (room) => room.spots.some((s) => s.item === 'key' || s.bundle?.some(([item]) => item === 'key'));
+  for (let i = 0; i < 40; i++) {
+    const seed = i === 0 ? 'classic' : randomSeed(mulberry32(100 + i));
+    assert.ok(hasKey(new Room({ code: 'KEY', seed, rand: mulberry32(i) })), `a key on ${seed}`);
+  }
+  // nothing rolled one (the bottom of every loot table): one is put out anyway
+  const room = new Room({ code: 'KEY', seed: randomSeed(mulberry32(5)), rand: () => 0 });
+  const spot = room.spots.find((s) => s.item === 'key');
+  assert.ok(['meadow', 'ledge', 'sky'].includes(spot?.kind), 'on a meadow, ledge or sky spot');
+  assert.ok(!room.spots.some((s) => s.bundle?.some(([item]) => item === 'key')), 'not in a chest');
+  const back = Room.fromSave(room.toSave(), { rand: () => 0.5 });
+  assert.equal(back.spots[spot.id].item, 'key', 'still there after a restart');
+  // ...and never in place of golden seeds
+  const can = room.spots.filter((s) => ['meadow', 'ledge', 'sky'].includes(s.kind));
+  for (const s of can) Object.assign(s, { item: 'golden_seeds', count: 1 });
+  can.at(-1).item = 'coin';
+  room.hideKey();
+  assert.equal(can.at(-1).item, 'key');
+  assert.equal(can.filter((s) => s.item === 'golden_seeds').length, can.length - 1);
+});
+
 await test('new seeds carry their generation, and grow what it added', () => {
   assert.equal(genOf('dewy-glade-31-v2'), 2);
   assert.equal(genOf('dewy-glade-31-v25'), 1);
@@ -215,7 +346,7 @@ await test('new seeds carry their generation, and grow what it added', () => {
   assert.ok(normalizeSeed(randomSeed(() => 0.999)).endsWith(`-v${CURRENT_GEN}`), 'the longest seed still fits its marker');
   let heaths = 0;
   for (let i = 0; i < 40; i++) {
-    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v2');
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v2');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     if (island.heath) {
@@ -232,7 +363,7 @@ await test('new seeds carry their generation, and grow what it added', () => {
 await test('generation 3 islands: twice as wide, with climbs, rings of toadstools and trails out to every wood', () => {
   assert.equal(genOf('dewy-glade-31-v3'), 3);
   for (let i = 0; i < 120; i++) {
-    const seed = randomSeed(mulberry32(i)).replace(/-v\d$/, '-v3');
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v3');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     const narrow = islandFor(seed.replace(/-v3$/, '-v2'));
@@ -241,7 +372,7 @@ await test('generation 3 islands: twice as wide, with climbs, rings of toadstool
     assert.ok(new Set(island.terraces.map((step) => step[5])).size >= 2, `${seed}: more than one climb`);
     assert.ok(new Set(island.toadstools.map((cap) => cap[4])).size >= 2, `${seed}: more than one ring of toadstools`);
     assert.ok(island.spots.length >= 50, `${seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower' && k !== 'pumpkin' && k !== 'fern' && k !== 'seashell')) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => !LATER_KINDS.has(k))) assert.ok(island.spots.some(([k]) => k === kind), `${seed} has no ${kind}`);
     // every wood has a trail into it
     for (const [x, z, r] of island.woods) assert.ok(distToPaths(x, z, island.trails) < r, `${seed}: no trail to the wood at ${x}, ${z}`);
   }
@@ -249,10 +380,10 @@ await test('generation 3 islands: twice as wide, with climbs, rings of toadstool
 
 await test('every seed grows a sound island: spots on land, reachable, not inside a cliff or a toadstool', () => {
   for (let i = 0; i < 300; i++) {
-    const island = islandFor(randomSeed(mulberry32(i)).replace(/-v\d$/, '') + i);
+    const island = islandFor(randomSeed(mulberry32(i)).replace(/-v\d+$/, '') + i);
     assert.deepEqual(checkIsland(island), [], `seed ${island.seed}`);
     assert.ok(island.spots.length >= 25, `seed ${island.seed} has ${island.spots.length} spots`);
-    for (const kind of Object.keys(SPOT_KINDS).filter((k) => k !== 'heather' && k !== 'cattail' && k !== 'bluebell' && k !== 'sunflower' && k !== 'pumpkin' && k !== 'fern' && k !== 'seashell')) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
+    for (const kind of Object.keys(SPOT_KINDS).filter((k) => !LATER_KINDS.has(k))) assert.ok(island.spots.some(([k]) => k === kind), `seed ${island.seed} has no ${kind}`);
   }
 });
 
@@ -319,37 +450,42 @@ await test('spots: whoever gets there first, checked against position, counted',
   assert.equal(b.conn.last(S.TAKEN).item, 'berries');
 });
 
-await test('trees: felled by whoever finishes first, next to it, not too fast; they grow back', () => {
+await test('trees: felled by whoever finishes first, next to it, not too fast; they stay down', () => {
   const room = new Room({ code: 'TEST11' });
   const a = join(room, 'A');
   const b = join(room, 'B');
   const at = (who, x, z) => room.message(who.p, { t: C.STATE, x, y: 0.8, z, yaw: 0, f: 1 });
-  const tree = { id: 7, x: 10, z: -3 };
-  at(a, 0, 0);
+  const tree = treeOf(room.wilds, 7);
+  at(a, tree.x + 6, tree.z);
   room.message(a.p, { t: C.CHOP, ...tree });
   assert.equal(a.conn.last(S.CHOP_DENY)?.id, 7, 'too far');
-  at(a, 11, -3);
+  at(a, tree.x + 1, tree.z);
+  room.message(a.p, { t: C.CHOP, ...tree, x: tree.x + 3 });
+  assert.equal(a.conn.last(S.CHOP_DENY)?.id, 7, 'not where it stands');
   room.message(a.p, { t: C.CHOP, ...tree });
   const felled = b.conn.last(S.FELLED);
   assert.equal(felled.id, 7);
   assert.equal(felled.by, a.p.id);
-  assert.ok(felled.count >= TREE.wood[0] && felled.count <= TREE.wood[1]);
+  assert.ok(felled.count >= TREE.wood[0] && felled.count <= mostWood(room.wilds.trees[7].scale), 'as much wood as a tree that size gives');
   assert.equal(a.p.wood, felled.count);
-  at(b, 9, -3);
+  at(b, tree.x - 1, tree.z);
   room.message(b.p, { t: C.CHOP, ...tree });
   assert.equal(b.conn.last(S.CHOP_DENY)?.id, 7, 'already down');
-  room.message(a.p, { t: C.CHOP, id: 8, x: 11.5, z: -3 });
+  const next = treeOf(room.wilds, 8);
+  at(a, next.x + 1, next.z);
+  room.message(a.p, { t: C.CHOP, ...next });
   assert.equal(a.conn.last(S.CHOP_DENY)?.id, 8, 'faster than an axe');
-  room.message(a.p, { t: C.CHOP, id: -1, x: 11, z: -3 });
-  room.message(a.p, { t: C.CHOP, id: 'x', x: 11, z: -3 });
-  assert.equal(a.conn.all(S.CHOP_DENY).length, 4, 'nonsense ids are turned down');
-  // a newcomer sees it down; then it grows back for everyone
+  room.message(a.p, { t: C.CHOP, id: -1, x: next.x, z: next.z });
+  room.message(a.p, { t: C.CHOP, id: 'x', x: next.x, z: next.z });
+  room.message(a.p, { t: C.CHOP, id: room.wilds.trees.length, x: next.x, z: next.z });
+  assert.equal(a.conn.all(S.CHOP_DENY).length, 6, 'nonsense ids are turned down');
+  // a newcomer sees it down, and it never grows back
   const c = join(room, 'C');
   assert.deepEqual(c.conn.last(S.WELCOME).felled, [7]);
   assert.equal(room.rosterList().find((p) => p.id === a.p.id).wood, felled.count);
   room.update(Date.now() + TREE.regrow[1] * 1000 + 100);
-  assert.equal(b.conn.last(S.REGROWN)?.id, 7);
-  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).felled, []);
+  assert.equal(b.conn.last(S.REGROWN), undefined);
+  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).felled, [7]);
 });
 
 await test('bigger trees give more wood, within the sizes trees come in', () => {
@@ -360,43 +496,132 @@ await test('bigger trees give more wood, within the sizes trees come in', () => 
   assert.ok(woodFor(0.8, luck(0)) >= 1, 'even a little one gives some');
   assert.equal(woodFor(50, luck(0.99)), woodFor(TREE.size[1], luck(0.99)), 'no giants');
   assert.equal(woodFor(undefined, luck(0.5)), woodFor(1, luck(0.5)), 'no size: an ordinary tree');
-  // and the room goes by the size the page says
+  // and the room goes by the size it has the tree as (shared/wilds.js), whatever the page says
   const room = new Room({ code: 'TEST12', rand: luck(0.99) });
   const a = join(room, 'A');
-  room.message(a.p, { t: C.STATE, x: 11, y: 0.8, z: -3, yaw: 0, f: 1 });
-  room.message(a.p, { t: C.CHOP, id: 3, x: 10, z: -3, size: 1.5 });
-  assert.equal(a.conn.last(S.FELLED).count, woodFor(1.5, luck(0.99)));
+  const tree = treeOf(room.wilds, 3);
+  room.message(a.p, { t: C.STATE, x: tree.x + 1, y: 0.8, z: tree.z, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.CHOP, ...tree, size: 50 });
+  assert.equal(a.conn.last(S.FELLED).count, woodFor(room.wilds.trees[3].scale, luck(0.99)));
 });
 
-await test('rocks: broken by whoever finishes first, next to it, not too fast; a new one surfaces', () => {
+await test('rocks: broken by whoever finishes first, next to it, not too fast; they stay broken', () => {
   const room = new Room({ code: 'TEST13' });
   const a = join(room, 'A');
   const b = join(room, 'B');
   const at = (who, x, z) => room.message(who.p, { t: C.STATE, x, y: 0.8, z, yaw: 0, f: 1 });
-  const rock = { id: 4, x: 6, z: 2, size: 0.4 };
-  at(a, 0, 0);
+  const rock = rockOf(room.wilds, 4);
+  at(a, rock.x + 6, rock.z);
   room.message(a.p, { t: C.MINE, ...rock });
   assert.equal(a.conn.last(S.MINE_DENY)?.id, 4, 'too far');
-  at(a, 7, 2);
+  at(a, rock.x + 1, rock.z);
   room.message(a.p, { t: C.MINE, ...rock });
   const mined = b.conn.last(S.MINED);
   assert.equal(mined.id, 4);
   assert.equal(mined.by, a.p.id);
   assert.ok(mined.count >= ROCK.stone[0] && mined.count <= ROCK.stone[1]);
   assert.equal(a.p.stone, mined.count);
-  at(b, 6, 3);
+  at(b, rock.x, rock.z + 1);
   room.message(b.p, { t: C.MINE, ...rock });
   assert.equal(b.conn.last(S.MINE_DENY)?.id, 4, 'already broken');
-  room.message(a.p, { t: C.MINE, id: 5, x: 7.5, z: 2 });
+  const next = rockOf(room.wilds, 5);
+  at(a, next.x + 1, next.z);
+  room.message(a.p, { t: C.MINE, ...next });
   assert.equal(a.conn.last(S.MINE_DENY)?.id, 5, 'faster than a pickaxe');
-  room.message(a.p, { t: C.MINE, id: -1, x: 7, z: 2 });
-  room.message(a.p, { t: C.MINE, id: 'x', x: 7, z: 2 });
+  room.message(a.p, { t: C.MINE, id: -1, x: next.x, z: next.z });
+  room.message(a.p, { t: C.MINE, id: 'x', x: next.x, z: next.z });
   assert.equal(a.conn.all(S.MINE_DENY).length, 4, 'nonsense ids are turned down');
   assert.deepEqual(join(room, 'C').conn.last(S.WELCOME).mined, [4]);
   assert.equal(room.rosterList().find((p) => p.id === a.p.id).stone, mined.count);
   room.update(Date.now() + ROCK.regrow[1] * 1000 + 100);
-  assert.equal(b.conn.last(S.RESURFACED)?.id, 4);
-  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, []);
+  assert.equal(b.conn.last(S.RESURFACED), undefined);
+  assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, [4]);
+});
+
+await test('trees and rocks: the room places them, on dry land at ground level, the same every time', () => {
+  const seeds = ['classic', 'mossy-cove-7'];
+  for (let gen = 2; gen <= CURRENT_GEN; gen++) for (let i = 0; i < 3; i++) seeds.push(randomSeed(mulberry32(100 * gen + i)).replace(/-v\d+$/, `-v${gen}`));
+  for (const seed of seeds) {
+    const island = islandFor(seed);
+    const wilds = growWilds(island);
+    assert.ok(wilds.trees.length > 20 && wilds.rocks.length > 20, `${seed}: a wood and some rocks`);
+    assert.deepEqual(wildsToWire(growWilds(island, { cached: false })), wildsToWire(wilds), `${seed}: the same every time`);
+    for (const [kind, list, reach] of [['tree', wilds.trees, (t) => 0.8 * t.scale], ['rock', wilds.rocks, (r) => 0.9 * r.size]]) {
+      list.forEach((thing, id) => {
+        assert.ok(thing.sites.length >= 1 && thing.sites.length <= 3);
+        assert.deepEqual(thing.sites[0], [thing.x, thing.z]);
+        for (const [x, z] of thing.sites) {
+          const where = `${seed}: ${kind} ${id} at ${x}, ${z}`;
+          const r = reach(thing);
+          for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+            const ground = island.groundAt(Math.round(x + dx), Math.round(z + dz));
+            assert.ok(ground && ground !== 'pond', `${where} reaches out over the water`);
+          }
+          assert.equal(island.floorAt(x, z), 0, `${where} is not at ground level`);
+          assert.equal(island.topOver(x, z), null, `${where} is inside a cliff or under a toadstool`);
+          assert.equal(island.skyOver(x, z, 1), null, `${where} is under a sky isle`);
+          assert.ok(Math.hypot(x - island.spawn.x, z - island.spawn.z) > STONE_CIRCLE + 0.8, `${where} is in the stone circle`);
+          assert.ok(island.spots.every(([, sx, , sz]) => Math.hypot(x - sx, z - sz) >= 1), `${where} is on a spot`);
+        }
+      });
+    }
+  }
+  // and the farm's: kept in shared/homewilds.js, on the farm's grass and sand, clear of the pens, the stall and the platforms
+  assert.equal(readFileSync(new URL('../shared/homewilds.js', import.meta.url), 'utf8'), homeWildsSource(), 'shared/homewilds.js is out of date: npm run wilds');
+  for (const thing of [...FARM_WILDS.trees, ...FARM_WILDS.rocks]) {
+    for (const [x, z] of thing.sites) {
+      assert.ok(Math.max(Math.abs(x), Math.abs(z)) < HOME_HALF - 0.5, `the farm's ${x}, ${z} is off the edge`);
+      assert.ok(HOME_KEEP_CLEAR.every(([kx, kz, r]) => Math.hypot(x - kx, z - kz) >= r), `the farm's ${x}, ${z} is in a pen or by the stall`);
+      assert.ok(HOME_PLATFORMS.every((p) => Math.abs(x - p.x) >= p.w / 2 || Math.abs(z - p.z) >= p.d / 2), `the farm's ${x}, ${z} is under a platform`);
+    }
+  }
+});
+
+await test('a shuffle is the same everywhere: every number kept, the same order for the same draws', () => {
+  for (let i = 0; i < 200; i++) {
+    const order = shuffled([2, 3, 4, 5, 7, 9], mulberry32(i));
+    assert.deepEqual([...order].sort((a, b) => a - b), [2, 3, 4, 5, 7, 9]);
+    assert.deepEqual(shuffled([2, 3, 4, 5, 7, 9], mulberry32(i)), order);
+  }
+});
+
+await test('the room sends every page where its trees and rocks stand; a giant is one of them', () => {
+  const room = new Room({ code: 'TEST30', seed: 'mossy-cove-7' });
+  const welcome = join(room, 'A').conn.last(S.WELCOME);
+  assert.deepEqual(welcome.wilds, wildsToWire(room.wilds));
+  assert.deepEqual(wildsFromWire(JSON.parse(JSON.stringify(welcome.wilds))), room.wilds, 'and back, as the page reads it');
+  assert.equal(wildsFromWire({ trees: [[1, 1, 1]], rocks: [] }), null, 'nonsense is not a forest');
+  assert.deepEqual(room.giants.counts, { tree: room.wilds.trees.length, rock: room.wilds.rocks.length }, 'without a page saying how many');
+  const tree = room.wilds.trees[0];
+  assert.deepEqual(siteOf(tree, tree.sites.length), tree.sites[0], 'round and round its places');
+});
+
+await test('a bop knocks things loose onto the ground, never into the air or the sea', () => {
+  const room = new Room({ code: 'TEST31' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const { x: sx, z: sz } = room.island.spawn;
+  const bop = (by, y) => {
+    room.message(by.p, { t: C.STATE, x: sx + 8, y: 0.8, z: sz, yaw: 0, f: 1 });
+    room.message(b.p, { t: C.STATE, x: sx + 8, y, z: sz + 1.2, yaw: 0, f: 1 });
+    b.p.bag = { wood: 3 };
+    b.p.boppedAt = 0;
+    by.p.bopAt = 0;
+    room.message(by.p, { t: C.BOP, weapon: 'wooden_sword', yaw: 0 });
+  };
+  bop(a, 1.9); // (B jumping)
+  assert.equal(a.conn.last(S.DROP).y, GROUND_STAND_Y, 'down on the ground');
+  // out over the sea: nothing drops (it stays in the bag)
+  const sea = { x: room.island.half + 5, z: 0 };
+  b.p.bag = { wood: 3 };
+  b.p.x = sea.x;
+  b.p.z = sea.z;
+  assert.equal(room.knockLoose(b.p, 1, Date.now()), null);
+  assert.equal(b.p.bag.wood, 3);
+  // up on a terrace: on the terrace
+  const [tx, tz, , , top] = room.island.terraces[0];
+  assert.equal(room.groundUnder(tx, top + GROUND_STAND_Y + 1.5, tz), top);
+  assert.equal(room.groundUnder(tx, GROUND_STAND_Y, tz), 0, 'not if they are under it');
 });
 
 await test('bopping: the farmer in front, in reach, knocked back; what they gathered drops, for anyone to pick up', () => {
@@ -466,27 +691,25 @@ await test('bigger rocks give more stone, within the sizes rocks come in', () =>
   assert.ok(mostStone(1.1) >= stoneFor(1.1, luck(0.99)));
   const room = new Room({ code: 'TEST14', rand: luck(0.99) });
   const a = join(room, 'A');
-  room.message(a.p, { t: C.STATE, x: 7, y: 0.8, z: 2, yaw: 0, f: 1 });
-  room.message(a.p, { t: C.MINE, id: 2, x: 6.2, z: 2, size: 1 });
-  assert.equal(a.conn.last(S.MINED).count, stoneFor(1, luck(0.99)));
+  const rock = rockOf(room.wilds, 2);
+  room.message(a.p, { t: C.STATE, x: rock.x + 1, y: 0.8, z: rock.z, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.MINE, ...rock, size: 40 });
+  assert.equal(a.conn.last(S.MINED).count, stoneFor(rock.size, luck(0.99)), 'the room goes by its own size');
 });
 
-await test('an emptied spot grows back after a while, with a fresh roll', () => {
+await test('an emptied spot stays empty: nothing in a lobby grows back', () => {
   const room = new Room({ code: 'TEST04' });
   const a = join(room, 'A');
   const id = spotOf('mushroom');
   standAt(room, a, id);
   room.message(a.p, { t: C.TAKE, id });
-  const now = Date.now();
-  room.update(now + 5_000);
-  assert.equal(room.spots[id].item, null, 'not yet');
   const [, slowest] = SPOT_KINDS.mushroom.regrow;
-  room.update(now + slowest * 1000 + 100);
-  assert.ok(room.spots[id].item);
-  assert.equal(a.conn.last(S.SPOT).id, id);
+  room.update(Date.now() + slowest * 1000 * 100);
+  assert.equal(room.spots[id].item, null);
+  assert.equal(a.conn.last(S.SPOT), undefined);
 });
 
-await test('rare finds are announced when they turn up and when someone takes one', () => {
+await test('rare finds are announced when someone takes one', () => {
   const lucky = () => 0.97; // (the top of every loot table: the rare end)
   const room = new Room({ code: 'TEST05', rand: lucky });
   const a = join(room, 'A');
@@ -496,10 +719,8 @@ await test('rare finds are announced when they turn up and when someone takes on
   assert.ok(room.info().rare > 0, 'the lobby list says rare finds are about');
   standAt(room, a, id);
   room.message(a.p, { t: C.TAKE, id });
-  assert.match(b.conn.last(S.CHAT).text, /^A found (golden seeds|an old key)!$/);
+  assert.match(b.conn.last(S.CHAT).text, /^A found (golden seeds|an old key|a key piece to the .+)!$/);
   assert.equal(a.p.rares, 1);
-  room.update(Date.now() + 120_000);
-  assert.ok(b.conn.all(S.CHAT).some((m) => /sparkles up on a ledge/.test(m.text)));
 });
 
 await test('a dropped player gets their seat back; heading home gives it up', () => {
@@ -555,9 +776,12 @@ await test('a saved room comes back as it was: spots, felled trees, broken rocks
   const id = room.spots.findIndex((s) => s.kind === 'meadow');
   standAt(room, a, id);
   room.message(a.p, { t: C.TAKE, id });
-  room.message(a.p, { t: C.STATE, x: 11, y: 0.8, z: -3, yaw: 0, f: 1 });
-  room.message(a.p, { t: C.CHOP, id: 5, x: 10, z: -3 });
-  room.message(a.p, { t: C.MINE, id: 9, x: 10.5, z: -2, size: 0.5 });
+  const tree = treeOf(room.wilds, 5);
+  const rock = rockOf(room.wilds, 9);
+  room.message(a.p, { t: C.STATE, x: tree.x + 1, y: 0.8, z: tree.z, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.CHOP, ...tree });
+  room.message(a.p, { t: C.STATE, x: rock.x + 1, y: 0.8, z: rock.z, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.MINE, ...rock });
   room.createdAt -= 3_600_000; // an hour in
   assert.ok(room.changed);
 
@@ -606,39 +830,23 @@ await test('a save from before a change keeps only what still fits', () => {
   assert.deepEqual(back.rosterList().map(({ name, color, finds }) => [name, color, finds]), [['Ab', PLAYER_COLORS[0], 0]]);
 });
 
-await test('an empty lobby goes dormant, wakes by its code, and is let go after a week', () => {
+await test('an empty lobby is thrown away a little after the last farmer leaves', () => {
   const kept = [];
   const lobby = new Lobby({ log: () => {}, store: { load: () => null, save: (d) => kept.push(d) } });
-  const room = lobby.make({ name: 'Sleepy', seed: 'dewy glade 31' });
+  const room = lobby.make({ name: 'Brief', seed: 'dewy glade 31' });
   const a = join(room, 'A');
-  const id = room.spots.findIndex((s) => s.kind === 'ledge');
-  standAt(room, a, id);
-  room.message(a.p, { t: C.TAKE, id });
+  assert.deepEqual(lobby.list().map((l) => l.code), [room.code]);
   room.leave(a.p, { hold: false });
-  room.emptySince -= 91_000;
+  room.emptySince -= 10_000;
   lobby.reap();
-  assert.equal(lobby.rooms.size, 0);
-  assert.deepEqual(lobby.list().map((l) => [l.code, l.quiet, l.players]), [[room.code, true, 0]], 'listed as quiet while dormant');
-  const hidden = lobby.make({ name: 'Secret', inviteOnly: true });
-  hidden.emptySince -= 91_000;
-  lobby.reap();
-  assert.equal(lobby.list().length, 1, 'an invite-only one stays unlisted, dormant too');
-  lobby.dormant.delete(hidden.code);
-  assert.equal(room.timer, null, 'stopped');
-  const woke = lobby.find(room.code);
-  assert.ok(woke && woke !== room);
-  assert.equal(woke.seed, 'dewy-glade-31');
-  assert.equal(woke.spots[id].item, null, 'what was taken is still gone');
-  assert.equal(lobby.list().length, 1);
-  woke.emptySince -= 91_000;
-  lobby.reap();
-  lobby.dormant.get(room.code).since -= 8 * 24 * 3600_000;
+  assert.equal(lobby.find(room.code), room, 'not yet: a reload is quick');
+  room.emptySince -= 25_000;
   lobby.reap();
   assert.equal(lobby.find(room.code), null);
+  assert.equal(room.timer, null, 'stopped');
+  assert.deepEqual(lobby.list(), []);
   lobby.save();
-  assert.deepEqual(kept.at(-1).dormant, []);
   assert.deepEqual(kept.at(-1).rooms, []);
-  woke.close();
 });
 
 await test('the store writes atomically and sets aside a file it cannot read', () => {
@@ -750,6 +958,34 @@ await test('a farm\'s name is one of a kind, whatever the capitals and punctuati
   assert.ok(!farms.names.has('sunny-acres'));
   assert.equal((await farms.recover({ name: 'Clover Field', pin: '482913' })).id, a.id, 'the old PIN still works');
   assert.equal(JSON.stringify(a).includes('482913'), false, 'the PIN itself is not kept');
+});
+
+await test('an account: made with a username, password and shirt color, logged in from another device, wrong passwords lock it', async () => {
+  const dir = mkdtempSync(joinPath(tmpdir(), 'farms-'));
+  try {
+    let farms = new Farms({ dir, log: () => {} });
+    const made = await farms.register({ username: 'Niels', password: 'turnips4', color: PLAYER_COLORS[2], save: aSave(7) }, null, 'p1');
+    assert.equal(made.username, 'Niels');
+    assert.ok(made.token, 'a new farm, from the save');
+    assert.ok(!readFileSync(joinPath(dir, `${made.id}.json`), 'utf8').includes('turnips4'), 'the password itself is not kept');
+    assert.equal((await farms.register({ username: 'niels!', password: 'another1', color: PLAYER_COLORS[0], save: aSave() }, null, 'p2')).status, 409, 'taken');
+    assert.equal((await farms.register({ username: 'Bo Peep', password: 'short', color: PLAYER_COLORS[0], save: aSave() }, null, 'p2')).status, 400, 'too short');
+    // an old farm without an account gets one, keeping its id
+    const old = farms.create(aSave(3), 'p3');
+    const attached = await farms.register({ username: 'Ann', password: 'hollyhock', color: PLAYER_COLORS[1] }, farms.auth(bearer(old)), 'p3');
+    assert.equal(attached.id, old.id);
+    farms = new Farms({ dir, log: () => {} }); // (a restart: the usernames are gathered again)
+    const back = await farms.login({ username: 'NIELS', password: 'turnips4' });
+    assert.equal(back.id, made.id);
+    assert.equal(back.color, PLAYER_COLORS[2]);
+    assert.equal(farms.auth(bearer(back)).save.backpack.gold, 7);
+    assert.deepEqual(farms.setColor(farms.auth(bearer(back)), PLAYER_COLORS[5]), { username: 'Niels', color: PLAYER_COLORS[5] });
+    assert.equal(farms.open(farms.auth(bearer(back)), 'p4').color, PLAYER_COLORS[5]);
+    for (let i = 0; i < 5; i++) assert.equal((await farms.login({ username: 'Niels', password: 'wrong-one' })).status, 403);
+    assert.equal((await farms.login({ username: 'Niels', password: 'turnips4' })).status, 429, 'locked a while');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 await test('a farm comes back with its name and PIN, as a device of its own; wrong PINs lock it a while', async () => {
@@ -883,8 +1119,8 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.equal(ann.conn.last(S.FARM_DENY).op, 'unbuild', 'too far');
   room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
   assert.deepEqual(ann.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,3', piece: 'wood_fence', by: bo.p.id });
-  // gates, arches, arbors, low walls, rail and picket fences, hedges, palisades, cobbles, gravel, stepping stones, wells, lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, wattle fences, troughs, stone benches, sundials, wheelbarrows, rope fences, log benches, compost bins, milk churns, dovecotes and the blocks to climb on (boulders too) are pieces too
-  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar', 'low_stone_wall', 'wood_palisade', 'wood_barrel', 'straw_bale', 'straw_stack', 'log_tower', 'stone_arch', 'cobble_path', 'rail_fence', 'wood_arbor', 'gravel_path', 'mossy_stone_block', 'stone_well', 'box_hedge', 'stepping_stones', 'tree_stump', 'crate_stack', 'stone_lantern', 'scarecrow', 'picket_fence', 'grain_sacks', 'hay_cart', 'beehive', 'birdbath', 'signpost', 'wattle_fence', 'water_trough', 'stone_bench', 'sundial', 'wheelbarrow', 'barrel_stack', 'straw_step', 'rope_fence', 'boulder', 'log_bench', 'compost_bin', 'milk_churns', 'dovecote']) {
+  // gates, arches, arbors, low walls, rail and picket fences, hedges, palisades, cobbles, gravel, stepping stones, wells, lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, wattle fences, troughs, stone benches, sundials, wheelbarrows, torches, log fences, mailboxes, birdhouses, flagpoles, cairns, clotheslines, rope fences, log benches, compost bins, milk churns, dovecotes and the blocks to climb on (boulders too) are pieces too
+  for (const piece of ['wood_gate', 'wood_crate', 'stone_step', 'stone_block', 'wood_step', 'log_pile', 'wood_scaffold', 'tall_stone_block', 'stone_pillar', 'low_stone_wall', 'wood_palisade', 'wood_barrel', 'straw_bale', 'straw_stack', 'log_tower', 'stone_arch', 'cobble_path', 'rail_fence', 'wood_arbor', 'gravel_path', 'mossy_stone_block', 'stone_well', 'box_hedge', 'stepping_stones', 'tree_stump', 'crate_stack', 'stone_lantern', 'scarecrow', 'picket_fence', 'grain_sacks', 'hay_cart', 'beehive', 'birdbath', 'signpost', 'wattle_fence', 'water_trough', 'stone_bench', 'sundial', 'wheelbarrow', 'barrel_stack', 'straw_step', 'torch', 'log_fence', 'mailbox', 'birdhouse', 'flagpole', 'stone_cairn', 'clothesline', 'rope_fence', 'boulder', 'log_bench', 'compost_bin', 'milk_churns', 'dovecote']) {
     room.message(bo.p, { t: C.BUILD, key: '5,3', piece });
     assert.deepEqual(ann.conn.last(S.BUILT), { t: S.BUILT, key: '5,3', piece, by: bo.p.id });
     room.message(bo.p, { t: C.UNBUILD, key: '5,3' });
@@ -953,19 +1189,25 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.message(ann.p, { t: C.UNBUILD, key: '2,5' });
   room.message(ann.p, { t: C.CHEST_TAKE, item: 'wood', count: 1 });
   // the farm's rocks: broken by whoever is next to one (the stone is theirs); the room keeps when it comes back
-  room.message(bo.p, { t: C.MINE, id: 3, x: 5, z: 3, size: 0.3 });
+  const stand = (who, { x, z }, dx = 1) => room.message(who.p, { t: C.STATE, x: x + dx, y: 0.8, z, yaw: 0, f: 1 });
+  stand(bo, rockOf(FARM_WILDS, 3));
+  room.message(bo.p, { t: C.MINE, ...rockOf(FARM_WILDS, 3) });
   const mined = ann.conn.last(S.MINED);
   assert.deepEqual([mined.id, mined.by], [3, bo.p.id]);
   assert.ok(mined.count >= 1 && mined.at > Date.now());
-  room.message(ann.p, { t: C.MINE, id: 4, x: 5, z: 3, size: 0.3 });
+  stand(ann, rockOf(FARM_WILDS, 4), 8);
+  room.message(ann.p, { t: C.MINE, ...rockOf(FARM_WILDS, 4) });
   assert.equal(ann.conn.last(S.MINE_DENY)?.id, 4, 'too far');
   // ...and its trees, the same way (Bo's rock was a moment ago: chopping isn't mining)
-  room.message(bo.p, { t: C.CHOP, id: 7, x: 5, z: 4, size: 1.2 });
+  stand(bo, treeOf(FARM_WILDS, 7));
+  room.message(bo.p, { t: C.CHOP, ...treeOf(FARM_WILDS, 7) });
   const felled = ann.conn.last(S.FELLED);
   assert.deepEqual([felled.id, felled.by], [7, bo.p.id]);
   assert.ok(felled.count >= 1 && felled.at > Date.now());
-  room.message(ann.p, { t: C.CHOP, id: 8, x: 5, z: 4, size: 1.2 });
+  stand(ann, treeOf(FARM_WILDS, 8), 8);
+  room.message(ann.p, { t: C.CHOP, ...treeOf(FARM_WILDS, 8) });
   assert.equal(ann.conn.last(S.CHOP_DENY)?.id, 8, 'too far');
+  stand(bo, { x: 4, z: 3 }, 0);
   room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], felled: [], mined: [] } });
   assert.ok(room.mined.has(3) && room.felled.has(7), 'the animals can\'t bring them back');
   // written into the owner's save, the chest beside it
@@ -982,6 +1224,8 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   assert.deepEqual(a.save.farm.hens, [[1, 1, 1, 1]]);
   assert.deepEqual(a.chest, { turnip: 1, flax: 1 });
   assert.equal(a.roomRev, 1);
+  // lamp posts and benches made at the workbench before they were built from wood and stone come back as what they cost
+  assert.deepEqual(new FarmRoom({ farm: { ...a, chest: { wood: 1, lamp_post: 2, garden_bench: 1 } }, admit: () => null }).chest, { wood: 13, stone: 4 });
   // a save from a page that didn't have that farm keeps the room's farm, but its backpack counts
   farms.put(a, 'pa', { v: 5, farm: { savedAt: 1, hours: 1, tilled: [], crops: [] }, backpack: { gold: 77 } }, { live: false, roomRev: 0 });
   assert.deepEqual(a.save.farm.tilled.map(([key]) => key).sort(), ['3,3', '4,3']);
@@ -999,6 +1243,188 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.close();
 });
 
+console.log('bosses');
+await test('a boss sleeps till someone comes, fights, gets tougher with more farmers, and turns friendly when bopped enough', () => {
+  const fight = new BossFight('parsnip', mulberry32(7));
+  const at = ARENAS.parsnip;
+  assert.equal(arenaAt(at.x + 3, at.z), 'parsnip');
+  assert.equal(arenaAt(0, 0), null, 'the farm is no arena');
+  assert.deepEqual(fight.step(0.1, []), [], 'nobody there: asleep');
+  const a = { id: 1, x: at.x, y: GROUND_STAND_Y, z: at.z + 2 };
+  assert.deepEqual(fight.step(0.1, [a]).map((fx) => fx.e), ['wake']);
+  assert.equal(fight.bop(1, 'mallet', a.x, a.y, a.z), null, 'not bopped while it wakes');
+  for (let i = 0; i < 30; i++) fight.step(0.1, [a]);
+  assert.equal(fight.phase, 'fight');
+  const one = fight.max;
+  fight.step(0.05, [a, { ...a, id: 2 }]);
+  assert.ok(fight.max > one && fight.hp > one * 0.99, 'more health with two');
+  // moves: shockwaves and seeds come out, a jump clears them
+  const fx = [];
+  for (let i = 0; i < 400; i++) fx.push(...fight.step(0.05, [a, { ...a, id: 2 }]));
+  assert.ok(fx.some((f) => f.e === 'wave') && fx.some((f) => f.e === 'seeds'), 'it hops and shoots');
+  const wave = { x: 0, z: 0, speed: 7, max: 4.5 };
+  assert.ok(waveHits(wave, 0.5, 3.5, GROUND_STAND_Y, 0) && !waveHits(wave, 0.5, 3.5, GROUND_STAND_Y + 1, 0), 'jumped over');
+  const seeds = { x: 0, z: 0, a0: 0, n: 4, speed: 6 };
+  assert.ok(seedHits(seedAt(seeds, 0, 0.5), 0, GROUND_STAND_Y, 3));
+  // bopped till it is friendly: out of reach doesn't count
+  fight.start('rest', { dur: 1e9 });
+  assert.equal(fight.bop(1, 'mallet', fight.x + 9, GROUND_STAND_Y, fight.z), null, 'too far');
+  assert.equal(fight.bop(1, 'axe', fight.x + 1, GROUND_STAND_Y, fight.z), null, 'not a weapon');
+  let hit;
+  for (let i = 0; i < 200 && !hit?.won; i++) hit = fight.bop(1, 'wooden_sword', fight.x + 1, GROUND_STAND_Y, fight.z);
+  assert.equal(hit.hp, 0);
+  assert.deepEqual(hit.won.sort(), [1, 2], 'everyone who was there');
+  assert.equal(fight.phase, 'friendly');
+  // left alone, back to sleep, fresh
+  for (let i = 0; i < 100; i++) fight.step(0.1, []);
+  assert.equal(fight.phase, 'sleep');
+  assert.equal(fight.hp, BOSSES.parsnip.hp);
+});
+
+await test('a boss fight on a farm with helpers: its portal, the bops, and the portal used up when it is beaten', () => {
+  const room = new FarmRoom({ farm: { id: 'bossfarm', save: null }, admit: () => ({ id: 'bossfarm', owner: true }) });
+  const a = join(room, 'Ann');
+  const b = join(room, 'Bo');
+  const start = arenaStart('parsnip');
+  // a full set of seals builds the portal (paid from the builder's backpack, on the page)
+  assert.deepEqual(PIECES.parsnip_portal.cost, { [BOSSES.parsnip.key]: BOSSES.parsnip.pieces });
+  room.message(a.p, { t: C.STATE, x: 5, y: GROUND_STAND_Y, z: 6, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.BUILD, key: '5,5', piece: 'parsnip_portal' });
+  assert.equal(room.built.get('5,5'), 'parsnip_portal');
+  room.message(a.p, { t: C.BUILD, key: '6,5', piece: 'parsnip_portal' });
+  assert.equal(room.built.get('6,5'), undefined, 'one to a farm');
+  // into the arena: it wakes and fights
+  for (const who of [a, b]) room.message(who.p, { t: C.STATE, x: start.x, y: GROUND_STAND_Y, z: start.z, yaw: 0, f: 1 });
+  let now = Date.now();
+  for (let i = 0; i < 60; i++) room.tickBosses((now += 50));
+  const fight = room.fights.get('parsnip');
+  assert.equal(fight.phase, 'fight');
+  assert.ok(a.conn.all(S.BOSS).length > 5 && b.conn.all(S.BOSS_FX).some((m) => m.fx.e === 'wake'));
+  // not taken down with a fight on through it
+  room.message(a.p, { t: C.STATE, x: 5, y: GROUND_STAND_Y, z: 6, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.UNBUILD, key: '5,5' });
+  assert.equal(room.built.get('5,5'), 'parsnip_portal');
+  // bopped from beside it, never faster than a weapon swings
+  const beside = () => {
+    fight.start('rest', { dur: 1e9 });
+    for (const who of [a, b]) room.message(who.p, { t: C.STATE, x: fight.x + 1, y: GROUND_STAND_Y, z: fight.z, yaw: 0, f: 1 });
+  };
+  beside();
+  room.message(a.p, { t: C.BOSS_BOP, boss: 'parsnip', weapon: 'mallet' });
+  room.message(a.p, { t: C.BOSS_BOP, boss: 'parsnip', weapon: 'mallet' });
+  assert.equal(b.conn.all(S.BOSS_FX).filter((m) => m.fx.e === 'bop').length, 1, 'too fast');
+  room.message(b.p, { t: C.BOSS_BOP, boss: 'lion', weapon: 'mallet' });
+  assert.equal(b.conn.all(S.BOSS_FX).filter((m) => m.fx.e === 'bop').length, 1, 'not that boss here');
+  for (let i = 0; i < 200 && !a.conn.last(S.BOSS_WON); i++) {
+    beside();
+    a.p.bossBopAt = 0;
+    room.message(a.p, { t: C.BOSS_BOP, boss: 'parsnip', weapon: 'mallet' });
+  }
+  const won = b.conn.last(S.BOSS_WON);
+  assert.ok(won, 'beaten');
+  assert.deepEqual(won.won.sort(), [a.p.id, b.p.id].sort(), 'both took part');
+  assert.equal(room.built.get('5,5'), undefined, 'its portal is used up');
+  assert.deepEqual(a.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,5', piece: portalOf('parsnip'), by: 0 }, 'and nobody gets the seals back');
+  room.close();
+});
+
+// ---------- Cards and the arcade ----------
+console.log('cards and the arcade');
+await test('poker hands are told apart and ranked, and the best five of seven found', () => {
+  const name = (cards) => evaluate(cards.split(' ')).name;
+  assert.equal(name('As Ks Qs Js Ts'), 'Straight flush');
+  assert.equal(name('9c 9d 9h 9s 2c'), 'Four of a kind');
+  assert.equal(name('3c 3d 3h 7s 7c'), 'Full house');
+  assert.equal(name('2h 7h 9h Jh Kh'), 'Flush');
+  assert.equal(name('Ac 2d 3h 4s 5c'), 'Straight', 'the wheel');
+  assert.equal(name('Qc Kd Ah 2s 3c'), 'High card', 'no wrapping round');
+  assert.equal(name('5c 5d 5h'), 'Three of a kind');
+  assert.equal(name('8c 8d 4h 4s'), 'Two pair');
+  assert.equal(name('Jc Jd'), 'Pair');
+  assert.deepEqual(evaluate(['Kc', '4d', '9h']).scoring, ['Kc'], 'a high card scores the highest');
+  assert.deepEqual(evaluate(['Jc', '3d', 'Jd', '9s']).scoring, ['Jc', 'Jd']);
+  const v = (cards) => evaluate(cards.split(' ')).value;
+  assert.ok(v('Ac Ad 2h 3s 4c') > v('Kc Kd Qh Js 9c'), 'aces beat kings');
+  assert.ok(v('Ac Ad 9h 3s 4c') > v('Ah As 8h 7s 6c'), 'then the kicker');
+  assert.ok(v('6c 7d 8h 9s Tc') > v('Ac 2d 3h 4s 5c'), 'the wheel is the lowest straight');
+  assert.equal(v('Ac Ad 9h 3s 4c'), v('Ah As 9c 3d 4h'), 'a split pot');
+  const best = bestHand('2c 2d 7h 8h 9h Th Jh'.split(' '));
+  assert.equal(best.name, 'Straight flush');
+  assert.deepEqual(new Set(best.cards), new Set(['7h', '8h', '9h', 'Th', 'Jh']));
+  const deck = shuffle(newDeck(), mulberry32(5));
+  assert.equal(new Set(deck).size, 52);
+});
+
+await test('the arcade: coinflip doubles or loses, blackjack settles by the rules', () => {
+  assert.deepEqual(coinflip(40, 'heads', () => 0.1), { side: 'heads', won: true, payout: 80 });
+  assert.deepEqual(coinflip(40, 'heads', () => 0.9), { side: 'tails', won: false, payout: 0 });
+  assert.deepEqual(handTotal(['As', '6d']), { total: 17, soft: true });
+  assert.deepEqual(handTotal(['As', '6d', '9c']), { total: 16, soft: false });
+  // a hand dealt from a stacked shoe: the dealer's cards come off second and fourth
+  const deal = (cards) => {
+    const rand = mulberry32(1);
+    const game = blackjackDeal(10, rand);
+    game.shoe = [...cards].reverse();
+    Object.assign(game, { player: [], dealer: [], over: false, result: '', payout: 0 });
+    game.player.push(game.shoe.pop());
+    game.dealer.push(game.shoe.pop());
+    game.player.push(game.shoe.pop());
+    game.dealer.push(game.shoe.pop());
+    return game;
+  };
+  let g = blackjackStand(deal(['Ts', '9d', '9c', '8h']));
+  assert.equal(g.result, 'win');
+  assert.equal(g.payout, 20);
+  g = blackjackHit(deal(['Ts', '9d', '6c', '8h', 'Kd']));
+  assert.equal(g.result, 'bust');
+  assert.equal(g.payout, 0);
+  g = blackjackDouble(deal(['5s', '9d', '6c', '7h', 'Td', 'Th']));
+  assert.ok(g.doubled && g.over);
+  assert.equal(g.stake, 20);
+  assert.equal(g.result, 'dealer bust', '21 against the dealer\'s 9 + 7 + 10');
+  assert.equal(g.payout, 40);
+  g = blackjackStand(deal(['Ts', '9d', '7c', '9h']));
+  assert.equal(g.result, 'lose');
+  g = blackjackStand(deal(['Ts', '9d', '7c', '8h']));
+  assert.equal(g.result, 'push');
+  assert.equal(g.payout, 10);
+  // a natural ends the hand as it is dealt
+  let n = 0;
+  for (let seed = 1; seed < 400 && !n; seed++) {
+    const game = blackjackDeal(10, mulberry32(seed));
+    if (game.result === 'blackjack') n = game.payout;
+  }
+  assert.equal(n, 25, 'a blackjack pays 3 to 2');
+});
+
+await test('Lucky Hand: jokers, plays and swaps, and the payout tiers', () => {
+  assert.deepEqual(luckyScore(['Kc', 'Kd']), { cat: 1, name: 'Pair', chips: 30, mult: 2, total: 60, scoring: ['Kc', 'Kd'] });
+  // 10 + 10 + 10 chips, 2 mult; +8 mult with a pair; +3 for a scoring heart; x2 needs three of a kind
+  assert.equal(luckyScore(['Kh', 'Kd', '3c'], ['twin_turnips', 'rosy_heart', 'scarecrow']).total, 30 * 13);
+  assert.equal(luckyScore(['Kh', 'Kd', 'Kc'], ['scarecrow', 'golden_goose']).total, (30 + 30) * 3 * 3);
+  assert.equal(luckyScore(['2h', '3h', '4h', '5h', '6h'], ['garden_path', 'bouquet']).total, (100 + 20) * (8 + 22));
+  for (const id of Object.keys(LUCKY_JOKERS)) assert.ok(jokerText(id).length > 10, id);
+  const game = luckyStart(100, mulberry32(9));
+  assert.equal(game.hand.length, LUCKY.hand);
+  assert.equal(game.offer.length, LUCKY.offer);
+  luckyPlay(game, [0]);
+  assert.equal(game.plays, LUCKY.plays, 'a joker first');
+  luckyPick(game, game.offer[0]);
+  luckyDiscard(game, [0, 1, 2]);
+  assert.equal(game.discards, LUCKY.discards - 1);
+  assert.equal(game.hand.length, LUCKY.hand);
+  luckyPlay(game, [0, 1]);
+  assert.equal(game.offer.length, LUCKY.offer, 'and a second after the first hand');
+  luckyPick(game, game.offer[1]);
+  assert.equal(game.jokers.length, 2);
+  while (!game.over) luckyPlay(game, [0, 1, 2, 3, 4]);
+  assert.equal(game.offer.length, 0, 'no more than two');
+  assert.equal(game.payout, Math.floor(100 * luckyPays(game.score)));
+  assert.equal(luckyPays(0), 0);
+  assert.equal(luckyPays(LUCKY.tiers[1][0]), LUCKY.tiers[1][1]);
+  assert.equal(luckyPays(1e9), LUCKY.tiers.at(-1)[1]);
+});
+
 // ---------- The server, over sockets ----------
 console.log('server');
 const PORT = 3900 + Math.floor(Math.random() * 90);
@@ -1012,8 +1438,19 @@ function startServer(env = {}) {
 let server = startServer();
 await server.ready;
 
-// (farm: be on that farm instead, as the farm auth says: "<id>.<token>")
-function client(code = '', key = `key${Math.random()}`, { farm = null, auth = null } = {}) {
+// An account on the server: its farm's auth, "<id>.<token>" (a lobby is for logged in farmers)
+async function signUp(username, color = PLAYER_COLORS[3]) {
+  const out = await fetch(`${base}/api/account/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-farm-session': `signup-${Math.random().toString(36).slice(2)}` },
+    body: JSON.stringify({ username, password: 'bot-password', color, save: { v: 7, farm: null, backpack: {} } }),
+  }).then((r) => r.json());
+  return `${out.id}.${out.token}`;
+}
+let botAuth = await signUp('Bot');
+
+// (farm: be on that farm instead; auth: whose browser it is, as "<id>.<token>")
+function client(code = '', key = `key${Math.random()}`, { farm = null, auth = botAuth } = {}) {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws${farm ? `?farm=${farm}` : code ? `?lobby=${code}` : ''}`);
   const inbox = [];
   const waiters = [];
@@ -1023,7 +1460,7 @@ function client(code = '', key = `key${Math.random()}`, { farm = null, auth = nu
     for (const w of [...waiters]) if (w.match(m)) waiters.splice(waiters.indexOf(w), 1) && w.done(m);
   });
   const closed = new Promise((done) => ws.on('close', (code) => done(code)));
-  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(farm && { auth }) })));
+  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(auth && { auth }) })));
   return {
     ws,
     inbox,
@@ -1097,6 +1534,16 @@ try {
     assert.equal(await bad.closed, CLOSE.NO_GAME);
   });
 
+  await test('a lobby is for logged in farmers: their account\'s name and shirt, whatever the page says', async () => {
+    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
+    assert.equal(await client(code, 'k-nobody', { auth: null }).closed, CLOSE.NO_ACCOUNT);
+    assert.equal(await client(code, 'k-forged', { auth: `${botAuth.split('.')[0]}.not-the-right-token` }).closed, CLOSE.NO_ACCOUNT);
+    const fern = client(code, 'k-fern', { auth: await signUp('Fern', PLAYER_COLORS[6]) });
+    const w = await fern.next(S.WELCOME);
+    assert.deepEqual([w.name, w.color], ['Fern', PLAYER_COLORS[6]]);
+    fern.ws.close(1000);
+  });
+
   await test('farms over HTTP: make, open, save, pair; another device\'s page is turned down', async () => {
     const call = (method, path, { body = {}, auth, session = 'page-aaaaaaaa', type = 'application/json' } = {}) =>
       fetch(`${base}${path}`, {
@@ -1153,6 +1600,7 @@ try {
     try {
       server = startServer({ GAME_DATA });
       await server.ready;
+      botAuth = await signUp('Bot'); // (this server keeps its farms, and its accounts, in dir)
       const made = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ours', seed: 'sunny knoll 5', inviteOnly: true }) }).then((r) => r.json());
       const a = client(made.code, 'restart-key');
       const w = await a.next(S.WELCOME);

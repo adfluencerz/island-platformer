@@ -19,9 +19,18 @@
 //   POST /api/farms/invite     { code } -> { id, name }: the farm an invite code is for
 //   POST /api/farms/me/help    { code, name } -> { id, name }: this farm's farmer helps on that one now
 //   POST /api/farms/me/helping -> { farms: [{ id, name, here }] }: the farms they help on (here: farmers on it now)
+//   POST /api/account/register { username, password, color, save } -> { id, token, rev, username, color }:
+//                              an account on this device's farm (sent with its token), or on a new farm from save
+//   POST /api/account/login    { username, password } -> { id, token, username, color }: this device's own token
+//   PUT  /api/account/color    { color } -> { username, color }: a new shirt color
+//   POST /api/friends          -> { friends: [{ id, name, color, online, where }], asks: [{ id, name }] }
+//   POST /api/friends/add      { username } -> { name, friends }: ask them (friends: they had asked us, so now we are)
+//   POST /api/friends/answer   { id, yes } -> { name, friends }
+//   POST /api/friends/remove   { id } -> {}
 //   (/me: "Authorization: Bearer <id>.<token>", and every farm call names the
 //   page in "X-Farm-Session"; see server/farms.js)
 //   WS   /ws?farm=ID           be on that farm, its owner or one of its helpers (server/farmroom.js)
+//   WS   /ws?presence          online, for friends' invitations to lobbies (server/presence.js)
 //
 // In development Vite serves the client and proxies /api and /ws here
 // (vite.config.js); `npm run dev` starts both.
@@ -38,7 +47,9 @@ import { Lobby, CODE_RE } from './lobby.js';
 import { Store } from './store.js';
 import { Farms, MAX_SAVE } from './farms.js';
 import { FarmRooms } from './farmroom.js';
+import { Presence } from './presence.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
+import { PS, usernameKey } from '../shared/protocol.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || undefined; // 127.0.0.1 behind a proxy (deploy/), every address otherwise
@@ -55,6 +66,8 @@ const DATA = process.env.GAME_DATA || fileURLToPath(new URL('../data/lobbies.jso
 const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)) });
 const farms = new Farms({ dir: DATA === 'off' ? null : join(dirname(resolve(DATA)), 'farms') });
 const farmRooms = new FarmRooms({ farms });
+const presence = new Presence({ farms, lobby });
+setInterval(() => presence.tick(), 250).unref();
 
 // ---------- HTTP ----------
 // The visitor's address, for the limits on opening lobbies and farms
@@ -151,7 +164,7 @@ const server = createServer(async (req, res) => {
     const room = lobby.find(one[1].toUpperCase());
     return room ? json(res, 200, room.info()) : json(res, 404, { error: 'no such lobby' });
   }
-  if (path.startsWith('/api/farms')) return farmApi(req, res, path);
+  if (path.startsWith('/api/farms') || path.startsWith('/api/account/') || path.startsWith('/api/friends')) return farmApi(req, res, path);
   if (path.startsWith('/api/')) return json(res, 404, { error: 'not found' });
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
   return serveStatic(req, res, path);
@@ -165,6 +178,8 @@ async function farmApi(req, res, path) {
     'PUT /api/farms/me/recovery', 'POST /api/farms/recover',
     'POST /api/farms/me/helpers', 'POST /api/farms/me/helpers/invite', 'POST /api/farms/me/helpers/remove',
     'POST /api/farms/invite', 'POST /api/farms/me/help', 'POST /api/farms/me/helping',
+    'POST /api/account/register', 'POST /api/account/login', 'PUT /api/account/color',
+    'POST /api/friends', 'POST /api/friends/add', 'POST /api/friends/answer', 'POST /api/friends/remove',
   ];
   if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
   // JSON only (as for lobbies), and the page that is asking
@@ -183,12 +198,31 @@ async function farmApi(req, res, path) {
   else if (route === 'POST /api/farms/pair') out = farms.claim(body?.code, address);
   else if (route === 'POST /api/farms/recover') out = await farms.recover(body ?? {}, address);
   else if (route === 'POST /api/farms/invite') out = farms.invited(body?.code, address);
-  else {
+  else if (route === 'POST /api/account/login') out = await farms.login(body ?? {}, address);
+  else if (route === 'POST /api/account/register') {
+    // (on this device's farm, if it has one the server knows)
+    out = await farms.register(body ?? {}, farms.auth(req.headers.authorization), session, address);
+  } else {
     const farm = farms.auth(req.headers.authorization);
     if (!farm) return json(res, 401, { error: 'This device does not have that farm.' });
     if (route === 'POST /api/farms/me/open') out = farms.open(farm, session);
     else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save, { live: farmRooms.has(farm.id), roomRev: body?.roomRev });
     else if (route === 'PUT /api/farms/me/recovery') out = await farms.setRecovery(farm, body ?? {});
+    else if (route === 'PUT /api/account/color') out = farms.setColor(farm, body?.color);
+    else if (route === 'POST /api/friends') {
+      const friends = farms.friendsOf(farm).map((f) => ({ ...f, online: presence.isOnline(f.id), where: presence.whereIs(f.id) }));
+      out = { friends, asks: farms.asksOf(farm) };
+    } else if (route === 'POST /api/friends/add') {
+      out = farms.askFriend(farm, String(body?.username ?? ''));
+      // (the one asked sees the ask come in, or, if they had asked first, us on their list)
+      if (!out.error) presence.sendTo(farms.accounts.get(usernameKey(String(body?.username ?? ''))), { t: PS.FRIENDS });
+    } else if (route === 'POST /api/friends/answer') {
+      out = farms.answerFriend(farm, String(body?.id ?? ''), !!body?.yes);
+      if (!out.error) presence.sendTo(String(body?.id ?? ''), { t: PS.FRIENDS });
+    } else if (route === 'POST /api/friends/remove') {
+      out = farms.removeFriend(farm, String(body?.id ?? ''));
+      presence.sendTo(String(body?.id ?? ''), { t: PS.FRIENDS });
+    }
     else if (route === 'POST /api/farms/me/helpers') out = { helpers: farms.helpersOf(farm) };
     else if (route === 'POST /api/farms/me/helpers/invite') out = farms.invite(farm, body?.name);
     else if (route === 'POST /api/farms/me/helpers/remove') {
@@ -210,6 +244,7 @@ server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname !== '/ws') return socket.destroy();
   wss.handleUpgrade(req, socket, head, (ws) => {
+    if (url.searchParams.has('presence')) return attachPresence(ws);
     // a farm (its owner, or one of its helpers: the room asks who they are)
     const farmId = url.searchParams.get('farm');
     if (farmId !== null) {
@@ -253,6 +288,12 @@ function attach(ws, room) {
       return;
     }
     if (!player) {
+      // who they are: the account on this browser's farm (its token, as for
+      // the farm API) has the name and shirt color. A lobby is for logged in
+      // farmers only; on a farm the room asks who they are itself.
+      const farm = farms.auth(`Bearer ${typeof msg?.auth === 'string' ? msg.auth : ''}`);
+      if (farm?.account) msg = { ...msg, name: farm.account.name, color: farm.color };
+      else if (!room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
       player = room.join(conn, msg);
       if (player) clearTimeout(joinTimer);
     } else if (player.conn === conn) {
@@ -263,6 +304,39 @@ function attach(ws, room) {
     clearTimeout(joinTimer);
     // 1000 is the client's Leave; anything else (a reload, a drop) holds the seat
     if (player && player.conn === conn) room.leave(player, { hold: code !== 1000 });
+  });
+  ws.on('error', () => {});
+}
+
+// A page online, for its friends (server/presence.js)
+function attachPresence(ws) {
+  const conn = {
+    send: (data) => ws.readyState === ws.OPEN && ws.send(data),
+    close: (code, reason) => ws.close(code, reason),
+  };
+  let online = false;
+  let count = 0;
+  let windowStart = Date.now();
+  const helloTimer = setTimeout(() => !online && ws.close(1008, 'no hello'), 10_000);
+  ws.on('message', (data, isBinary) => {
+    const now = Date.now();
+    if (now - windowStart > 1000) {
+      windowStart = now;
+      count = 0;
+    }
+    if (++count > 20 || isBinary) return;
+    let msg;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (online) presence.message(conn, msg);
+    else if ((online = presence.hello(conn, msg))) clearTimeout(helloTimer);
+  });
+  ws.on('close', () => {
+    clearTimeout(helloTimer);
+    if (online) presence.leave(conn);
   });
   ws.on('error', () => {});
 }

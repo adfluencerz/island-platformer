@@ -1,6 +1,8 @@
 // On-screen controls for touch screens: a thumbstick (bottom left) to walk,
-// and buttons (bottom right) for the keys a phone doesn't have: Use (E), Jump
-// (Space), the backpack (I) and, in a lobby, chat (Enter). Holding the clock
+// buttons (bottom right) for Use (E) and Jump (Space), and a column of small
+// ones top right, under the coin counter, for the other keys a phone doesn't
+// have: the backpack (I), building (B, on a farm) and, with others about,
+// chat (Enter). Holding the clock
 // fast-forwards time at home, like T. The buttons press those keys for real
 // (a keydown, and a keyup when let go), so the game, the backpack and the
 // menus treat them just like the keyboard.
@@ -132,14 +134,18 @@ export class TouchControls {
     const pad = el('div', 'tc-pad', root);
     this.useBtn = holdButton(el('button', 'tc-btn tc-use', pad, 'Use'), 'KeyE');
     holdButton(el('button', 'tc-btn tc-jump', pad, 'Jump'), 'Space');
-    holdButton(el('button', 'tc-btn tc-small tc-bag', pad, 'Bag'), 'KeyI');
+    // ...and top right, under the coin counter (wherever the HUD has put it)
+    const side = (this.side = el('div', 'tc-side', root));
+    holdButton(el('button', 'tc-btn tc-small tc-bag', side, 'Bag'), 'KeyI');
+    this.buildBtn = holdButton(el('button', 'tc-btn tc-small tc-build', side, 'Build'), 'KeyB');
     // (on click, not as the finger lands: iOS only brings up the keyboard for the chat line then)
-    this.chatBtn = el('button', 'tc-btn tc-small tc-chat', pad, 'Chat');
+    this.chatBtn = el('button', 'tc-btn tc-small tc-chat', side, 'Chat');
     this.chatBtn.addEventListener('click', () => {
       key('keydown', 'Enter');
       key('keyup', 'Enter');
     });
-    for (const b of pad.children) b.type = 'button';
+    for (const b of [...pad.children, ...side.children]) b.type = 'button';
+    addEventListener('resize', () => this.placeSide());
 
     // ---- hold the clock: fast-forward (T) ----
     const clock = document.querySelector('.dn-clock');
@@ -152,6 +158,14 @@ export class TouchControls {
   setPlace(place) {
     this.root.hidden = !place;
     this.chatBtn.hidden = place !== 'lobby' && place !== 'farm';
+    this.buildBtn.hidden = place !== 'home' && place !== 'farm'; // (building is for farms)
+    requestAnimationFrame(() => this.placeSide());
+  }
+
+  // The column of small buttons just under the coin counter
+  placeSide() {
+    const funds = document.querySelector('.inv-funds')?.getBoundingClientRect();
+    if (funds?.height) this.side.style.top = `${Math.round(funds.bottom + 10)}px`;
   }
 
   // Something to use within reach (the HUD's prompt): the Use button lights up

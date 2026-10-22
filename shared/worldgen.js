@@ -23,7 +23,10 @@
 // out to them all (NARROW and WIDE below). Generation 4 added the reed marsh.
 // Generation 5 added the bluebell glade. Generation 6 added the sunflower field.
 // Generation 7 added the pumpkin patch. Generation 8 added the fern glen.
-// Generation 9 added the shell dunes.
+// Generation 9 added the shell dunes. Generation 10 added the sky isles
+// (shared/skyisles.js): landmasses floating overhead, up stairs of floating steps.
+
+import { growSkyIsles, skyOver as skyOverIn, checkSky } from './skyisles.js';
 
 export const CLASSIC_SEED = 'classic';
 export const MAX_SEED = 24;
@@ -31,7 +34,7 @@ export const WILD_HALF = 34; // tiles reach this far from the middle, on both ax
 const WIDE_HALF = 68; // and from generation 3 on: twice as wide
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
-export const CURRENT_GEN = 9;
+export const CURRENT_GEN = 10;
 export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
 export const GLADE_RADIUS = [4.5, 6.5]; // the bluebell glade's size (gen 5, on islands twice as wide)
 export const FIELD_RADIUS = [5, 7]; // the sunflower field's size (gen 6, on islands twice as wide)
@@ -40,13 +43,48 @@ export const GLEN_RADIUS = [4.5, 6.5]; // the fern glen's size (gen 8, on island
 export const DUNES_RADIUS = [4.5, 6.5]; // the shell dunes' size (gen 9, on islands twice as wide)
 export const MARSH_RADIUS = [5, 7]; // the reed marsh's size (gen 4, on islands twice as wide)
 
-// Which generation of the world a seed grows: "...-v2" is 2, any other seed 1
+// Which generation of the world a seed grows: "...-v2" is 2 (up to "-v19"), any other seed 1
 export function genOf(seed) {
-  const m = /-v([1-9])$/.exec(String(seed));
+  const m = /-v([1-9]|1[0-9])$/.exec(String(seed));
   return m ? Math.min(CURRENT_GEN, Number(m[1])) : 1;
 }
 
 // ---------- Randomness ----------
+// list in an order rng picks, the same in every browser and on the server.
+// (It once was list.sort(() => rng() - 0.5), whose order is up to how the
+// JavaScript engine sorts: browsers of other versions grew other islands
+// from the same seed. This is that sort as the server's engine does it, step
+// by step, so every island stays as the server always grew it: the first run
+// of rising or falling ones (turned round if falling), then each of the rest
+// put in by binary search.)
+export function shuffled(list, rng) {
+  const a = [...list];
+  const n = a.length;
+  if (n < 2) return a;
+  const order = () => rng() - 0.5;
+  let run = 2;
+  const falling = order() < 0;
+  for (let i = 2; i < n; i++) {
+    const o = order();
+    if (falling ? o >= 0 : o < 0) break;
+    run++;
+  }
+  if (falling) a.splice(0, run, ...a.slice(0, run).reverse());
+  for (let start = run; start < n; start++) {
+    const pivot = a[start];
+    let left = 0;
+    let right = start;
+    while (left < right) {
+      const mid = left + ((right - left) >> 1);
+      if (order() < 0) right = mid;
+      else left = mid + 1;
+    }
+    a.splice(start, 1);
+    a.splice(left, 0, pivot);
+  }
+  return a;
+}
+
 export function mulberry32(seed) {
   return () => {
     seed |= 0;
@@ -120,6 +158,7 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   patch: { x, z, r } | undefined: a pumpkin patch (generation 7 and up)
 //   glen: { x, z, r } | undefined: a fern glen (generation 8 and up)
 //   dunes: { x, z, r } | undefined: shell dunes by the shore (generation 9 and up)
+//   sky: [isle, ...] | undefined: the sky isles (generation 10 and up; shared/skyisles.js)
 //   spots: [[kind, x, y, z], ...]: a spot's id is its index
 function finishIsland(desc) {
   const { coast, pond } = desc;
@@ -142,6 +181,8 @@ function finishIsland(desc) {
   ];
   const topOver = (x, z, margin = 0) =>
     tops.find((t) => Math.abs(x - t.x) < t.w / 2 + margin && Math.abs(z - t.z) < t.d / 2 + margin) ?? null;
+  // the sky isle or the floating step over (x, z) (generation 10), the same way
+  const skyOver = (x, z, margin = 0) => (desc.sky ? skyOverIn(desc.sky, x, z, margin) : null);
   // what the ground is at (x, z): null (the sea), 'pond', 'sand', 'stone' (the
   // stone circle), 'path', 'meadow', 'heath' (the moor), 'marsh' (the reeds),
   // 'glade' (the bluebells), 'field' (the sunflowers), 'patch' (the pumpkins),
@@ -186,7 +227,7 @@ function finishIsland(desc) {
     if (woodsAt(x, z) > 0) return 'moss';
     return 'grass';
   };
-  return { ...desc, coastAt, isLand, inPond, woodsAt, floorAt, topOver, groundAt };
+  return { ...desc, coastAt, isLand, inPond, woodsAt, floorAt, topOver, skyOver, groundAt };
 }
 
 // ---------- The classic island ----------
@@ -312,7 +353,7 @@ function growIsland(seed, attempt) {
   const c = stream('coast');
   const r = c.rand(...size.coast);
   const room = size.half - 1.5 - r; // how far the coast may bulge
-  const freqs = [2, 3, 4, 5, 7, 9].sort(() => c.rng() - 0.5).slice(0, 3).sort((a, b) => a - b);
+  const freqs = shuffled([2, 3, 4, 5, 7, 9], c.rng).slice(0, 3).sort((a, b) => a - b);
   const amps = size.bulges.map((range) => c.rand(...range));
   const scale = Math.min(1, room / amps.reduce((a, b) => a + b, 0));
   const coast = { r, waves: freqs.map((f, i) => [amps[i] * scale, f, c.rand(0, Math.PI * 2)]) };
@@ -723,7 +764,14 @@ function growIsland(seed, attempt) {
     dunes = growDunes(seed, attempt, { draft, shoreDist, groundOk, inland, taken, pond, meadow, spawn, others: [...others, glen?.area], grow: size.heath });
     for (const spot of dunes?.spots ?? []) spots.push(spot);
   }
-  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }), ...(patch && { patch: patch.area }), ...(glen && { glen: glen.area }), ...(dunes && { dunes: dunes.area }) });
+  // Generation 10: the sky isles, last of all. (Up there, so they only keep
+  // clear of what is on the ground where their stairs come down.)
+  let sky;
+  if (genOf(seed) >= 10) {
+    sky = growSkyIsles({ stream, draft, shoreDist, inland, taken, onTrail: (x, z) => distToPaths(x, z, trails) < 2.2, spawn, circle: STONE_CIRCLE });
+    for (const spot of sky?.spots ?? []) spots.push(spot);
+  }
+  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }), ...(patch && { patch: patch.area }), ...(glen && { glen: glen.area }), ...(dunes && { dunes: dunes.area }), ...(sky && { sky: sky.sky }) });
   return checkIsland(island).length ? null : island;
 }
 
@@ -1010,14 +1058,17 @@ export function checkIsland(island) {
     if (!island.isLand(x, z)) problems.push(`${where} is in the sea`);
     const top = island.topOver(x, z, 0.4);
     if (kind === 'ledge' || y > 1) {
-      if (!top) problems.push(`${where} floats with nothing under it`);
-      else if (!(y > top.top && y < top.top + 1.2)) problems.push(`${where} is not just over its ledge`);
+      // (up on a sky isle, a chest stands right on it)
+      const over = top ?? island.skyOver(x, z, 0.4);
+      if (!over) problems.push(`${where} floats with nothing under it`);
+      else if (!(y > over.top && y < over.top + 1.2) && !(y === over.top && island.sky)) problems.push(`${where} is not just over its ledge`);
     } else {
       if (top) problems.push(`${where} is inside a cliff or a toadstool`);
       if (!(y >= island.floorAt(x, z) && y < island.floorAt(x, z) + 1)) problems.push(`${where} is not on the ground`);
     }
     if (Math.hypot(x - spawn.x, z - spawn.z) <= 4.5) problems.push(`${where} is in the stone circle`);
   }
+  problems.push(...checkSky(island));
   return problems;
 }
 

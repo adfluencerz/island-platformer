@@ -171,7 +171,6 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   box-shadow: inset 2px 2px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
 }
 .ui-game-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.ui-game.quiet { opacity: 0.75; } /* (nobody there: it wakes up when you join) */
 .ui-game-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-status { min-height: 1.2em; font-size: 21px; font-weight: 600; }
 .ui-status.error { color: var(--inv-red); }
@@ -308,6 +307,9 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-helper-list { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 4px; background: var(--inv-slot-bg); }
 .ui-helper { display: flex; align-items: center; gap: 8px; font-size: 21px; }
 
+/* Starting a lobby: the seconds till it opens */
+.ui-party-clock { font-size: 56px; font-weight: 700; text-align: center; line-height: 1; }
+
 /* ---------- Chat (bottom right) ---------- */
 .ui-chat {
   position: fixed;
@@ -349,3 +351,15 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 @media (max-width: 760px) {
   .ui-players { width: 190px; }
 }
+
+/* ---------- Shirt colors (the account, and Your farmer: splash.js) ---------- */
+.ui-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.ui-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(74, 46, 20, 0.35);
+  cursor: pointer;
+  padding: 0;
+}
+.ui-swatch.on { border-color: #4a2e14; box-shadow: 0 0 0 3px #fff6dc inset; transform: scale(1.1); }

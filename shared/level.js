@@ -4,8 +4,9 @@
 // grow from seeds in shared/worldgen.js. What the worlds look like is the
 // client's business (src/maps.js, src/world.js). The numbers that balance
 // the game (times, costs, what things give) are in shared/balance.js.
-import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST } from './balance.js';
-export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, STURDY_HITS } from './balance.js';
+import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS, BOSSES } from './balance.js';
+import { SKY_STYLES, relicAt } from './skyisles.js';
+export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, TOOL_HITS } from './balance.js';
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
@@ -29,7 +30,7 @@ export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', 
 // is rolled each time the spot regrows, so a spot is a little different every
 // time.
 // (regrow and loot: LOBBY_SPOTS, shared/balance.js)
-const TOUCHED = new Set(['meadow', 'ledge']); // (the rest are gathered)
+const TOUCHED = new Set(['meadow', 'ledge', 'sky', 'relic']); // (the rest are gathered)
 export const SPOT_KINDS = Object.fromEntries(Object.entries(LOBBY_SPOTS).map(([kind, spot]) => [kind, { use: TOUCHED.has(kind) ? 'touch' : 'gather', ...spot }]));
 
 // ---------- Trees ----------
@@ -102,7 +103,7 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // taller than a crate), so step, crate, scaffold, pillar is a stair walked all
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch or a wood arbor joins the walls (or fences)
-// beside it the same way. A low stone wall, a rail, picket, wattle or rope
+// beside it the same way. A low stone wall, a rail, picket, wattle, log or rope
 // fence or a box hedge is hopped over like a fence; a palisade, like a stone wall, can't be. A farm has `one`
 // farm chest at most (src/chest.js): built, it stands where it was put; on a
 // farm with helpers there is one by the plaza till then, so the harvest
@@ -155,6 +156,12 @@ export const PIECES = {
   wheelbarrow: { name: 'Wheelbarrow', solid: true },
   barrel_stack: { name: 'Barrel stack', solid: true, block: 1.8 },
   torch: { name: 'Torch', solid: true },
+  log_fence: { name: 'Log fence', solid: true, joins: true },
+  mailbox: { name: 'Mailbox', solid: true },
+  birdhouse: { name: 'Birdhouse', solid: true },
+  flagpole: { name: 'Flagpole', solid: true },
+  stone_cairn: { name: 'Stone cairn', solid: true },
+  clothesline: { name: 'Clothesline', solid: true },
   rope_fence: { name: 'Rope fence', solid: true, joins: true },
   boulder: { name: 'Boulder', solid: true, block: 0.9 },
   log_bench: { name: 'Log bench', solid: true },
@@ -162,14 +169,42 @@ export const PIECES = {
   milk_churns: { name: 'Milk churns', solid: true },
   dovecote: { name: 'Dovecote', solid: true },
   workbench: { name: 'Workbench', solid: true },
+  arcade: { name: 'Arcade', solid: true, one: true }, // (games for gold: src/arcade.js)
   farm_chest: { name: 'Farm chest', solid: true, one: true },
-  house: { name: 'House', solid: true, one: true, size: [5, 4] },
+  house: { name: 'House', solid: true, perHelper: true, size: [5, 4] }, // (one, and one more for each helper: mostPieces)
   lamp_post: { name: 'Lamp post', solid: true },
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
+  // a relic from a sky isle on a pedestal, to show it off (`relic`: one of those)
+  ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
+  // a boss's portal (`portal`: which boss; shared/bosses.js), from a full set
+  // of its key pieces, one to a farm; and its statue, for beating it
+  ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, { name }]) => [
+    [`${id}_portal`, { name: `${name} portal`, portal: id, one: true }],
+    [`${id}_statue`, { name: `${name} statue`, solid: true, statue: id }],
+  ])),
 };
 for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?? {}; // (shared/balance.js)
+
+// The Build tab's groups, in order, and each piece's `group`: fences, walls
+// and what joins them (gates, arches, arbors, hedges); paths, walked on;
+// blocks, climbed; the buildings, that do something; the decorations; the
+// relics; the bosses' portals and statues
+export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics', 'Bosses'];
+const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well']);
+for (const [id, piece] of Object.entries(PIECES)) {
+  piece.group = piece.relic ? 'Relics'
+    : piece.portal || piece.statue ? 'Bosses'
+    : BUILDINGS.has(id) ? 'Buildings'
+    : piece.joins ? 'Fences & walls'
+    : piece.block ? 'Blocks'
+    : !piece.solid ? 'Paths'
+    : 'Decor';
+}
 export const MAX_PIECES = 2000; // on one farm
+// How many of piece id a farm may have, with this many helpers: one of the
+// `one` pieces, one more house for each helper, as many as it likes of the rest
+export const mostPieces = (id, helpers) => (PIECES[id].one ? 1 : PIECES[id].perHelper ? 1 + helpers : Infinity);
 
 // The tiles a piece built on tile key stands on: one, or for a piece with a
 // `size` [across, deep] (the house), that many, its front row centred on key
@@ -219,11 +254,36 @@ export function keptClear(gx, gz) {
 export const RARE = {
   golden_seeds: 'Golden seeds',
   key: 'An old key',
+  ...Object.fromEntries(Object.values(BOSSES).map(({ key, name }) => [key, `A key piece to the ${name.toLowerCase()}`])), // (shared/bosses.js)
+  ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, found])), // (the sky isles' relics)
 };
 
 // Roll a spot's loot: [item, count]. rand: () => [0, 1)
-export function rollLoot(kind, rand = Math.random) {
-  const { loot } = SPOT_KINDS[kind];
+export const rollLoot = (kind, rand = Math.random) => pick(SPOT_KINDS[kind].loot, rand);
+
+// What a lobby's spot starts out with: { item, count }, and for a chest up on
+// a sky isle its `bundle` ([[item, count], ...]; its item is 'chest'). A relic
+// is the one its isle's style has. island: islandFor(seed). rand: () => [0, 1)
+export function rollSpot(island, kind, x, z, rand = Math.random) {
+  if (kind === 'relic') return { item: relicAt(island, x, z), count: 1 };
+  if (SKY_CHESTS[kind]) return { item: 'chest', count: 1, bundle: rollChest(kind, rand) };
+  const [item, count] = rollLoot(kind, rand);
+  return { item, count };
+}
+
+// What is in a chest of this kind (SKY_CHESTS): [[item, count], ...]
+export function rollChest(kind, rand = Math.random) {
+  const { rolls: [lo, hi], loot } = SKY_CHESTS[kind];
+  const got = new Map();
+  for (let n = lo + Math.floor(rand() * (hi - lo + 1)); n > 0; n--) {
+    const [item, count] = pick(loot, rand);
+    got.set(item, (got.get(item) ?? 0) + count);
+  }
+  return [...got];
+}
+
+// One of loot ([item, weight, min, max], ...) by weight: [item, count]
+function pick(loot, rand) {
   let r = rand() * loot.reduce((sum, [, w]) => sum + w, 0);
   for (const [item, w, min, max] of loot) {
     r -= w;

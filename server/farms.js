@@ -27,6 +27,18 @@
 // accounts: their device's token for their own farm proves it), and the owner
 // can take them off again.
 //
+// A farmer can have an account: a username (one of a kind on the server, and
+// their name in lobbies) and a password, kept on their farm (farm.account,
+// the password as a scrypt hash), and the color of their farmer's shirt
+// (farm.color). Logging in with them gives the device a token for that farm,
+// the way a pairing code does. Wrong passwords lock the account a while, as
+// wrong PINs do. There is no getting a forgotten password back.
+//
+// Farmers with accounts can be friends: one asks for the other by username
+// (farm.friendAsks, on the farm asked), and once that one says yes each is on
+// the other's farm.friends. Friends see who is online, and invite each other
+// to lobbies (server/presence.js).
+//
 // One file per farm, data/farms/<id>.json (server/store.js); with no folder
 // (GAME_DATA=off) the farms are kept in memory only.
 import { randomBytes, createHash, timingSafeEqual, randomInt, scrypt } from 'node:crypto';
@@ -34,9 +46,9 @@ import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { Store } from './store.js';
-import { MAX_FARM_NAME, MAX_NAME } from '../shared/constants.js';
+import { MAX_FARM_NAME, MAX_NAME, PLAYER_COLORS } from '../shared/constants.js';
 import { farmTitle } from './farmroom.js';
-import { cleanText, farmNameKey, pinProblem } from '../shared/protocol.js';
+import { cleanText, farmNameKey, pinProblem, usernameKey, usernameProblem, passwordProblem } from '../shared/protocol.js';
 
 export const MAX_SAVE = 64 * 1024; // bytes of JSON (a farm's save is a few KB)
 const ID_RE = /^[a-f0-9]{16}$/;
@@ -48,10 +60,12 @@ const PIN_TRIES = 5; // wrong PINs in a row before a farm's recovery locks
 const LOCK_MS = 15 * 60_000; // the first lock; each one after lasts twice as long...
 const MAX_LOCK_MS = 24 * 3600_000; // ...up to this
 const NO_MATCH = "That farm name and PIN don't match.";
+const NO_LOGIN = "That username and password don't match.";
 const HELP_LENGTH = 8; // (longer than a pairing code, so the two can't be mixed up)
 const HELP_MS = 24 * 3600_000;
 const MAX_HELPERS = 12;
 const MAX_INVITES = 10; // invite codes out at once, per farm
+const MAX_FRIENDS = 50; // friends per farmer, and asks waiting on one
 
 const scryptAsync = promisify(scrypt);
 const pinHash = async (pin, salt) => (await scryptAsync(pin, Buffer.from(salt, 'hex'), 32)).toString('hex');
@@ -107,6 +121,9 @@ export class Farms {
     this.allowClaim = limiter(5, 10);
     this.allowPut = limiter(5, 1); // per farm (a page saves every 15 s, and when it is left)
     this.allowRecover = limiter(10, 30);
+    this.allowLogin = limiter(10, 30);
+    this.allowSignUp = limiter(5, 60);
+    this.accounts = new Map(); // username key -> farm id
     this.names = new Map(); // farm name key -> farm id
     this.invites = new Map(); // helper's invite code -> { id, until }
     this.helping = new Map(); // a helper's farm id -> the ids of the farms they help on
@@ -118,6 +135,7 @@ export class Farms {
     for (const f of files) {
       const farm = this.get(f.slice(0, -5));
       if (farm?.nameKey) this.names.set(farm.nameKey, farm.id);
+      if (farm?.account?.key) this.accounts.set(farm.account.key, farm.id);
       for (const h of farm?.helpers ?? []) this.indexHelper(h.id, farm.id, true);
       this.farms.delete(farm?.id); // (read again when it is wanted)
     }
@@ -183,7 +201,7 @@ export class Farms {
   open(farm, session) {
     farm.holder = session;
     this.write(farm);
-    return { save: farm.save, rev: farm.rev, roomRev: farm.roomRev ?? 0, helpers: farm.helpers?.length ?? 0, name: farm.name ?? '' };
+    return { save: farm.save, rev: farm.rev, roomRev: farm.roomRev ?? 0, helpers: farm.helpers?.length ?? 0, name: farm.name ?? '', ...accountOf(farm) };
   }
 
   // The page's save. Its farm counts only when the farm isn't being played
@@ -268,7 +286,7 @@ export class Farms {
     farm.helpers ??= [];
     if (!farm.helpers.some((h) => h.id === theirs.id)) {
       if (farm.helpers.length >= MAX_HELPERS) return { error: 'That farm has all the helpers it can have.', status: 409 };
-      farm.helpers.push({ id: theirs.id, name: cleanText(name, MAX_NAME) || 'Farmer', since: Date.now() });
+      farm.helpers.push({ id: theirs.id, name: theirs.account?.name || cleanText(name, MAX_NAME) || 'Farmer', since: Date.now() });
       this.indexHelper(theirs.id, farm.id, true);
     }
     this.invites.delete(normalizeHelpCode(text));
@@ -302,9 +320,10 @@ export class Farms {
     return list;
   }
 
-  // The owner came onto the farm (or asked for an invite): what to call the farm by
+  // The owner came onto the farm (or asked for an invite): what to call the
+  // farm by (with an account, its username: a farmer goes by that everywhere)
   seenOwner(farm, name) {
-    name = cleanText(name, MAX_NAME);
+    name = farm.account?.name || cleanText(name, MAX_NAME);
     if (!name || name === farm.ownerName) return;
     farm.ownerName = name;
     this.write(farm);
@@ -314,7 +333,7 @@ export class Farms {
   seenHelper(farm, id, name) {
     const h = farm.helpers?.find((x) => x.id === id);
     if (!h) return false;
-    name = cleanText(name, MAX_NAME);
+    name = this.get(id)?.account?.name || cleanText(name, MAX_NAME);
     if (name && name !== h.name) {
       h.name = name;
       this.write(farm);
@@ -378,6 +397,166 @@ export class Farms {
   }
 }
 
-// What the page saves (src/main.js): { v, farm, backpack }. The server goes no
+// What a page is told of the account on a farm: { username, color } (none: {})
+const accountOf = (farm) => (farm.account ? { username: farm.account.name, color: farm.color } : {});
+const okColor = (color) => PLAYER_COLORS.includes(color);
+
+// ---------- Accounts ----------
+Object.assign(Farms.prototype, {
+  // A new account: on this device's farm (one without an account yet), or,
+  // with none, on a new farm made from the page's save. -> { id, token,
+  // rev, username, color } (token, rev: a new farm's)
+  async register({ username, password, color, save } = {}, farm, session, address) {
+    username = cleanText(username, MAX_NAME + 1);
+    const problem = usernameProblem(username) || passwordProblem(password) || (!okColor(color) && 'Pick a shirt color.');
+    if (problem) return { error: problem, status: 400 };
+    if (farm?.account) return { error: 'This farm has an account already. Log out first.', status: 409 };
+    const key = usernameKey(username);
+    if (this.accounts.has(key)) return { error: 'That username is taken. Try another.', status: 409 };
+    if (address && !this.allowSignUp(address)) return { error: 'Too many new accounts from here. Try again in a minute.', status: 429 };
+    const salt = randomBytes(16).toString('hex');
+    const hashed = await pinHash(password, salt);
+    // (from here on nothing waits, so two can't both take a name)
+    if (this.accounts.has(key)) return { error: 'That username is taken. Try another.', status: 409 };
+    let made = null;
+    if (!farm) {
+      made = this.create(save, session, null);
+      if (made.error) return made;
+      farm = this.get(made.id);
+    }
+    farm.account = { name: username, key, salt, hash: hashed, fails: 0, locks: 0, lockedUntil: 0 };
+    farm.color = color;
+    farm.ownerName = username;
+    this.accounts.set(key, farm.id);
+    if (!this.write(farm)) return { error: 'The server could not keep your account.', status: 500 };
+    this.log(`farm ${farm.id}: an account was made`);
+    // (on the farms they help on they go by their username from now on too)
+    for (const id of this.helping.get(farm.id) ?? []) {
+      const other = this.get(id);
+      if (other) this.seenHelper(other, farm.id, username);
+    }
+    return { id: farm.id, token: made?.token, rev: made?.rev, username, color };
+  },
+
+  // Log in: a token of this device's own for the account's farm. -> { id, token, username, color }
+  async login({ username, password } = {}, address) {
+    if (address && !this.allowLogin(address)) return { error: 'Too many tries. Wait a little and try again.', status: 429 };
+    const key = usernameKey(username);
+    const id = key && this.accounts.get(key);
+    const farm = id && this.get(id);
+    const acc = farm?.account;
+    if (!acc || acc.key !== key || passwordProblem(password)) return { error: NO_LOGIN, status: 403 };
+    const now = Date.now();
+    if (now < (acc.lockedUntil ?? 0)) {
+      const minutes = Math.ceil((acc.lockedUntil - now) / 60_000);
+      return { error: `Too many wrong passwords. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`, status: 429 };
+    }
+    // (every try counts as a wrong one until it is seen to match, as for PINs)
+    acc.fails = (acc.fails ?? 0) + 1;
+    if (acc.fails % PIN_TRIES === 0) {
+      acc.locks = (acc.locks ?? 0) + 1;
+      acc.lockedUntil = now + Math.min(MAX_LOCK_MS, LOCK_MS * 2 ** (acc.locks - 1));
+    }
+    const tried = Buffer.from(await pinHash(password, acc.salt), 'hex');
+    if (!timingSafeEqual(tried, Buffer.from(acc.hash, 'hex'))) {
+      this.write(farm);
+      return { error: NO_LOGIN, status: 403 };
+    }
+    Object.assign(acc, { fails: 0, locks: 0, lockedUntil: 0 });
+    const token = this.newDevice(farm);
+    if (!this.write(farm)) return { error: 'The server could not keep your farm.', status: 500 };
+    this.log(`farm ${farm.id}: logged in (${farm.tokens.length} devices)`);
+    return { id: farm.id, token, ...accountOf(farm) };
+  },
+
+  // A new shirt color
+  setColor(farm, color) {
+    if (!farm.account) return { error: 'Make an account first.', status: 400 };
+    if (!okColor(color)) return { error: 'That is not one of the colors.', status: 400 };
+    farm.color = color;
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    return accountOf(farm);
+  },
+});
+
+// ---------- Friends ----------
+const without = (list, id) => (list ?? []).filter((x) => x !== id);
+
+Object.assign(Farms.prototype, {
+  // Are these two farms' farmers friends? (it takes both lists)
+  areFriends(a, b) {
+    return !!(a?.friends?.includes(b?.id) && b?.friends?.includes(a?.id));
+  },
+
+  // A farmer's friends: [{ id, name, color }]
+  friendsOf(farm) {
+    const list = [];
+    for (const id of farm.friends ?? []) {
+      const other = this.get(id);
+      if (other?.account && this.areFriends(farm, other)) list.push({ id, name: other.account.name, color: other.color });
+    }
+    return list;
+  },
+
+  // Who asked to be their friend: [{ id, name }]
+  asksOf(farm) {
+    const list = [];
+    for (const id of farm.friendAsks ?? []) {
+      const other = this.get(id);
+      if (other?.account) list.push({ id, name: other.account.name });
+    }
+    return list;
+  },
+
+  // Ask the farmer with this username to be friends (they asked us already:
+  // friends now). -> { name, friends: true or false }
+  askFriend(farm, username) {
+    if (!farm.account) return { error: 'Make an account first.', status: 400 };
+    const id = this.accounts.get(usernameKey(username));
+    const other = id && this.get(id);
+    if (!other?.account) return { error: 'There is no farmer by that name.', status: 404 };
+    if (other.id === farm.id) return { error: "That's you!", status: 400 };
+    const name = other.account.name;
+    if (this.areFriends(farm, other)) return { error: `You and ${name} are friends already.`, status: 409 };
+    if (farm.friendAsks?.includes(other.id)) return this.answerFriend(farm, other.id, true);
+    if (other.friendAsks?.includes(farm.id)) return { name, friends: false };
+    if ((other.friendAsks?.length ?? 0) >= MAX_FRIENDS) return { error: `${name} has too many asks waiting.`, status: 409 };
+    other.friendAsks = [...(other.friendAsks ?? []), farm.id];
+    if (!this.write(other)) return { error: 'The server could not keep that.', status: 500 };
+    return { name, friends: false };
+  },
+
+  // Yes or no to an ask from farm id. -> { name, friends }
+  answerFriend(farm, id, yes) {
+    const other = this.get(id);
+    if (!farm.friendAsks?.includes(id) || !other?.account) return { error: 'That ask is not there (any more).', status: 404 };
+    farm.friendAsks = without(farm.friendAsks, id);
+    if (yes) {
+      if ((farm.friends?.length ?? 0) >= MAX_FRIENDS || (other.friends?.length ?? 0) >= MAX_FRIENDS) {
+        this.write(farm);
+        return { error: 'One of you has all the friends they can have.', status: 409 };
+      }
+      farm.friends = [...without(farm.friends, id), id];
+      other.friends = [...without(other.friends, farm.id), farm.id];
+      other.friendAsks = without(other.friendAsks, farm.id);
+      this.write(other);
+    }
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    return { name: other.account.name, friends: !!yes };
+  },
+
+  removeFriend(farm, id) {
+    const other = this.get(id);
+    farm.friends = without(farm.friends, id);
+    if (other) {
+      other.friends = without(other.friends, farm.id);
+      this.write(other);
+    }
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    return {};
+  },
+});
+
+// What the page saves (src/main.js): { v, farm, backpack, skills }. The server goes no
 // further than the shape; what is in it is the page's business.
 const validSave = (save) => !!save && typeof save === 'object' && !Array.isArray(save) && Number.isInteger(save.v) && save.v >= 1;

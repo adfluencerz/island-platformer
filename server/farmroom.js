@@ -21,7 +21,15 @@
 // to the owner, as at home) and sends their state along (ANIMALS); everyone
 // else's page draws them from that, for company. With the owner away they
 // keep as they were, and the owner's page catches up on what they gave when
-// it next has them (src/animals.js restore()).
+// it next has them (src/animals.js restore()). The farm's upgrades (`levels`:
+// its workbench's and pens', bought by the owner) go along with them.
+//
+// The bosses' arenas are out past the sea on the farm's world (shared/bosses.js):
+// the room keeps a BossFight for each, moving its boss while anyone is in its
+// arena and counting the bops (BOSS_BOP). Beaten, its portal goes (UNBUILT,
+// by nobody: the key pieces it was built from are used up), and everyone who
+// fought hears they won (BOSS_WON): their own pages hand out what it gives.
+// A fight isn't kept: the room goes, and the boss is asleep again.
 //
 // The farm is kept in the farm's own file, in the page's save format (the
 // save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age]], built:
@@ -35,10 +43,14 @@ import { Place } from '../shared/place.js';
 import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS, devToolsOn } from '../shared/constants.js';
 import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
+import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } from '../shared/bosses.js';
+import { wildsFromWire, standsAt } from '../shared/wilds.js';
+import { HOME_WILDS } from '../shared/homewilds.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
+import { unmake, BOSSES, WEAPONS } from '../shared/balance.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
-const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
+const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
 const SECONDS_PER_HOUR = DAY_LENGTH_SECONDS / 24;
 const RIPE_SLACK = 1; // seconds: pages count growth on their own clocks
 const MAX_STACK = CHEST.stack; // of one item in the chest
@@ -48,20 +60,27 @@ const SOIL_EVERY = 1000; // ms between looks at the bare soil
 // (as in a lobby: shared/room.js)
 const CHOP_REACH = 2.6;
 const CHOP_EVERY = 1000; // ms
-const MAX_TREES = 2000;
 const MINE_REACH = 2.6;
 const MINE_EVERY = 900; // ms
-const MAX_ROCKS = 2000;
+const BOSS_EVERY = 0.8; // of a weapon's `every` (WEAPONS): the fewest ms between one farmer's bops at a boss that count
+const BOSS_SEND = 2; // ticks between a boss's BOSSes
 const ITEM_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const KEY_RE = /^-?\d{1,3},-?\d{1,3}$/;
+// where the farm's trees and rocks stand (shared/wilds.js), the same on every farm and every page
+const WILDS = wildsFromWire(HOME_WILDS);
+const MAX_TREES = WILDS.trees.length;
+const MAX_ROCKS = WILDS.rocks.length;
 
 export class FarmRoom extends Place {
   // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
   // { id, owner }, or null for someone who isn't the owner or a helper.
-  constructor({ farm, admit, log = () => {} }) {
-    super({ code: farm.id, name: farmTitle(farm), worldLimit: Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w) + 40, log }); // (the house's room is out past the sea)
+  // helpers(): how many helpers the farm has now (each lets it have one more house)
+  constructor({ farm, admit, helpers = () => 0, log = () => {} }) {
+    const far = Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w, ...Object.values(ARENAS).map(({ x, z }) => Math.max(Math.abs(x), Math.abs(z)) + ARENA_R));
+    super({ code: farm.id, name: farmTitle(farm), worldLimit: far + 40, log }); // (the house's room and the bosses' arenas are out past the sea)
     this.farmId = farm.id;
     this.admit = admit;
+    this.helpers = helpers;
     const saved = farm.save?.farm ?? null;
     const now = Date.now();
     // the clock: game hours since the farm began, running on from when it was saved
@@ -91,6 +110,7 @@ export class FarmRoom extends Place {
     this.covered = new Map(); // every tile a piece stands on (a house: many) -> the key it was built on
     for (const [key, piece] of saved?.built ?? []) {
       const free = KEY_RE.test(key) && PIECES[piece] && pieceTiles(piece, key).every((k) => KEY_RE.test(k) && !this.tilled.has(k) && !this.covered.has(k));
+      // (a house built while it had more helpers stays)
       if (free && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece))) this.put(key, piece);
     }
     const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
@@ -100,15 +120,18 @@ export class FarmRoom extends Place {
     this.treeSites = siteMap(saved?.treeSites, MAX_TREES);
     this.rockSites = siteMap(saved?.rockSites, MAX_ROCKS);
     this.giants = Giants.fromSave(saved?.giants, this.rand); // (shared/giants.js)
+    this.giants.setCounts(MAX_TREES, MAX_ROCKS);
     // the rest of the farm is the animals', as the owner's page saved them
     // (and the chest the page keeps when it plays the farm alone: the owner's
     // page puts what is in it into this one when it comes)
     const { savedAt, hours, tilled, crops, built, felled, mined, treeSites, rockSites, giants, chest, ...animals } = saved ?? {};
     this.animals = animals;
-    this.chest = { ...(farm.chest ?? {}) };
+    this.chest = unmake(farm.chest); // (a lamp post or bench made at the workbench, back in wood and stone)
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
     this.clockSentAt = now;
     this.soilAt = now;
+    this.fights = new Map(BOSS_IDS.map((id) => [id, new BossFight(id, this.rand)])); // boss -> its fight (shared/bosses.js)
+    this.bossAt = now;
   }
 
   // the farm's clock now, in game hours
@@ -146,7 +169,7 @@ export class FarmRoom extends Place {
       id: p.id,
       name: p.name,
       color: p.color,
-      farm: { id: this.farmId, name: this.name, owner: this.ownerName },
+      farm: { id: this.farmId, name: this.name, owner: this.ownerName, helpers: this.helpers() },
       mine: p.owner,
       tilled: this.tilledList(this.hours()),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
@@ -156,6 +179,7 @@ export class FarmRoom extends Place {
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
       giants: this.giants.toSave(),
+      bosses: Object.fromEntries([...this.fights].filter(([, f]) => f.phase !== 'sleep').map(([id, f]) => [id, f.toWire()])),
       chest: this.chest,
       hours: round3(this.hours()),
       animals: this.animals,
@@ -176,10 +200,11 @@ export class FarmRoom extends Place {
   }
 
   // ---------- What they do ----------
-  // Close enough to the tile, and down on the ground (not up on a platform)
+  // Close enough to the tile, and not far above it (a step or a platform is
+  // fine: the client reaches 1.2 up or down, USE_HEIGHT in src/main.js)
   near(p, key) {
     const [gx, gz] = key.split(',').map(Number);
-    return Math.hypot(gx - p.x, gz - p.z) <= REACH && Math.abs(p.y - GROUND_STAND_Y) < 0.6;
+    return Math.hypot(gx - p.x, gz - p.z) <= REACH && Math.abs(p.y - GROUND_STAND_Y) < 1.4;
   }
 
   act(p, msg) {
@@ -228,7 +253,7 @@ export class FarmRoom extends Place {
         const fromChest = Object.hasOwn(PIECES, piece) ? this.chestShare(p, piece, msg.chest) : null;
         const tiles = Object.hasOwn(PIECES, piece) ? pieceTiles(piece, key) : [];
         const free = (k) => onFarm(k) && !this.covered.has(k) && !this.tilled.has(k) && !keptClear(...k.split(',').map(Number));
-        const ok = onFarm(key) && fromChest && tiles.every(free) && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece)) && this.near(p, key);
+        const ok = onFarm(key) && fromChest && tiles.every(free) && this.built.size < MAX_PIECES && this.count(piece) < mostPieces(piece, this.helpers()) && this.near(p, key);
         if (!ok) return this.deny(p, 'build', key, undefined, Object.hasOwn(PIECES, piece) ? piece : undefined);
         for (const [item, n] of fromChest) {
           this.chest[item] -= n;
@@ -245,7 +270,7 @@ export class FarmRoom extends Place {
         const { key } = msg;
         const at = onFarm(key) && this.covered.get(key);
         const piece = at && this.built.get(at);
-        if (!piece || !this.near(p, key)) return this.deny(p, 'unbuild', key);
+        if (!piece || !this.near(p, key) || this.fights.get(portalBoss(piece))?.awake) return this.deny(p, 'unbuild', key); // (not a portal with a fight on through it)
         this.unput(at);
         this.changed = true;
         this.broadcast({ t: S.UNBUILT, key: at, piece, by: p.id });
@@ -255,7 +280,8 @@ export class FarmRoom extends Place {
         // (as in a lobby: the page says where the tree stands, the room checks the chopper is by it)
         const { id, x, z } = msg;
         const now = Date.now();
-        const ok = Number.isInteger(id) && id >= 0 && id < MAX_TREES && finite(x, z) &&
+        const tree = Number.isInteger(id) ? WILDS.trees[id] : null;
+        const ok = tree && finite(x, z) && standsAt(tree, x, z) &&
           !this.felled.has(id) && !this.giants.is('tree', id) && now - (p.chopAt ?? 0) >= CHOP_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= CHOP_REACH && Math.abs(p.y - GROUND_STAND_Y) < 2;
         if (!ok) return this.send(p, { t: S.CHOP_DENY, id });
@@ -264,15 +290,16 @@ export class FarmRoom extends Place {
         this.felled.set(id, at);
         p.chopAt = now;
         this.changed = true;
-        this.broadcast({ t: S.FELLED, id, by: p.id, count: woodFor(msg.size, this.rand), at });
+        this.broadcast({ t: S.FELLED, id, by: p.id, count: woodFor(tree.scale, this.rand), at });
         break;
       }
       case C.MINE: {
         // (the same for a rock)
         const { id, x, z } = msg;
         const now = Date.now();
-        const size = Math.min(ROCK.size[1], Number.isFinite(msg.size) ? msg.size : 0);
-        const ok = Number.isInteger(id) && id >= 0 && id < MAX_ROCKS && finite(x, z) &&
+        const rock = Number.isInteger(id) ? WILDS.rocks[id] : null;
+        const size = rock?.size ?? 0;
+        const ok = rock && finite(x, z) && standsAt(rock, x, z) &&
           !this.mined.has(id) && !this.giants.is('rock', id) && now - (p.mineAt ?? 0) >= MINE_EVERY &&
           Math.hypot(x - p.x, z - p.z) <= MINE_REACH + size * 1.5 && Math.abs(p.y - GROUND_STAND_Y) < 2;
         if (!ok) return this.send(p, { t: S.MINE_DENY, id });
@@ -281,12 +308,9 @@ export class FarmRoom extends Place {
         this.mined.set(id, at);
         p.mineAt = now;
         this.changed = true;
-        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(msg.size, this.rand), at });
+        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(size, this.rand), at });
         break;
       }
-      case C.COUNT:
-        this.giants.setCounts(msg.trees, msg.rocks);
-        break;
       case C.DEV_GIANT: {
         // (developer tools: shared/constants.js DEV_TOOLS)
         const { kind, id } = msg;
@@ -298,7 +322,9 @@ export class FarmRoom extends Place {
       }
       case C.HIT: {
         // (as in a lobby: shared/room.js)
-        const hit = giantSwing(this.giants, p, msg);
+        const thing = (msg.kind === 'tree' ? WILDS.trees : msg.kind === 'rock' ? WILDS.rocks : [])[msg.id];
+        if (!thing || !finite(msg.x, msg.z) || !standsAt(thing, msg.x, msg.z)) return;
+        const hit = giantSwing(this.giants, p, { ...msg, size: thing.scale ?? thing.size });
         if (!hit) return;
         const { kind, id } = hit;
         this.changed = true;
@@ -310,6 +336,29 @@ export class FarmRoom extends Place {
         (tree ? this.felled : this.mined).set(id, at);
         const by = hit.shares.find(([who]) => who === p.id)?.[1] ?? 0;
         this.broadcast({ t: tree ? S.FELLED : S.MINED, id, by: p.id, count: by, at, shares: hit.shares });
+        break;
+      }
+      case C.BOSS_BOP: {
+        // (in its arena, close enough, not too fast: shared/bosses.js)
+        const { boss, weapon } = msg;
+        const fight = Object.hasOwn(BOSSES, boss) && this.fights.get(boss);
+        const now = Date.now();
+        if (!fight || !Object.hasOwn(WEAPONS, weapon) || arenaAt(p.x, p.z) !== boss || now - (p.bossBopAt ?? 0) < WEAPONS[weapon].every * BOSS_EVERY) return;
+        const hit = fight.bop(p.id, weapon, p.x, p.y, p.z);
+        if (!hit) return;
+        p.bossBopAt = now;
+        this.broadcast({ t: S.BOSS_FX, boss, fx: { e: 'bop', by: p.id, hp: hit.hp } });
+        if (!hit.won) break;
+        this.broadcast({ t: S.BOSS, boss, s: fight.toWire() });
+        this.broadcast({ t: S.BOSS_WON, boss, by: p.id, won: hit.won });
+        this.say(`The ${BOSSES[boss].name.toLowerCase()} is all dizzy, and friendly now!`);
+        // its portal goes: the key pieces it was built from are used up
+        const key = [...this.built].find(([, piece]) => piece === portalOf(boss))?.[0];
+        if (key) {
+          this.unput(key);
+          this.changed = true;
+          this.broadcast({ t: S.UNBUILT, key, piece: portalOf(boss), by: 0 });
+        }
         break;
       }
       case C.CHEST_PUT: {
@@ -415,12 +464,20 @@ export class FarmRoom extends Place {
     return false;
   }
 
+  // how many of `piece` are built on the farm
+  count(piece) {
+    let n = 0;
+    for (const built of this.built.values()) if (built === piece) n++;
+    return n;
+  }
+
   store(item, count) {
     this.chest[item] = (this.chest[item] ?? 0) + count;
   }
 
   // ---------- Every tick ----------
   tickPlace(now) {
+    this.tickBosses(now);
     for (const [list, sites, t] of [[this.felled, this.treeSites, S.REGROWN], [this.mined, this.rockSites, S.RESURFACED]]) {
       for (const [id, at] of list) {
         if (now < at) continue;
@@ -451,6 +508,19 @@ export class FarmRoom extends Place {
     if (now - this.clockSentAt < CLOCK_EVERY) return;
     this.clockSentAt = now;
     if (this.connected()) this.broadcast({ t: S.FARM_CLOCK, hours: round3(this.hours(now)) });
+  }
+
+  // The bosses, while anyone is in their arenas (or till they fall asleep again)
+  tickBosses(now) {
+    const dt = Math.min(0.25, (now - this.bossAt) / 1000);
+    this.bossAt = now;
+    for (const [boss, fight] of this.fights) {
+      if (fight.phase === 'sleep' && !this.connected()) continue;
+      const here = [...this.players.values()].filter((p) => p.conn && arenaAt(p.x, p.z) === boss);
+      if (fight.phase === 'sleep' && !here.length) continue;
+      for (const fx of fight.step(dt, here)) this.broadcast({ t: S.BOSS_FX, boss, fx });
+      if (this.tick % BOSS_SEND === 0 || fight.phase === 'sleep') this.broadcast({ t: S.BOSS, boss, s: fight.toWire() });
+    }
   }
 
   // ---------- Keeping it ----------
@@ -510,7 +580,12 @@ export class FarmRooms {
     if (this.rooms.has(id)) return this.rooms.get(id);
     const farm = this.farms.get(id);
     if (!farm) return null;
-    const room = new FarmRoom({ farm, admit: (auth, name) => this.admit(farm, auth, name), log: this.log });
+    const room = new FarmRoom({
+      farm,
+      admit: (auth, name) => this.admit(farm, auth, name),
+      helpers: () => this.farms.get(id)?.helpers?.length ?? 0,
+      log: this.log,
+    });
     room.start();
     this.rooms.set(id, room);
     this.log(`farm ${id} opened for helpers`);

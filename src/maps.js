@@ -2,77 +2,58 @@ import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from './world.js';
-import { STALL, buildStall } from './merchant.js';
-import { YARD, PASTURE, buildPens } from './animals.js';
+import { buildStall } from './merchant.js';
+import { buildPens } from './animals.js';
+import { buildSkyIsles } from './skyisles.js';
+import { homeGround, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR, PEN_RECTS } from '../shared/farmland.js';
+import { WILD_DECOR, HOME_DECOR, wildKeepClear } from '../shared/wilds.js';
 
 // ---------- Maps ----------
 // What the worlds look like (built by world.js): your farm, and the wild
 // island a lobby's seed grows (shared/worldgen.js). A map says, per ground tile,
 // what kind of tile it is (or null for sea); how each kind looks and whether
-// grass grows on it; its platforms; and decorate() puts the trees, bushes and
-// rocks around. build() is for a map's own set pieces, and may return a
-// function that animates them.
+// grass grows on it; its platforms; and decorate() puts the bushes around
+// (the trees and rocks stand where the server says: shared/wilds.js).
+// build() is for a map's own set pieces, and may return a function that
+// animates them.
 
 // ---------- Home: your farm's island ----------
 // A square island: a sand rim, a stone plaza at spawn, dirt paths toward a
 // staggered set of platforms, the merchant's stall and the gates of the hen
-// yard and the pasture, and grass everywhere else.
-const HOME_PATHS = [
-  [[1, 27], [1, 15], [0, 6]], // from the south shore up to spawn
-  [[0, 6], [-3, 1], [-6, -1]], // spawn -> first platform
-  [[0, 6], [4, 2], [8, -6], [11, -12]], // spawn -> under the high platforms
-  [[1, 7], [STALL.x, STALL.z + 2]], // spawn -> the merchant's stall
-  [[-2, 5.5], [YARD.x + YARD.w / 2 - 0.5, YARD.z]], // spawn -> the hen yard's gate
-  [[1, PASTURE.z], [PASTURE.x + PASTURE.w / 2 - 0.5, PASTURE.z]], // the south path -> the pasture's gate
-];
-const HOME_PLAZA = { x: 0, z: 5, r: 2.6 };
-const HOME_HALF = 29;
-
-// Trees stay out of the platforming area so they never block a jump or the view
-const PLAY_AREA = { minX: -14, maxX: 17, minZ: -21, maxZ: 9 };
-const inPlayArea = (x, z) =>
-  x > PLAY_AREA.minX && x < PLAY_AREA.maxX && z > PLAY_AREA.minZ && z < PLAY_AREA.maxZ;
-
-const platform = (x, y, z, w, h, d, color = 0x8b5a2b) => ({ x, y, z, w, h, d, color, cap: 'grass' });
-
+// yard and the pasture, and grass everywhere else (its plan: shared/farmland.js;
+// its trees and rocks: shared/homewilds.js).
 export const HOME = {
   name: 'home',
   seed: 1337,
   half: HOME_HALF,
   spawn: SPAWN,
-  tileType(gx, gz) {
-    if (Math.max(Math.abs(gx), Math.abs(gz)) > HOME_HALF - 1.5) return 'sand'; // (world.js asks between tiles too)
-    if (Math.hypot(gx - HOME_PLAZA.x, gz - HOME_PLAZA.z) < HOME_PLAZA.r) return 'stone';
-    if (distToPaths(gx, gz, HOME_PATHS) < 0.85) return 'path';
-    return 'grass';
-  },
+  tileType: homeGround, // (world.js asks between tiles too)
   tileStyles: {
     grass: { color: 0x5d9b3a, jitter: 0.035, top: [0.006, 0.026], lush: true },
     path: { color: 0xb08a5a, jitter: 0.05, top: [0.004, 0.01] },
     stone: { color: 0x9c9a92, jitter: 0.07, top: [0.012, 0.03] },
     sand: { color: 0xe3cc94, jitter: 0.03, top: [0.004, 0.012] },
   },
-  decorTypes: new Set(['grass']),
+  decorTypes: HOME_DECOR,
   foliage: { grass: { tufts: 2.2, lushTufts: 1.5, flowerLush: 0.35, flowerChance: 0.35 } },
-  platforms: [
-    platform(-6, 1, -4, 4, 1, 4),
-    platform(0, 2.5, -8, 4, 1, 4),
-    platform(6, 4, -12, 4, 1, 4),
-    platform(12, 5.5, -16, 4, 1, 4),
-    platform(-10, 3, -14, 3, 1, 3, 0xa0522d),
-  ],
-  keepClear: [[SPAWN.x, SPAWN.z, 1.5], [STALL.x, STALL.z + 1.5, 4], [YARD.x, YARD.z, Math.hypot(YARD.w, YARD.d) / 2 + 0.6],
-    [PASTURE.x, PASTURE.z, Math.hypot(PASTURE.w, PASTURE.d) / 2 + 0.6]],
+  platforms: HOME_PLATFORMS,
+  keepClear: HOME_KEEP_CLEAR,
   build(ctx) {
     buildStall(ctx);
     buildPens(ctx);
   },
-  decorate({ scatter, addTree, addBush, addRock, isOpenGround, tileAt }) {
-    scatter(70, 2.6, (x, z) => !inPlayArea(x, z) && isOpenGround(x, z, 1), (x, z) => addTree(x, z));
-    scatter(40, 2, (x, z) => isOpenGround(x, z, 0.8), addBush);
-    scatter(30, 1.5, (x, z) => tileAt(x, z) === 'sand' || isOpenGround(x, z, 0.5), (x, z) => addRock(x, z));
+  decorate({ scatter, addBush, isOpenGround }) {
+    scatter(40, 2, (x, z) => isOpenGround(x, z, 0.8) && !inBiggestPen(x, z, 0.8), addBush);
   },
 };
+
+// (where the pens' fences go out to at their last level: no bushes there)
+function inBiggestPen(x, z, margin) {
+  return Object.values(PEN_RECTS).some((levels) => {
+    const r = levels[levels.length - 1];
+    return Math.abs(x - r.x) < r.w / 2 + margin && Math.abs(z - r.z) < r.d / 2 + margin;
+  });
+}
 
 // ---------- The wild islands: one per online lobby ----------
 // Bigger and wilder than a farm (from generation 3 on, twice as wide again),
@@ -114,8 +95,6 @@ const forSize = (island, n) => Math.round(n * (island.half / WILD_HALF) ** 2);
 export function wildMap(island) {
   const theme = THEMES[island.theme] ?? THEMES.spring;
   const { trails } = island;
-  const nearTerrace = (x, z, margin) =>
-    island.terraces.some(([tx, tz, w, d]) => Math.abs(x - tx) < w / 2 + margin && Math.abs(z - tz) < d / 2 + margin);
   const offTrail = (x, z, d) => distToPaths(x, z, trails) > d;
   const more = (n) => forSize(island, n);
   return {
@@ -142,7 +121,7 @@ export function wildMap(island) {
       glen: { color: 0x3d6b3a, jitter: 0.04, top: [0.006, 0.02], lush: true },
       dune: { color: 0xd9c188, jitter: 0.03, top: [0.006, 0.02] },
     },
-    decorTypes: new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch', 'glen', 'dune']),
+    decorTypes: WILD_DECOR,
     foliage: {
       grass: { tufts: 2.6, lushTufts: 1.5, flowerLush: 0.3, flowerChance: 0.25, hue: theme.hue },
       moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], hue: theme.hue },
@@ -161,52 +140,12 @@ export function wildMap(island) {
     platforms: island.terraces.map(([x, z, w, d, top], i) => ({
       x, y: top / 2, z, w, h: top, d, color: [0x8a857b, 0x7d786f, 0x918b80, 0x86817a][i % 4], cap: 'moss',
     })),
-    // nothing grows on the spots or in the stone circle
-    keepClear: [
-      ...island.spots.map(([, x, , z]) => [x, z, 1]),
-      [island.spawn.x, island.spawn.z, STONE_CIRCLE + 0.8],
-    ],
+    // nothing grows on the spots or in the stone circle (or up into a sky isle)
+    keepClear: wildKeepClear(island),
     build: (ctx) => buildWildPieces(island, ctx),
-    growBackAnywhere: true, // (a tree from the full forest may grow back out on the grass: world.js)
-    decorate({ scatter, addTree, addBush, addRock, isOpenGround, tileAt, rand }) {
-      // The forest: thick on the moss, with big old trees among the pines
-      scatter(more(130), 2.1, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.2) && offTrail(x, z, 1.8),
-        (x, z) => addTree(x, z, { scale: rand(1, 1.6) }));
-      // Lone trees out on the grass
-      scatter(more(24), 5, (x, z) => tileAt(x, z) === 'grass' && isOpenGround(x, z, 1.6) && offTrail(x, z, 2.2),
-        (x, z) => addTree(x, z));
+    // (its trees and rocks are the server's: shared/wilds.js)
+    decorate({ scatter, addBush, isOpenGround }) {
       scatter(more(60), 1.8, (x, z) => isOpenGround(x, z, 0.8) && offTrail(x, z, 1.2), addBush);
-      scatter(more(45), 1.4, (x, z) => tileAt(x, z) === 'sand' || isOpenGround(x, z, 0.5), (x, z) => addRock(x, z));
-      // Boulders tumbled at the foot of the terraces
-      scatter(more(9), 2.2, (x, z) => nearTerrace(x, z, 2.2) && !nearTerrace(x, z, 0.6) && isOpenGround(x, z, 0.4) && offTrail(x, z, 1.6),
-        (x, z) => addRock(x, z, [0.7, 1.1]));
-      // Generation 2 (the heath): last, so nothing before it moves
-      if (island.heath) {
-        scatter(14, 2.4, (x, z) => tileAt(x, z) === 'heath' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.5, 0.9]));
-      }
-      // Generation 4 (the reed marsh): after the heath's, again
-      if (island.marsh) {
-        scatter(6, 2.4, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
-      }
-      // Generation 5 (the bluebell glade): after the marsh's
-      if (island.glade) {
-        scatter(4, 2.6, (x, z) => tileAt(x, z) === 'glade' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
-      }
-      // Generation 6 (the sunflower field): after the glade's
-      if (island.field) {
-        scatter(3, 2.6, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
-      }
-      // Generation 7 (the pumpkin patch): after the field's
-      if (island.patch) {
-        scatter(3, 2.6, (x, z) => tileAt(x, z) === 'patch' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
-      }
-      // Generation 8 (the fern glen), then 9 (the shell dunes): after the patch's
-      if (island.glen) {
-        scatter(6, 2.4, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.8]));
-      }
-      if (island.dunes) {
-        scatter(5, 2.4, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => addRock(x, z, [0.4, 0.7]));
-      }
     },
   };
 }
@@ -449,11 +388,15 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
     });
   }
 
-  // the lily pads drift a little
+  // Generation 10: the sky isles overhead (src/skyisles.js)
+  const sky = buildSkyIsles(island, { root, addCollider });
+
+  // the lily pads drift a little (and on the sky isles, what turns turns)
   return (t) => {
     pads.forEach((pad, i) => {
       pad.position.y = -0.1 + Math.sin(t * 1.3 + i) * 0.012;
       pad.rotation.y += Math.sin(t * 0.4 + i) * 0.0008;
     });
+    sky?.(t);
   };
 }

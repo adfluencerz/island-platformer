@@ -29,10 +29,12 @@ function browserKey() {
 }
 
 export class Connection {
-  // code: the lobby to join ('' quick joins). Or farm: the farm to be on,
-  // and auth: "<id>.<token>" of this browser's own farm (src/net/farm.js)
-  constructor({ name, code = '', farm = null, auth = null }) {
+  // code: the lobby to join ('' quick joins). Or farm: the farm to be on.
+  // auth: "<id>.<token>" of this browser's own farm (src/net/farm.js): who we are
+  // color: our shirt's
+  constructor({ name, color, code = '', farm = null, auth = null }) {
     this.name = name;
+    this.color = color;
     this.code = code;
     this.farm = farm;
     this.auth = auth;
@@ -65,8 +67,8 @@ export class Connection {
     const query = this.farm ? `?farm=${encodeURIComponent(this.farm)}` : this.code ? `?lobby=${encodeURIComponent(this.code)}` : '';
     const ws = (this.ws = new WebSocket(`${proto}//${location.host}/ws${query}`));
     ws.onopen = () => {
-      const join = { t: C.JOIN, v: PROTOCOL_VERSION, name: this.name, key: browserKey(), back: this.welcomed };
-      if (this.farm) join.auth = this.auth;
+      const join = { t: C.JOIN, v: PROTOCOL_VERSION, name: this.name, color: this.color, key: browserKey(), back: this.welcomed };
+      if (this.auth) join.auth = this.auth;
       ws.send(JSON.stringify(join));
     };
     ws.onmessage = (e) => {

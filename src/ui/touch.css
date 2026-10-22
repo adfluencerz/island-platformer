@@ -40,7 +40,7 @@
 :root:not(.touch) .tc { display: none; }
 body.in-menu .tc { display: none; }
 .tc { font-family: var(--inv-font); }
-.tc-stick, .tc-btn { touch-action: none; }
+.tc-stick, .tc-btn, :root.touch .inv-hotbar { touch-action: none; }
 
 .tc-stick {
   position: fixed;
@@ -96,7 +96,7 @@ body.in-menu .tc { display: none; }
 .tc-btn.down { transform: translateY(2px); box-shadow: inset 0 4px 0 #a3530c, 0 1px 0 rgba(0, 0, 0, 0.3); }
 .tc-use { right: 0; bottom: 0; width: 78px; height: 78px; font-size: 27px; }
 .tc-use.ready { background: #4f9e3c; box-shadow: inset 0 4px 0 #7ed957, inset 0 -4px 0 #2f6b25, 0 0 0 4px rgba(255, 230, 120, 0.8); }
-.tc-jump { right: 86px; bottom: 0; width: 60px; height: 60px; }
+.tc-jump { right: 86px; bottom: 0; width: 72px; height: 72px; font-size: 26px; }
 .tc-small {
   width: 50px;
   height: 50px;
@@ -106,8 +106,20 @@ body.in-menu .tc { display: none; }
   text-shadow: none;
   box-shadow: inset 0 3px 0 var(--inv-slot-light), inset 0 -3px 0 var(--inv-slot-shade), 0 3px 0 rgba(0, 0, 0, 0.3);
 }
-.tc-bag { right: 14px; bottom: 88px; }
-.tc-chat { right: 92px; bottom: 70px; }
+/* Bag, Build and Chat: a column top right, under the coin counter (touch.js puts its top there) */
+.tc-side {
+  position: fixed;
+  top: calc(var(--safe-t) + 120px);
+  right: calc(var(--safe-r) + 10px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none; /* (taps between the buttons go to the world) */
+}
+.tc-side .tc-btn { position: relative; }
+.tc-build { font-size: 17px; }
 
 /* Hold the clock to fast-forward (at home) */
 :root.touch .dn-clock { pointer-events: auto; touch-action: none; }
@@ -193,6 +205,8 @@ body.in-menu .tc { display: none; }
   font-size: 19px;
 }
 :root.compact .ui-build-text .ui-muted { font-size: 16px; }
+/* ...stopping short of the Bag, Build and Chat buttons (a column of 50px buttons on the right; in landscape, a row of three) */
+:root.touch .ui-build { right: calc(var(--safe-r) + 70px); }
 
 :root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
 :root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
@@ -227,8 +241,8 @@ body.in-menu .tc { display: none; }
 :root.compact .inv-tt-name { font-size: 23px; }
 :root.compact .inv-tt-desc { font-size: 18px; }
 
-/* The merchant's shop */
-:root.compact .shop-window { width: auto; margin-top: 0; }
+/* The merchant's shop, and the farm chest: as wide as the screen has room for (the chest's note wraps) */
+:root.compact .shop-window, :root.compact .chest-window { width: auto; margin-top: 0; }
 :root.compact .shop-say { font-size: 20px; margin-bottom: 8px; }
 :root.compact .shop-heading { font-size: 21px; margin: 8px 0 4px; }
 :root.compact .shop-item { font-size: 19px; gap: 6px; padding: 6px 8px 6px 6px; }
@@ -272,6 +286,9 @@ body.in-menu .tc { display: none; }
 
 @media (orientation: portrait) {
   :root.touch .inv-grid { grid-template-columns: repeat(6, var(--inv-slot)); }
+  /* the chest's words and buttons as wide as its six columns of slots, so it fits the screen */
+  :root.touch .chest-window > * { max-width: calc(var(--inv-slot) * 6 + 30px); }
+  :root.touch .chest-bar { flex-wrap: wrap; gap: 6px 12px; }
 }
 @media (orientation: portrait) and (max-width: 380px) {
   :root.touch .shop-stock { grid-template-columns: 1fr; }
@@ -281,13 +298,14 @@ body.in-menu .tc { display: none; }
 @media (orientation: landscape) {
   :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); max-height: calc(100dvh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
   :root.touch .ui-prompt { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--hotbar-b) + var(--hotbar-h) + 12px); }
-  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 10px); top: calc(var(--safe-t) + 116px); bottom: auto; width: min(300px, 36vw); }
+  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 96px); top: calc(var(--safe-t) + 182px); bottom: auto; width: min(300px, 36vw); } /* (under the buttons, clear of Jump) */
   :root.touch .ui-chat-log { max-height: 96px; }
   :root.touch .inv-toasts { bottom: calc(var(--controls-b) + var(--stick) + 10px); }
   :root.touch .inv-menu { padding-top: calc(var(--safe-t) + 46px); }
   /* the buttons stacked up beside the toolbar rather than along it */
   :root.touch { --inv-slot: 34px; }
-  .tc-jump { right: 9px; bottom: 88px; }
-  .tc-bag { right: 84px; bottom: 104px; }
-  .tc-chat { right: 84px; bottom: 44px; }
+  .tc-jump { right: 3px; bottom: 88px; }
+  /* Bag, Build and Chat in a row under the coin counter (no room for a column over Jump) */
+  .tc-side { flex-direction: row-reverse; }
+  :root.touch .ui-build { right: calc(var(--safe-r) + 190px); }
 }

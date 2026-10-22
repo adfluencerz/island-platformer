@@ -9,5 +9,7 @@ export function fingerprint(seed) {
   const { coast, pond, pondFloor, terraces, toadstools, woods, meadow, trails, stones, spots, spawn, theme, half } = island;
   const ground = [];
   for (let z = -half; z <= half; z++) for (let x = -half; x <= half; x++) ground.push(island.groundAt(x, z) ?? '-');
-  return hashSeed(JSON.stringify([island.seed, theme, half, spawn, coast, pond, pondFloor, terraces, toadstools, woods, meadow, trails, stones, spots, ground.join(',')]));
+  // (the sky isles, from generation 10, only where there are any: older islands' prints stay as they were)
+  const sky = island.sky ? [island.sky] : [];
+  return hashSeed(JSON.stringify([island.seed, theme, half, spawn, coast, pond, pondFloor, terraces, toadstools, woods, meadow, trails, stones, spots, ground.join(','), ...sky]));
 }
