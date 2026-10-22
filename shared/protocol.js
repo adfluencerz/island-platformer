@@ -60,6 +60,7 @@ export const S = {
   DROP: 'drop', // { id, item, count, x, y, z, from, wait }: something dropped (knocked loose by a bop, or THROW), for anyone to walk into (but from, the farmer it came from, for wait ms)
   GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire()), whenever that changes
   GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
+  GAME_SCORE: 'gameScore', // { scores: [[id, score]], top: [id, ...] }: king of the hill: the scores now, and who is up on the crown
   GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (winner: 0, nobody)
   PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
   BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms

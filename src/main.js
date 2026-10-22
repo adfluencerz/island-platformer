@@ -37,7 +37,7 @@ import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDeco
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
 import { arenaFor, signFor, SIGN_REACH, GAMES } from '../shared/arenas.js';
-import { arenaMap, buildSignpost } from './arenas.js';
+import { arenaMap, buildSignpost, buildCrown } from './arenas.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { CAST_REACH, waterOn } from '../shared/fishing.js';
 import { HOME_HALF } from '../shared/farmland.js';
@@ -45,7 +45,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createBosses } from './bosses.js';
-import { BOSSES, SHOP } from '../shared/balance.js';
+import { BOSSES, SHOP, MINIGAMES } from '../shared/balance.js';
 import { portalOf } from '../shared/bosses.js';
 import { createSkills } from './skills.js';
 import { SKILL_LIST } from '../shared/skills.js';
@@ -1167,11 +1167,15 @@ const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
 let bopReady = 0; // (clock time the weapon can swing again)
 
 const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
+// (in king of the hill's arena, empty hands shove: MINIGAMES in shared/balance.js)
+const shoving = () => !!arenaId && partyGame?.kind === 'king_of_hill' && !weaponInHand();
+const bopWith = () => (shoving() ? 'shove' : weaponInHand());
+const bopStats = (id) => (id === 'shove' ? MINIGAMES.king_of_hill.shove : WEAPONS[id]);
 const resting = (pos) => !arenaId && Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
 
 // The nearest other farmer within reach (and not resting in the stone circle): { id, pos }, or null
 function bopTarget() {
-  const weapon = WEAPONS[weaponInHand()];
+  const weapon = bopStats(bopWith());
   if (!weapon) return null;
   let best = null;
   let bestD = weapon.reach * 0.9; // (the lobby has a slightly older idea of where they are)
@@ -1189,14 +1193,14 @@ function bopTarget() {
 
 // Swing the weapon in hand: at the nearest farmer in reach, or at the air
 function bop() {
-  const id = weaponInHand();
+  const id = bopWith();
   const now = clock.elapsedTime;
   if (!id || now < bopReady || anim.swing >= 0) return;
   if (resting(player.position)) return inventory.notify('The stone circle is for resting: no bopping here');
   const target = bopTarget();
   if (target) anim.facing = Math.atan2(target.pos.x - player.position.x, target.pos.z - player.position.z);
   farmer.swing();
-  bopReady = now + WEAPONS[id].every / 1000;
+  bopReady = now + bopStats(id).every / 1000;
   net?.send({ t: C.BOP, weapon: id, yaw: Math.round(anim.facing * 100) / 100 });
 }
 
@@ -1389,7 +1393,7 @@ function useAction() {
   if (!building && bosses.use()) return; // (a boss's portal or arena, or a mount in hand)
   if (place === 'lobby' && !arenaId && fishing.use()) return;
   if (place === 'lobby') {
-    if (arenaId) return weaponInHand() && bop(); // (off in a party game's arena)
+    if (arenaId) return bopWith() && bop(); // (off in a party game's arena)
     if (atSign()) return useSign();
     if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
     if (holding() === 'axe' && swingAxe()) return;
@@ -3123,6 +3127,7 @@ function leaveLobbyWorld() {
   partyGame = null;
   arenaId = 0;
   partyHud.clear();
+  showCrowns([]);
   lobbyRoster = [];
   clearSpots();
   clearDrops();
@@ -3144,13 +3149,13 @@ function leaveLobbyWorld() {
 // over, with the prize. While we are in the arena the lobby's island is kept
 // as it was (its spots and drops out of sight), and only the farmers in the
 // same place as us are drawn.
-const PARTY_KIND = 'coin_rush'; // (the one game there is so far)
 const partyHud = new PartyHud({
   onJoin: () => net?.send({ t: C.GAME_JOIN }),
   onLeave: () => leaveParty(),
   nameOf: (id) => lobbyNames.get(id) ?? 'Someone',
 });
 const coinPending = new Map(); // coin id -> when we said we picked it up (performance.now())
+const crowns = new Map(); // king of the hill: player id -> the crown over their head, while they hold the hill
 let readyCount = 0; // the last number of the countdown shown
 const inParty = () => !!partyGame?.players.some(([id]) => id === myId);
 const partyFrozen = () => !!arenaId && partyGame?.phase === 'ready';
@@ -3158,14 +3163,19 @@ const atSign = () => place === 'lobby' && !arenaId && !!session && footReach() &
   Math.hypot(player.position.x - session.sign.x, player.position.z - session.sign.z) < SIGN_REACH;
 
 function signHint() {
-  if (!partyGame) return `Start a ${GAMES[PARTY_KIND].name.toLowerCase()}`;
+  if (!partyGame) return 'Start a party game';
   const name = GAMES[partyGame.kind]?.name.toLowerCase() ?? 'party game';
   if (partyGame.phase !== 'gathering') return '';
   return inParty() ? `Not coming to the ${name} after all` : `Join the ${name}`;
 }
 
 function useSign() {
-  if (!partyGame) net?.send({ t: C.GAME_START, game: PARTY_KIND });
+  if (!partyGame) {
+    partyHud.choose((kind) => {
+      partyHud.stopChoosing();
+      net?.send({ t: C.GAME_START, game: kind });
+    });
+  }
   else if (partyGame.phase === 'gathering') net?.send({ t: inParty() ? C.GAME_LEAVE : C.GAME_JOIN });
   else inventory.notify('A game is on: wait for the next one');
 }
@@ -3197,6 +3207,7 @@ function showParty(game, pos = null) {
     readyCount = -1;
     hud.flash('Go!');
   }
+  if (playing) showCrowns(game.top ?? []);
   if (!playing && arenaId) backFromArena(); // (it was called off, or we are out of it)
 }
 
@@ -3204,6 +3215,7 @@ function showParty(game, pos = null) {
 function backFromArena(pos = null) {
   arenaId = 0;
   coinPending.clear();
+  showCrowns([]);
   enterWorld('wild', session.seed, session.wilds);
   showLobbyThings(true);
   showRemotes();
@@ -3222,10 +3234,43 @@ function leaveParty() {
   if (arenaId) backFromArena();
 }
 
-// Every frame in the arena: the countdown, and coins we walk into
+// King of the hill: a crown over the head of each farmer up on the hill (ids)
+function showCrowns(ids) {
+  for (const [id, crown] of crowns) {
+    if (ids.includes(id)) continue;
+    scene.remove(crown);
+    crowns.delete(id);
+  }
+  for (const id of ids) {
+    if (crowns.has(id)) continue;
+    const crown = buildCrown();
+    scene.add(crown);
+    crowns.set(id, crown);
+  }
+}
+
+// GAME_SCORE: king of the hill's scores, and who holds the hill now
+function partyScores(m) {
+  if (!partyGame) return;
+  partyGame.top = m.top;
+  partyHud.scores(m.scores);
+  if (!arenaId) return;
+  const had = crowns.has(myId);
+  showCrowns(m.top);
+  if (!had && crowns.has(myId)) hud.flash('King of the hill!');
+}
+
+// Every frame in the arena: the countdown, coins we walk into, crowns
 function updateArena() {
   partyHud.update();
-  hud.setPrompt('');
+  hud.setPrompt(crowns.has(myId) ? 'You hold the hill!' : partyGame?.kind === 'king_of_hill' && partyGame.phase === 'playing' ? (shoving() ? 'E: shove' : 'Up the hill! E: bop') : '');
+  const t = performance.now() / 1000;
+  for (const [id, crown] of crowns) {
+    const pos = id === myId ? player.position : remotes.positionOf(id);
+    if (!pos) continue;
+    crown.position.set(pos.x, pos.y + 0.95 + Math.sin(t * 3) * 0.04, pos.z);
+    crown.rotation.y = t;
+  }
   if (partyGame?.phase === 'ready') {
     const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
     if (left > 0 && left !== readyCount) {
@@ -3344,6 +3389,7 @@ function joinLobby({ name, code }) {
   });
   on(S.GAME, (m) => showParty(m.game));
   on(S.GAME_COIN, (m) => partyCoin(m));
+  on(S.GAME_SCORE, (m) => partyScores(m));
   on(S.GAME_END, (m) => partyOver(m));
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
@@ -3685,6 +3731,7 @@ function update(dt) {
     updateSpots(dt, t);
     updateDrops(dt, t);
     partyHud.update();
+    if (partyHud.choosing && !atSign()) partyHud.stopChoosing();
     sendState(dt);
     remotes.update(dt, t);
   } else {

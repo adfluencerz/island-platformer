@@ -6,7 +6,10 @@
 //              (shared/arenas.js), at their start, for readyMs: a look about
 //   playing    the game, for its time (GAMES); coin rush: walking into a
 //              coin (GAME_COIN) scores it, checked against where the room
-//              last heard the player was, the way a lobby's spots are
+//              last heard the player was, the way a lobby's spots are;
+//              king of the hill: every tick a player's feet are up on the
+//              hill's crown (where the room last heard they were) counts,
+//              a point a second (GAME_SCORE, with who is up there now)
 //   over       the scores to everyone, the prize to the winner (and a few
 //              coins to everyone else who played), and all of them back in
 //              the lobby, where they arrive. The next game can start
@@ -19,6 +22,7 @@
 // A game isn't kept when the lobby is saved: a restart calls it off.
 import { S } from './protocol.js';
 import { GAMES, arenaFor, arenaSeed, signFor, SIGN_REACH } from './arenas.js';
+import { GROUND_STAND_Y } from './level.js';
 import { MINIGAMES } from './balance.js';
 
 const COIN_REACH = 1.8; // the page picks a coin up within 0.6; the slack covers a position up to ~150 ms old
@@ -50,7 +54,7 @@ export class Party {
   constructor(room) {
     this.room = room;
     this.sign = signFor(room.island);
-    this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at }, taken: Set of coin ids }
+    this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at, held }, taken: Set of coin ids, top: ids on the crown, last }
     this.count = 0; // games so far (each one's id)
     this.nextAt = 0; // when the next one can start (ms)
   }
@@ -64,6 +68,7 @@ export class Party {
       id: g.id, kind: g.kind, seed: g.seed, phase: g.phase, ms: Math.max(0, g.until - now),
       players: [...g.players].map(([id, { score }]) => [id, score]),
       taken: [...g.taken],
+      top: g.top,
     };
   }
 
@@ -82,9 +87,9 @@ export class Party {
     const seed = arenaSeed(this.room.rand);
     this.game = {
       id: ++this.count, kind, seed, arena: arenaFor(kind, seed), phase: 'gathering', until: now + MINIGAMES.gatherMs,
-      players: new Map(), taken: new Set(),
+      players: new Map(), taken: new Set(), top: [], last: 0,
     };
-    this.game.players.set(p.id, { score: 0, at: 0 });
+    this.game.players.set(p.id, { score: 0, at: 0, held: 0 });
     this.room.say(`${p.name} is starting a ${GAMES[kind].name.toLowerCase()}! Join at the signpost in the stone circle (${Math.round(MINIGAMES.gatherMs / 1000)} s).`);
     this.tell(now);
     return '';
@@ -93,7 +98,7 @@ export class Party {
   join(p, now = Date.now()) {
     const g = this.game;
     if (!g || g.phase !== 'gathering' || g.players.has(p.id)) return;
-    g.players.set(p.id, { score: 0, at: 0 });
+    g.players.set(p.id, { score: 0, at: 0, held: 0 });
     this.tell(now);
   }
 
@@ -103,6 +108,7 @@ export class Party {
     const g = this.game;
     if (!g?.players.has(p.id)) return;
     g.players.delete(p.id);
+    g.top = g.top.filter((id) => id !== p.id);
     if (p.game) {
       p.game = 0;
       this.room.rosterDirty = true;
@@ -131,9 +137,34 @@ export class Party {
     this.room.broadcast({ t: S.GAME_COIN, id, by: p.id, score: me.score });
   }
 
+  // King of the hill: the time everyone up on the crown has held it (ms
+  // since the last tick, a few at most, so a stall gives nobody a lot)
+  holdHill(g, now) {
+    const dt = g.last ? Math.min(now - g.last, 250) : 0;
+    g.last = now;
+    const top = [];
+    let changed = false;
+    for (const [id, me] of g.players) {
+      const p = this.room.players.get(id);
+      if (!p || p.game !== g.id || !g.arena.onCrown(p.x, p.y - GROUND_STAND_Y, p.z)) continue;
+      top.push(id);
+      me.held += dt;
+      const score = Math.floor(me.held / 1000);
+      if (score !== me.score) {
+        me.score = score;
+        me.at = now;
+        changed = true;
+      }
+    }
+    if (!changed && top.length === g.top.length && top.every((id, i) => id === g.top[i])) return;
+    g.top = top;
+    this.room.broadcast({ t: S.GAME_SCORE, scores: [...g.players].map(([id, { score }]) => [id, score]), top });
+  }
+
   // ---------- Every tick ----------
   tick(now) {
     const g = this.game;
+    if (g?.phase === 'playing' && g.kind === 'king_of_hill') this.holdHill(g, now);
     if (!g || now < g.until) {
       // coin rush: over as soon as every coin is picked up
       if (g?.phase === 'playing' && g.kind === 'coin_rush' && g.taken.size >= g.arena.coins.length) this.end(now);
@@ -184,9 +215,9 @@ export class Party {
       t: S.GAME_END, game: g.kind, seed: g.seed, winner, prizes, pos,
       scores: scores.map(([id, { score }]) => [id, score]),
     });
-    const name = GAMES[g.kind].name.toLowerCase();
+    const { name, scored, nobody } = GAMES[g.kind];
     const won = this.room.players.get(winner);
-    this.room.say(won ? `${won.name} won the ${name} with ${best[1].score} coin${best[1].score === 1 ? '' : 's'}!` : `The ${name} is over: nobody picked up a coin.`);
+    this.room.say(won ? `${won.name} won the ${name.toLowerCase()} with ${scored(best[1].score)}!` : `The ${name.toLowerCase()} is over: ${nobody}.`);
     this.tell(now);
   }
 }

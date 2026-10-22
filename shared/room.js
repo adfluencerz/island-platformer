@@ -52,7 +52,7 @@ import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn } from './fishing.js';
-import { DAY_LENGTH_SECONDS, SKILLS, SHOP } from './balance.js';
+import { DAY_LENGTH_SECONDS, SKILLS, SHOP, MINIGAMES } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 
@@ -308,7 +308,9 @@ export class Room extends Place {
         break;
       }
       case C.BOP: {
-        const weapon = Object.hasOwn(WEAPONS, msg.weapon) ? WEAPONS[msg.weapon] : null;
+        // (in king of the hill's arena, empty hands shove)
+        const shoving = msg.weapon === 'shove' && p.game && this.party.game?.kind === 'king_of_hill';
+        const weapon = shoving ? MINIGAMES.king_of_hill.shove : Object.hasOwn(WEAPONS, msg.weapon) ? WEAPONS[msg.weapon] : null;
         const now = Date.now();
         if (!weapon || now - p.bopAt < weapon.every - 150 || this.resting(p)) return;
         p.bopAt = now;

@@ -13,9 +13,13 @@
 //   bales: [[x, z, w, d, top], ...]: hay bales to climb, solid down to the
 //     ground; a stack is a wide one with a narrower one standing on it
 //   coins: [[x, y, z], ...]: a coin's id is its index (y: where it floats)
-//   start(i, n): where player i of n starts, round the middle
+//   hill: [[x, z, w, d, top], ...]: king of the hill's steps, bottom up (the
+//     last is the crown); [] for other games
+//   start(i, n): where player i of n starts, round the middle (round the
+//     edge, with a hill there)
 // and answers isLand(x, z), groundAt(x, z) ('grass', 'sand' or null: the sea),
-// topAt(x, z, margin) (the highest bale top over x, z, or 0).
+// topAt(x, z, margin) (the highest bale or step over x, z, or 0) and
+// onCrown(x, feetY, z) (up on the hill's top).
 //
 // Arenas are versioned the way islands are: never change how a kind of arena
 // grows from a seed once players know it; a new look is a new kind (or a new
@@ -26,7 +30,14 @@ import { MINIGAMES } from './balance.js';
 
 // The party games there are, by kind: what they are called and how long they last
 export const GAMES = {
-  coin_rush: { name: 'Coin rush', ms: MINIGAMES.coin_rush.ms, blurb: 'Pick up the most coins before the time runs out' },
+  coin_rush: {
+    name: 'Coin rush', ms: MINIGAMES.coin_rush.ms, blurb: 'Pick up the most coins before the time runs out',
+    unit: '', scored: (n) => `${n} coin${n === 1 ? '' : 's'}`, nobody: 'nobody picked up a coin',
+  },
+  king_of_hill: {
+    name: 'King of the hill', ms: MINIGAMES.king_of_hill.ms, blurb: 'Stand on top of the hill the longest: bop the others off',
+    unit: ' s', scored: (n) => `${n} s on top`, nobody: 'nobody held the hill',
+  },
 };
 
 export const COIN_FLOAT = 0.7; // how high over what it is over a coin floats (a farmer standing there touches it)
@@ -39,39 +50,27 @@ const round1 = (v) => Math.round(v * 10) / 10;
 // A seed for a new arena: "dewy-glade-31"
 export const arenaSeed = (rand = Math.random) => normalizeSeed(randomSeed(rand).replace(/-v\d+$/, ''));
 
-// ---------- Coin rush: a round meadow with hay bales ----------
-function growCoinRush(seed, attempt) {
-  const stream = (part) => {
-    const rng = mulberry32(hashSeed(`coin_rush/${seed}/${attempt}/${part}`));
-    const rand = (min, max) => min + rng() * (max - min);
-    return { rng, rand, int: (min, max) => Math.floor(rand(min, max + 1)), pick: (arr) => arr[Math.floor(rng() * arr.length)] };
-  };
-
-  // The coast: round, with a couple of gentle bays
-  const c = stream('coast');
-  const coast = { r: round1(c.rand(13, 16)), waves: [[c.rand(0.6, 1.2), c.int(2, 3), c.rand(0, 6.3)], [c.rand(0.3, 0.7), c.int(4, 6), c.rand(0, 6.3)]] };
-  const shoreDist = (x, z) => coast.r + waves(Math.atan2(z, x), coast.waves) - Math.hypot(x, z);
-
-  // The hay bales: a few round the middle, some stacked two high
-  const b = stream('bales');
+// Hay bales round an arena (b: a stream): want [min, max] of them, at
+// [near, far] from the middle, with footprints well on land and where
+// clear(x, z, w, d) says; nearly half have a narrower one stacked on one end
+// (the other end is the step up). The order the stream is drawn from never
+// changes (coin rush arenas are pinned).
+function growBales(b, shoreDist, clear, [lo, hi], [near, far]) {
   const bales = [];
   const clearOf = (x, z, w, d, gap) =>
     bales.every(([bx, bz, bw, bd]) => Math.abs(x - bx) > (w + bw) / 2 + gap || Math.abs(z - bz) > (d + bd) / 2 + gap);
-  // a footprint well on land and clear of where everyone starts
   const fits = (x, z, w, d) =>
-    [[-1, -1], [1, -1], [-1, 1], [1, 1]].every(([sx, sz]) => shoreDist(x + (sx * w) / 2, z + (sz * d) / 2) > 2) &&
-    Math.hypot(x, z) > 3.5 + Math.max(w, d) / 2;
-  const want = b.int(6, 9);
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].every(([sx, sz]) => shoreDist(x + (sx * w) / 2, z + (sz * d) / 2) > 2) && clear(x, z, w, d);
+  const want = b.int(lo, hi);
   for (let n = 0; n < 300 && bales.length < want; n++) {
     const a = b.rand(0, Math.PI * 2);
-    const d = b.rand(4.5, coast.r - 3);
+    const d = b.rand(near, far);
     const x = round1(Math.cos(a) * d);
     const z = round1(Math.sin(a) * d);
     const w = round1(b.rand(2.2, 3.4));
     const dd = round1(b.rand(2.2, 3.4));
     if (!fits(x, z, w, dd) || !clearOf(x, z, w, dd, 1.6)) continue;
     bales.push([x, z, w, dd, BALE_RISE]);
-    // stacked: a narrower bale on one end of it (the other end is the step up)
     if (b.rng() < 0.45) {
       const along = w > dd;
       const sw = along ? round1(w * 0.5) : w;
@@ -80,6 +79,29 @@ function growCoinRush(seed, attempt) {
       bales.push([along ? round1(x + side * (w - sw) / 2) : x, along ? z : round1(z + side * (dd - sd) / 2), sw, sd, BALE_RISE * 2]);
     }
   }
+  return bales;
+}
+
+// A stream of numbers for one part of one try at an arena
+function streamFor(kind, seed, attempt) {
+  return (part) => {
+    const rng = mulberry32(hashSeed(`${kind}/${seed}/${attempt}/${part}`));
+    const rand = (min, max) => min + rng() * (max - min);
+    return { rng, rand, int: (min, max) => Math.floor(rand(min, max + 1)), pick: (arr) => arr[Math.floor(rng() * arr.length)] };
+  };
+}
+
+// ---------- Coin rush: a round meadow with hay bales ----------
+function growCoinRush(seed, attempt) {
+  const stream = streamFor('coin_rush', seed, attempt);
+
+  // The coast: round, with a couple of gentle bays
+  const c = stream('coast');
+  const coast = { r: round1(c.rand(13, 16)), waves: [[c.rand(0.6, 1.2), c.int(2, 3), c.rand(0, 6.3)], [c.rand(0.3, 0.7), c.int(4, 6), c.rand(0, 6.3)]] };
+  const shoreDist = (x, z) => coast.r + waves(Math.atan2(z, x), coast.waves) - Math.hypot(x, z);
+
+  // The hay bales: a few round the middle (clear of where everyone starts), some stacked two high
+  const bales = growBales(stream('bales'), shoreDist, (x, z, w, d) => Math.hypot(x, z) > 3.5 + Math.max(w, d) / 2, [6, 9], [4.5, coast.r - 3]);
   if (bales.length < 4) return null;
   const topAt = (x, z, margin = 0) =>
     bales.reduce((top, [bx, bz, w, d, t]) => (Math.abs(x - bx) < w / 2 + margin && Math.abs(z - bz) < d / 2 + margin ? Math.max(top, t) : top), 0);
@@ -110,21 +132,63 @@ function growCoinRush(seed, attempt) {
   return finishArena({ game: 'coin_rush', seed, half: Math.ceil(coast.r + 3), coast, bales, coins });
 }
 
+// ---------- King of the hill: a meadow with a stepped hill in the middle ----------
+// The hill is three grassy steps, each standing on the one under it with a
+// ledge all round; its top step is the crown, where the time counts.
+// Farmers start round the edge, a few bales between them and the hill.
+function growKingOfHill(seed, attempt) {
+  const stream = streamFor('king_of_hill', seed, attempt);
+  const c = stream('coast');
+  const coast = { r: round1(c.rand(13, 15)), waves: [[c.rand(0.5, 1), c.int(2, 3), c.rand(0, 6.3)], [c.rand(0.3, 0.6), c.int(4, 6), c.rand(0, 6.3)]] };
+  const shoreDist = (x, z) => coast.r + waves(Math.atan2(z, x), coast.waves) - Math.hypot(x, z);
+
+  // The hill: each step a little off the middle of the one under it
+  const h = stream('hill');
+  const hill = [];
+  let [x, z, w, d, top] = [0, 0, h.rand(8, 9.5), h.rand(8, 9.5), 0];
+  for (const [shrink, rise] of [[1, h.rand(0.9, 1.1)], [h.rand(0.6, 0.68), h.rand(0.9, 1.1)], [h.rand(0.52, 0.6), h.rand(0.9, 1.1)]]) {
+    const nw = round1(w * shrink);
+    const nd = round1(d * shrink);
+    x = round1(x + h.rand(-0.15, 0.15) * (w - nw));
+    z = round1(z + h.rand(-0.15, 0.15) * (d - nd));
+    top = round1(top + rise);
+    hill.push([x, z, nw, nd, top]);
+    [w, d] = [nw, nd];
+  }
+
+  // A few bales out toward the edge, clear of the hill and of where everyone starts
+  const startR = round1(coast.r - 3.5);
+  const [hx, hz, hw, hd] = hill[0];
+  const clear = (bx, bz, bw, bd) =>
+    (Math.abs(bx - hx) > (bw + hw) / 2 + 2 || Math.abs(bz - hz) > (bd + hd) / 2 + 2) &&
+    Math.abs(Math.hypot(bx, bz) - startR) > 1.2 + Math.max(bw, bd) / 2;
+  const bales = growBales(stream('bales'), shoreDist, clear, [3, 5], [6, coast.r - 2.5]);
+
+  return finishArena({ game: 'king_of_hill', seed, half: Math.ceil(coast.r + 3), coast, hill, bales, coins: [], startR });
+}
+
 // The questions everyone asks of an arena
 function finishArena(desc) {
-  const { coast, bales } = desc;
+  const { coast, bales, hill = [], startR = 1.6 } = desc;
+  const blocks = [...bales, ...hill];
   const shoreDist = (x, z) => coast.r + waves(Math.atan2(z, x), coast.waves) - Math.hypot(x, z);
   const isLand = (x, z) => shoreDist(x, z) > 0.5;
   const groundAt = (x, z) => (!isLand(x, z) ? null : shoreDist(x, z) < 2 ? 'sand' : 'grass');
   const topAt = (x, z, margin = 0) =>
-    bales.reduce((top, [bx, bz, w, d, t]) => (Math.abs(x - bx) < w / 2 + margin && Math.abs(z - bz) < d / 2 + margin ? Math.max(top, t) : top), 0);
-  // round the middle, as farmers arrive on an island (shared/level.js spawnPoint)
+    blocks.reduce((top, [bx, bz, w, d, t]) => (Math.abs(x - bx) < w / 2 + margin && Math.abs(z - bz) < d / 2 + margin ? Math.max(top, t) : top), 0);
+  // round the middle, as farmers arrive on an island (shared/level.js
+  // spawnPoint); round the edge for a game with a hill in the middle
   const start = (i, n) => {
     const a = (i / Math.max(n, 1)) * Math.PI * 2;
-    const r = n > 1 ? 1.6 : 0;
+    const r = hill.length ? startR : n > 1 ? startR : 0;
     return { x: round1(Math.cos(a) * r), y: GROUND_STAND_Y, z: round1(Math.sin(a) * r) };
   };
-  return { ...desc, isLand, groundAt, topAt, start };
+  // King of the hill: whether a farmer with their feet at y is up on the
+  // crown (standing, or jumping about over it)
+  const crown = hill.at(-1);
+  const onCrown = (x, y, z) =>
+    !!crown && Math.abs(x - crown[0]) < crown[2] / 2 + 0.3 && Math.abs(z - crown[1]) < crown[3] / 2 + 0.3 && y > crown[4] - 0.3 && y < crown[4] + 2.5;
+  return { ...desc, hill, isLand, groundAt, topAt, start, crown, onCrown };
 }
 
 // What every arena must be: a list of what is wrong with it (empty: nothing).
@@ -141,6 +205,13 @@ export function checkArena(arena) {
       if (!under) problems.push(`the stacked bale at ${x}, ${z} has no step up`);
     } else if (top > REACH_UP) problems.push(`the bale at ${x}, ${z} is out of reach`);
   }
+  // the hill's steps: on land, each on the one under it with a ledge all round, a jump up
+  arena.hill.forEach(([x, z, w, d, top], i) => {
+    const [ux, uz, uw, ud, ut] = i ? arena.hill[i - 1] : [x, z, w + 2, d + 2, 0];
+    if (![[-1, -1], [1, -1], [-1, 1], [1, 1]].every(([sx, sz]) => arena.isLand(x + (sx * w) / 2, z + (sz * d) / 2))) problems.push(`the hill's step ${i} hangs over the sea`);
+    if (top - ut > REACH_UP || top <= ut) problems.push(`the hill's step ${i} is out of reach`);
+    if (Math.abs(x - ux) > (uw - w) / 2 - 0.8 || Math.abs(z - uz) > (ud - d) / 2 - 0.8) problems.push(`the hill's step ${i} has no ledge to climb from`);
+  });
   for (const [x, y, z] of arena.coins) {
     const where = `the coin at ${x}, ${z}`;
     if (!arena.isLand(x, z)) problems.push(`${where} is in the sea`);
@@ -155,7 +226,7 @@ export function checkArena(arena) {
   return problems;
 }
 
-const GROW = { coin_rush: growCoinRush };
+const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill };
 
 // The arena a kind of game grows from a seed (the same every time,
 // everywhere), or null for a kind there isn't. A seed whose first tries make
