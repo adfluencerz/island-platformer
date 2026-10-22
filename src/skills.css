@@ -1,0 +1,35 @@
+/* ---------- The Skills tab (src/skills.js), in the bag's colors (inventory.css) ---------- */
+.inv-skills { width: min(calc(12 * var(--inv-slot) + 33px), calc(100vw - 76px)); }
+.inv-skills[hidden] { display: none; }
+.sk-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 10px; }
+.sk-overall { font-size: 28px; line-height: 1; }
+.sk-goal { font-size: 20px; opacity: 0.8; }
+.sk-goal.done { color: #2f7f24; opacity: 1; }
+.sk-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+.sk-card {
+  padding: 8px 10px;
+  border-radius: 3px;
+  background: var(--inv-slot-bg);
+  box-shadow: inset 3px 3px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
+}
+.sk-card.soon { filter: grayscale(0.7); opacity: 0.6; }
+.sk-top { display: flex; justify-content: space-between; align-items: baseline; }
+.sk-name { font-size: 24px; line-height: 1; }
+.sk-level { font-size: 22px; color: var(--inv-red); }
+.sk-bar {
+  height: 10px;
+  margin: 5px 0 3px;
+  border-radius: 2px;
+  background: var(--inv-slot-shade);
+  overflow: hidden;
+}
+.sk-fill { height: 100%; background: #4f9a2c; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2); }
+.sk-xp { font-size: 18px; opacity: 0.8; }
+.sk-perk { font-size: 18px; line-height: 1.1; }
+.sk-perk::before { content: '• '; }

@@ -21,7 +21,8 @@
 // to the owner, as at home) and sends their state along (ANIMALS); everyone
 // else's page draws them from that, for company. With the owner away they
 // keep as they were, and the owner's page catches up on what they gave when
-// it next has them (src/animals.js restore()).
+// it next has them (src/animals.js restore()). The farm's upgrades (`levels`:
+// its workbench's and pens', bought by the owner) go along with them.
 //
 // The bosses' arenas are out past the sea on the farm's world (shared/bosses.js):
 // the room keeps a BossFight for each, moving its boss while anyone is in its
@@ -49,7 +50,7 @@ import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES
 import { unmake, BOSSES, WEAPONS } from '../shared/balance.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
-const REACH = 2.6; // the client farms the tile underfoot, or one tapped within 2.2
+const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
 const SECONDS_PER_HOUR = DAY_LENGTH_SECONDS / 24;
 const RIPE_SLACK = 1; // seconds: pages count growth on their own clocks
 const MAX_STACK = CHEST.stack; // of one item in the chest

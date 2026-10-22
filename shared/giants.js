@@ -8,14 +8,14 @@
 // how its giant is doing after every swing; a farm played alone keeps its own
 // on the page (src/main.js). A giant is one of the place's trees or rocks, by
 // its number (shared/wilds.js: the server's list, the same on every page).
-import { GIANT, TREE, ROCK, STURDY_HITS, GROUND_STAND_Y, woodFor, stoneFor, mostWood, mostStone } from './level.js';
+import { GIANT, TREE, ROCK, TOOL_HITS, GROUND_STAND_Y, woodFor, stoneFor, mostWood, mostStone } from './level.js';
 import { finite } from './protocol.js';
 
 export const KINDS = ['tree', 'rock'];
 export const MORNING = 6; // the game hour each day's roll comes at
 export const LOBBY_DAWN = 9; // a lobby's clock starts at this hour, when it opens
 const BASE = { tree: TREE.hits, rock: ROCK.hits };
-const STURDY = { tree: 'sturdy_axe', rock: 'sturdy_pickaxe' };
+const TOOL = { tree: '_axe', rock: '_pickaxe' }; // (the better tools' ids end so: TOOL_HITS)
 const MOST = 2000; // tree and rock ids are below this (as in shared/room.js)
 const SIZES = { tree: TREE.size, rock: ROCK.size };
 const REACH = 2.6; // past the bark or the rock's edge (as for an ordinary one, in shared/room.js)
@@ -31,9 +31,9 @@ export const giantMax = (kind) => GIANT.hits * BASE[kind];
 // How much bigger a giant of this size is drawn
 export const giantScale = (kind, size) => (kind === 'tree' ? GIANT.treeScale : Math.max(GIANT.rockScale, GIANT.rockMin / Math.max(size, 0.05)));
 
-// What one swing with `tool` takes off: one, or a little more with a sturdy
-// one (as much more as it saves on an ordinary tree or rock)
-export const swingDamage = (kind, tool) => (tool === STURDY[kind] ? BASE[kind] / STURDY_HITS[tool] : 1);
+// What one swing with `tool` takes off: one, or more with a better one (as
+// much more as it saves on an ordinary tree or rock)
+export const swingDamage = (kind, tool) => (typeof tool === 'string' && tool.endsWith(TOOL[kind]) && TOOL_HITS[tool] ? BASE[kind] / TOOL_HITS[tool] : 1);
 
 // The most a giant of this size can give (room to keep in the backpack)
 export const mostGiantLoot = (kind, size) => GIANT.loot * (kind === 'tree' ? mostWood(size) : mostStone(size));

@@ -1,4 +1,4 @@
-import { SHOP, COIN_VALUE, STURDY_HITS } from '../shared/balance.js';
+import { SHOP, COIN_VALUE, TOOL_HITS, TOOL_EXTRA, HOE_TILLS } from '../shared/balance.js';
 import { RELICS } from './relics.js';
 
 // ---------- Item catalog ----------
@@ -11,10 +11,11 @@ import { RELICS } from './relics.js';
 // `plants` names the crop (see crops.js) a seed grows into.
 // `price` is what the merchant at the farm stall asks for it; `sell` is what
 // the merchant pays for one. No `sell`: not for sale. `tool` says what a tool
-// does (the sturdy ones from the workbench do the same as the plain ones,
-// better: `hits` swings fell a tree or break a rock, a `wide` hoe tills three
-// tiles at once). Prices, a coin's worth and the sturdy tools' hits are set
-// in shared/balance.js (see the end of the catalog). `piece`: a thing made at the
+// does (the sturdy, silver and golden ones from the workbench do the same as
+// the plain ones, better: `hits` swings fell a tree or break a rock, and it
+// gives `extra` more; a hoe `tills` [across, ahead] tiles at once). Prices, a
+// coin's worth and the better tools' hits are set in shared/balance.js (see
+// the end of the catalog). `piece`: a thing made at the
 // workbench to be put down on the farm in build mode (PIECES, shared/level.js).
 
 // Seed packets share one drawing; only the picture on the front changes color.
@@ -539,6 +540,32 @@ export const ITEMS = {
       '................',
     ],
   },
+  large_egg: {
+    name: 'Large egg',
+    category: 'Produce',
+    description: 'A big brown egg, from a hen in a well kept yard. Worth more than an ordinary one.',
+    maxStack: 999,
+    color: 0xd9a46a,
+    palette: { o: '#5b3a1e', w: '#d9a46a', W: '#f2cfa0', s: '#b07a45', d: '#8f5a2f' },
+    sprite: [
+      '......oooo......',
+      '.....oWWwwo.....',
+      '....oWWwwwwo....',
+      '...oWWwwwwwwo...',
+      '...oWwwwdwwwo...',
+      '..oWwwwwwwwwso..',
+      '..owwdwwwwwwso..',
+      '..owwwwwwwdwso..',
+      '..owwwwwwwwsso..',
+      '..owwwwdwwwsso..',
+      '..owwwwwwwssso..',
+      '...owwwwwssso...',
+      '...owwwwsssso...',
+      '....osssssso....',
+      '.....oooooo.....',
+      '................',
+    ],
+  },
   hen: {
     name: 'Hen',
     category: 'Animal',
@@ -826,30 +853,21 @@ ITEMS.golden_turnip = {
 };
 
 // ---------- Made at the workbench (src/workbench.js) ----------
-// The sturdy tools: the plain ones' drawings with blue steel heads
+// The better tools: the plain ones' drawings with blue steel heads (sturdy),
+// then silver, then gold
 const STEEL = { m: '#2f4a6b', M: '#5b84b1', L: '#a8c8ec' };
-ITEMS.wide_hoe = {
-  ...ITEMS.hoe,
-  name: 'Wide hoe',
-  description: 'A broad blade that tills three tiles side by side in one go. Use with E.',
-  wide: true,
-  palette: { ...ITEMS.hoe.palette, ...STEEL },
-  sprite: [...ITEMS.hoe.sprite],
-};
-ITEMS.sturdy_axe = {
-  ...ITEMS.axe,
-  name: 'Sturdy axe',
-  description: 'Fells a tree in two swings. Swing with E (or hold it).',
-  palette: { ...ITEMS.axe.palette, ...STEEL },
-  sprite: [...ITEMS.axe.sprite],
-};
-ITEMS.sturdy_pickaxe = {
-  ...ITEMS.pickaxe,
-  name: 'Sturdy pickaxe',
-  description: 'Breaks a rock in two swings. Swing with E (or hold it).',
-  palette: { ...ITEMS.pickaxe.palette, ...STEEL },
-  sprite: [...ITEMS.pickaxe.sprite],
-};
+const SILVER = { m: '#6b7380', M: '#b4bcc8', L: '#f2f5fa' };
+const GOLD = { m: '#8a5a12', M: '#e0a82e', L: '#ffe58a' };
+const better = (plain, name, description, metal) => ({ ...ITEMS[plain], name, description, palette: { ...ITEMS[plain].palette, ...metal }, sprite: [...ITEMS[plain].sprite] });
+ITEMS.wide_hoe = better('hoe', 'Wide hoe', 'A broad blade that tills three tiles side by side in one go. Use with E.', STEEL);
+ITEMS.sturdy_axe = better('axe', 'Sturdy axe', 'Fells a tree in three swings. Swing with E (or hold it).', STEEL);
+ITEMS.sturdy_pickaxe = better('pickaxe', 'Sturdy pickaxe', 'Breaks a rock in two swings. Swing with E (or hold it).', STEEL);
+ITEMS.silver_hoe = better('hoe', 'Silver hoe', 'Tills five tiles in a row in one go. Use with E.', SILVER);
+ITEMS.silver_axe = better('axe', 'Silver axe', 'Fells a tree in two swings. Swing with E (or hold it).', SILVER);
+ITEMS.silver_pickaxe = better('pickaxe', 'Silver pickaxe', 'Breaks a rock in one swing. Swing with E (or hold it).', SILVER);
+ITEMS.golden_hoe = better('hoe', 'Golden hoe', 'Tills a patch three by three in one go. Use with E.', GOLD);
+ITEMS.golden_axe = better('axe', 'Golden axe', 'Fells a tree in one swing, and gets an extra log out of it. Swing with E (or hold it).', GOLD);
+ITEMS.golden_pickaxe = better('pickaxe', 'Golden pickaxe', 'Breaks a rock in one swing, and gets an extra stone out of it. Swing with E (or hold it).', GOLD);
 
 // For bopping other farmers in lobbies (WEAPONS in shared/level.js): a bop
 // knocks them back and shakes loose a little of what they gathered there.
@@ -1033,7 +1051,9 @@ for (const [id, { price, sell }] of Object.entries(SHOP)) {
   if (sell) ITEMS[id].sell = sell;
 }
 ITEMS.coin.currency = COIN_VALUE;
-for (const [id, hits] of Object.entries(STURDY_HITS)) ITEMS[id].hits = hits;
+for (const [id, hits] of Object.entries(TOOL_HITS)) ITEMS[id].hits = hits;
+for (const [id, extra] of Object.entries(TOOL_EXTRA)) ITEMS[id].extra = extra;
+for (const [id, tills] of Object.entries(HOE_TILLS)) ITEMS[id].tills = tills;
 
 // Render a sprite to a data URL once and reuse it for every <img>. Keyed by the
 // item, since items may share a drawing with different palettes.
@@ -2174,6 +2194,27 @@ export const PIECE_ICONS = {
       '.oddooooooooddo.',
       '.odo........odo.',
       '.ooo........ooo.',
+    ],
+  },
+  arcade: {
+    palette: { ...WOOD, r: '#b5483a', c: '#f2ede0', g: '#e0b23a', y: '#ffe7a3' },
+    sprite: [
+      '..oooooooooooo..',
+      '..oyrrrrrrrryo..',
+      '..oooooooooooo..',
+      '.oooooooooooooo.',
+      'orrccrrccrrccrro',
+      'orrccrrccrrccrro',
+      'oooooooooooooooo',
+      '.od....oo....do.',
+      '.od...oggo...do.',
+      '.od...oggo...do.',
+      '.od....oo....do.',
+      'oooooooooooooooo',
+      'oWWWWWWWWWWWWWWo',
+      'orrccrrccrrccrro',
+      'orrccrrccrrccrro',
+      'oooooooooooooooo',
     ],
   },
   farm_chest: {

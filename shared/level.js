@@ -6,7 +6,7 @@
 // the game (times, costs, what things give) are in shared/balance.js.
 import { CROP_GROW_TIME, LOBBY_SPOTS, TREE_BALANCE, ROCK_BALANCE, BUILD_COSTS, CHEST, SKY_CHESTS, BOSSES } from './balance.js';
 import { SKY_STYLES, relicAt } from './skyisles.js';
-export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, STURDY_HITS } from './balance.js';
+export { CROP_GROW_TIME, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, CHEST, GIANT, TOOL_HITS } from './balance.js';
 
 export const GROUND_STAND_Y = 0.8; // player center height standing on bare ground (height 1.6 / 2)
 export const SPAWN = { x: 0, z: 4 }; // the middle of the home farm's stone plaza
@@ -163,6 +163,7 @@ export const PIECES = {
   stone_cairn: { name: 'Stone cairn', solid: true },
   clothesline: { name: 'Clothesline', solid: true },
   workbench: { name: 'Workbench', solid: true },
+  arcade: { name: 'Arcade', solid: true, one: true }, // (games for gold: src/arcade.js)
   farm_chest: { name: 'Farm chest', solid: true, one: true },
   house: { name: 'House', solid: true, perHelper: true, size: [5, 4] }, // (one, and one more for each helper: mostPieces)
   lamp_post: { name: 'Lamp post', solid: true },
@@ -184,7 +185,7 @@ for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?
 // blocks, climbed; the buildings, that do something; the decorations; the
 // relics; the bosses' portals and statues
 export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics', 'Bosses'];
-const BUILDINGS = new Set(['workbench', 'farm_chest', 'house', 'stone_well']);
+const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
     : piece.portal || piece.statue ? 'Bosses'

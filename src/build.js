@@ -12,7 +12,7 @@ import { createItemMesh } from './itemmesh.js';
 // log towers, stone blocks, mossy or not, and pillars), wells, stone
 // lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water
 // troughs, stone benches, sundials, wheelbarrows, torches, log fences,
-// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, the workbench and what it makes for the farm, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, the workbench and what it makes for the farm, the arcade, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -239,6 +239,53 @@ function cask(g, y0, h, w) {
   for (const [y, k] of [[0.1, 0.88], [h * 0.3, w + 0.02], [h * 0.7, w + 0.02], [h - 0.1, 0.88]]) part(g, barrel, MATS.iron, 0, y0 + y, 0, k, 0.05, k).castShadow = false;
   part(g, barrel, MATS.plankA, 0, y0 + h + 0.005, 0, 0.78, 0.01, 0.78).castShadow = false;
   part(g, box, MATS.plankB, 0, y0 + h + 0.012, 0, 0.7, 0.01, 0.04).castShadow = false;
+}
+
+// The workbench, as fancy as the farm's workbench level (setBenchLevel):
+// a plain bench with a vise and a mallet; from level 2 a pegboard of tools
+// behind it, a lantern and a jar of nails; at level 3 a little shingled roof
+// over it on posts, an anvil and a grindstone
+let benchLevel = 1;
+function workbench(g, solids, level) {
+  part(g, box, MATS.benchTop, 0, 0.82, 0, 0.96, 0.1, 0.62);
+  for (const [x, z] of [[-0.4, -0.24], [0.4, -0.24], [-0.4, 0.24], [0.4, 0.24]]) part(g, box, MATS.post, x, 0.39, z, 0.1, 0.78, 0.1);
+  part(g, box, MATS.plankB, 0, 0.22, 0, 0.84, 0.05, 0.52); // the shelf
+  part(g, box, MATS.stoneLight, -0.2, 0.3, 0.02, 0.3, 0.12, 0.22); // a block of stone on it
+  part(g, box, MATS.iron, 0.3, 0.93, -0.16, 0.16, 0.12, 0.12); // a vise
+  part(g, box, MATS.post, -0.18, 0.9, 0.1, 0.36, 0.05, 0.05); // a mallet
+  part(g, box, MATS.iron, -0.02, 0.92, 0.1, 0.1, 0.1, 0.14);
+  let top = 0.9;
+  if (level > 1) {
+    // the pegboard, and what hangs on it: a saw, a hammer, a coil of twine
+    part(g, box, MATS.plankA, 0, 1.25, -0.29, 0.9, 0.7, 0.04);
+    for (const x of [-0.42, 0.42]) part(g, box, MATS.post, x, 1.25, -0.29, 0.06, 0.74, 0.06);
+    part(g, box, MATS.iron, -0.22, 1.3, -0.26, 0.3, 0.12, 0.01);
+    part(g, box, MATS.post, -0.05, 1.3, -0.26, 0.06, 0.1, 0.03);
+    part(g, box, MATS.post, 0.14, 1.22, -0.26, 0.04, 0.28, 0.03);
+    part(g, box, MATS.iron, 0.14, 1.37, -0.25, 0.14, 0.06, 0.05);
+    part(g, barrel, MATS.twine, 0.32, 1.38, -0.25, 0.12, 0.04, 0.12).rotation.x = Math.PI / 2;
+    // a lantern on the corner, lit at night with the lamps
+    part(g, box, MATS.iron, -0.36, 0.9, 0.18, 0.12, 0.04, 0.12);
+    part(g, box, MATS.lantern, -0.36, 0.99, 0.18, 0.09, 0.14, 0.09).castShadow = false;
+    part(g, box, MATS.iron, -0.36, 1.08, 0.18, 0.12, 0.03, 0.12);
+    part(g, barrel, MATS.water, 0.12, 0.91, -0.12, 0.08, 0.1, 0.08); // a jar
+    top = 1.6;
+  }
+  if (level > 2) {
+    // the roof: posts at the back, a sloping roof of shingles
+    for (const x of [-0.46, 0.46]) part(g, box, MATS.post, x, 0.95, -0.29, 0.08, 1.9, 0.08);
+    const roof = part(g, box, MATS.roofTile, 0, 1.9, -0.02, 1.08, 0.06, 0.78);
+    roof.rotation.x = 0.32;
+    part(g, box, MATS.roofDark, 0, 2.02, -0.37, 1.1, 0.06, 0.08);
+    // the anvil on a stump, and the grindstone in its frame
+    part(g, log, MATS.bark, 0.2, 0.12, 0.42, 0.22, 0.24, 0.22);
+    part(g, box, MATS.iron, 0.2, 0.3, 0.42, 0.24, 0.1, 0.12);
+    part(g, tip, MATS.iron, 0.36, 0.31, 0.42, 0.08, 0.12, 0.08).rotation.z = -Math.PI / 2;
+    for (const z of [0.36, 0.48]) part(g, box, MATS.post, -0.25, 0.18, z, 0.04, 0.36, 0.04);
+    part(g, barrel, MATS.stoneLight, -0.25, 0.3, 0.42, 0.26, 0.06, 0.26).rotation.x = Math.PI / 2;
+    top = 2.05;
+  }
+  solids.push({ x: 0, y: top / 2, z: 0, w: 0.96, h: top, d: 0.62 });
 }
 
 // A piece's model, at the middle of its tile. joined: the directions
@@ -666,6 +713,37 @@ function model(id, gx, gz, joined) {
     part(g, box, MATS.post, -0.18, 0.9, 0.1, 0.36, 0.05, 0.05); // a mallet
     part(g, box, MATS.iron, -0.02, 0.92, 0.1, 0.1, 0.1, 0.14);
     solids.push({ x: 0, y: 0.45, z: 0, w: 0.96, h: 0.9, d: 0.62 });
+  } else if (id === 'arcade') {
+    // a little fairground booth: a counter striped red and cream with cards
+    // and a coin on it, a big gold coin on the back board, a striped awning,
+    // and a sign on top ringed with bulbs that light up at night
+    part(g, box, MATS.plankB, 0, 0.44, 0.02, 0.92, 0.88, 0.6);
+    for (let i = 0; i < 6; i++) part(g, box, i % 2 ? MATS.linen : MATS.cloth, -0.385 + i * 0.154, 0.46, 0.325, 0.154, 0.74, 0.02).castShadow = false;
+    part(g, box, MATS.benchTop, 0, 0.92, 0.04, 1.02, 0.08, 0.7);
+    part(g, box, MATS.linen, -0.22, 0.975, 0.12, 0.16, 0.03, 0.22); // a deck of cards
+    part(g, box, MATS.cloth, 0.04, 0.965, 0.14, 0.14, 0.01, 0.2).rotation.y = 0.3; // one dealt, face down
+    part(g, flag, MATS.brass, 0.26, 0.975, 0.1, 0.14, 0.03, 0.14); // a coin
+    for (const x of [-0.46, 0.46]) {
+      part(g, box, MATS.post, x, 1.05, -0.28, 0.08, 2.1, 0.08);
+      part(g, box, MATS.post, x, 1.4, 0.34, 0.06, 0.96, 0.06);
+    }
+    part(g, box, MATS.plankA, 0, 1.45, -0.3, 0.86, 0.9, 0.05); // the back board
+    part(g, flag, MATS.brass, 0, 1.48, -0.26, 0.42, 0.04, 0.42).rotation.x = Math.PI / 2;
+    part(g, flag, MATS.endGrain, 0, 1.48, -0.235, 0.26, 0.02, 0.26).rotation.x = Math.PI / 2;
+    // the awning, sloping down to the front, with a scalloped edge
+    for (let i = 0; i < 7; i++) {
+      const x = -0.48 + i * 0.16;
+      part(g, box, i % 2 ? MATS.linen : MATS.cloth, x, 1.98, 0.06, 0.16, 0.03, 0.82).rotation.x = 0.32;
+      part(g, box, i % 2 ? MATS.linen : MATS.cloth, x, 1.81, 0.47, 0.14, 0.1, 0.02).castShadow = false;
+    }
+    // the sign, and its bulbs
+    part(g, box, MATS.plankB, 0, 2.38, -0.28, 0.92, 0.36, 0.06);
+    part(g, box, MATS.cloth, 0, 2.38, -0.245, 0.8, 0.24, 0.02).castShadow = false;
+    for (let i = 0; i < 6; i++) {
+      for (const y of [2.22, 2.54]) part(g, ball, MATS.lantern, -0.4 + i * 0.16, y, -0.24, 0.06, 0.06, 0.06).castShadow = false;
+    }
+    solids.push({ x: 0, y: 1.1, z: 0, w: 0.96, h: 2.2, d: 0.72 });
+    workbench(g, solids, benchLevel);
   } else if (id === 'stone_well') {
     // a ring of stones round dark water, two posts holding a little plank
     // roof, and a bucket hanging on its rope from the crank
@@ -1307,6 +1385,13 @@ export function createBuildings(world) {
       for (const piece of pieces.values()) undraw(piece);
       pieces.clear();
       covered.clear();
+    },
+
+    // The farm's workbench level: its workbenches drawn to match
+    setBenchLevel(level) {
+      if (level === benchLevel) return;
+      benchLevel = level;
+      for (const [key, piece] of pieces) if (piece.id === 'workbench') draw(key);
     },
 
     // The nearest piece of kind `id` whose tile is within `reach` of pos (its key, or null)
