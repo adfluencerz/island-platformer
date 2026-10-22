@@ -203,8 +203,10 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
     const problem = buildProblem();
     const note = el('div', 'inv-build-note', buildEl);
     note.textContent = problem || 'Pick something to build. E puts it where the see-through one is (the tile you point at, or in front of you), or click or tap a tile. What your backpack is short of comes out of your farm\'s chest. Taking a piece down gives back what it cost.';
-    // (a relic shows once there is one to put on show; its group, once there is a relic)
-    const shown = (id) => !PIECES[id].relic || toBuild(id) > 0;
+    // (a relic or a boss's statue shows once there is one to put on show, a
+    // boss's portal once there is a piece of its key; their groups, once there is one)
+    const shown = (id) => (PIECES[id].portal ? Object.keys(PIECES[id].cost).some((item) => toBuild(item) > 0)
+      : !(PIECES[id].relic || PIECES[id].statue) || toBuild(id) > 0);
     const groups = BUILD_GROUPS.filter((g) => Object.keys(PIECES).some((id) => PIECES[id].group === g && shown(id)));
     if (!groups.includes(group)) group = groups[0];
     const tabsRow = el('div', 'inv-build-groups', buildEl);

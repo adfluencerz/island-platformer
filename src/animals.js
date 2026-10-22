@@ -416,6 +416,58 @@ function buildSheep(color) {
 const BUILD = { hen: buildHen, cow: buildCow, sheep: buildSheep };
 const COLORS = { hen: HEN_COLORS.length, cow: COW_COLORS.length, sheep: WOOL_COLORS.length };
 
+// ---------- Shiny ones ----------
+// For beating a boss (src/bosses.js): an animal in gold, that sparkles. Her
+// color is SHINY (kept in the save like any other), she gives what any of
+// her kind does, and she doesn't count toward how many the pen has room for.
+export const SHINY = 9;
+const MOST_SHINY = 12; // of a kind
+const goldMats = new Map(); // a material -> its gold one
+function gild(root) {
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.material?.color) return;
+    if (!goldMats.has(obj.material)) {
+      const { r, g, b } = obj.material.color;
+      const light = 0.35 + 0.65 * Math.min(1, 0.3 * r + 0.59 * g + 0.11 * b + 0.25); // (dark parts stay a darker gold)
+      goldMats.set(obj.material, new THREE.MeshStandardMaterial({
+        color: new THREE.Color(1, 0.8, 0.25).multiplyScalar(light),
+        emissive: 0x6b4a00,
+        emissiveIntensity: 0.35,
+        metalness: 0.55,
+        roughness: 0.35,
+      }));
+    }
+    obj.material = goldMats.get(obj.material);
+  });
+}
+const sparkleMat = new THREE.SpriteMaterial({ depthWrite: false, transparent: true, map: canvasTexture(32, (ctx) => {
+  ctx.fillStyle = '#fff6c0';
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const r = i % 2 ? 3 : 15;
+    const a = (i / 8) * Math.PI * 2;
+    ctx.lineTo(16 + Math.cos(a) * r, 16 + Math.sin(a) * r);
+  }
+  ctx.fill();
+}) });
+// little stars that come and go round her: returns twinkle(t), for each frame
+function sparkles(root, height) {
+  const stars = Array.from({ length: 4 }, (_, i) => {
+    const star = new THREE.Sprite(sparkleMat);
+    star.userData.seed = i * 1.7;
+    root.add(star);
+    return star;
+  });
+  return (t) => {
+    for (const star of stars) {
+      const k = (t * 0.6 + star.userData.seed) % 1;
+      const a = star.userData.seed * 2.3 + Math.floor(t * 0.6 + star.userData.seed) * 2.1;
+      star.position.set(Math.cos(a) * 0.45, height * (0.4 + k * 0.8), Math.sin(a) * 0.45);
+      star.scale.setScalar(0.22 * Math.sin(k * Math.PI));
+    }
+  };
+}
+
 // ---------- What floats over them ----------
 function canvasTexture(size, draw) {
   const canvas = document.createElement('canvas');
@@ -499,13 +551,15 @@ export function createAnimals() {
     p.z = THREE.MathUtils.clamp(p.z, r.minZ, r.maxZ);
     return p;
   };
-  const countOf = (kind) => animals.filter((a) => a.kind === kind).length;
+  const countOf = (kind) => animals.filter((a) => a.kind === kind && a.color !== SHINY).length; // (shiny ones are extra)
   const isReady = (a) => !!a.def.product && hours >= a.readyAt;
 
   // due: game hours of her next egg (a hen) or until she has milk or wool
   function add(kind, { color = 0, x, z, due, asleep = false }) {
     const def = KINDS[kind];
-    const model = BUILD[kind](color);
+    const shiny = color === SHINY;
+    const model = BUILD[kind](shiny ? 0 : color);
+    if (shiny) gild(model.root);
     const a = {
       kind,
       def,
@@ -532,6 +586,7 @@ export function createAnimals() {
       wakeAt: 0,
       zAt: rand(0, 3),
       seed: rand(0, 100),
+      twinkle: shiny ? sparkles(model.root, kind === 'hen' ? 0.6 : 1.3) : null,
     };
     a.root.visible = !(asleep && kind === 'hen'); // (a hen sleeps in the coop)
     a.badge = def.product ? new THREE.Sprite(badgeMat(def.product)) : null;
@@ -793,6 +848,7 @@ export function createAnimals() {
     }
     makeRoom(player);
     for (const a of animals) animate(a, dt, t);
+    for (const a of animals) a.twinkle?.(t);
 
     for (let i = eggs.length - 1; i >= 0; i--) {
       const egg = eggs[i];
@@ -881,6 +937,18 @@ export function createAnimals() {
     return null;
   }
 
+  // A shiny one of `kind`, for beating a boss, out in her pen now
+  function addShiny(kind) {
+    if (!KINDS[kind] || animals.filter((a) => a.kind === kind && a.color === SHINY).length >= MOST_SHINY) return null;
+    const a = { def: KINDS[kind] };
+    const spot = roamSpot(a);
+    const animal = add(kind, { color: SHINY, x: spot.x, z: spot.z, due: kind === 'hen' ? nextLay(hours) : hours });
+    animal.squash = -0.3;
+    animal.flap = 1;
+    float(heartMat, spot.x, kind === 'hen' ? 1 : 2, spot.z, { life: 1.5, scale: 0.45 });
+    return animal;
+  }
+
   function clear() {
     for (const a of animals) {
       root.remove(a.root); // (geometry and materials are shared)
@@ -912,6 +980,7 @@ export function createAnimals() {
     verbFor,
     inPenFor,
     letOut,
+    addShiny,
     clear,
     list: () => animals,
     // For the save: each kind as [color, x, z, due (game hours)], eggs as [x, z]
@@ -933,10 +1002,12 @@ export function createAnimals() {
       const asleep = isBedtime(now);
       for (const [kind, key] of Object.entries(SAVE_KEYS)) {
         const list = saved?.[key] ?? STARTERS[kind](now);
-        for (const [color, x, z, due] of list.slice(0, KINDS[kind].max)) {
+        // (the shiny ones besides as many as the pen holds)
+        const plain = list.filter(([color]) => color !== SHINY).slice(0, KINDS[kind].max);
+        for (const [color, x, z, due] of [...plain, ...list.filter(([color]) => color === SHINY).slice(0, MOST_SHINY)]) {
           if (![x, z, due].every(Number.isFinite)) continue;
           const spot = clampRoam({ def: KINDS[kind] }, { x, z });
-          add(kind, { color: color >= 0 && color < COLORS[kind] ? color : 0, x: spot.x, z: spot.z, due, asleep });
+          add(kind, { color: (color >= 0 && color < COLORS[kind]) || color === SHINY ? color : 0, x: spot.x, z: spot.z, due, asleep });
         }
       }
       for (const [x, z] of (saved?.eggs ?? []).slice(0, countOf('hen') * EGGS_PER_HEN)) {

@@ -58,6 +58,8 @@ const MATS = {
   cloth: mat(0xb5483a),
   clothDark: mat(0x8a3229),
   sack: mat(0xd9c08a),
+  portal: mat(0x6a2f94, { emissive: 0x7a3fa0, emissiveIntensity: 0.9 }), // (a boss's portal: its swirl)
+  portalLight: mat(0xd9a8ff, { emissive: 0xc58cf0, emissiveIntensity: 1 }),
   sackDark: mat(0xbfa26c),
   crow: mat(0x26262c),
   beak: mat(0xe0a23a),
@@ -95,6 +97,7 @@ const GLOWS = {
   house: [0, 0, 0], // (set below: the lamp over the door)
   torch: [0, 1.5, 0],
   ...Object.fromEntries(Object.keys(PIECES).filter((id) => PIECES[id].relic).map((id) => [id, [0, 1.2, 0]])), // (a relic)
+  ...Object.fromEntries(Object.keys(PIECES).filter((id) => PIECES[id].portal).map((id) => [id, [0, 1, 0.3]])), // (a boss's portal)
 };
 const FLICKERS = new Set(['torch']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
@@ -1124,6 +1127,37 @@ function model(id, gx, gz, joined) {
     relic.castShadow = true;
     g.add(relic);
     solids.push({ x: 0, y: 0.4, z: 0, w: 0.6, h: 0.8, d: 0.6 });
+  } else if (PIECES[id]?.portal) {
+    // A boss's portal (shared/bosses.js): a stone arch round a purple swirl
+    // that turns (setNight). Walked up to, not into.
+    part(g, box, MATS.stoneDark, 0, 0.06, 0, 1, 0.12, 0.5);
+    for (const x of [-0.43, 0.43]) part(g, box, MATS.stone, x, 0.95, 0, 0.18, 1.7, 0.3);
+    part(g, box, MATS.stoneLight, 0, 1.86, 0, 1.08, 0.2, 0.34);
+    part(g, box, MATS.moss, -0.3, 1.97, 0.05, 0.3, 0.04, 0.2);
+    const swirl = new THREE.Group();
+    swirl.name = 'swirl';
+    swirl.position.set(0, 0.98, 0);
+    g.add(swirl);
+    part(swirl, ball, MATS.portal, 0, 0, 0, 0.68, 1.6, 0.06);
+    for (let i = 0; i < 3; i++) {
+      const arm = part(swirl, box, MATS.portalLight, 0, 0, 0.04, 0.05, 0.5, 0.02);
+      arm.rotation.z = (i * Math.PI * 2) / 3;
+      arm.position.set(Math.sin(-arm.rotation.z) * 0.16, Math.cos(arm.rotation.z) * 0.16, 0.04);
+    }
+    solids.push({ x: 0, y: 0.06, z: 0, w: 1, h: 0.12, d: 0.5 });
+  } else if (PIECES[id]?.statue) {
+    // A boss's statue: the evil parsnip in stone, on a plinth
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    const root = part(g, tip, MATS.stoneLight, 0, 0.98, 0, 0.62, 1.1, 0.62);
+    root.rotation.x = Math.PI; // (point down)
+    part(g, ball, MATS.stoneLight, 0, 1.5, 0, 0.62, 0.2, 0.62);
+    for (const [x, z, r] of [[0, 0, 0], [0.1, 0.05, 0.4], [-0.1, -0.02, -0.4]]) {
+      const leaf = part(g, box, MATS.moss, x, 1.75, z, 0.08, 0.42, 0.04);
+      leaf.rotation.z = r;
+    }
+    for (const x of [-0.12, 0.12]) part(g, box, MATS.stoneDark, x, 1.25, 0.25, 0.14, 0.04, 0.04).rotation.z = x > 0 ? 0.4 : -0.4; // (grumpy brows)
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
   } else if (id === 'planter') {
     part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
     part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
@@ -1150,6 +1184,7 @@ export function createBuildings(world) {
 
   const glows = new Map(); // key -> { at: where a light-giving piece's flame is, in the world, flicker, flame }
   const relics = new Map(); // key -> the relic floating over its pedestal (it turns)
+  const swirls = new Map(); // key -> a boss's portal's swirl (it turns too)
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
     const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
     light.castShadow = false;
@@ -1164,6 +1199,7 @@ export function createBuildings(world) {
     world.root.remove(piece.group);
     glows.delete(piece.key);
     relics.delete(piece.key);
+    swirls.delete(piece.key);
     for (const c of piece.colliders) world.platforms.splice(world.platforms.indexOf(c), 1);
     piece.group = null;
     piece.colliders = [];
@@ -1183,6 +1219,8 @@ export function createBuildings(world) {
     piece.key = key;
     const relic = group.getObjectByName('relic');
     if (relic) relics.set(key, relic);
+    const swirl = group.getObjectByName('swirl');
+    if (swirl) swirls.set(key, swirl);
     const flame = GLOWS[piece.id];
     if (flame) {
       glows.set(key, {
@@ -1304,6 +1342,7 @@ export function createBuildings(world) {
         relic.rotation.y = t * 0.8 + relic.parent.position.x;
         relic.position.y = 1.25 + Math.sin(t * 1.6 + relic.parent.position.z) * 0.06;
       }
+      for (const swirl of swirls.values()) swirl.rotation.z = -t * 2.2;
       const nearest = night > 0.01 && focus
         ? [...glows.values()].sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
         : [];

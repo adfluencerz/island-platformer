@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { createFarmer } from './character.js';
 import { TICK_DT, INTERP_DELAY } from '../shared/constants.js';
 import { STATEF } from '../shared/protocol.js';
+import { BOSS_IDS } from '../shared/bosses.js';
+import { createMount } from './mounts.js';
 
 // ---------- Other players ----------
 // Everyone else in the game, drawn from the room's snapshots. Snapshots come
@@ -165,6 +167,11 @@ export class Remotes {
       r.farmer.pick.visible = (s.f & STATEF.PICK) !== 0;
       r.farmer.sword.visible = (s.f & STATEF.SWORD) !== 0;
       r.farmer.mallet.visible = (s.f & STATEF.MALLET) !== 0;
+      const mount = Math.floor(s.f / STATEF.MOUNT) & 7; // (riding: src/mounts.js)
+      if (mount !== (r.mount ?? 0)) {
+        r.mount = mount;
+        r.farmer.ride(mount ? createMount(BOSS_IDS[mount - 1]) : null);
+      }
       const swinging = (s.f & STATEF.SWING) !== 0;
       if (swinging && !r.wasSwinging) r.farmer.swing();
       r.wasSwinging = swinging;
