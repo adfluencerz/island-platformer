@@ -16,6 +16,10 @@ export const C = {
   PICKUP: 'pickup', // { id }: walked into drop id
   HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
+  GAME_START: 'gameStart', // { game }: start a party game of this kind (GAMES in shared/arenas.js), at the signpost (shared/minigame.js)
+  GAME_JOIN: 'gameJoin', // {}: into the party game gathering now
+  GAME_LEAVE: 'gameLeave', // {}: out of the party game (gathering: not coming after all; in the arena: back to the lobby)
+  GAME_COIN: 'gameCoin', // { id }: walked into coin id in the arena (coin rush)
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
   // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
@@ -30,12 +34,13 @@ export const C = {
   REEL: 'reel', // {}: E with the line out: lands what bit if it is in time (BITE), else just reels in
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
+  BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
 };
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, resumed } (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
-  ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, away }] }
+  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, game, resumed } (game: as for GAME) (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z], ...]; giants: Giants toSave(), shared/giants.js)
+  ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, game, away }] } (game: the party game id they are off in, 0: in the lobby)
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count, items? }: spot id was emptied by player `by` (items: a sky isle chest's [[item, count], ...]; its item is 'chest')
@@ -49,6 +54,9 @@ export const S = {
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
   DROP: 'drop', // { id, item, count, x, y, z }: something dropped, for anyone to walk into
+  GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire()), whenever that changes
+  GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
+  GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (winner: 0, nobody)
   PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
   BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms
   CAUGHT: 'caught', // { n, item, count, items? }: what we landed on cast n (item null: nothing, it got away; 'chest': a little chest, its items [[item, count], ...])
@@ -70,6 +78,9 @@ export const S = {
   CHEST: 'chest', // { items: { item: count } }
   CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
+  BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
+  BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp } a bop that landed
+  BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
 };
 
 // Presence (server/presence.js): every logged in page keeps one more socket,
@@ -108,6 +119,7 @@ export const STATEF = {
   ROD: 128, // has a fishing rod in hand
   CAST: 256, // ...with its line out
   BITE: 512, // ...and the bobber is dipping
+  MOUNT: 1024, // riding: (f / MOUNT) & 7 is which mount, 1 + its boss's place in BOSS_IDS (shared/bosses.js); 0 on foot
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;

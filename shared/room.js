@@ -37,6 +37,10 @@
 // does (BITE), and if REEL comes in time it is theirs (CAUGHT), the lobby
 // hearing of a rare one. Casting goes on as long as anyone likes.
 //
+// At the signpost in the stone circle, a farmer can start a party game
+// (shared/minigame.js): whoever joins is off to an arena of its own for a
+// while, out of the lobby's doings, and back with a prize for the winner.
+//
 // The players, their seats, chat and position snapshots are shared/place.js;
 // what is here is the lobby's own.
 //
@@ -50,6 +54,7 @@ import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn } from './fishing.js';
 import { DAY_LENGTH_SECONDS, SKILLS } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
+import { Party } from './minigame.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
 const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
@@ -89,6 +94,7 @@ export class Room extends Place {
     this.giants = new Giants(rand); // (shared/giants.js)
     this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
+    this.party = new Party(this); // (its party games)
   }
 
   // Every lobby has at least one old key somewhere. If none was rolled, one
@@ -121,7 +127,7 @@ export class Room extends Place {
   }
 
   playerExtra(p) {
-    return { finds: p.finds, rares: p.rares, wood: p.wood, stone: p.stone };
+    return { finds: p.finds, rares: p.rares, wood: p.wood, stone: p.stone, game: p.game };
   }
 
   spawnFor(id) {
@@ -144,7 +150,13 @@ export class Room extends Place {
       boppedAt: 0, // when they were last bopped
       castAt: 0, // when they last cast a line
       line: null, // the line they have out: { n, item, count, items, window, x, z, biteAt, bit } (castLine, shared/fishing.js)
+      game: 0, // the party game they are off in (0: here in the lobby)
     });
+  }
+
+  remove(p) {
+    super.remove(p);
+    this.party.leave(p, { gone: true });
   }
 
   welcome(p, resumed) {
@@ -167,12 +179,31 @@ export class Room extends Place {
       pos: { x: p.x, y: p.y, z: p.z },
       clock: (Date.now() - this.createdAt) / 1000,
       giants: this.giants.toSave(),
+      game: this.party.wire(),
       resumed,
     });
   }
 
   // ---------- Messages ----------
   act(p, msg) {
+    switch (msg?.t) {
+      case C.GAME_START: {
+        const why = this.party.start(p, msg.game);
+        if (why) this.send(p, { t: S.CHAT, from: 0, text: why });
+        return;
+      }
+      case C.GAME_JOIN:
+        return this.party.join(p);
+      case C.GAME_LEAVE:
+        return this.party.leave(p);
+      case C.GAME_COIN:
+        return this.party.coin(p, msg.id);
+    }
+    // (off in a party game's arena: nothing of the lobby's, bar a bop at whoever is there too)
+    if (p.game && msg?.t !== C.BOP) {
+      if (msg?.t === C.TAKE) this.send(p, { t: S.DENY, id: msg.id });
+      return;
+    }
     switch (msg?.t) {
       case C.TAKE: {
         const spot = this.spots[msg.id];
@@ -352,8 +383,9 @@ export class Room extends Place {
   }
 
   // In the stone circle where farmers arrive: nobody bops or is bopped there
+  // (an arena has none)
   resting(p) {
-    return Math.hypot(p.x - this.island.spawn.x, p.z - this.island.spawn.z) < SAFE_CIRCLE;
+    return !p.game && Math.hypot(p.x - this.island.spawn.x, p.z - this.island.spawn.z) < SAFE_CIRCLE;
   }
 
   // The nearest farmer in front of p within reach who can be bopped (or null)
@@ -363,7 +395,7 @@ export class Room extends Place {
     let best = null;
     let bestD = reach;
     for (const q of this.players.values()) {
-      if (q === p || !q.conn || now - q.boppedAt < BOP_GRACE || this.resting(q) || Math.abs(q.y - p.y) > 1.2) continue;
+      if (q === p || !q.conn || q.game !== p.game || now - q.boppedAt < BOP_GRACE || this.resting(q) || Math.abs(q.y - p.y) > 1.2) continue;
       const dx = q.x - p.x;
       const dz = q.z - p.z;
       const d = Math.hypot(dx, dz);
@@ -376,10 +408,10 @@ export class Room extends Place {
 
   // Up to n of one thing q gathered on this visit, out of their bag and onto
   // the ground under them, even if they were in the air (or null: nothing to
-  // drop, or nowhere: they are out over the sea)
+  // drop, or nowhere: they are out over the sea, or off in a party game's arena)
   knockLoose(q, n, now) {
     const kinds = Object.entries(q.bag).filter(([item, count]) => count > 0 && !KEEPS.has(item));
-    if (!kinds.length || this.drops.size >= MAX_DROPS || !this.island.isLand(q.x, q.z)) return null;
+    if (q.game || !kinds.length || this.drops.size >= MAX_DROPS || !this.island.isLand(q.x, q.z)) return null;
     const [item, have] = kinds[Math.floor(this.rand() * kinds.length)];
     const count = Math.min(n, have);
     q.bag[item] -= count;
@@ -434,6 +466,7 @@ export class Room extends Place {
         this.send(p, { t: S.CAUGHT, n: line.n, item: null });
       }
     }
+    this.party.tick(now);
 
     // (nothing grows back) maybe a giant, the once: as soon as a page has said how many trees and rocks there are
     for (const [kind, id] of this.giants.roll(0, { tree: this.felled, rock: this.mined })) {

@@ -209,6 +209,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
   });
 
   // Animation state for the model
+  let mount = null; // what they ride (ride()), if anything
   const anim = {
     facing: 0, // current yaw, eased toward the movement direction
     walkPhase: 0,
@@ -278,6 +279,17 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
       }
     }
 
+    // On a mount (ride()): sat up on it, legs either side, and it walks instead
+    rig.position.y = -height / 2 + (mount ? mount.seat : 0);
+    if (mount) {
+      legs[0].pivot.rotation.set(-1.2, 0, -0.35);
+      legs[1].pivot.rotation.set(-1.2, 0, 0.35);
+      mount.animate(dt, anim.walkAmount, time);
+    } else {
+      legs[0].pivot.rotation.z = 0;
+      legs[1].pivot.rotation.z = 0;
+    }
+
     // Walk bob + idle breathing, and a slight forward lean while walking
     const bob = Math.abs(Math.sin(anim.walkPhase)) * 0.06 * anim.walkAmount;
     torso.position.y = 0.55 + bob;
@@ -309,6 +321,18 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     setRod(color) {
       poleMat.color.setHex(color);
     },
+    // Up on a mount (src/mounts.js createMount()), or (null) down off it
+    ride(next) {
+      if (mount) {
+        root.remove(mount.root);
+        mount.dispose();
+      }
+      mount = next;
+      if (mount) {
+        mount.root.position.y = -height / 2;
+        root.add(mount.root);
+      }
+    },
     setShirt(color) {
       shirtMat.color.setHex(color);
     },
@@ -316,6 +340,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     dispose() {
       root.traverse((obj) => obj.isMesh && obj.geometry.dispose());
       shirtMat.dispose();
+      mount?.dispose();
       for (const m of own) m.dispose();
     },
   };

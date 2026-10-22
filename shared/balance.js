@@ -154,6 +154,44 @@ export const HOE_TILLS = { wide_hoe: [3, 1], silver_hoe: [5, 1], golden_hoe: [3,
 // bar over it shows `barSeconds` after the last swing.
 export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockScale: 2.5, rockMin: 1.6, barSeconds: 4 };
 
+// ---------- Bosses ----------
+// Four big grumps live out past the sea, each behind a portal: fought in any
+// order, alone or with the friends on your farm (shared/bosses.js). Nobody
+// gets hurt: a boss is bopped (WEAPONS) until it is dizzy and turns friendly.
+// Each needs its own set of `pieces` key pieces (the `key` item), found in
+// lobbies (LOBBY_SPOTS, a whole set's worth of luck) and up on the sky isles
+// (SKY_CHESTS): a full set builds its portal on a farm (BUILD_COSTS), and it
+// is used up when the boss is beaten. `hp`: its health with one farmer, and
+// `perPlayer` times that more for each farmer past the first. `pause`:
+// seconds it takes between moves ([min, max]; `quicken` shorter for each
+// farmer past the first). The rest are its moves' (shared/bosses.js).
+// Beating one gives everyone who fought: its statue and its mount the first
+// time (`statue`, `mount`: items), and a shiny animal for the farm every time.
+// (Only the parsnip is in so far.)
+export const BOSSES = {
+  parsnip: {
+    name: 'Evil Parsnip', key: 'parsnip_seal', pieces: 3, hp: 40, perPlayer: 0.7, pause: [1.3, 2.1], quicken: 0.12,
+    hop: { windup: 0.5, air: 0.8, height: 4, reach: 7, hops: [2, 3], wave: 7, waveMax: 4.5 }, // a hop at someone, and a shockwave where it lands
+    roll: { windup: 0.8, speed: 10, time: 1.8, dizzy: 1.4 }, // a roll at someone, bouncing off the arena's edge, then a moment's dizzy
+    seeds: { windup: 0.6, count: 10, perPlayer: 2, speed: 6, volleys: 2, gap: 0.6 }, // seeds shot all round
+    walk: 1.6, // its pace, between moves
+    statue: 'parsnip_statue', mount: 'parsnip_mount',
+  },
+};
+// What every boss fight shares. `hitsOut`: a farmer the boss bops this many
+// times is sent back to the arena's start (and can go again). `dizzy`:
+// seconds a bopped farmer wobbles (slower, no swinging); `knock`: how hard
+// they are knocked back; `grace`: seconds after a bop before the next can
+// land. `damage`: what one bop of each weapon takes off. `sleep`: seconds an
+// empty arena waits before its boss goes back to sleep, fresh. `shiny`: the
+// kinds a shiny animal can be.
+export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage: { wooden_sword: 1, mallet: 2 }, sleep: 4, shiny: ['hen', 'cow', 'sheep'] };
+
+// [[key item, weight, 1, 1], ...]: one of each boss's key pieces, for a loot list
+function bossPieces(weight) {
+  return Object.values(BOSSES).map((boss) => [boss.key, weight, 1, 1]);
+}
+
 // ---------- Lobby spots ----------
 // What a lobby's resource spots turn up. `regrow`: seconds until an emptied
 // spot has something again. `loot`: [item, weight, min, max]: each time it
@@ -170,12 +208,12 @@ export const LOBBY_SPOTS = {
   seashell: { regrow: [30, 45], loot: [['seashell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 9)
   meadow: {
     regrow: [30, 50],
-    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.04, 1, 1]],
+    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.04, 1, 1], ...bossPieces(0.025)],
   },
   // up on the sky isles (generation 10): finds lying about, and on the steps up
   sky: {
     regrow: [40, 60],
-    loot: [['coin', 0.5, 2, 4], ['gem', 0.22, 1, 1], ['sunflower_seeds', 0.12, 2, 3], ['carrot_seeds', 0.1, 2, 4], ['golden_seeds', 0.05, 1, 1], ['key', 0.1, 1, 1]],
+    loot: [['coin', 0.5, 2, 4], ['gem', 0.22, 1, 1], ['sunflower_seeds', 0.12, 2, 3], ['carrot_seeds', 0.1, 2, 4], ['golden_seeds', 0.05, 1, 1], ['key', 0.1, 1, 1], ...bossPieces(0.07)],
   },
   // (the relic and the chests up there: what is on them is rolled their own way, SKY_CHESTS)
   relic: { regrow: [0, 0], loot: [] },
@@ -183,7 +221,7 @@ export const LOBBY_SPOTS = {
   sky_vault: { regrow: [0, 0], loot: [] },
   ledge: {
     regrow: [40, 60],
-    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.08, 1, 1]],
+    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.08, 1, 1], ...bossPieces(0.05)],
   },
 };
 
@@ -199,8 +237,8 @@ export const SKY_ISLES = { count: [1, 3], radius: [5, 7.5], top: [9, 15], firstS
 // are in one, each from `loot` ([item, weight, min, max], as for the spots;
 // the same thing twice is one stack).
 export const SKY_CHESTS = {
-  sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.06, 1, 1]] },
-  sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5]] },
+  sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.06, 1, 1], ...bossPieces(0.06)] },
+  sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5], ...bossPieces(0.2)] },
 };
 
 // ---------- Finds on the farm ----------
@@ -277,6 +315,12 @@ export const BUILD_COSTS = {
   flagpole: { wood: 3, flax: 2 },
   stone_cairn: { stone: 3 },
   clothesline: { wood: 2, flax: 2 },
+  rope_fence: { wood: 2, flax: 1 },
+  boulder: { stone: 3 },
+  log_bench: { wood: 3 },
+  compost_bin: { wood: 4 },
+  milk_churns: { wood: 1, stone: 3 },
+  dovecote: { wood: 5, stone: 1 },
   workbench: { wood: 10, stone: 5 },
   arcade: { wood: 30, stone: 10, flax: 6 },
   farm_chest: { wood: 8, stone: 2 },
@@ -286,6 +330,10 @@ export const BUILD_COSTS = {
   garden_bench: { wood: 6 },
   planter: { planter: 1 },
   pond: { stone: 30 },
+  ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, boss]) => [
+    [`${id}_portal`, { [boss.key]: boss.pieces }], // (a boss's portal: a full set of its key pieces)
+    [boss.statue, { [boss.statue]: 1 }], // (its statue: the one it gave)
+  ])),
 };
 
 // ---------- The workbench ----------
@@ -453,6 +501,30 @@ export const LUCKY_JOKERS = {
   trowel: { name: 'Garden trowel', suit: 's', mult: 3 },
   royal_hen: { name: 'Royal hen', face: true, chips: 20 },
   golden_goose: { name: 'Golden goose', times: 1.5 },
+};
+
+// ---------- Party games (lobbies: shared/minigame.js, shared/arenas.js) ----------
+// E at the signpost in the stone circle starts one: everyone in the lobby
+// hears, and has gatherMs to join (at the sign, or from the pop-up). Then
+// whoever joined is off to an arena grown from a seed, readyMs to look about
+// before it starts, and back to the lobby once it is over. The next game can
+// start cooldownMs later. (ms throughout)
+export const MINIGAMES = {
+  gatherMs: 20_000,
+  readyMs: 3000,
+  cooldownMs: 10_000,
+  // Coin rush: the most coins picked up before the time runs out (the coins
+  // are the game's, only for the score; the prize is real ones)
+  coin_rush: { ms: 60_000, coins: [36, 48], high: 0.3 }, // high: the share of coins up on the hay bales
+  // The prize: the winner's coins (more for each other farmer who played) and
+  // one roll of loot ([item, weight, min, max]); everyone else who played
+  // gets a few coins for joining in
+  prize: {
+    coins: 12,
+    perPlayer: 3,
+    loot: [['carrot_seeds', 0.35, 2, 4], ['sunflower_seeds', 0.3, 2, 3], ['gem', 0.25, 1, 1], ['golden_seeds', 0.1, 1, 1]],
+    played: [1, 2],
+  },
 };
 
 // ---------- Room to keep things ----------

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { createFarmer } from './character.js';
 import { TICK_DT, INTERP_DELAY } from '../shared/constants.js';
 import { STATEF } from '../shared/protocol.js';
+import { BOSS_IDS } from '../shared/bosses.js';
+import { createMount } from './mounts.js';
 import { createTackle } from './fishing.js';
 
 // ---------- Other players ----------
@@ -172,6 +174,11 @@ export class Remotes {
       r.farmer.mallet.visible = (s.f & STATEF.MALLET) !== 0;
       r.farmer.rod.visible = (s.f & STATEF.ROD) !== 0;
       r.farmer.anim.line = r.farmer.rod.visible && (s.f & STATEF.CAST) ? ((s.f & STATEF.BITE) ? 'bite' : 'out') : null;
+      const mount = Math.floor(s.f / STATEF.MOUNT) & 7; // (riding: src/mounts.js)
+      if (mount !== (r.mount ?? 0)) {
+        r.mount = mount;
+        r.farmer.ride(mount ? createMount(BOSS_IDS[mount - 1]) : null);
+      }
       const swinging = (s.f & STATEF.SWING) !== 0;
       if (swinging && !r.wasSwinging) r.farmer.swing();
       r.wasSwinging = swinging;

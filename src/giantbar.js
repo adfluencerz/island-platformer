@@ -1,5 +1,5 @@
 // The health bar over a giant tree or rock (shared/giants.js) while anyone is
-// swinging at it: it shows on every page each time a swing lands, and fades
+// swinging at it (and over a boss, src/bosses.js, all through its fight): it shows on every page each time a swing lands, and fades
 // GIANT.barSeconds after the last. Drawn like the name tags over farmers
 // (src/remotes.js): a sprite over the scenery, never hidden behind it.
 import * as THREE from 'three';
@@ -51,8 +51,9 @@ export function createGiantBars(scene) {
   const bars = new Map(); // "kind:id" -> bar
 
   return {
-    // a swing landed: show how it is doing, over `top` (a Vector3; null: not here)
-    show(kind, id, hp, max, top, now) {
+    // a swing landed: show how it is doing, over `top` (a Vector3; null: not
+    // here). label: what it is called (a giant's, by its kind; a boss's, its name)
+    show(kind, id, hp, max, top, now, label = kind === 'tree' ? 'Giant tree' : 'Giant rock') {
       if (!top) return;
       const key = `${kind}:${id}`;
       let bar = bars.get(key);
@@ -63,7 +64,7 @@ export function createGiantBars(scene) {
       }
       const drawn = `${Math.ceil(hp)}/${max}`;
       if (bar.drawn !== drawn) {
-        paint(bar, kind === 'tree' ? 'Giant tree' : 'Giant rock', hp, max);
+        paint(bar, label, hp, max);
         bar.drawn = drawn;
       }
       bar.sprite.position.copy(top);
@@ -82,7 +83,10 @@ export function createGiantBars(scene) {
     },
 
     clear() {
-      for (const key of [...bars.keys()]) this.remove(...key.split(':').map((v, i) => (i ? Number(v) : v)));
+      for (const key of [...bars.keys()]) {
+        const [kind, id] = key.split(':');
+        this.remove(kind, kind === 'boss' ? id : Number(id)); // (a giant's id is its tree or rock's number; a boss's, its name)
+      }
     },
 
     // now: the same clock show() was given
