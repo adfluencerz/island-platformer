@@ -1,0 +1,25 @@
+/* A lobby's party game (src/ui/party.js): a card at the top, under any invitation */
+.ui-party {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  z-index: 40;
+  font-family: var(--inv-font);
+  color: var(--inv-ink);
+  animation: ui-party-in 0.25s ease-out;
+}
+.ui-party-title { font-size: 24px; line-height: 1.1; }
+.ui-party-line { font-size: 18px; line-height: 1.15; }
+.ui-party .ui-row:empty { display: none; }
+.ui-party.playing .ui-party-title { font-size: 26px; }
+@keyframes ui-party-in {
+  from { transform: translate(-50%, -16px); opacity: 0; }
+  to { transform: translateX(-50%); opacity: 1; }
+}

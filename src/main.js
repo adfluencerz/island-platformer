@@ -18,6 +18,7 @@ import { showCodeInAddress } from './net/lobby.js';
 import { FarmSync } from './net/farm.js';
 import { PresenceLink } from './net/presence.js';
 import { InvitePopups } from './ui/invite.js';
+import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { TouchControls, isTouch } from './ui/touch.js';
@@ -31,6 +32,8 @@ import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
+import { arenaFor, signFor, SIGN_REACH, GAMES } from '../shared/arenas.js';
+import { arenaMap, buildSignpost } from './arenas.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
@@ -170,15 +173,24 @@ let wildsShown = null; // (the wild island's trees and rocks, as its lobby sent 
 let world = worlds.home;
 scene.add(world.root);
 
-// name: 'home' or 'wild' (seed: which wild island; wire: its trees and
-// rocks, as its lobby sent them)
+// name: 'home', 'wild' (seed: which wild island; wire: its trees and
+// rocks, as its lobby sent them) or 'arena' (seed: a party game's { kind,
+// seed }, shared/arenas.js; the lobby's island is kept, for going back)
 function enterWorld(name, seed, wire) {
-  let stale = null; // the wild island we will not be back on
+  let stale = null; // the wild island (or arena) we will not be back on
   const wilds = name === 'wild' ? JSON.stringify(wire ?? null) : null;
   if (name === 'wild' && (worlds.wild?.name !== `wild:${islandFor(seed).seed}` || wilds !== wildsShown)) {
     stale = worlds.wild;
-    worlds.wild = buildWorld(wildMap(islandFor(seed)), wildsFromWire(wire) ?? undefined);
+    const island = islandFor(seed);
+    worlds.wild = buildWorld(wildMap(island), wildsFromWire(wire) ?? undefined);
+    worlds.wild.root.add(buildSignpost(signFor(island))); // (where party games start)
     wildsShown = wilds;
+  }
+  if (name === 'arena' && worlds.arena?.name !== `arena:${seed.kind}:${seed.seed}`) {
+    stale = worlds.arena;
+    const map = arenaMap(arenaFor(seed.kind, seed.seed));
+    worlds.arena = buildWorld(map);
+    worlds.arena.coins = map.coins; // (a view per coin, by id)
   }
   if (worlds[name] !== world) {
     scene.remove(world.root);
@@ -682,7 +694,7 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
-  const hint = useHint();
+  const hint = atSign() ? signHint() : useHint();
   if (hint) hud.setPrompt(`E  ${hint}`);
   else hud.setPrompt(gatherSpotInReach()?.kind === 'sky_vault' ? 'Locked: an old key would open it' : '');
 }
@@ -768,12 +780,16 @@ function resetChopping() {
   chop.pending.clear();
 }
 
+// The world a lobby's or a farm room's trees and rocks are in: the one under
+// our feet, but in a lobby its island even while we are off in a party game's arena
+const wildsWorld = () => (place === 'lobby' ? worlds.wild : world);
+
 // FELLED, from a lobby or a farm's room
 function treeFelled(m) {
   chop.pending.delete(m.id);
   if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
   // it falls away from whoever felled it
-  world.fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
+  wildsWorld().fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
   const got = myShare(m) + extraFrom('axe', m);
   if (got) inventory.add('wood', got);
   if (m.shares) giantDown('tree', m.id, got, 'wood');
@@ -874,7 +890,7 @@ function resetMining() {
 function rockMined(m) {
   mine.pending.delete(m.id);
   if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
-  world.breakRock(m.id);
+  wildsWorld().breakRock(m.id);
   const got = myShare(m) + extraFrom('pickaxe', m);
   if (got) inventory.add('stone', got);
   if (m.shares) giantDown('rock', m.id, got, 'stone');
@@ -934,16 +950,17 @@ function hitGiant(kind, thing) {
 function giantNews(m) {
   if (!GIANT_KINDS.includes(m.kind)) return;
   giantsHere().set(m.kind, m.id, m.hp);
+  const here = wildsWorld();
   if (!m.by) {
-    world.makeGiant(m.kind, m.id);
+    here.makeGiant(m.kind, m.id);
     return;
   }
   // (our own swing shook it already)
   if (m.by !== myId) {
-    if (m.kind === 'tree') world.shakeTree(m.id, remotes.positionOf(m.by));
-    else world.shakeRock(m.id);
+    if (m.kind === 'tree') here.shakeTree(m.id, remotes.positionOf(m.by));
+    else here.shakeRock(m.id);
   }
-  giantBars.show(m.kind, m.id, m.hp, m.max, world.giantTop(m.kind, m.id), clock.elapsedTime);
+  if (here === world) giantBars.show(m.kind, m.id, m.hp, m.max, world.giantTop(m.kind, m.id), clock.elapsedTime);
 }
 
 // A giant came down: no more giants of its kind here
@@ -1071,7 +1088,7 @@ const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
 let bopReady = 0; // (clock time the weapon can swing again)
 
 const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
-const resting = (pos) => Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
+const resting = (pos) => !arenaId && Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
 
 // The nearest other farmer within reach (and not resting in the stone circle): { id, pos }, or null
 function bopTarget() {
@@ -1131,6 +1148,7 @@ function addDrop([id, item, count, x, y, z]) {
   const gem = createItemMesh(item);
   gem.scale.setScalar(0.7);
   group.add(gem);
+  group.visible = !arenaId; // (on the lobby's island: out of sight while we are in an arena)
   scene.add(group);
   drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: 0 });
 }
@@ -1251,7 +1269,7 @@ const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
 let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
 const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen();
-const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping();
+const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping() || partyFrozen();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
@@ -1267,6 +1285,8 @@ window.addEventListener('keydown', (e) => {
 function useAction() {
   if (!building && bosses.use()) return; // (a boss's portal or arena, or a mount in hand)
   if (place === 'lobby') {
+    if (arenaId) return weaponInHand() && bop(); // (off in a party game's arena)
+    if (atSign()) return useSign();
     if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
     if (holding() === 'axe' && swingAxe()) return;
     if (holding() === 'pickaxe' && swingPick()) return;
@@ -2123,8 +2143,11 @@ let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone, helpe
 let farmJoining = 0; // (each joinFarm's number: a newer one wins)
 const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
 const visiting = () => !!farmVisit && !farmVisit.mine; // on a friend's farm
-let session = null; // { code, room } once a lobby has welcomed us
+let session = null; // { code, seed, room, wilds, sign } once a lobby has welcomed us (sign: where its signpost stands)
 let myId = 0;
+let partyGame = null; // the lobby's party game as it last said (shared/minigame.js wire()), or null
+let arenaId = 0; // the party game whose arena we are in (0: on the lobby's island)
+let lobbyRoster = []; // (as the lobby last sent it: remotes shows those where we are)
 let sendTimer = 0;
 let farmOnScreen = false; // the home farm's soil and crops are in the scene
 // (a lobby's day starts mid-morning, in good light: LOBBY_DAWN, shared/giants.js)
@@ -2704,6 +2727,10 @@ function sendFarmClock(ff, t) {
 function leaveLobbyWorld() {
   session = null;
   myId = 0;
+  partyGame = null;
+  arenaId = 0;
+  partyHud.clear();
+  lobbyRoster = [];
   clearSpots();
   clearDrops();
   resetChopping();
@@ -2713,6 +2740,152 @@ function leaveLobbyWorld() {
   remotes.clear();
   keys.clear();
   showCodeInAddress('');
+}
+
+// ---------- Party games ----------
+// At the signpost in a lobby's stone circle (shared/arenas.js signFor), E
+// starts a party game (shared/minigame.js), or joins the one gathering; the
+// card at the top (src/ui/party.js) has Join too. Whoever is in it goes off
+// to its arena (src/arenas.js) once it has gathered, a moment to look about
+// (standing still), then the game; and back on the lobby's island when it is
+// over, with the prize. While we are in the arena the lobby's island is kept
+// as it was (its spots and drops out of sight), and only the farmers in the
+// same place as us are drawn.
+const PARTY_KIND = 'coin_rush'; // (the one game there is so far)
+const partyHud = new PartyHud({
+  onJoin: () => net?.send({ t: C.GAME_JOIN }),
+  onLeave: () => leaveParty(),
+  nameOf: (id) => lobbyNames.get(id) ?? 'Someone',
+});
+const coinPending = new Map(); // coin id -> when we said we picked it up (performance.now())
+let readyCount = 0; // the last number of the countdown shown
+const inParty = () => !!partyGame?.players.some(([id]) => id === myId);
+const partyFrozen = () => !!arenaId && partyGame?.phase === 'ready';
+const atSign = () => place === 'lobby' && !arenaId && !!session && footReach() &&
+  Math.hypot(player.position.x - session.sign.x, player.position.z - session.sign.z) < SIGN_REACH;
+
+function signHint() {
+  if (!partyGame) return `Start a ${GAMES[PARTY_KIND].name.toLowerCase()}`;
+  const name = GAMES[partyGame.kind]?.name.toLowerCase() ?? 'party game';
+  if (partyGame.phase !== 'gathering') return '';
+  return inParty() ? `Not coming to the ${name} after all` : `Join the ${name}`;
+}
+
+function useSign() {
+  if (!partyGame) net?.send({ t: C.GAME_START, game: PARTY_KIND });
+  else if (partyGame.phase === 'gathering') net?.send({ t: inParty() ? C.GAME_LEAVE : C.GAME_JOIN });
+  else inventory.notify('A game is on: wait for the next one');
+}
+
+// The farmers drawn: the ones where we are (the lobby's island, or our arena)
+function showRemotes() {
+  remotes.setRoster(lobbyRoster.filter((p) => (p.game ?? 0) === arenaId), myId);
+}
+
+// The lobby's party game as it is now (null: none). pos: where the lobby has
+// us (a WELCOME's: back in the arena after a reload)
+function showParty(game, pos = null) {
+  partyGame = game;
+  partyHud.show(game, myId);
+  const playing = game && game.phase !== 'gathering' && inParty();
+  if (playing && arenaId !== game.id) {
+    enterWorld('arena', game);
+    arenaId = game.id;
+    coinPending.clear();
+    world.coins.forEach((coin, id) => (coin.visible = !game.taken.includes(id)));
+    showLobbyThings(false);
+    showRemotes();
+    const i = game.players.findIndex(([id]) => id === myId);
+    putDown(pos ?? arenaFor(game.kind, game.seed).start(i, game.players.length));
+    readyCount = 0;
+    hud.setPrompt('');
+  }
+  if (playing && game.phase === 'playing' && readyCount !== -1) {
+    readyCount = -1;
+    hud.flash('Go!');
+  }
+  if (!playing && arenaId) backFromArena(); // (it was called off, or we are out of it)
+}
+
+// Out of the arena, onto the lobby's island (pos: where; else where farmers arrive)
+function backFromArena(pos = null) {
+  arenaId = 0;
+  coinPending.clear();
+  enterWorld('wild', session.seed, session.wilds);
+  showLobbyThings(true);
+  showRemotes();
+  putDown(pos ?? arrival());
+}
+
+// The lobby's spots and drops (in the scene, not the island's world): out of sight in an arena
+function showLobbyThings(on) {
+  for (const spot of spots.values()) spot.view.group.visible = on;
+  for (const drop of drops.values()) drop.group.visible = on && !drop.pending;
+}
+
+// Not playing after all: out of the gathering, or back to the lobby from the arena
+function leaveParty() {
+  net?.send({ t: C.GAME_LEAVE });
+  if (arenaId) backFromArena();
+}
+
+// Every frame in the arena: the countdown, and coins we walk into
+function updateArena() {
+  partyHud.update();
+  hud.setPrompt('');
+  if (partyGame?.phase === 'ready') {
+    const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
+    if (left > 0 && left !== readyCount) {
+      readyCount = left;
+      hud.flash(String(left));
+    }
+    return;
+  }
+  if (partyGame?.phase !== 'playing') return;
+  const now = performance.now();
+  world.coins.forEach((coin, id) => {
+    const at = coinPending.get(id);
+    if (at !== undefined) {
+      if (now - at < 1500) return;
+      coinPending.delete(id); // (the lobby never said: it didn't count, it is still there)
+      coin.visible = !partyGame.taken.includes(id);
+    }
+    if (!coin.visible || player.position.distanceTo(coin.position) > TOUCH_RADIUS + 0.3) return;
+    coin.visible = false; // (at once, so it feels instant: GAME_COIN settles it)
+    coinPending.set(id, now);
+    net?.send({ t: C.GAME_COIN, id });
+  });
+}
+
+// GAME_COIN: someone picked a coin up
+function partyCoin(m) {
+  if (!partyGame) return;
+  partyGame.taken.push(m.id);
+  partyHud.score(m.by, m.score);
+  if (arenaId) {
+    coinPending.delete(m.id);
+    if (world.coins[m.id]) world.coins[m.id].visible = false;
+    if (m.by === myId) hud.flash(`${m.score}`);
+  }
+}
+
+// GAME_END: it is over. Our prize into the backpack, and back to the lobby if we played.
+function partyOver(m) {
+  const played = m.pos.find(([id]) => id === myId);
+  const got = m.prizes.find(([id]) => id === myId)?.[1] ?? null;
+  partyGame = null;
+  if (played && arenaId) backFromArena({ x: played[1], y: played[2], z: played[3] });
+  for (const [item, count] of got ?? []) if (ITEMS[item]) inventory.add(item, count);
+  if (played) {
+    const named = (item, count) => {
+      const name = (ITEMS[item]?.name ?? item).toLowerCase();
+      return count > 1 && !name.endsWith('s') ? `${name}s` : name;
+    };
+    partyHud.results(m, got, named);
+    if (m.winner === myId) hud.flash('You won!');
+  } else {
+    partyHud.show(null, myId);
+  }
 }
 
 function joinLobby({ name, code }) {
@@ -2737,7 +2910,8 @@ function joinLobby({ name, code }) {
     }
     place = 'lobby';
     enterWorld('wild', m.seed, m.wilds);
-    session = { code: m.code, seed: m.seed, room: m.room };
+    session = { code: m.code, seed: m.seed, room: m.room, wilds: m.wilds, sign: signFor(islandFor(m.seed)) };
+    arenaId = 0;
     myId = m.id;
     farmer.setShirt(m.color);
     putDown(m.pos);
@@ -2757,7 +2931,8 @@ function joinLobby({ name, code }) {
     for (const drop of m.drops ?? []) addDrop(drop);
     lobbyNames.clear();
     for (const p of m.roster) lobbyNames.set(p.id, p.name);
-    remotes.setRoster(m.roster, myId);
+    lobbyRoster = m.roster;
+    showRemotes();
     // one time of day for everyone in the lobby, counted from when it opened
     dayNight.setTime(LOBBY_DAWN + (m.clock / DAY_LENGTH_SECONDS) * 24);
     showCodeInAddress(m.code);
@@ -2765,13 +2940,18 @@ function joinLobby({ name, code }) {
     hud.showLobby(session, myId);
     touch.setPlace('lobby');
     hud.setRoster(m.roster);
+    showParty(m.game, m.pos);
     if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
   });
   on(S.ROSTER, (m) => {
     hud.setRoster(m.list);
-    remotes.setRoster(m.list, myId);
+    lobbyRoster = m.list;
+    showRemotes();
     for (const p of m.list) lobbyNames.set(p.id, p.name);
   });
+  on(S.GAME, (m) => showParty(m.game));
+  on(S.GAME_COIN, (m) => partyCoin(m));
+  on(S.GAME_END, (m) => partyOver(m));
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
     const spot = spots.get(m.id);
@@ -2799,10 +2979,10 @@ function joinLobby({ name, code }) {
     showSpot(spot);
   });
   on(S.FELLED, treeFelled);
-  on(S.REGROWN, (m) => world.regrowTree(m.id, { n: m.n ?? 0 }));
+  on(S.REGROWN, (m) => wildsWorld().regrowTree(m.id, { n: m.n ?? 0 }));
   on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
   on(S.MINED, rockMined);
-  on(S.RESURFACED, (m) => world.regrowRock(m.id, { n: m.n ?? 0 }));
+  on(S.RESURFACED, (m) => wildsWorld().regrowRock(m.id, { n: m.n ?? 0 }));
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.GIANT, giantNews);
   on(S.BOPPED, (m) => bopped(m));
@@ -3095,11 +3275,16 @@ function update(dt) {
   const t = clock.elapsedTime;
   world.updateTrees(dt);
   if (building && place !== 'home') stopBuilding();
-  if (place === 'lobby') {
+  if (place === 'lobby' && arenaId) {
+    updateArena(dt);
+    sendState(dt);
+    remotes.update(dt, t);
+  } else if (place === 'lobby') {
     updateChopping();
     updateMining();
     updateSpots(dt, t);
     updateDrops(dt, t);
+    partyHud.update();
     sendState(dt);
     remotes.update(dt, t);
   } else {

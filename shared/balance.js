@@ -438,5 +438,29 @@ export const LUCKY_JOKERS = {
   golden_goose: { name: 'Golden goose', times: 1.5 },
 };
 
+// ---------- Party games (lobbies: shared/minigame.js, shared/arenas.js) ----------
+// E at the signpost in the stone circle starts one: everyone in the lobby
+// hears, and has gatherMs to join (at the sign, or from the pop-up). Then
+// whoever joined is off to an arena grown from a seed, readyMs to look about
+// before it starts, and back to the lobby once it is over. The next game can
+// start cooldownMs later. (ms throughout)
+export const MINIGAMES = {
+  gatherMs: 20_000,
+  readyMs: 3000,
+  cooldownMs: 10_000,
+  // Coin rush: the most coins picked up before the time runs out (the coins
+  // are the game's, only for the score; the prize is real ones)
+  coin_rush: { ms: 60_000, coins: [36, 48], high: 0.3 }, // high: the share of coins up on the hay bales
+  // The prize: the winner's coins (more for each other farmer who played) and
+  // one roll of loot ([item, weight, min, max]); everyone else who played
+  // gets a few coins for joining in
+  prize: {
+    coins: 12,
+    perPlayer: 3,
+    loot: [['carrot_seeds', 0.35, 2, 4], ['sunflower_seeds', 0.3, 2, 3], ['gem', 0.25, 1, 1], ['golden_seeds', 0.1, 1, 1]],
+    played: [1, 2],
+  },
+};
+
 // ---------- Room to keep things ----------
 export const CHEST = { stack: 999, kinds: 64 }; // the most of one item in a farm chest, and of different items
