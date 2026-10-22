@@ -1148,11 +1148,13 @@ function bopped(m) {
     inventory.notify(lost ? `${who} bopped you: you dropped ${lost} ${ITEMS[item].name.toLowerCase()}` : `${who} bopped you`);
   } else if (m.by === myId) {
     hud.flash('Bop!');
+    // (only what they gathered on this visit can be knocked loose, never a rare find or coins)
+    if (!m.drop) inventory.notify(`${lobbyNames.get(m.id) ?? 'They'} had nothing gathered here to drop`);
   }
 }
 
 // ---- What gets dropped: a little bobbing treasure, for anyone to walk into ----
-function addDrop([id, item, count, x, y, z]) {
+function addDrop([id, item, count, x, y, z, from = 0, wait = 0]) {
   if (!ITEMS[item] || drops.has(id)) return;
   const group = new THREE.Group();
   group.position.set(x, y - GROUND_STAND_Y + 0.3, z);
@@ -1161,7 +1163,7 @@ function addDrop([id, item, count, x, y, z]) {
   group.add(gem);
   group.visible = !arenaId; // (on the lobby's island: out of sight while we are in an arena)
   scene.add(group);
-  drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: 0 });
+  drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: from === myId ? performance.now() + wait : 0 }); // (knocked out of us: not ours to take straight back)
 }
 
 function removeDrop(id) {
@@ -3223,7 +3225,7 @@ function joinLobby({ name, code }) {
   on(S.BOPPED, (m) => bopped(m));
   on(S.BITE, (m) => fishing.bit(m));
   on(S.CAUGHT, (m) => fishing.caught(m));
-  on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z]));
+  on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z, m.from, m.wait]));
   on(S.PICKED, (m) => {
     removeDrop(m.id);
     if (m.by === myId) inventory.add(m.item, m.count);

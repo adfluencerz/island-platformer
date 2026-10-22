@@ -47,7 +47,7 @@
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, devToolsOn } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, DROP_OWN_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
@@ -89,7 +89,7 @@ export class Room extends Place {
     // how often each tree and rock grew back (so which of its places it is in: shared/level.js nextSite)
     this.treeSites = new Map(); // tree id -> count
     this.rockSites = new Map(); // rock id -> count
-    this.drops = new Map(); // id -> { id, item, count, x, y, z, until }
+    this.drops = new Map(); // id -> { id, item, count, x, y, z, until, from, ownAt } (from: who it was knocked out of, who can't take it back till ownAt)
     this.dropId = 0;
     this.giants = new Giants(rand); // (shared/giants.js)
     this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
@@ -174,7 +174,7 @@ export class Room extends Place {
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
       wilds: this.wildsWire,
-      drops: [...this.drops.values()].map(({ id, item, count, x, y, z }) => [id, item, count, x, y, z]),
+      drops: [...this.drops.values()].map((d) => [d.id, d.item, d.count, d.x, d.y, d.z, d.from, Math.max(0, d.ownAt - Date.now())]),
       roster: this.rosterList(),
       pos: { x: p.x, y: p.y, z: p.z },
       clock: (Date.now() - this.createdAt) / 1000,
@@ -321,7 +321,7 @@ export class Room extends Place {
           t: S.BOPPED, by: p.id, id: target.id, dx: round2(dx), dz: round2(dz), knock: weapon.knock,
           drop: drop && [drop.item, drop.count],
         });
-        if (drop) this.broadcast({ t: S.DROP, id: drop.id, item: drop.item, count: drop.count, x: drop.x, y: drop.y, z: drop.z });
+        if (drop) this.broadcast({ t: S.DROP, id: drop.id, item: drop.item, count: drop.count, x: drop.x, y: drop.y, z: drop.z, from: drop.from, wait: DROP_OWN_MS });
         break;
       }
       case C.CAST: {
@@ -365,7 +365,10 @@ export class Room extends Place {
       }
       case C.PICKUP: {
         const drop = this.drops.get(msg.id);
-        if (!drop || Math.hypot(drop.x - p.x, drop.y - p.y, drop.z - p.z) > TOUCH_REACH) {
+        // (not straight back into the bag it was knocked out of: they are still
+        // standing on it, and the farmer who bopped them would never get a look in)
+        const mine = drop?.from === p.id && Date.now() < drop.ownAt;
+        if (!drop || mine || Math.hypot(drop.x - p.x, drop.y - p.y, drop.z - p.z) > TOUCH_REACH) {
           this.send(p, { t: S.DROP_DENY, id: msg.id });
           return;
         }
@@ -416,7 +419,7 @@ export class Room extends Place {
     const count = Math.min(n, have);
     q.bag[item] -= count;
     const y = this.groundUnder(q.x, q.y, q.z) + GROUND_STAND_Y; // (where a farmer standing there would be)
-    const drop = { id: ++this.dropId, item, count, x: round2(q.x), y: round2(y), z: round2(q.z), until: now + DROP_MS };
+    const drop = { id: ++this.dropId, item, count, x: round2(q.x), y: round2(y), z: round2(q.z), until: now + DROP_MS, from: q.id, ownAt: now + DROP_OWN_MS };
     this.drops.set(drop.id, drop);
     return drop;
   }
