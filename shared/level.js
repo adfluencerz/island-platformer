@@ -103,7 +103,7 @@ export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockS
 // taller than a crate), so step, crate, scaffold, pillar is a stair walked all
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch or a wood arbor joins the walls (or fences)
-// beside it the same way. A low stone wall, a rail, picket, wattle or log
+// beside it the same way. A low stone wall, a rail, picket, wattle, log or rope
 // fence or a box hedge is hopped over like a fence; a palisade, like a stone wall, can't be. A farm has `one`
 // farm chest at most (src/chest.js): built, it stands where it was put; on a
 // farm with helpers there is one by the plaza till then, so the harvest
@@ -162,6 +162,12 @@ export const PIECES = {
   flagpole: { name: 'Flagpole', solid: true },
   stone_cairn: { name: 'Stone cairn', solid: true },
   clothesline: { name: 'Clothesline', solid: true },
+  rope_fence: { name: 'Rope fence', solid: true, joins: true },
+  boulder: { name: 'Boulder', solid: true, block: 0.9 },
+  log_bench: { name: 'Log bench', solid: true },
+  compost_bin: { name: 'Compost bin', solid: true },
+  milk_churns: { name: 'Milk churns', solid: true },
+  dovecote: { name: 'Dovecote', solid: true },
   workbench: { name: 'Workbench', solid: true },
   arcade: { name: 'Arcade', solid: true, one: true }, // (games for gold: src/arcade.js)
   farm_chest: { name: 'Farm chest', solid: true, one: true },
