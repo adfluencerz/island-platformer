@@ -45,7 +45,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createBosses } from './bosses.js';
-import { BOSSES } from '../shared/balance.js';
+import { BOSSES, SHOP } from '../shared/balance.js';
 import { portalOf } from '../shared/bosses.js';
 import { createSkills } from './skills.js';
 import { createPuffs } from './puff.js';
@@ -228,6 +228,7 @@ const inventory = createInventory({
   onOpenChange: (open) => open && keys.clear(),
   onBuild: (piece) => startBuilding(piece),
   onAdd: (id) => readRecipe(id),
+  onDrop: ({ id, count }) => dropFromBackpack(id, count),
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
@@ -1163,7 +1164,9 @@ function addDrop([id, item, count, x, y, z, from = 0, wait = 0]) {
   group.add(gem);
   group.visible = !arenaId; // (on the lobby's island: out of sight while we are in an arena)
   scene.add(group);
-  drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: from === myId ? performance.now() + wait : 0 }); // (knocked out of us: not ours to take straight back)
+  // (knocked out of us, or dropped by us: not ours to take straight back, and
+  // not till we have stepped off it, either)
+  drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: from === myId ? performance.now() + wait : 0, away: from !== myId });
 }
 
 function removeDrop(id) {
@@ -1185,7 +1188,8 @@ function updateDrops(dt, t) {
     gem.rotation.y += dt * 2;
     drop.group.visible = !drop.pending;
     const near = Math.hypot(drop.x - player.position.x, drop.y - player.position.y, drop.z - player.position.z) < TOUCH_RADIUS + 0.4;
-    if (!near || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count)) continue;
+    if (!drop.away) drop.away = !near;
+    if (!near || !drop.away || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count)) continue;
     drop.pending = true;
     net?.send({ t: C.PICKUP, id: drop.id });
   }
@@ -2307,7 +2311,29 @@ function freeFarmSpot() {
   }
   return null;
 }
-const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (item, count) => inventory.add(item, count) });
+const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (item, count) => inventory.add(item, count), isItem: (id) => !!ITEMS[id] });
+
+// Put down what the backpack's window carries (inventory.js onDrop), at our
+// feet: in a lobby the room has it, for anyone to walk into (THROW); on our
+// own farm, alone, it lies there (finds.js), kept with the farm. Only what has
+// a price (never a tool), and not on a farm with helpers (its room has the say
+// over what is on it: the farm chest is for sharing). True if it went.
+function dropFromBackpack(id, count) {
+  const def = ITEMS[id];
+  const no = (text) => (inventory.notify(text), false);
+  if (!def || def.trashable === false || !Object.hasOwn(SHOP, id) || def.currency) return no(`${def?.name ?? 'That'} can't be dropped`);
+  if (!player.onGround) return no('Land first, then drop it');
+  if (place === 'lobby' && net && !arenaId) {
+    net.send({ t: C.THROW, item: id, count });
+    return true;
+  }
+  if (place === 'home' && !farmVisit && farmOnScreen) {
+    farmFinds.drop(id, count, player.position.x, player.position.y - player.height / 2, player.position.z);
+    return true;
+  }
+  if (place === 'home' && farmVisit) return no('Nothing is dropped on a farm with helpers: the farm chest is for sharing');
+  return no('You can\'t drop things here');
+}
 // The farm's chest (chest.js): where its piece is built; on a farm with
 // helpers, by the plaza till one is. On a farm with helpers what is in it is
 // the room's; on our own farm without them, ours (ownChest, kept in the
@@ -3264,6 +3290,10 @@ function joinLobby({ name, code }) {
     removeDrop(m.id);
     if (m.by === myId) inventory.add(m.item, m.count);
   });
+  on(S.THROW_DENY, (m) => {
+    if (!ITEMS[m.item] || !(m.count > 0)) return;
+    inventory.notify(inventory.add(m.item, m.count) ? 'That couldn\'t be dropped here: it is back in your backpack' : 'That couldn\'t be dropped here, and your backpack is full');
+  });
   on(S.DROP_DENY, (m) => {
     const drop = drops.get(m.id);
     if (drop) Object.assign(drop, { pending: false, retryAt: performance.now() + 500 });
@@ -3339,6 +3369,7 @@ function captureFarm() {
     tilled: [...farmTiles].map(([key, mesh]) => [key, crops.has(key) ? 0 : mesh.userData.bare, mesh.userData.life]),
     crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
     built: buildings.list(),
+    dropped: farmFinds.dropped(), // (what we dropped, lying about)
     machines: machines.capture(),
     felled: [...farmFelled],
     mined: [...farmMined],
@@ -3354,6 +3385,7 @@ function captureFarm() {
 // (a farm from before there were animals gets the ones a new farm comes with)
 function showFarm(farm) {
   resetFarm();
+  farmFinds.restoreDropped(farm?.dropped);
   ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
   useLevels(farm?.levels);
   if (!farm) return animals.restore(null, farmHours());

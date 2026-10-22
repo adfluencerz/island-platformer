@@ -22,6 +22,7 @@
   color: var(--inv-ink);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* (a finger held on a slot takes one, not the picture's menu) */
 }
 .inv-hotbar[hidden], .inv-menu[hidden], .inv-held[hidden], .inv-tooltip[hidden], .inv-icon[hidden] {
   display: none !important;

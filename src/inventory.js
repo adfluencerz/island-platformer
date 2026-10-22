@@ -10,8 +10,11 @@ import { buzz } from './ui/touch.js';
 // In the backpack menu:
 //   left click        pick up / place / swap / merge a stack
 //   right click       take one (shift: take half), or drop one into a slot
+//   ctrl + click      take one, as a right click does (cmd on a Mac)
 //   shift + click     move a stack between the toolbar and the backpack
+//   long press        (a touchscreen) take one
 //   trash slot        destroy the carried stack (tools refuse)
+//   click outside     drop the carried stack on the ground (onDrop, main.js)
 //
 // Its Build tab (or B) picks a piece to build on the farm, or taking pieces
 // down: build mode (src/build.js, main.js) pays with the wood and stone in
@@ -19,6 +22,8 @@ import { buzz } from './ui/touch.js';
 // (src/skills.js).
 
 export const COLS = 12;
+const LONG_PRESS_MS = 450; // a finger held this long on a slot takes one
+const TOUCH_MOUSE_MS = 800; // the mouse events a touch makes as well come within this
 const ROWS = 3;
 export const SLOT_COUNT = COLS * ROWS;
 const HOTBAR = [...Array(COLS).keys()];
@@ -93,7 +98,9 @@ function iconImg(parent) {
 // building(): the piece build mode has now (null: not building).
 // inChest(item): how many the farm's chest has to build with too.
 // renderSkills(el): draws the Skills tab into el.
-export function createInventory({ onOpenChange, onBuild, onAdd, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
+// onDrop({ id, count }): put the carried stack down on the ground; true if
+// it went (false: it stays carried, and onDrop has said why).
+export function createInventory({ onOpenChange, onBuild, onAdd, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
@@ -161,8 +168,8 @@ export function createInventory({ onOpenChange, onBuild, onAdd, buildProblem = (
   iconImg(trashEl).src = TRASH_ICON;
 
   const hintEl = el('div', 'inv-hint', packEl);
-  el('span', 'mouse-only', hintEl).textContent = 'Click: pick up / place · Right click: take one (Shift: half) · Shift+click: move to/from toolbar';
-  el('span', 'touch-only', hintEl).textContent = 'Tap: pick up / place · The top row is your toolbar';
+  el('span', 'mouse-only', hintEl).textContent = 'Click: pick up / place · Right click or Ctrl+click: take one (Shift: half) · Shift+click: move to/from toolbar · Click outside: drop';
+  el('span', 'touch-only', hintEl).textContent = 'Tap: pick up / place · Hold: take one · Tap outside: drop · The top row is your toolbar';
 
   const heldEl = el('div', 'inv-held', document.body);
   const heldImg = iconImg(heldEl);
@@ -565,13 +572,47 @@ export function createInventory({ onOpenChange, onBuild, onAdd, buildProblem = (
 
   gridEl.addEventListener('mousedown', (e) => {
     const slot = e.target.closest('[data-index]');
-    if (!slot) return;
+    if (!slot || performance.now() - touchAt < TOUCH_MOUSE_MS) return; // (a touch: its pointer events had it)
     const i = Number(slot.dataset.index);
-    if (e.button === 0) leftClick(i, e.shiftKey);
+    if (e.button === 0 && (e.ctrlKey || e.metaKey)) rightClick(i, false);
+    else if (e.button === 0) leftClick(i, e.shiftKey);
     else if (e.button === 2) rightClick(i, e.shiftKey);
     render();
     showTooltip(held ? null : slots[i], e.clientX, e.clientY);
   });
+
+  // A touchscreen: a tap is a left click, and a finger held on a slot takes
+  // one, as a right click does (the mouse events a touch makes as well are let be)
+  let touchAt = -Infinity; // performance.now() of the last touch on the grid
+  let press = null; // { id, i, timer, done }: a finger down on a slot
+  gridEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    touchAt = performance.now();
+    const slot = e.target.closest('[data-index]');
+    if (!slot || press) return;
+    const i = Number(slot.dataset.index);
+    press = { id: e.pointerId, i, done: false };
+    press.timer = setTimeout(() => {
+      press.done = true;
+      if (!slots[i]) return;
+      rightClick(i, false);
+      buzz(15);
+      render();
+    }, LONG_PRESS_MS);
+  });
+  const endPress = (e, tap) => {
+    if (!press || e.pointerId !== press.id) return;
+    touchAt = performance.now();
+    clearTimeout(press.timer);
+    const { i, done } = press;
+    press = null;
+    if (tap && !done) {
+      leftClick(i, false);
+      render();
+    }
+  };
+  gridEl.addEventListener('pointerup', (e) => endPress(e, true));
+  gridEl.addEventListener('pointercancel', (e) => endPress(e, false));
 
   trashEl.addEventListener('mousedown', () => {
     trashHeld();
@@ -586,9 +627,15 @@ export function createInventory({ onOpenChange, onBuild, onAdd, buildProblem = (
   buildTab.addEventListener('click', () => setTab('build'));
   skillsTab.addEventListener('click', () => setTab('skills'));
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
-  // A right click outside the window: put down what is carried, or close
+  // A right click outside the window: put back what is carried, or close.
+  // A click (or a tap) outside it with something carried: drop it on the ground.
   menuEl.addEventListener('mousedown', (e) => {
-    if (e.button !== 2 || e.target !== menuEl) return;
+    if (e.target !== menuEl) return;
+    if (e.button === 0) {
+      if (held && onDrop({ ...held })) held = null;
+      return render();
+    }
+    if (e.button !== 2) return;
     if (!held) return setOpen(false);
     putBack();
     render();

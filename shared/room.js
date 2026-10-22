@@ -52,7 +52,7 @@ import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn } from './fishing.js';
-import { DAY_LENGTH_SECONDS, SKILLS } from './balance.js';
+import { DAY_LENGTH_SECONDS, SKILLS, SHOP } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 
@@ -64,6 +64,7 @@ const MINE_REACH = 2.6; // the client mines within 1.3 of the rock's edge (plus 
 const MINE_EVERY = 900; // ms: the fewest between two broken rocks (breaking one takes ROCK.hits swings)
 const REEL_SLACK = 450; // ms: a REEL this late after the bite window still counts (the BITE took a while to get there, and the REEL back)
 const MAX_DROPS = 60;
+const THROW_EVERY = 200; // ms: the fewest between two things dropped
 const round2 = (v) => Math.round(v * 100) / 100;
 const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
 const KEY_KINDS = new Set(['meadow', 'ledge', 'sky']); // where a lobby's one sure key can go (Room.hideKey)
@@ -147,6 +148,7 @@ export class Room extends Place {
       hitAt: 0, // when they last swung at a giant
       bag: {}, // what they gathered on this visit: item -> count (what a bop can knock loose)
       bopAt: 0, // when they last swung a weapon
+      throwAt: 0, // when they last dropped something out of their backpack
       boppedAt: 0, // when they were last bopped
       castAt: 0, // when they last cast a line
       line: null, // the line they have out: { n, item, count, items, window, x, z, biteAt, bit } (castLine, shared/fishing.js)
@@ -202,6 +204,7 @@ export class Room extends Place {
     // (off in a party game's arena: nothing of the lobby's, bar a bop at whoever is there too)
     if (p.game && msg?.t !== C.BOP) {
       if (msg?.t === C.TAKE) this.send(p, { t: S.DENY, id: msg.id });
+      else if (msg?.t === C.THROW) this.send(p, { t: S.THROW_DENY, item: typeof msg.item === 'string' ? msg.item : null, count: Number.isInteger(msg.count) ? msg.count : 0 });
       return;
     }
     switch (msg?.t) {
@@ -363,6 +366,27 @@ export class Room extends Place {
         this.send(p, { t: S.CAUGHT, n: line.n, item: line.item, count: line.count, ...(line.items && { items: line.items }) });
         break;
       }
+      case C.THROW: {
+        // Something out of their backpack, dropped at their feet for anyone
+        // to walk into (only things with a price: never a tool), or
+        // THROW_DENY: it stays theirs. (The page keeps the backpack, as for
+        // a farm: it has taken it out already, and puts it back on a deny.)
+        const now = Date.now();
+        const { item } = msg;
+        const count = Number.isInteger(msg.count) ? msg.count : 0;
+        const { x, z } = p;
+        const ok = typeof item === 'string' && Object.hasOwn(SHOP, item) && item !== 'coin' && count >= 1 && count <= 999 &&
+          now - p.throwAt >= THROW_EVERY && this.drops.size < MAX_DROPS && this.island.isLand(x, z);
+        if (!ok) {
+          this.send(p, { t: S.THROW_DENY, item: typeof item === 'string' ? item : null, count });
+          return;
+        }
+        p.throwAt = now;
+        if (p.bag[item]) p.bag[item] = Math.max(0, p.bag[item] - count); // (out of the bag too: a bop can't knock loose what they dropped)
+        const drop = this.dropAt(item, count, x, this.groundUnder(x, p.y, z) + GROUND_STAND_Y, z, p.id, now);
+        this.broadcast({ t: S.DROP, id: drop.id, item, count, x: drop.x, y: drop.y, z: drop.z, from: p.id, wait: DROP_OWN_MS });
+        break;
+      }
       case C.PICKUP: {
         const drop = this.drops.get(msg.id);
         // (not straight back into the bag it was knocked out of: they are still
@@ -419,7 +443,13 @@ export class Room extends Place {
     const count = Math.min(n, have);
     q.bag[item] -= count;
     const y = this.groundUnder(q.x, q.y, q.z) + GROUND_STAND_Y; // (where a farmer standing there would be)
-    const drop = { id: ++this.dropId, item, count, x: round2(q.x), y: round2(y), z: round2(q.z), until: now + DROP_MS, from: q.id, ownAt: now + DROP_OWN_MS };
+    return this.dropAt(item, count, q.x, y, q.z, q.id, now);
+  }
+
+  // count of item on the ground at x, y (where a farmer standing there would
+  // be), z: for anyone to walk into, bar `from` (who it came from) for a moment
+  dropAt(item, count, x, y, z, from, now) {
+    const drop = { id: ++this.dropId, item, count, x: round2(x), y: round2(y), z: round2(z), until: now + DROP_MS, from, ownAt: now + DROP_OWN_MS };
     this.drops.set(drop.id, drop);
     return drop;
   }

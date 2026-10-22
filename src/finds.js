@@ -10,6 +10,10 @@ import { createItemMesh } from './itemmesh.js';
 // helpers its room has the say over what is on it), and not kept: they are
 // gone when you set off.
 // (how often, how likely, and what: FARM_FINDS in shared/balance.js)
+//
+// What the farmer drops out of their backpack (drop()) lies about the same
+// way, but is kept with the farm (dropped(), restoreDropped()), and isn't
+// picked straight back up: not till they have stepped away from it.
 const { every: CHECK_EVERY, chance: CHANCE, two: TWO, most: MOST, loot: FINDS } = FARM_FINDS;
 const FLOAT_Y = 0.6; // over the ground
 const REACH = 1.1; // from the farmer's middle, to pick one up
@@ -26,20 +30,30 @@ function roll() {
 
 // freeSpot(): somewhere on the farm for a find, { x, y, z } (y: the ground), or null.
 // onPickUp(item, count): into the backpack; false if there was no room.
-export function createFarmFinds({ scene, freeSpot, onPickUp }) {
-  const finds = []; // { item, count, mesh, x, y, z, age, retryAt }
+// isItem(id): an item there is (a save is not to be trusted).
+export function createFarmFinds({ scene, freeSpot, onPickUp, isItem = () => true }) {
+  const finds = []; // { item, count, mesh, x, y, z, age, retryAt, own, away } (own: dropped by the farmer; away: they have stepped off it since)
   let wait = CHECK_EVERY;
+
+  function add(item, count, x, y, z, own = false, away = false) {
+    const mesh = createItemMesh(item);
+    mesh.position.set(x, y + FLOAT_Y, z);
+    mesh.rotation.y = Math.random() * Math.PI * 2;
+    mesh.scale.setScalar(0);
+    scene.add(mesh);
+    finds.push({ item, count, mesh, x, y: y + FLOAT_Y, z, age: 0, retryAt: 0, own, away });
+  }
 
   function spawn() {
     const spot = freeSpot();
     if (!spot) return;
     const [item, count] = roll();
-    const mesh = createItemMesh(item);
-    mesh.position.set(spot.x, spot.y + FLOAT_Y, spot.z);
-    mesh.rotation.y = Math.random() * Math.PI * 2;
-    mesh.scale.setScalar(0);
-    scene.add(mesh);
-    finds.push({ item, count, mesh, x: spot.x, y: spot.y + FLOAT_Y, z: spot.z, age: 0, retryAt: 0 });
+    add(item, count, spot.x, spot.y, spot.z);
+  }
+
+  // Dropped by the farmer at x, z, on the ground at height y
+  function drop(item, count, x, y, z) {
+    add(item, count, x, y, z, true);
   }
 
   function remove(find) {
@@ -47,23 +61,40 @@ export function createFarmFinds({ scene, freeSpot, onPickUp }) {
     finds.splice(finds.indexOf(find), 1);
   }
 
-  function clear() {
-    while (finds.length) remove(finds[0]);
+  // (what the farmer dropped stays, unless `all`: another farm is on screen)
+  function clear(all = false) {
+    for (const find of [...finds]) if (all || !find.own) remove(find);
     wait = CHECK_EVERY;
+  }
+
+  // What the farmer dropped, for the farm's save: [[item, count, x, y, z], ...]
+  function dropped() {
+    return finds.filter((f) => f.own).map((f) => [f.item, f.count, f.x, f.y - FLOAT_Y, f.z]);
+  }
+
+  // The farm's save's dropped() (another farm's, or none: nothing lying about)
+  function restoreDropped(list) {
+    clear(true);
+    for (const d of Array.isArray(list) ? list : []) {
+      const [item, count, x, y, z] = Array.isArray(d) ? d : [];
+      if (isItem(item) && Number.isInteger(count) && count > 0 && [x, y, z].every(Number.isFinite)) add(item, count, x, y, z, true, true);
+    }
   }
 
   // active: on our own farm, alone. counting: being played (not behind a menu).
   // at: the farmer's position (Vector3).
   function update(dt, t, { active, counting, at }) {
+    for (const find of finds) find.mesh.visible = active;
     if (!active) {
-      if (finds.length) clear();
+      if (finds.some((f) => !f.own)) clear();
       return;
     }
     if (counting && (wait -= dt) <= 0) {
       wait = CHECK_EVERY;
-      if (finds.length < MOST && Math.random() < CHANCE) {
+      const lying = () => finds.filter((f) => !f.own).length; // (what the farmer dropped doesn't count)
+      if (lying() < MOST && Math.random() < CHANCE) {
         spawn();
-        if (finds.length < MOST && Math.random() < TWO) spawn();
+        if (lying() < MOST && Math.random() < TWO) spawn();
       }
     }
     for (const find of [...finds]) {
@@ -75,11 +106,12 @@ export function createFarmFinds({ scene, freeSpot, onPickUp }) {
       mesh.position.y = find.y + Math.sin(t * 2 + find.x) * 0.15;
       mesh.rotation.y += dt * 1.5;
       const near = Math.hypot(find.x - at.x, mesh.position.y - at.y, find.z - at.z) < REACH;
-      if (!near || performance.now() < find.retryAt) continue;
+      if (find.own && !find.away) find.away = !near; // (dropped: not back into the backpack till we have stepped off it)
+      if (!near || (find.own && !find.away) || performance.now() < find.retryAt) continue;
       if (onPickUp(find.item, find.count)) remove(find);
       else find.retryAt = performance.now() + 1000;
     }
   }
 
-  return { update, clear, list: () => finds };
+  return { update, clear, drop, dropped, restoreDropped, list: () => finds };
 }

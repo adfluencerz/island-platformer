@@ -628,6 +628,50 @@ await test('a bop knocks things loose onto the ground, never into the air or the
   assert.equal(room.groundUnder(tx, GROUND_STAND_Y, tz), 0, 'not if they are under it');
 });
 
+await test('dropping things out of the backpack: at your feet, for anyone (not straight back to you); never tools or coins', () => {
+  const room = new Room({ code: 'TEST16' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const { x: sx, z: sz } = room.island.spawn;
+  const at = (who, x, z) => room.message(who.p, { t: C.STATE, x: sx + x, y: 0.8, z: sz + z, yaw: 0, f: 1 });
+  at(a, 8, 0);
+  a.p.bag = { wood: 5 };
+  room.message(a.p, { t: C.THROW, item: 'wood', count: 4 });
+  const drop = b.conn.last(S.DROP);
+  assert.deepEqual([drop.item, drop.count, drop.from, drop.wait], ['wood', 4, a.p.id, DROP_OWN_MS]);
+  assert.deepEqual([drop.x, drop.y, drop.z], [sx + 8, GROUND_STAND_Y, sz], 'at their feet, on the ground');
+  assert.equal(a.p.bag.wood, 1, 'out of what a bop could knock loose');
+  room.message(a.p, { t: C.PICKUP, id: drop.id });
+  assert.equal(a.conn.last(S.DROP_DENY).id, drop.id, 'not straight back');
+  at(b, 8, 0.5);
+  room.message(b.p, { t: C.PICKUP, id: drop.id });
+  assert.deepEqual([b.conn.last(S.PICKED).by, b.p.bag.wood], [b.p.id, 4]);
+  // what can't be dropped comes back, to go back into the backpack
+  const deny = (msg, why) => {
+    a.p.throwAt = 0;
+    const before = a.conn.all(S.THROW_DENY).length;
+    room.message(a.p, { t: C.THROW, ...msg });
+    assert.equal(a.conn.all(S.THROW_DENY).length, before + 1, why);
+    assert.deepEqual([a.conn.last(S.THROW_DENY).item, a.conn.last(S.THROW_DENY).count], [typeof msg.item === 'string' ? msg.item : null, Number.isInteger(msg.count) ? msg.count : 0]);
+  };
+  deny({ item: 'axe', count: 1 }, 'a tool');
+  deny({ item: 'coin', count: 5 }, 'coins');
+  deny({ item: 'nonsense', count: 1 }, 'no such thing');
+  deny({ item: 'wood', count: 0 }, 'none of it');
+  deny({ item: 'wood', count: 1.5 }, 'a part of one');
+  deny({ item: { x: 1 }, count: 1 }, 'not an item at all');
+  a.p.throwAt = 0;
+  room.message(a.p, { t: C.THROW, item: 'stone', count: 1 });
+  room.message(a.p, { t: C.THROW, item: 'stone', count: 1 });
+  assert.equal(a.conn.last(S.THROW_DENY).item, 'stone', 'not so fast');
+  at(a, room.island.half + 5, 0);
+  deny({ item: 'stone', count: 1 }, 'out over the sea');
+  // off in a party game's arena: not the lobby's ground
+  at(a, 8, 0);
+  a.p.game = 1;
+  deny({ item: 'stone', count: 1 }, 'in an arena');
+});
+
 await test('bopping: the farmer in front, in reach, knocked back; what they gathered drops, for anyone to pick up', () => {
   const room = new Room({ code: 'TEST15' });
   const a = join(room, 'A');
