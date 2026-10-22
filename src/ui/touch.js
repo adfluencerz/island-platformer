@@ -173,6 +173,11 @@ export class TouchControls {
     this.useBtn.classList.toggle('ready', on);
   }
 
+  // A fish on the line: the Use button pulses till it is tapped (or it gets away)
+  setBite(on) {
+    this.useBtn.classList.toggle('bite', on);
+  }
+
   // The stick as the world's x and z (the camera looks north, so up the screen is -z)
   direction() {
     return { x: this.stick.x, z: this.stick.y };

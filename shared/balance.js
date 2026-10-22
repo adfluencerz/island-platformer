@@ -10,8 +10,9 @@
 //
 // What uses each part: the item catalog (src/items.js), the world and its
 // lobbies (shared/level.js, shared/room.js), the workbench (src/workbench.js),
-// the animals (src/animals.js), the farm's finds (src/finds.js), the arcade's
-// games (shared/arcade.js) and a new farmer's backpack (src/main.js).
+// the animals (src/animals.js), the farm's finds (src/finds.js), fishing
+// (shared/fishing.js), the arcade's games (shared/arcade.js) and a new
+// farmer's backpack (src/main.js).
 
 // ---------- Time ----------
 export const DAY_LENGTH_SECONDS = 1440; // a whole game day, in real seconds
@@ -59,6 +60,24 @@ export const SHOP = {
   large_egg: { sell: 45 },
   milk: { sell: 60 },
   wool: { sell: 120 },
+  // fished up (see Fishing)
+  sardine: { sell: 18 },
+  mackerel: { sell: 30 },
+  sea_bass: { sell: 55 },
+  pufferfish: { sell: 130 },
+  moonfish: { sell: 160 },
+  seaweed: { sell: 8 },
+  minnow: { sell: 15 },
+  perch: { sell: 28 },
+  sunfish: { sell: 50 },
+  catfish: { sell: 65 },
+  koi: { sell: 150 },
+  trout: { sell: 40 },
+  salmon: { sell: 70 },
+  rainbow_trout: { sell: 110 },
+  glowfish: { sell: 220 },
+  golden_carp: { sell: 450 },
+  old_boot: { sell: 2 },
 };
 export const COIN_VALUE = 10; // gold for picking up one coin
 
@@ -310,6 +329,7 @@ export const BUILD_COSTS = {
   ...Object.fromEntries(RELICS.map((relic) => [relic, { [relic]: 1 }])), // (a relic on its pedestal: the relic itself)
   garden_bench: { wood: 6 },
   planter: { planter: 1 },
+  pond: { stone: 30 },
   ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, boss]) => [
     [`${id}_portal`, { [boss.key]: boss.pieces }], // (a boss's portal: a full set of its key pieces)
     [boss.statue, { [boss.statue]: 1 }], // (its statue: the one it gave)
@@ -335,6 +355,10 @@ export const RECIPES = [
   { makes: 'golden_axe', level: 3, needs: { silver_axe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
   { makes: 'golden_pickaxe', level: 3, needs: { silver_pickaxe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
   { makes: 'golden_hoe', level: 3, needs: { silver_hoe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
+  // fishing rods (shared/fishing.js), each from the one before
+  { makes: 'fishing_rod', needs: { wood: 5, flax: 2 } },
+  { makes: 'sturdy_rod', needs: { fishing_rod: 1, wood: 15, stone: 10, flax: 4 } },
+  { makes: 'golden_rod', level: 2, needs: { sturdy_rod: 1, gold: 500, wood: 20, gem: 2 } },
 ];
 
 // Made at the workbench once, built straight from wood and stone now: what
@@ -362,13 +386,54 @@ export const BOP_GRACE = 2500; // ms a farmer who was just bopped can't be again
 export const SAFE_CIRCLE = 3.5; // nobody bops or is bopped this close to where farmers arrive
 export const DROP_MS = 45_000; // a drop nobody picks up fades after this (ms)
 
+// ---------- Fishing ----------
+// With a rod in hand, E facing water casts; a while later the bobber dips,
+// and E again in time lands what bit (in a lobby the server rolls it). `bite`:
+// seconds [min, max] from the cast till something bites, with each rod.
+// `luck`: how much likelier a rarer catch is with it (for each step of rarity,
+// times this). The rods are made at the workbench, each from the one before.
+export const RODS = {
+  fishing_rod: { bite: [6, 13], luck: 1 },
+  sturdy_rod: { bite: [4, 9], luck: 1.5 },
+  golden_rod: { bite: [2.5, 6], luck: 2 },
+};
+// ms to press E once the bobber dips, by how rare what bit is (0 common .. 3 the rarest)
+export const BITE_WINDOW = [1300, 1000, 750, 550];
+export const CAST_EVERY = 1200; // ms: the fewest between two casts
+// What bites where: the sea round your farm, a pond built on it, and any
+// water in a lobby (its sea and its pond: rarer things). Each [item, weight,
+// rarity, { rod, hours, count }]: `rod` the least rod it bites for (1: a
+// sturdy one, 2: golden), `hours` [from, to] of game time it bites in (past
+// midnight if from > to), `count` [min, max] of it (else one). 'chest': a
+// little chest of loot (FISHED_CHEST); wood is driftwood.
+export const FISHING = {
+  sea: [
+    ['sardine', 30, 0], ['mackerel', 22, 0], ['sea_bass', 12, 1],
+    ['pufferfish', 4, 2, { rod: 1 }], ['moonfish', 5, 2, { hours: [20, 5] }],
+    ['seaweed', 6, 0], ['old_boot', 5, 0], ['wood', 4, 0, { count: [2, 4] }],
+    ['key', 0.8, 2], ['chest', 1.5, 2],
+  ],
+  pond: [
+    ['minnow', 30, 0], ['perch', 22, 0], ['sunfish', 10, 1, { hours: [9, 17] }],
+    ['catfish', 10, 1, { hours: [18, 6] }], ['koi', 4, 2, { rod: 1 }],
+    ['old_boot', 4, 0], ['key', 0.6, 2], ['chest', 1, 2],
+  ],
+  lobby: [
+    ['trout', 26, 0], ['salmon', 18, 1], ['rainbow_trout', 9, 1],
+    ['glowfish', 4, 2, { hours: [21, 4] }], ['golden_carp', 1.2, 3, { rod: 1 }],
+    ['old_boot', 4, 0], ['key', 1.5, 2], ['chest', 3, 2],
+  ],
+};
+// What is in a little chest fished up: `rolls` things, each from `loot`
+// ([item, weight, min, max], as for the sky isle chests)
+export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1]] };
 // ---------- Skills ----------
 // Five skills that level up by doing (shared/skills.js, src/skills.js), from
 // level 1 to SKILLS.max. `next`: XP from each level to the one after (1 -> 2
 // first). `xp`: what each thing done is worth (`harvest` by crop). `bonus`:
 // the chance, for each level past 1, of one more of what it gives (an extra
-// crop, egg, milk, wool, log or stone; fishing's: bites that much sooner,
-// once there is fishing). From level `fewerSwings` a tree or rock takes one
+// crop, egg, milk, wool, log or stone; fishing's: bites that much sooner).
+// From level `fewerSwings` a tree or rock takes one
 // swing less (never under `leastSwings`: a lobby turns down two felled within
 // a second). The overall level is all five added up; at DOUBLE_JUMP.level it
 // unlocks one jump more in the air, at `speed`.

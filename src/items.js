@@ -954,6 +954,169 @@ ITEMS.planter = {
   ],
 };
 
+// ---------- Fishing (shared/fishing.js, src/fishing.js) ----------
+// The rods, made at the workbench, each from the one before: the better the
+// rod, the sooner a bite and the rarer what bites (RODS in shared/balance.js).
+// Then what is fished up: one drawing for most fish, in each one's colors.
+const ROD_SPRITE = [
+    '............oo..',
+    '...........oWo..',
+    '..........oWwol.',
+    '.........oWwo.l.',
+    '........oWwo..l.',
+    '.......oWwo...l.',
+    '......oWwo....l.',
+    '.....oWwo.....l.',
+    '....oWwo......l.',
+    '.ooodwo......oro',
+    '.oMmoo.......oRo',
+    '.oMmo.........o.',
+    'oddo............',
+    'odo.............',
+    'oo..............',
+    '................',
+  ];
+const rod = (name, description, color, pole) => ({
+  name,
+  category: 'Tool',
+  tool: 'rod',
+  description,
+  maxStack: 1,
+  trashable: false,
+  color,
+  palette: { o: '#3b2412', d: '#7a4f28', M: '#a9b3c1', m: '#5d6470', l: '#e8edf3', r: '#e0475b', R: '#ffffff', ...pole },
+  sprite: [...ROD_SPRITE],
+});
+ITEMS.fishing_rod = rod('Fishing rod', 'Cast with E facing the sea or a pond, then press E again when the bobber dips.', 0xb0743a, { W: '#d99b57', w: '#b0743a' });
+ITEMS.sturdy_rod = rod('Sturdy rod', 'Bites come sooner, and rarer fish take an interest. Cast with E facing water.', 0x5b84b1, { W: '#a8c8ec', w: '#5b84b1' });
+ITEMS.golden_rod = rod('Golden rod', 'The fish practically queue up, the rarest among them. Cast with E facing water.', 0xffd700, { W: '#fff6b0', w: '#e0a800' });
+
+const FISH_SPRITE = [
+    '................',
+    '................',
+    '................',
+    '.......oooo.....',
+    '......offffo....',
+    '.oo..obbbbbbo...',
+    '.ofo.obbbbbbbbo.',
+    '.offobbbbbbbwebo',
+    '.offobBbbbbbbbbo',
+    '.ofo.oBBBBBBBBo.',
+    '.oo...oBBBBBoo..',
+    '.......offfo....',
+    '........ooo.....',
+    '................',
+    '................',
+    '................',
+  ];
+// b/B = back and belly, f = fins
+const fish = (name, description, color, b, B, f) => ({
+  name,
+  category: 'Fish',
+  description,
+  maxStack: 999,
+  color,
+  palette: { o: '#24323f', w: '#ffffff', e: '#111111', b, B, f },
+  sprite: [...FISH_SPRITE],
+});
+Object.assign(ITEMS, {
+  // the sea round the farm
+  sardine: fish('Sardine', 'Small, silver and in a hurry. From the sea.', 0x8fb3cc, '#8fb3cc', '#e3edf2', '#5f87a3'),
+  mackerel: fish('Mackerel', 'Stripy and full of beans. From the sea.', 0x3f8f8a, '#3f8f8a', '#d9eee6', '#2a6662'),
+  sea_bass: fish('Sea bass', 'A fine, heavy fish. The merchant likes these.', 0x7d8a96, '#7d8a96', '#dfe4e8', '#57626c'),
+  moonfish: fish('Moonfish', 'Only bites late at night, and glows a little in the dark.', 0xc9c3f0, '#c9c3f0', '#f6f3ff', '#9a8fd9'),
+  // a pond on the farm
+  minnow: fish('Minnow', 'Tiny, quick, and always somewhere in a pond.', 0x9fae8a, '#9fae8a', '#e8eedc', '#76845f'),
+  perch: fish('Perch', 'Green and gold, with a spiky fin. From a pond.', 0x8fae3c, '#8fae3c', '#f1e7a8', '#c25a12'),
+  sunfish: fish('Sunfish', 'Comes up to bask in the middle of the day.', 0xf0a03a, '#f0a03a', '#ffe6a8', '#d26e1c'),
+  catfish: fish('Catfish', 'Whiskery. Wakes up in the evening.', 0x7a6a52, '#7a6a52', '#d9cdb4', '#55493a'),
+  koi: fish('Koi', 'Orange and white, and very proud of it. Takes a sturdy rod.', 0xff7a3a, '#ff7a3a', '#ffffff', '#ffffff'),
+  // a lobby's water
+  trout: fish('Trout', 'Speckled and lively. From the wild islands.', 0x8a8a52, '#8a8a52', '#efe7c8', '#66663a'),
+  salmon: fish('Salmon', 'Pink, strong, and worth a bit. From the wild islands.', 0xe88a8a, '#e88a8a', '#ffe4dc', '#b85c5c'),
+  rainbow_trout: fish('Rainbow trout', 'Every colour along its side. From the wild islands.', 0x7fbf9f, '#7fbf9f', '#ffb3c8', '#c77dff'),
+  glowfish: fish('Glowfish', 'Lights up the water on a wild island, late at night.', 0x5ff0e8, '#5ff0e8', '#d8fffb', '#2ec4b6'),
+  golden_carp: fish('Golden carp', 'The rarest thing in the water. Takes a sturdy rod and a lot of luck.', 0xffd700, '#ffd700', '#fff6b0', '#e0a800'),
+});
+ITEMS.pufferfish = {
+  name: 'Pufferfish',
+  category: 'Fish',
+  description: 'Puffs up when surprised. Rare, and only for a sturdy rod.',
+  maxStack: 999,
+  color: 0xe8c547,
+  palette: { o: '#4a3a12', b: '#e8c547', B: '#fff1b8', f: '#c9a12a', w: '#ffffff', e: '#111111', m: '#e07a5f' },
+  sprite: [
+    '................',
+    '.....o..o..o....',
+    '....oooooooooo..',
+    '..oobbbbbbbbbbo.',
+    '.obbbbbbbbbwweo.',
+    '.obbbbbbbbbweeo.',
+    'oobbbbbbbbbbbbbo',
+    'ofobBbbbbbbbbbmo',
+    'offobBBbbbbbbbbo',
+    'ofo.obBBBBBBBbo.',
+    '.o...oBBBBBBBo..',
+    '.....ooooooooo..',
+    '.....o..o..o....',
+    '................',
+    '................',
+    '................',
+  ],
+};
+ITEMS.seaweed = {
+  name: 'Seaweed',
+  category: 'Forage',
+  description: 'Slippery. Caught on the line in the sea.',
+  maxStack: 999,
+  color: 0x4f9e3c,
+  palette: { o: '#1f3d1c', g: '#4f9e3c', G: '#7ed957' },
+  sprite: [
+    '................',
+    '.......o........',
+    '......ogo...o...',
+    '......ogo..ogo..',
+    '.o....oGgo.ogo..',
+    'ogo....ogo.oGgo.',
+    'ogo...oGgo..ogo.',
+    'oGgo..ogo..oGgo.',
+    '.ogo..oGgo.ogo..',
+    '.oGgo.ogo.oGgo..',
+    '..ogooGgo.ogo...',
+    '..oGgoogo.ogo...',
+    '...ogoogooGgo...',
+    '...oGgoGgoogo...',
+    '....oooooooo....',
+    '................',
+  ],
+};
+ITEMS.old_boot = {
+  name: 'Old boot',
+  category: 'Junk',
+  description: 'Somebody lost this a long time ago. The merchant will take it, just.',
+  maxStack: 99,
+  color: 0x6b4a2b,
+  palette: { o: '#2a1a0e', b: '#6b4a2b', B: '#8a6340', L: '#a08a6a', d: '#3d2a18' },
+  sprite: [
+    '................',
+    '................',
+    '....ooooooo.....',
+    '....oLLLLLo.....',
+    '....obbbbbo.....',
+    '....obBbbbo.....',
+    '....obBbbbo.....',
+    '....obbbbbo.....',
+    '....obbbbbooooo.',
+    '....obbbbbbbbbbo',
+    '...obbBbbbbbbbbo',
+    '...obbbbbbbbbbbo',
+    '...odddddddddddd',
+    '...ooooooooooooo',
+    '................',
+    '................',
+  ],
+};
+
 // ---------- The bosses (shared/bosses.js) ----------
 // The evil parsnip's key pieces (BOSSES in shared/balance.js: a full set
 // builds its portal), its statue, and the friendly parsnip to ride
@@ -2446,6 +2609,27 @@ export const PIECE_ICONS = {
       '.oSppppppppppSo.',
       '.oSSSSSSSSSSSSo.',
       '.oooooooooooooo.',
+      '................',
+    ],
+  },
+  pond: {
+    palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', w: '#3d7fa8', W: '#9fd3ef', g: '#3f7f34', G: '#6fb04a' },
+    sprite: [
+      '................',
+      '................',
+      '....oooooooo....',
+      '..ooLMLMLMLMoo..',
+      '.oLMwwwwwwwwMLo.',
+      '.oMwWwwwwwwwwMo.',
+      'oLwwwwwgGgwwwwLo',
+      'oMwwwwgGGgwWwwMo',
+      'oLwwwwwggwwwwwLo',
+      'oMwwWwwwwwwwwwMo',
+      '.oLwwwwwwwwWwLo.',
+      '.oMLwwwwwwwwLMo.',
+      '..ooMLMLMLMLoo..',
+      '....oooooooo....',
+      '................',
       '................',
     ],
   },

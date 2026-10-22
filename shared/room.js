@@ -32,6 +32,11 @@
 // every swing at it comes here (HIT), so everyone's add up, and what it gives
 // is shared by how much each farmer did.
 //
+// With a fishing rod a farmer casts into the sea or the pond (CAST): the
+// room rolls what will bite and when (shared/fishing.js), says so when it
+// does (BITE), and if REEL comes in time it is theirs (CAUGHT), the lobby
+// hearing of a rare one. Casting goes on as long as anyone likes.
+//
 // At the signpost in the stone circle, a farmer can start a party game
 // (shared/minigame.js): whoever joins is off to an arena of its own for a
 // while, out of the lobby's doings, and back with a prize for the winner.
@@ -46,6 +51,9 @@ import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
+import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn } from './fishing.js';
+import { DAY_LENGTH_SECONDS, SKILLS } from './balance.js';
+import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 
 const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
@@ -54,6 +62,7 @@ const CHOP_REACH = 2.6; // the client chops within 1.5 of the trunk
 const CHOP_EVERY = 1000; // ms: the fewest between two felled trees (felling one takes TREE.hits swings)
 const MINE_REACH = 2.6; // the client mines within 1.3 of the rock's edge (plus the rock itself: up to 1.5 times its size, as drawn)
 const MINE_EVERY = 900; // ms: the fewest between two broken rocks (breaking one takes ROCK.hits swings)
+const REEL_SLACK = 450; // ms: a REEL this late after the bite window still counts (the BITE took a while to get there, and the REEL back)
 const MAX_DROPS = 60;
 const round2 = (v) => Math.round(v * 100) / 100;
 const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
@@ -139,6 +148,8 @@ export class Room extends Place {
       bag: {}, // what they gathered on this visit: item -> count (what a bop can knock loose)
       bopAt: 0, // when they last swung a weapon
       boppedAt: 0, // when they were last bopped
+      castAt: 0, // when they last cast a line
+      line: null, // the line they have out: { n, item, count, items, window, x, z, biteAt, bit } (castLine, shared/fishing.js)
       game: 0, // the party game they are off in (0: here in the lobby)
     });
   }
@@ -313,6 +324,45 @@ export class Room extends Place {
         if (drop) this.broadcast({ t: S.DROP, id: drop.id, item: drop.item, count: drop.count, x: drop.x, y: drop.y, z: drop.z });
         break;
       }
+      case C.CAST: {
+        const now = Date.now();
+        const rod = Object.hasOwn(RODS, msg.rod ?? '') ? msg.rod : null;
+        const ok = rod && finite(msg.x, msg.z) && now - p.castAt >= CAST_EVERY &&
+          Math.hypot(msg.x - p.x, msg.z - p.z) <= CAST_REACH + 0.5 && waterOn(this.island, msg.x, msg.z);
+        const n = Number.isInteger(msg.n) ? msg.n : 0;
+        p.line = null;
+        if (!ok) {
+          this.send(p, { t: S.CAUGHT, n, item: null });
+          return;
+        }
+        p.castAt = now;
+        const level = Number.isInteger(msg.level) ? Math.max(1, Math.min(SKILLS.max, msg.level)) : 1; // (the page keeps the skills)
+        const line = castLine('lobby', rod, this.hour(now), level, this.rand);
+        p.line = { ...line, n, x: msg.x, z: msg.z, biteAt: now + line.bite * 1000, bit: false };
+        break;
+      }
+      case C.REEL: {
+        const line = p.line;
+        p.line = null;
+        if (!line?.bit) return; // (reeled in before anything bit)
+        const late = Date.now() > line.biteAt + line.window + REEL_SLACK;
+        if (late || Math.hypot(line.x - p.x, line.z - p.z) > CAST_REACH + 1.5) {
+          this.send(p, { t: S.CAUGHT, n: line.n, item: null });
+          return;
+        }
+        p.finds++;
+        for (const [it, n] of line.items ?? [[line.item, line.count]]) {
+          this.gathered(p, it, n);
+          if (RARE[it]) {
+            p.rares++;
+            this.say(`${p.name} fished up ${RARE[it].toLowerCase()}!`);
+          }
+        }
+        this.rosterDirty = true;
+        this.changed = true;
+        this.send(p, { t: S.CAUGHT, n: line.n, item: line.item, count: line.count, ...(line.items && { items: line.items }) });
+        break;
+      }
       case C.PICKUP: {
         const drop = this.drops.get(msg.id);
         if (!drop || Math.hypot(drop.x - p.x, drop.y - p.y, drop.z - p.z) > TOUCH_REACH) {
@@ -395,8 +445,27 @@ export class Room extends Place {
     return { ...msg, size: thing.scale ?? thing.size };
   }
 
+  // The lobby's hour of the day at now (it opens at LOBBY_DAWN), as everyone's pages show it
+  hour(now = Date.now()) {
+    return (LOBBY_DAWN + ((now - this.createdAt) / 1000 / DAY_LENGTH_SECONDS) * 24) % 24;
+  }
+
   // ---------- Every tick ----------
   tickPlace(now) {
+    // a bite on someone's line, and one they let get away
+    for (const p of this.players.values()) {
+      const line = p.line;
+      if (!line) continue;
+      if (!p.conn) {
+        p.line = null;
+      } else if (!line.bit && now >= line.biteAt) {
+        line.bit = true;
+        this.send(p, { t: S.BITE, n: line.n, window: line.window });
+      } else if (line.bit && now > line.biteAt + line.window + REEL_SLACK) {
+        p.line = null;
+        this.send(p, { t: S.CAUGHT, n: line.n, item: null });
+      }
+    }
     this.party.tick(now);
 
     // (nothing grows back) maybe a giant, the once: as soon as a page has said how many trees and rocks there are

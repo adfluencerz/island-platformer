@@ -16,6 +16,8 @@ import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/const
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
+import { FISHING, RODS, SHOP } from '../shared/balance.js';
+import { biting, castLine } from '../shared/fishing.js';
 import { fingerprint } from './seed-fingerprint.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
@@ -940,6 +942,68 @@ await test('chat is cleaned and rate limited', () => {
   assert.equal(b.conn.last(S.CHAT).text, 'hi there');
   for (let i = 0; i < 10; i++) room.message(a.p, { t: C.CHAT, text: `spam ${i}` });
   assert.ok(b.conn.all(S.CHAT).filter((m) => m.from === a.p.id).length <= 5);
+});
+
+await test('fishing: what bites where, with which rod, at what hour', () => {
+  for (const [water, table] of Object.entries(FISHING)) {
+    for (const [item] of table) assert.ok(item === 'chest' || item === 'key' || item === 'wood' || SHOP[item]?.sell, `${water}: the merchant buys ${item}`);
+  }
+  const at = (hour, rod = 'fishing_rod') => biting('sea', rod, hour).map(([item]) => item);
+  assert.ok(at(23).includes('moonfish') && !at(12).includes('moonfish'), 'the moonfish only at night');
+  assert.ok(!at(23).includes('pufferfish') && at(23, 'sturdy_rod').includes('pufferfish'), 'the pufferfish takes a sturdy rod');
+  const share = (rod) => {
+    const table = biting('lobby', rod, 23);
+    const total = table.reduce((sum, [, w]) => sum + w, 0);
+    return table.filter(([, , rarity]) => rarity >= 2).reduce((sum, [, w]) => sum + w, 0) / total;
+  };
+  assert.ok(share('golden_rod') > share('sturdy_rod') && share('sturdy_rod') > share('fishing_rod'), 'a better rod, rarer things');
+  const rand = mulberry32(4);
+  for (let i = 0; i < 200; i++) {
+    const line = castLine('pond', 'golden_rod', 12, 1, rand);
+    assert.ok(line.bite >= RODS.golden_rod.bite[0] && line.bite <= RODS.golden_rod.bite[1] && line.window > 0);
+    if (line.item === 'chest') assert.ok(line.items.length >= 1);
+    assert.notEqual(line.item, 'catfish', 'no catfish at noon');
+  }
+});
+
+await test('fishing in a lobby: the room rolls it, a bite in time lands it, a late one gets away', () => {
+  const room = new Room({ code: 'FISH', rand: mulberry32(2) });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  // on the sand, facing the sea
+  const shore = room.island.coastAt(0) - 1.5;
+  room.message(a.p, { t: C.STATE, x: shore, y: 0.8, z: 0, yaw: Math.PI / 2, f: 1 });
+  assert.ok(room.island.isLand(shore, 0) && !room.island.isLand(shore + 2.5, 0));
+  room.message(a.p, { t: C.CAST, n: 1, x: shore - 2, z: 0, rod: 'fishing_rod' });
+  assert.equal(a.conn.last(S.CAUGHT)?.n, 1, 'not on dry land');
+  assert.equal(a.p.line, null);
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 2, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+  assert.ok(a.p.line && !a.p.line.bit);
+  room.message(a.p, { t: C.REEL });
+  assert.equal(a.p.line, null, 'reeled in before a bite: nothing');
+  assert.equal(a.conn.all(S.CAUGHT).length, 1);
+  // a bite, and E in time
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 3, x: shore + 2.5, z: 0, rod: 'golden_rod' });
+  Object.assign(a.p.line, { item: 'golden_carp', count: 1, items: undefined, biteAt: Date.now() - 1 });
+  room.update();
+  assert.deepEqual(a.conn.last(S.BITE), { t: S.BITE, n: 3, window: a.p.line.window });
+  room.message(a.p, { t: C.REEL });
+  assert.equal(a.conn.last(S.CAUGHT).item, 'golden_carp');
+  assert.equal(a.p.rares, 1);
+  assert.ok(b.conn.all(S.CHAT).some((m) => m.text === 'A fished up a golden carp!'), 'the lobby hears of a rare one');
+  assert.equal(a.p.bag.golden_carp, undefined, 'a rare fish is never knocked loose');
+  // too slow
+  a.p.castAt = 0;
+  room.message(a.p, { t: C.CAST, n: 4, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+  a.p.line.biteAt = Date.now() - 10_000;
+  a.p.line.bit = true;
+  room.message(a.p, { t: C.REEL });
+  assert.deepEqual(a.conn.last(S.CAUGHT), { t: S.CAUGHT, n: 4, item: null });
+  // and not again straight away
+  room.message(a.p, { t: C.CAST, n: 5, x: shore + 2.5, z: 0, rod: 'fishing_rod' });
+  assert.equal(a.conn.last(S.CAUGHT).n, 5, 'casting again too soon');
 });
 
 console.log('keeping lobbies');

@@ -7,7 +7,8 @@ import { createShop } from './shop.js';
 import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './animals.js';
-import { createBuildings } from './build.js';
+import { createBuildings, POND_WATER_Y } from './build.js';
+import { createFishing } from './fishing.js';
 import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
 import { createArcade } from './arcade.js';
@@ -30,11 +31,13 @@ import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
-import { HOME, wildMap } from './maps.js';
+import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
 import { arenaFor, signFor, SIGN_REACH, GAMES } from '../shared/arenas.js';
 import { arenaMap, buildSignpost } from './arenas.js';
 import { wildsFromWire } from '../shared/wilds.js';
+import { CAST_REACH, waterOn } from '../shared/fishing.js';
+import { HOME_HALF } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
@@ -177,6 +180,7 @@ scene.add(world.root);
 // rocks, as its lobby sent them) or 'arena' (seed: a party game's { kind,
 // seed }, shared/arenas.js; the lobby's island is kept, for going back)
 function enterWorld(name, seed, wire) {
+  wildIsland = name === 'wild' ? islandFor(seed) : null;
   let stale = null; // the wild island (or arena) we will not be back on
   const wilds = name === 'wild' ? JSON.stringify(wire ?? null) : null;
   if (name === 'wild' && (worlds.wild?.name !== `wild:${islandFor(seed).seed}` || wilds !== wildsShown)) {
@@ -199,6 +203,8 @@ function enterWorld(name, seed, wire) {
   }
   stale?.dispose(); // (out of the scene by now)
 }
+
+let wildIsland = null; // the wild island we are on, in a lobby (shared/worldgen.js: where its water is)
 
 // The sea around every island; it fades into the fog toward the horizon
 const WATER_Y = SEA_LEVEL;
@@ -1284,6 +1290,7 @@ window.addEventListener('keydown', (e) => {
 // chopping and mining reach USE_HEIGHT up or down (from a step or a platform).
 function useAction() {
   if (!building && bosses.use()) return; // (a boss's portal or arena, or a mount in hand)
+  if (place === 'lobby' && !arenaId && fishing.use()) return;
   if (place === 'lobby') {
     if (arenaId) return weaponInHand() && bop(); // (off in a party game's arena)
     if (atSign()) return useSign();
@@ -1300,6 +1307,7 @@ function useAction() {
     return;
   }
   if (building) return buildHere();
+  if (fishing.use()) return;
   if (houseDoorInReach()) return goInside();
   if (houseRoom.exitInReach(player.position)) return goOutside();
   if (chest.inReach(player.position)) return chest.open();
@@ -1394,6 +1402,8 @@ function farmHere(x, z) {
 // prompt and the touch Use button: '' (nothing). In a lobby: bop, chop, mine
 // or gather; at home: chop, mine, then harvest, till or plant the tile in front.
 function useHint() {
+  const fish = fishing.prompt();
+  if (fish) return fish.replace(/^E {2}/, '');
   if (place === 'lobby') {
     const target = bopTarget();
     if (target && !resting(player.position)) return `Bop ${lobbyNames.get(target.id) ?? 'them'}`;
@@ -2152,8 +2162,41 @@ let sendTimer = 0;
 let farmOnScreen = false; // the home farm's soil and crops are in the scene
 // (a lobby's day starts mid-morning, in good light: LOBBY_DAWN, shared/giants.js)
 
-const remotes = new Remotes(scene);
+const remotes = new Remotes(scene, { waterFrom });
 const touch = new TouchControls(); // (only shown on a touch screen)
+
+// The water at x, z, to fish in: { water, y } (which FISHING table, and its
+// surface), or null: land. In a lobby, its sea and its pond; on a farm, the
+// sea past its edge and a fish pond built on it.
+function waterAt(x, z) {
+  if (place === 'lobby') {
+    const what = wildIsland && waterOn(wildIsland, x, z);
+    return what && { water: 'lobby', y: what === 'sea' ? WATER_Y : LOBBY_POND_Y };
+  }
+  if (Math.max(Math.abs(x), Math.abs(z)) > HOME_HALF + 0.5) return { water: 'sea', y: WATER_Y };
+  const pond = buildings.get(tileKeyFor(x, z)) === 'pond' && buildings.anchor(tileKeyFor(x, z));
+  if (!pond) return null;
+  const [px, pz] = keyXZ(pond);
+  return Math.abs(x - px) < 1.1 && Math.abs(z - (pz - 1)) < 1.1 ? { water: 'pond', y: POND_WATER_Y } : null; // (the water, inside its stones)
+}
+
+// Where a bobber cast from x, z facing yaw lands: a little way out on the
+// first water in front, within CAST_REACH ({ x, y, z, water }), or null
+function waterFrom(x0, z0, yaw) {
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  for (let d = 1; d <= CAST_REACH; d += 0.25) {
+    if (!waterAt(x0 + fx * d, z0 + fz * d)) continue;
+    const out = Math.min(d + 1.2, CAST_REACH);
+    for (const at of [out, d]) {
+      const x = x0 + fx * at;
+      const z = z0 + fz * at;
+      const w = waterAt(x, z);
+      if (w) return { x, z, ...w };
+    }
+  }
+  return null;
+}
 const hud = new Hud({
   onTravel: () => splash.show({ page: 'online' }),
   onMenu: () => splash.show(),
@@ -2164,6 +2207,19 @@ const hud = new Hud({
   isBlocked: () => menuOpen() || !splash.hidden,
   onPrompt: (text) => touch.setReady(!!text),
   onStopBuilding: () => stopBuilding(),
+});
+
+// ---------- Fishing ----------
+// With a rod in hand, E facing the sea or a pond casts (src/fishing.js; in
+// a lobby the room rolls the catch, on a farm the page does).
+const fishing = createFishing({
+  scene, farmer, player, inventory, hud, touch,
+  waterAhead: () => (player.onGround && !menuOpen() && !houseRoom.inside(player.position) ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
+  hour: () => dayNight.hour(),
+  lobby: () => (place === 'lobby' ? net : null),
+  rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : null),
+  skill: () => skills.level('fishing'),
+  landed: () => skills.gain('fishing', SKILLS.xp.fish),
 });
 
 // ---------- The bosses ----------
@@ -2442,6 +2498,7 @@ function forgetLocalFarm() {
 
 function putDown({ x, y, z }) {
   stopWalking();
+  fishing.reset();
   player.position.set(x, y, z);
   player.velocity.set(0, 0, 0);
   snapCamera();
@@ -2986,6 +3043,8 @@ function joinLobby({ name, code }) {
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.GIANT, giantNews);
   on(S.BOPPED, (m) => bopped(m));
+  on(S.BITE, (m) => fishing.bit(m));
+  on(S.CAUGHT, (m) => fishing.caught(m));
   on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z]));
   on(S.PICKED, (m) => {
     removeDrop(m.id);
@@ -3023,7 +3082,9 @@ function sendState(dt, conn = net) {
     x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
     f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0) |
       (farmer.axe.visible ? STATEF.AXE : 0) | (farmer.pick.visible ? STATEF.PICK : 0) | (anim.swing >= 0 ? STATEF.SWING : 0) |
-      (farmer.sword.visible ? STATEF.SWORD : 0) | (farmer.mallet.visible ? STATEF.MALLET : 0) | bosses.mountBits() * STATEF.MOUNT,
+      (farmer.sword.visible ? STATEF.SWORD : 0) | (farmer.mallet.visible ? STATEF.MALLET : 0) |
+      (farmer.rod.visible ? STATEF.ROD : 0) | (fishing.state() ? STATEF.CAST : 0) | (fishing.state() === 'bite' ? STATEF.BITE : 0) |
+      bosses.mountBits() * STATEF.MOUNT,
   });
 }
 
@@ -3268,11 +3329,14 @@ function update(dt) {
   farmer.pick.visible = holding() === 'pickaxe';
   farmer.sword.visible = inventory.selectedId() === 'wooden_sword';
   farmer.mallet.visible = inventory.selectedId() === 'mallet';
+  farmer.rod.visible = holding() === 'rod';
+  if (farmer.rod.visible) farmer.setRod(ITEMS[inventory.selectedId()].color);
   animateCharacter(dt, moving);
   updateTileCursor(moving);
   updateHover();
 
   const t = clock.elapsedTime;
+  fishing.update(t);
   world.updateTrees(dt);
   if (building && place !== 'home') stopBuilding();
   if (place === 'lobby' && arenaId) {
@@ -3350,6 +3414,8 @@ function homePrompt() {
   if (menuOpen()) return '';
   const boss = bosses.prompt();
   if (boss || bosses.inArena()) return boss;
+  const fish = fishing.prompt();
+  if (fish) return fish;
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
   if (buildings.nearest('arcade', player.position, BENCH_REACH)) return 'E  Play at the arcade';
   if (houseDoorInReach()) return 'E  Go inside';
@@ -3379,7 +3445,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, dayNight, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { player, spots, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

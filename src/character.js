@@ -24,6 +24,7 @@ const bladeMat = mat(0x9a9a9a, { metalness: 0.6, roughness: 0.4 });
 const edgeMat = mat(0xdfe5ec, { metalness: 0.7, roughness: 0.3 });
 
 const HOE_REST_ANGLE = 0.9; // handle tilted forward/up from the arm
+const ROD_REST_ANGLE = 1.15; // a fishing rod, further forward
 export const HOE_SWING_TIME = 0.4; // seconds
 
 // Hoe swing keyframes: [time 0..1, arm angle, hoe angle relative to arm]
@@ -187,6 +188,22 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     rightArm.pivot.add(g);
   }
 
+  // A fishing rod: a long pole held up and out, a reel by the grip; the
+  // line hangs from `rodTip` (src/fishing.js draws it and the bobber)
+  const rod = new THREE.Group();
+  const poleMat = ownMat(0xb0743a, null);
+  rod.add(part(new THREE.CylinderGeometry(0.012, 0.032, 1.7, 6), poleMat, 0, 0.7, 0));
+  const reel = part(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 10), bladeMat, 0.06, 0.12, 0);
+  reel.rotation.z = Math.PI / 2;
+  rod.add(reel);
+  const rodTip = new THREE.Object3D();
+  rodTip.position.y = 1.55;
+  rod.add(rodTip);
+  rod.position.copy(rightArm.end.position);
+  rod.rotation.x = ROD_REST_ANGLE;
+  rod.visible = false;
+  rightArm.pivot.add(rod);
+
   root.traverse((obj) => {
     if (obj.isMesh) obj.castShadow = true;
   });
@@ -199,6 +216,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     walkAmount: 0, // 0 = idle pose, 1 = full walk cycle
     squash: 0, // >0 squashes (landing), <0 stretches (jumping)
     swing: -1, // tool swing progress 0..1, or -1 when not swinging
+    line: null, // the fishing line: null (not out), 'out' or 'bite' (the rod held out over the water)
   };
 
   // moving: walking (or steering in the air) this frame. targetYaw: where it
@@ -232,12 +250,19 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
       arms[1].pivot.rotation.x += (-0.4 - arms[1].pivot.rotation.x) * k;
     }
 
-    // A swing (hoe, axe or pickaxe, the same chop) overrides the right arm
+    // With the line out the rod is held out over the water, twitching when something bites
+    if (rod.visible && anim.line) {
+      const twitch = anim.line === 'bite' ? Math.sin(time * 45) * 0.08 : Math.sin(time * 1.3) * 0.03;
+      rightArm.pivot.rotation.x = -0.6 + twitch;
+    }
+
+    // A swing (hoe, axe or pickaxe, the same chop; a cast) overrides the right arm
     hoe.rotation.x = HOE_REST_ANGLE;
     axe.rotation.x = HOE_REST_ANGLE;
     pick.rotation.x = HOE_REST_ANGLE;
     sword.rotation.x = HOE_REST_ANGLE;
     mallet.rotation.x = HOE_REST_ANGLE;
+    rod.rotation.x = ROD_REST_ANGLE;
     if (anim.swing >= 0) {
       anim.swing += dt / HOE_SWING_TIME;
       if (anim.swing >= 1) {
@@ -250,6 +275,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
         pick.rotation.x = hoeAngle;
         sword.rotation.x = hoeAngle;
         mallet.rotation.x = hoeAngle;
+        rod.rotation.x = hoeAngle - HOE_REST_ANGLE + ROD_REST_ANGLE;
       }
     }
 
@@ -284,10 +310,16 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     pick,
     sword,
     mallet,
+    rod,
+    rodTip,
     anim,
     animate,
     swing() {
       if (anim.swing < 0) anim.swing = 0;
+    },
+    // the pole's color (the plain, sturdy or golden rod)
+    setRod(color) {
+      poleMat.color.setHex(color);
     },
     // Up on a mount (src/mounts.js createMount()), or (null) down off it
     ride(next) {

@@ -1,6 +1,6 @@
 // ---------- Skills ----------
 // Five skills that level up by doing: farming (planting, harvesting), animals
-// (petting, milking, eggs, shearing), fishing (once there is fishing),
+// (petting, milking, eggs, shearing), fishing (whatever is landed),
 // woodcutting and mining. Each is kept as the XP earned in it; its level
 // comes from that (SKILLS.next, shared/balance.js), from 1 to SKILLS.max.
 // Every level past 1 gives a small bonus (SKILLS.bonus), and the overall
@@ -15,7 +15,7 @@ export const SKILL_LIST = [
   { id: 'animals', name: 'Animals', does: 'Petting, milking, eggs and shearing' },
   { id: 'woodcutting', name: 'Woodcutting', does: 'Felling trees' },
   { id: 'mining', name: 'Mining', does: 'Breaking rocks' },
-  { id: 'fishing', name: 'Fishing', does: 'Catching fish', soon: true },
+  { id: 'fishing', name: 'Fishing', does: 'Catching fish' },
 ];
 export const SKILL_IDS = SKILL_LIST.map((s) => s.id);
 

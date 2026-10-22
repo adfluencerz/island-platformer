@@ -125,6 +125,44 @@ const gableShape = new THREE.Shape([new THREE.Vector2(-HOUSE_D / 2, 0), new THRE
 GLOWS.house = [0, WALL_TOP - 0.52, HOUSE_Z + HOUSE_D / 2 + 0.45];
 const gable = new THREE.ExtrudeGeometry(gableShape, { depth: HOUSE_W, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-HOUSE_W / 2, 0, 0);
 
+// ---------- The fish pond ----------
+// 3 tiles by 3 (PIECES.pond.size), built from the middle of its front row:
+// still water in a ring of stones, lily pads, reeds in a corner. Fished from
+// its edge (src/fishing.js); the stones round it are too tall to step over.
+export const POND_WATER_Y = 0.14; // the water's surface, where a bobber floats
+const POND_Z = -1; // its middle, from the middle of the tile it was built on
+const POND_IN = 1.25; // half the water's width
+const waterMat = mat(0x3d8fb8, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
+const padMat = mat(0x4f9e3c);
+
+function pond(g, solids, r) {
+  part(g, box, MATS.soil, 0, 0.02, POND_Z, POND_IN * 2, 0.04, POND_IN * 2);
+  part(g, box, waterMat, 0, POND_WATER_Y, POND_Z, POND_IN * 2, 0.02, POND_IN * 2).castShadow = false;
+  // the stones, round the edge
+  const n = 7;
+  for (const side of [0, 1, 2, 3]) {
+    for (let i = 0; i < n; i++) {
+      const along = -1.45 + (i / (n - 1)) * 2.9;
+      const [x, z] = [[along, -1.45], [1.45, along], [-along, 1.45], [-1.45, -along]][side];
+      const k = (side * n + i + Math.floor(r * 10)) % 3;
+      const stone = part(g, ball, k ? MATS.stone : MATS.stoneLight, x, 0.14, POND_Z + z, 0.5, 0.3 + k * 0.05, 0.5);
+      stone.rotation.y = i + side;
+    }
+  }
+  // lily pads, one with a flower, and reeds in the back corner
+  for (let i = 0; i < 3; i++) {
+    const a = r * 6 + i * 2.1;
+    const d = 0.35 + i * 0.25;
+    part(g, flag, padMat, Math.cos(a) * d, POND_WATER_Y + 0.015, POND_Z + Math.sin(a) * d, 0.34, 0.02, 0.34).castShadow = false;
+    if (!i) part(g, ball, MATS.petals[2], Math.cos(a) * d, POND_WATER_Y + 0.06, POND_Z + Math.sin(a) * d, 0.12, 0.08, 0.12);
+  }
+  for (let i = 0; i < 5; i++) part(g, box, MATS.leaf, -1.05 + (i % 3) * 0.12, 0.35, POND_Z - 1.05 + (i % 2) * 0.14, 0.04, 0.5 + (i % 3) * 0.12, 0.04);
+  // in the way all round (taller than a jump, like the well), the water open in the middle
+  for (const [x, z, w, d] of [[0, -1.45, 3, 0.2], [0, 1.45, 3, 0.2], [-1.45, 0, 0.2, 3], [1.45, 0, 0.2, 3]]) {
+    solids.push({ x, y: 1.1, z: POND_Z + z, w, h: 2.2, d });
+  }
+}
+
 function house(g, solids) {
   const z0 = HOUSE_Z;
   const front = z0 + HOUSE_D / 2;
@@ -1338,6 +1376,8 @@ function model(id, gx, gz, joined) {
     relic.castShadow = true;
     g.add(relic);
     solids.push({ x: 0, y: 0.4, z: 0, w: 0.6, h: 0.8, d: 0.6 });
+  } else if (id === 'pond') {
+    pond(g, solids, hash(gx, gz));
   } else if (PIECES[id]?.portal) {
     // A boss's portal (shared/bosses.js): a stone arch round a purple swirl
     // that turns (setNight). Walked up to, not into.
