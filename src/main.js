@@ -441,7 +441,7 @@ function updateCrops(dt, growDt, t) {
 // meadow and up on the ledges to walk into. The lobby rolls what is on each
 // spot and decides who got there first; the page draws them and asks.
 const spots = new Map(); // id -> { kind, use, x, y, z, item, count, view, pending, retryAt }
-const TOUCH_RADIUS = 0.6;
+const TOUCH_RADIUS = 1; // (walking into a treasure, or a drop: a little more for those)
 const GATHER_REACH = 1.6;
 const USE_HEIGHT = 1.2; // how far above or below the feet E reaches (from a step or a platform)
 // Standing (not mid-jump) with the feet within USE_HEIGHT of y (crops, trees and rocks: the ground's 0)
@@ -2367,7 +2367,39 @@ const workbench = createWorkbench({
   inventory,
   onOpenChange: (open) => (open ? keys.clear() : saveGame()),
   upgrades: { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade },
+  chest: { stock: chestStock, spend: spendFromChest },
 });
+
+// What the workbench uses of the chest ({ item: count }, what the backpack is
+// short of): from our own chest at once, or on our farm with helpers from the
+// room's, which says whether it was all there. Resolves to whether it was.
+const SPEND_WAIT = 8000; // ms to wait for the room's word
+let spendId = 0;
+const spending = new Map(); // id -> resolve
+function spendFromChest(items) {
+  const entries = Object.entries(items);
+  if (!farmNet) {
+    if (!entries.every(([item, n]) => (ownChest[item] ?? 0) >= n)) return Promise.resolve(false);
+    for (const [item, n] of entries) {
+      ownChest[item] -= n;
+      if (!ownChest[item]) delete ownChest[item];
+    }
+    chest.setItems(ownChest);
+    return Promise.resolve(true);
+  }
+  if (!farmVisit?.mine || !entries.every(([item, n]) => (roomChest[item] ?? 0) >= n)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const id = ++spendId;
+    const done = (ok) => {
+      clearTimeout(timer);
+      spending.delete(id);
+      resolve(ok);
+    };
+    const timer = setTimeout(() => done(false), SPEND_WAIT);
+    spending.set(id, done);
+    farmNet.send({ t: C.CHEST_SPEND, id, items });
+  });
+}
 
 // The arcade (arcade.js): built in build mode too, and E next to it opens
 // it; every game won or lost is saved
@@ -2854,6 +2886,7 @@ async function joinFarm(id) {
     roomChest = m.items;
     chest.setItems(m.items);
   });
+  on(S.CHEST_SPENT, (m) => spending.get(m.id)?.(!!m.ok));
   on(S.CHEST_GOT, (m) => {
     // (no room for it after all: back in the chest)
     if (!inventory.add(m.item, m.count)) farmNet.send({ t: C.CHEST_PUT, item: m.item, count: m.count });
@@ -2893,6 +2926,7 @@ async function joinFarm(id) {
 function leaveFarm() {
   const was = farmVisit;
   if (was?.mine) saveGame(); // (the animals, to the room)
+  for (const done of [...spending.values()]) done(false); // (nobody left to ask)
   farmNet?.leave();
   farmNet = null;
   farmVisit = null;
@@ -3085,7 +3119,7 @@ function updateArena() {
       coinPending.delete(id); // (the lobby never said: it didn't count, it is still there)
       coin.visible = !partyGame.taken.includes(id);
     }
-    if (!coin.visible || player.position.distanceTo(coin.position) > TOUCH_RADIUS + 0.3) return;
+    if (!coin.visible || player.position.distanceTo(coin.position) > 0.9) return; // (a race: kept tight)
     coin.visible = false; // (at once, so it feels instant: GAME_COIN settles it)
     coinPending.set(id, now);
     net?.send({ t: C.GAME_COIN, id });

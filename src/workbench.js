@@ -9,7 +9,9 @@ import { RECIPES, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js'; // (wh
 // backpack, to be put down from the Build tab; the better tools take the
 // place of the ones they're made from in the backpack; the sword and the
 // mallet are for bopping other farmers in lobbies. All of it is the page's
-// own, like the backpack, so it works on a friend's farm too.
+// own, like the backpack, so it works on a friend's farm too. What the
+// backpack is short of comes out of the farm's chest, as in build mode (the
+// farmer's own farm only: a helper has no say over its chest).
 //
 // Up top, the farm's upgrades, bought with gold and materials: the workbench
 // itself (each level makes more: a recipe's `level`, and is drawn fancier),
@@ -49,8 +51,12 @@ const UPGRADES = [
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
 // upgrades: { level(id): the farm's level of it, problem(id): why it can't
 // be upgraded right now ('' if it can: the farm's side of it), upgrade(id) }
-export function createWorkbench({ inventory, onOpenChange, upgrades }) {
+// chest: { stock(): { item: count } of what the chest has to make things
+// with, spend({ item: count }): a promise of whether it was all there, and
+// is used up now }
+export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { stock: () => ({}), spend: async () => false } }) {
   let open = false;
+  let busy = false; // (waiting to hear whether the chest had it)
 
   const menuEl = el('div', 'inv-menu bench-menu', document.body);
   menuEl.hidden = true;
@@ -58,10 +64,11 @@ export function createWorkbench({ inventory, onOpenChange, upgrades }) {
   el('div', 'inv-tab inv-frame', windowEl, 'Workbench');
   const closeBtn = button('inv-close', windowEl, '×', () => setOpen(false));
   closeBtn.title = 'Close (E / Esc)';
-  el('div', 'bench-note', windowEl, 'Make tools and things for the farm, and make the farm better. Put decorations down from the backpack\'s Build tab.');
+  const noteEl = el('div', 'bench-note', windowEl);
   const listEl = el('div', 'bench-list', windowEl);
 
-  const have = (id) => (id === 'gold' ? inventory.gold() : inventory.count(id));
+  const stored = (id) => (id === 'gold' || isTool(id) ? 0 : chest.stock()[id] ?? 0); // (tools stay with you)
+  const have = (id) => (id === 'gold' ? inventory.gold() : inventory.count(id)) + stored(id);
   // What's short of `needs` ({ item or gold: n }), as words ('': nothing)
   function short(needs) {
     for (const [id, n] of Object.entries(needs)) {
@@ -71,12 +78,22 @@ export function createWorkbench({ inventory, onOpenChange, upgrades }) {
     }
     return '';
   }
-  // Pay `needs`, but for the tool among them (it is swapped, not used up)
-  function pay(needs, tool) {
+  // Pay `needs`, but for the tool among them (it is swapped, not used up):
+  // from the backpack, and what it is short of from the chest. Resolves to
+  // whether it was paid. (The chest first: the backpack only fills up while
+  // we wait, and what it has is then still there to take.)
+  async function pay(needs, tool) {
+    const mine = {};
+    const theirs = {};
     for (const [id, n] of Object.entries(needs)) {
-      if (id === 'gold') inventory.spend(n);
-      else if (id !== tool) inventory.remove(id, n);
+      if (id === 'gold' || id === tool) continue;
+      mine[id] = Math.min(n, inventory.count(id));
+      if (n > mine[id]) theirs[id] = n - mine[id];
     }
+    if (Object.keys(theirs).length && !(await chest.spend(theirs))) return false;
+    for (const [id, n] of Object.entries(mine)) if (n) inventory.remove(id, n);
+    if (needs.gold) inventory.spend(needs.gold);
+    return true;
   }
 
   // Why this can't be made right now ('': it can)
@@ -103,7 +120,11 @@ export function createWorkbench({ inventory, onOpenChange, upgrades }) {
       const got = have(id);
       const need = el('span', 'bench-need' + (got < n ? ' short' : ''), row);
       el('img', 'inv-icon', need).src = spriteURL(ITEMS[id === 'gold' ? 'coin' : id]);
-      need.append(id === 'gold' ? `${gold(n)} (${gold(got)})` : isTool(id) ? ITEMS[id].name : `${n} (${got})`);
+      const inChest = stored(id);
+      need.append(id === 'gold' ? `${gold(n)} (${gold(got)})`
+        : isTool(id) ? ITEMS[id].name
+        : inChest ? `${n} (${got - inChest} + ${inChest} in chest)`
+        : `${n} (${got})`);
     }
   }
 
@@ -123,6 +144,8 @@ export function createWorkbench({ inventory, onOpenChange, upgrades }) {
   }
 
   function render() {
+    noteEl.textContent = 'Make tools and things for the farm, and make the farm better. Put decorations down from the backpack\'s Build tab.'
+      + (Object.keys(chest.stock()).length ? ' What your backpack is short of comes out of your farm\'s chest.' : '');
     listEl.textContent = '';
     el('div', 'bench-head', listEl, 'Upgrades');
     for (const up of UPGRADES) {
@@ -148,25 +171,35 @@ export function createWorkbench({ inventory, onOpenChange, upgrades }) {
     }
   }
 
-  function craft(recipe) {
-    if (problem(recipe)) return;
+  async function craft(recipe) {
+    if (busy || problem(recipe)) return;
     const tool = Object.keys(recipe.needs).find(isTool);
-    pay(recipe.needs, tool);
-    if (tool) {
+    busy = true;
+    const paid = await pay(recipe.needs, tool);
+    busy = false;
+    if (!paid) {
+      inventory.notify('The chest does not have that any more');
+    } else if (tool) {
       inventory.upgrade(tool, recipe.makes);
       inventory.notify(`Your ${ITEMS[tool].name.toLowerCase()} is now a ${ITEMS[recipe.makes].name.toLowerCase()}`);
     } else {
       inventory.add(recipe.makes);
     }
-    render();
+    if (open) render();
   }
 
-  function buy(up) {
-    if (upgradeProblem(up)) return;
-    pay(up.levels[upgrades.level(up.id)].cost);
-    upgrades.upgrade(up.id);
-    inventory.notify(`The ${up.name.toLowerCase()} is level ${upgrades.level(up.id)} now`);
-    render();
+  async function buy(up) {
+    if (busy || upgradeProblem(up)) return;
+    busy = true;
+    const paid = await pay(up.levels[upgrades.level(up.id)].cost);
+    busy = false;
+    if (paid) {
+      upgrades.upgrade(up.id);
+      inventory.notify(`The ${up.name.toLowerCase()} is level ${upgrades.level(up.id)} now`);
+    } else {
+      inventory.notify('The chest does not have that any more');
+    }
+    if (open) render();
   }
 
   menuEl.addEventListener('mousedown', (e) => e.target === menuEl && setOpen(false)); // click outside the window
