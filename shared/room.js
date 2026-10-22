@@ -56,7 +56,7 @@ import { DAY_LENGTH_SECONDS, SKILLS } from './balance.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 
-const TOUCH_REACH = 1.8; // the client collects at 0.6; the slack covers a position up to ~150 ms old
+const TOUCH_REACH = 2.2; // the client collects at 1 (a drop at 1.4); the slack covers a position up to ~150 ms old
 const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
 const CHOP_REACH = 2.6; // the client chops within 1.5 of the trunk
 const CHOP_EVERY = 1000; // ms: the fewest between two felled trees (felling one takes TREE.hits swings)

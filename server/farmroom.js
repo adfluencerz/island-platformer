@@ -413,6 +413,23 @@ export class FarmRoom extends Place {
         this.broadcast({ t: S.CHEST, items: this.chest });
         break;
       }
+      case C.CHEST_SPEND: {
+        // (the workbench's materials, when the backpack is short: all of it or none)
+        const { id, items } = msg;
+        if (!Number.isInteger(id) || !p.owner) return;
+        const asked = items && typeof items === 'object' && !Array.isArray(items) ? Object.entries(items) : [];
+        const ok = asked.length >= 1 && asked.length <= 8 && asked.every(([item, n]) => Number.isInteger(n) && n >= 1 && this.chest[item] >= n);
+        if (ok) {
+          for (const [item, n] of asked) {
+            this.chest[item] -= n;
+            if (!this.chest[item]) delete this.chest[item];
+          }
+          this.changed = true;
+          this.broadcast({ t: S.CHEST, items: this.chest });
+        }
+        this.send(p, { t: S.CHEST_SPENT, id, ok });
+        break;
+      }
       case C.CLOCK: {
         // The owner, alone on the farm, fast-forwarding (T): only ever forward, and not past a week
         const now = this.hours();

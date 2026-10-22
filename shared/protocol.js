@@ -28,6 +28,7 @@ export const C = {
   HARVEST: 'harvest', // { key }: the ripe crop on tile key, into the farm's chest
   CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
+  CHEST_SPEND: 'chestSpend', // { id, items: { item: count } }: use up some of what is in the chest, for what the workbench makes (the owner only); answered with CHEST_SPENT
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture()), and the farm's upgrade `levels`
   CAST: 'cast', // { n, x, z, rod, level }: cast the line, the bobber landing on the water at x, z (n: the page's count of its casts, said back in BITE and CAUGHT; rod: the one in hand, RODS in shared/balance.js; level: our fishing skill's; in a lobby)
@@ -79,6 +80,7 @@ export const S = {
   FARM_DENY: 'farmDeny', // { op, key, crop, piece }: that did not count (crop: a seed to give back; piece: a piece whose cost goes back; op 'load': what went in comes back)
   CHEST: 'chest', // { items: { item: count } }
   CHEST_GOT: 'chestGot', // { item, count }: out of the chest, for your backpack
+  CHEST_SPENT: 'chestSpent', // { id, ok }: the answer to CHEST_SPEND (ok: it was all there, and is used up)
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
   BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
   BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp } a bop that landed
