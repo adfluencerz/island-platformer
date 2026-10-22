@@ -14,6 +14,7 @@ export const C = {
   MINE: 'mine', // { id, x, z, size }: the last swing at rock id, which the page has lying at x, z (size: as for CHOP)
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
   PICKUP: 'pickup', // { id }: walked into drop id
+  THROW: 'throw', // { item, count }: dropped out of the backpack (the page has taken it out already), at our feet, for anyone to walk into
   HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   GAME_START: 'gameStart', // { game }: start a party game of this kind (GAMES in shared/arenas.js), at the signpost (shared/minigame.js)
@@ -56,7 +57,7 @@ export const S = {
   RESURFACED: 'resurfaced', // { id, n }: rock id is back, in its place n
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
-  DROP: 'drop', // { id, item, count, x, y, z, from, wait }: something dropped, for anyone to walk into (but from, the farmer it was knocked out of, for wait ms)
+  DROP: 'drop', // { id, item, count, x, y, z, from, wait }: something dropped (knocked loose by a bop, or THROW), for anyone to walk into (but from, the farmer it came from, for wait ms)
   GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire()), whenever that changes
   GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
   GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (winner: 0, nobody)
@@ -64,6 +65,7 @@ export const S = {
   BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms
   CAUGHT: 'caught', // { n, item, count, items? }: what we landed on cast n (item null: nothing, it got away; 'chest': a little chest, its items [[item, count], ...])
   DROP_DENY: 'dropDeny', // { id }: that pickup did not count (someone was quicker, or too far)
+  THROW_DENY: 'throwDeny', // { item, count }: that could not be dropped here: back into the backpack with it
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
