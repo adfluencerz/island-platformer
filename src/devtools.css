@@ -1,0 +1,94 @@
+/* The developer tools' panel (src/devtools.js): in the game's wood and parchment */
+.dev {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 8px 12px 10px;
+  box-sizing: border-box;
+  font-family: var(--inv-font);
+  color: var(--inv-ink);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.dev[hidden] { display: none; }
+.dev-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: grab;
+  touch-action: none; /* (dragged by its title) */
+}
+.dev-head:active { cursor: grabbing; }
+.dev-title { flex: 1; font-size: 24px; }
+.dev-x {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--inv-outline);
+  border-radius: 50%;
+  background: var(--inv-red);
+  color: #fff;
+  font: 700 20px/1 var(--inv-font);
+  cursor: pointer;
+}
+.dev-tabs { display: flex; gap: 4px; }
+.dev-tab {
+  flex: 1;
+  padding: 3px 0 4px;
+  border: 2px solid var(--inv-outline);
+  border-radius: 4px 4px 0 0;
+  background: var(--inv-paper-dark);
+  color: var(--inv-ink);
+  font: 18px var(--inv-font);
+  cursor: pointer;
+}
+.dev-tab.on { background: var(--inv-wood); color: #fff; text-shadow: 0 1px 0 var(--inv-outline); }
+.dev-body { overflow-y: auto; min-height: 0; }
+.dev-page { display: flex; flex-direction: column; gap: 10px; }
+.dev-page[hidden] { display: none; }
+.dev-h { font-size: 20px; font-weight: 700; }
+.dev-note { font-size: 16px; line-height: 1.05; opacity: 0.75; margin-bottom: 2px; }
+.dev-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.dev-btn {
+  padding: 3px 9px 4px;
+  border: 2px solid var(--inv-outline);
+  border-radius: 4px;
+  background: var(--inv-wood);
+  color: #fff;
+  font: 18px var(--inv-font);
+  text-shadow: 0 1px 0 var(--inv-outline);
+  box-shadow: inset 0 2px 0 var(--inv-wood-light), inset 0 -2px 0 #a3530c;
+  cursor: pointer;
+}
+.dev-btn:hover { background: #e98a2a; }
+.dev-btn:active { box-shadow: inset 0 2px 0 #a3530c; }
+.dev-btn.on { background: #a3530c; box-shadow: inset 0 2px 0 #7a3d08; }
+.dev-input {
+  min-width: 0;
+  padding: 3px 7px;
+  border: 2px solid var(--inv-outline);
+  border-radius: 4px;
+  background: var(--inv-slot-light);
+  color: var(--inv-ink);
+  font: 18px var(--inv-font);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.dev-what { flex: 1 1 140px; }
+.dev-count { width: 56px; }
+.dev-info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  font-size: 18px;
+}
+.dev-label { opacity: 0.75; }
+.dev-status { min-height: 1.1em; font-size: 17px; line-height: 1.1; }
+.dev-status.flash { animation: dev-flash 0.6s ease-out; }
+@keyframes dev-flash {
+  from { color: var(--inv-red); }
+  to { color: var(--inv-ink); }
+}
