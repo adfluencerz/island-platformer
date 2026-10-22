@@ -8,7 +8,8 @@ import { TILE_SIZE } from './world.js';
 // farmed, saved and shared like the rest of the farm (main.js). Its floor is
 // boards, with a field of earth in the left half to till and plant (crops
 // grow there as they do outside); the right half is for living in: a bed, a
-// table, a fireplace, a rug and a shelf. The front wall is kept low so the
+// table, a fireplace, a rug, a shelf of books (the recipe book is among them)
+// and a kitchen, a stove and a counter, to cook at (src/cooking.js). The front wall is kept low so the
 // camera sees in; the door in the middle of it goes back out.
 //
 // It is always there on the farm's world (a long way off): main.js puts the
@@ -39,6 +40,11 @@ const MATS = {
   window: mat(0xbfe3ff, { emissive: 0xffb84a, emissiveIntensity: 0 }),
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
   fire: new THREE.MeshBasicMaterial({ color: 0xff8a2a }),
+  iron: mat(0x4a4f58, { roughness: 0.5, metalness: 0.4 }),
+  ironDark: mat(0x33373e, { roughness: 0.5, metalness: 0.4 }),
+  copper: mat(0xc0703a, { roughness: 0.4, metalness: 0.5 }),
+  board: mat(0xd9b07a),
+  honey: mat(0xf0a020),
   dark: new THREE.MeshBasicMaterial({ color: 0x1b140e }),
 };
 const box = new THREE.BoxGeometry(1, 1, 1);
@@ -196,6 +202,43 @@ export function createHouseRoom(world) {
     }
   }
 
+  // the kitchen, against the back wall between the field and the fire: a
+  // black iron stove (a pot on it, its pipe up the wall, the fire glowing
+  // through the little window in its door) and a counter with a chopping
+  // board and jars on it
+  const kitchen = new THREE.Group();
+  kitchen.name = 'kitchen';
+  root.add(kitchen);
+  const kPart = (...args) => {
+    const mesh = part(...args);
+    root.remove(mesh);
+    kitchen.add(mesh);
+    return mesh;
+  };
+  const stoveX = midX + 1.2;
+  const counterX = midX + 2.45;
+  kPart(box, MATS.iron, stoveX, 0.45, back + 0.4, 1, 0.9, 0.7);
+  kPart(box, MATS.ironDark, stoveX, 0.92, back + 0.4, 1.04, 0.05, 0.74);
+  kPart(box, MATS.ironDark, stoveX, 0.04, back + 0.4, 1.04, 0.08, 0.74);
+  kPart(box, MATS.ironDark, stoveX, 0.45, back + 0.76, 0.6, 0.42, 0.02);
+  const glow = kPart(box, MATS.fire, stoveX, 0.45, back + 0.775, 0.3, 0.14, 0.01);
+  glow.castShadow = false;
+  kPart(box, MATS.ironDark, stoveX, 2.1, back + 0.2, 0.18, 2.4, 0.18); // the pipe
+  kPart(box, MATS.copper, stoveX - 0.2, 1.06, back + 0.4, 0.36, 0.24, 0.36); // the pot
+  kPart(box, MATS.copper, stoveX - 0.2, 1.19, back + 0.4, 0.4, 0.03, 0.4);
+  kPart(box, MATS.ironDark, stoveX + 0.08, 1.12, back + 0.4, 0.3, 0.03, 0.03); // its handle
+  solid({ x: stoveX, y: 0.45, z: back + 0.4, w: 1, h: 0.9, d: 0.7 });
+  kPart(box, MATS.wood, counterX, 0.43, back + 0.4, 1.4, 0.86, 0.7);
+  kPart(box, MATS.woodDark, counterX, 0.43, back + 0.76, 1.3, 0.76, 0.02);
+  for (const x of [-0.35, 0.35]) kPart(box, MATS.wood, counterX + x, 0.43, back + 0.775, 0.56, 0.66, 0.02);
+  kPart(box, MATS.floor, counterX, 0.89, back + 0.4, 1.46, 0.06, 0.74);
+  kPart(box, MATS.board, counterX - 0.25, 0.94, back + 0.45, 0.5, 0.04, 0.34);
+  kPart(box, MATS.honey, counterX + 0.3, 1.02, back + 0.3, 0.16, 0.2, 0.16);
+  kPart(box, MATS.sheet, counterX + 0.52, 1.0, back + 0.36, 0.14, 0.16, 0.14);
+  kPart(box, MATS.woodDark, counterX + 0.3, 1.13, back + 0.3, 0.17, 0.03, 0.17);
+  solid({ x: counterX, y: 0.45, z: back + 0.4, w: 1.4, h: 0.9, d: 0.7 });
+  const cookAt = { x: (stoveX + counterX) / 2, z: back + 1.35 };
+
   let doorFade = 1;
 
   // a warm light over the room at night
@@ -211,6 +254,12 @@ export function createHouseRoom(world) {
     // the door out, to tap
     door,
     exitInReach: (pos) => pos.y < 2.2 && Math.hypot(pos.x - HOUSE_DOOR_IN.x * TILE_SIZE, pos.z - (front - 0.6)) < DOOR_REACH,
+    // the kitchen (the stove and the counter, to tap), where to stand at it,
+    // and is pos close enough to cook (or to the shelf, to read the recipe book)?
+    kitchen,
+    kitchenSpot: () => ({ ...cookAt }),
+    kitchenInReach: (pos) => pos.y < 2.2 && Math.abs(pos.x - cookAt.x) < 1.6 && pos.z < cookAt.z + 0.6,
+    shelfInReach: (pos) => pos.y < 2.2 && pos.x > right - 1.6 && Math.abs(pos.z - shelfZ) < 1.2,
     // night: 0 by day, 1 at night
     setNight(night) {
       MATS.lantern.emissiveIntensity = night * 1.6;
@@ -228,6 +277,7 @@ export function createHouseRoom(world) {
         m.depthWrite = !m.transparent;
       }
       fire.scale.y = 0.4 * (0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3));
+      glow.scale.y = 0.14 * (0.8 + 0.2 * Math.sin(t * 7.1) * Math.sin(t * 3.7));
       fire.position.y = 0.2 + fire.scale.y / 2;
     },
   };

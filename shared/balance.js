@@ -78,6 +78,32 @@ export const SHOP = {
   glowfish: { sell: 220 },
   golden_carp: { sell: 450 },
   old_boot: { sell: 2 },
+  // made by the machines (MACHINES)
+  cheese: { sell: 150 },
+  mayonnaise: { sell: 65 },
+  cloth: { sell: 260 },
+  honey: { sell: 100 },
+  // cooked (DISHES): each sells for more than what went into it
+  fried_egg: { sell: 45 },
+  roasted_mushrooms: { sell: 75 },
+  baked_turnip: { sell: 55 },
+  berry_skewer: { sell: 70 },
+  roast_carrot: { sell: 90 },
+  pancakes: { sell: 280 },
+  cheese_omelette: { sell: 300 },
+  pumpkin_soup: { sell: 250 },
+  honey_carrots: { sell: 330 },
+  mushroom_pie: { sell: 290 },
+  carrot_cake: { sell: 420 },
+  berry_tart: { sell: 300 },
+  golden_pie: { sell: 700 },
+  // the kitchen's recipes the merchant sells (read, one goes in your recipe
+  // book), and the old recipe card found in lobbies (its recipe is a surprise;
+  // with all of those in the book already, it is only worth selling)
+  recipe_pumpkin_soup: { price: 400 },
+  recipe_honey_carrots: { price: 500 },
+  recipe_mushroom_pie: { price: 600 },
+  recipe_card: { sell: 150 },
 };
 export const COIN_VALUE = 10; // gold for picking up one coin
 
@@ -334,6 +360,14 @@ export const BUILD_COSTS = {
     [`${id}_portal`, { [boss.key]: boss.pieces }], // (a boss's portal: a full set of its key pieces)
     [boss.statue, { [boss.statue]: 1 }], // (its statue: the one it gave)
   ])),
+  // the machines: the one made at the workbench (RECIPES)
+  cheese_press: { cheese_press: 1 },
+  mayo_machine: { mayo_machine: 1 },
+  loom: { loom: 1 },
+  campfire: { wood: 6, stone: 6 },
+  // woven at the loom
+  bunting: { wood: 2, cloth: 1 },
+  market_awning: { wood: 4, cloth: 2 },
 };
 
 // ---------- The workbench ----------
@@ -347,6 +381,9 @@ export const RECIPES = [
   { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
   { makes: 'wooden_sword', needs: { wood: 8 } },
   { makes: 'mallet', needs: { wood: 4, stone: 6 } },
+  { makes: 'cheese_press', needs: { wood: 20, stone: 10 } },
+  { makes: 'mayo_machine', needs: { wood: 15, stone: 15 } },
+  { makes: 'loom', needs: { wood: 25, flax: 10 } },
   // level 2
   { makes: 'silver_axe', level: 2, needs: { sturdy_axe: 1, gold: 400, wood: 20, stone: 30, gem: 1 } },
   { makes: 'silver_pickaxe', level: 2, needs: { sturdy_pickaxe: 1, gold: 400, wood: 30, stone: 20, gem: 1 } },
@@ -360,6 +397,54 @@ export const RECIPES = [
   { makes: 'sturdy_rod', needs: { fishing_rod: 1, wood: 15, stone: 10, flax: 4 } },
   { makes: 'golden_rod', level: 2, needs: { sturdy_rod: 1, gold: 500, wood: 20, gem: 2 } },
 ];
+
+// ---------- Machines ----------
+// Made at the workbench (RECIPES) and put down on the farm from the Build
+// tab (shared/machines.js keeps what is in each). `takes`: one goes in, and
+// `hours` (game hours) later `makes` is ready to collect. A beehive takes
+// nothing: it makes `makes` every `hours` on its own, one jar at a time.
+export const MACHINES = {
+  cheese_press: { takes: 'milk', makes: 'cheese', hours: 4 },
+  mayo_machine: { takes: 'egg', makes: 'mayonnaise', hours: 3 },
+  loom: { takes: 'wool', makes: 'cloth', hours: 6 },
+  beehive: { makes: 'honey', hours: 24 },
+};
+
+// ---------- Cooking ----------
+// `cook`: where a dish is cooked: on a campfire built on the farm (it takes
+// CAMPFIRE_HOURS, game hours), or in the house's kitchen (straight away,
+// from the recipes in your recipe book). `needs`: what goes in. `boost`: what
+// eating one does (BOOSTS; a kitchen dish does it better, and for longer).
+// `learn` (the kitchen's): 'start', known from the start; 'shop', the
+// merchant sells the recipe (recipe_<dish>, SHOP); 'find', on an old recipe
+// card found in the lobbies.
+export const CAMPFIRE_HOURS = 1;
+export const DISHES = {
+  fried_egg: { cook: 'campfire', needs: { egg: 1 }, boost: ['quick'] },
+  roasted_mushrooms: { cook: 'campfire', needs: { mushroom: 2 }, boost: ['strong'] },
+  baked_turnip: { cook: 'campfire', needs: { turnip: 1 }, boost: ['bouncy'] },
+  berry_skewer: { cook: 'campfire', needs: { berries: 3 }, boost: ['quick'] },
+  roast_carrot: { cook: 'campfire', needs: { carrot: 1 }, boost: ['strong'] },
+  pancakes: { cook: 'kitchen', needs: { egg: 1, milk: 1, honey: 1 }, boost: ['quick'], learn: 'start' },
+  cheese_omelette: { cook: 'kitchen', needs: { egg: 2, cheese: 1 }, boost: ['strong'], learn: 'start' },
+  pumpkin_soup: { cook: 'kitchen', needs: { pumpkin: 2, milk: 1 }, boost: ['bouncy'], learn: 'shop' },
+  honey_carrots: { cook: 'kitchen', needs: { carrot: 2, honey: 1 }, boost: ['quick'], learn: 'shop' },
+  mushroom_pie: { cook: 'kitchen', needs: { mushroom: 3, egg: 1, flax: 1 }, boost: ['strong'], learn: 'shop' },
+  carrot_cake: { cook: 'kitchen', needs: { carrot: 2, egg: 2, honey: 1 }, boost: ['bouncy', 'quick'], learn: 'find' },
+  berry_tart: { cook: 'kitchen', needs: { berries: 4, egg: 1, honey: 1 }, boost: ['quick', 'strong'], learn: 'find' },
+  golden_pie: { cook: 'kitchen', needs: { golden_turnip: 1, egg: 1, cheese: 1, honey: 1 }, boost: ['quick', 'strong', 'bouncy'], learn: 'find' },
+};
+// What eating a dish does, for a while: [a campfire dish's, a kitchen dish's].
+// `speed`: walking goes this much faster. `swings`: this many fewer swings
+// fell a tree or break up a rock (one at the least; not a giant). `jump`:
+// jumping goes this much higher. `seconds`: how long it lasts (seconds of
+// play). One meal at a time: eating another puts the last one's out.
+export const BOOSTS = {
+  quick: { speed: [1.1, 1.2] },
+  strong: { swings: [1, 2] },
+  bouncy: { jump: [1.06, 1.12] },
+};
+export const BOOST_SECONDS = { campfire: 240, kitchen: 480 };
 
 // Made at the workbench once, built straight from wood and stone now: what
 // one is worth, for a backpack or a chest that still has some

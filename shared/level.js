@@ -176,6 +176,13 @@ export const PIECES = {
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
   pond: { name: 'Fish pond', solid: true, size: [3, 3] }, // (fished in: shared/fishing.js)
+  // the machines (shared/machines.js; the beehive above is one too)
+  cheese_press: { name: 'Cheese press', solid: true },
+  mayo_machine: { name: 'Mayonnaise machine', solid: true },
+  loom: { name: 'Loom', solid: true },
+  campfire: { name: 'Campfire', solid: true },
+  bunting: { name: 'Bunting', solid: true },
+  market_awning: { name: 'Market awning', solid: true },
   // a relic from a sky isle on a pedestal, to show it off (`relic`: one of those)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
   // a boss's portal (`portal`: which boss; shared/bosses.js), from a full set
@@ -192,7 +199,7 @@ for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?
 // blocks, climbed; the buildings, that do something; the decorations; the
 // relics; the bosses' portals and statues
 export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics', 'Bosses'];
-const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well', 'pond']);
+const BUILDINGS = new Set(['workbench', 'arcade', 'farm_chest', 'house', 'stone_well', 'pond', 'cheese_press', 'mayo_machine', 'loom', 'campfire']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
     : piece.portal || piece.statue ? 'Bosses'
@@ -255,6 +262,7 @@ export function keptClear(gx, gz) {
 export const RARE = {
   golden_seeds: 'Golden seeds',
   key: 'An old key',
+  recipe_card: 'An old recipe card',
   ...Object.fromEntries(Object.values(BOSSES).map(({ key, name }) => [key, `A key piece to the ${name.toLowerCase()}`])), // (shared/bosses.js)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, found])), // (the sky isles' relics)
   // the rarest fish (rarity 2 and up in FISHING, shared/balance.js)

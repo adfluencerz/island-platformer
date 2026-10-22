@@ -285,6 +285,25 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   100% { transform: translate(-50%, -60%); opacity: 0; }
 }
 
+.ui-boost {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--inv-slot) + 84px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 4px;
+  border-radius: 12px;
+  background: rgba(30, 14, 2, 0.55);
+  color: #fff3c4;
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 10;
+}
+.ui-boost[hidden] { display: none; }
+.ui-boost .inv-icon { width: 24px; height: 24px; }
 .ui-conn {
   position: fixed;
   top: 90px;

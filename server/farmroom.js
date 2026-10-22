@@ -12,6 +12,10 @@
 // everyone can see and put things in, and only the owner takes things out of.
 // The backpacks stay everyone's own (their own farm's save keeps them).
 //
+// The machines (shared/machines.js) are the room's too: whoever is next to
+// one puts something in from their own backpack (LOAD), and whoever is next to
+// it when it is ready collects it, into their own backpack (COLLECT).
+//
 // The farm's trees are chopped for wood and its rocks broken up for stone the
 // way a lobby's are (CHOP, MINE: the wood or stone goes to whoever did it),
 // and the room keeps when each comes back. A giant tree or rock (HIT) too,
@@ -33,7 +37,7 @@
 //
 // The farm is kept in the farm's own file, in the page's save format (the
 // save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age]], built:
-// [[key, piece]], felled and mined: [[tree or rock id, when it comes back (ms)]],
+// [[key, piece]], machines: [[key, item, at, takes]], felled and mined: [[tree or rock id, when it comes back (ms)]],
 // treeSites and rockSites: [[id, how often it grew back]], giants (shared/giants.js toSave()),
 // ...the animals }), so the owner's page can always play it, alone, from there; the
 // chest beside the save (farm.chest), where no page's save can write over it.
@@ -48,6 +52,7 @@ import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 import { unmake, BOSSES, WEAPONS } from '../shared/balance.js';
+import { loadFor, fillsItself, isReady, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
@@ -113,6 +118,8 @@ export class FarmRoom extends Place {
       // (a house built while it had more helpers stays)
       if (free && this.built.size < MAX_PIECES && !(PIECES[piece].one && this.has(piece))) this.put(key, piece);
     }
+    // key -> what is in the machine built there (shared/machines.js), in the farm's game hours
+    this.machines = machinesFromSave(saved?.machines, (key) => this.built.get(key), this.built.keys(), this.clockBase);
     const comingBack = (list, most) => new Map((Array.isArray(list) ? list : []).filter(([id, at]) => Number.isInteger(id) && id >= 0 && id < most && Number.isFinite(at)));
     this.felled = comingBack(saved?.felled, MAX_TREES); // tree id -> when it grows back (ms)
     this.mined = comingBack(saved?.mined, MAX_ROCKS); // rock id -> when a new one surfaces (ms)
@@ -124,7 +131,7 @@ export class FarmRoom extends Place {
     // the rest of the farm is the animals', as the owner's page saved them
     // (and the chest the page keeps when it plays the farm alone: the owner's
     // page puts what is in it into this one when it comes)
-    const { savedAt, hours, tilled, crops, built, felled, mined, treeSites, rockSites, giants, chest, ...animals } = saved ?? {};
+    const { savedAt, hours, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, ...animals } = saved ?? {};
     this.animals = animals;
     this.chest = unmake(farm.chest); // (a lamp post or bench made at the workbench, back in wood and stone)
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
@@ -174,6 +181,7 @@ export class FarmRoom extends Place {
       tilled: this.tilledList(this.hours()),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
       built: [...this.built],
+      machines: machinesToSave(this.machines),
       felled: [...this.felled],
       mined: [...this.mined],
       treeSites: [...this.treeSites],
@@ -263,6 +271,8 @@ export class FarmRoom extends Place {
         this.changed = true;
         this.broadcast({ t: S.BUILT, key, piece, by: p.id });
         if (fromChest.length) this.broadcast({ t: S.CHEST, items: this.chest });
+        const full = fillsItself(piece, this.hours()); // (a beehive: honey on its way)
+        if (full) this.setMachine(key, full, p);
         break;
       }
       case C.UNBUILD: {
@@ -271,9 +281,29 @@ export class FarmRoom extends Place {
         const at = onFarm(key) && this.covered.get(key);
         const piece = at && this.built.get(at);
         if (!piece || !this.near(p, key) || this.fights.get(portalBoss(piece))?.awake) return this.deny(p, 'unbuild', key); // (not a portal with a fight on through it)
+        const back = contentsBack(this.machines.get(at), this.hours()); // (what was in a machine goes back too)
+        this.machines.delete(at);
         this.unput(at);
         this.changed = true;
-        this.broadcast({ t: S.UNBUILT, key: at, piece, by: p.id });
+        this.broadcast({ t: S.UNBUILT, key: at, piece, by: p.id, ...(Object.keys(back).length && { back }) });
+        break;
+      }
+      case C.LOAD: {
+        // (what goes in came out of the loader's backpack: on a deny it goes back)
+        const { key } = msg;
+        const at = onFarm(key) && this.covered.get(key);
+        const state = at && !this.machines.has(at) && this.near(p, key) && loadFor(this.built.get(at), this.hours(), msg.dish);
+        if (!state) return this.deny(p, 'load', key);
+        this.setMachine(at, state, p);
+        break;
+      }
+      case C.COLLECT: {
+        const { key } = msg;
+        const at = onFarm(key) && this.covered.get(key);
+        const state = at && this.machines.get(at);
+        const hours = this.hours();
+        if (!isReady(state, hours) || !this.near(p, key)) return this.deny(p, 'collect', key);
+        this.setMachine(at, fillsItself(this.built.get(at), hours), p, state.item);
         break;
       }
       case C.CHOP: {
@@ -396,12 +426,22 @@ export class FarmRoom extends Place {
         const state = msg.state;
         if (!p.owner || !state || typeof state !== 'object' || Array.isArray(state)) return;
         if (JSON.stringify(state).length > MAX_ANIMALS) return;
-        const { savedAt, hours, tilled, crops, built, felled, mined, treeSites, rockSites, giants, chest, ...animals } = state; // (only the animals' part)
+        const { savedAt, hours, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, ...animals } = state; // (only the animals' part)
         this.animals = animals;
         this.changed = true;
         break;
       }
     }
+  }
+
+  // What is in the machine on tile key now (null: nothing), after p loaded or
+  // collected it (got: what p collected)
+  setMachine(key, state, p, got) {
+    if (state) this.machines.set(key, state);
+    else this.machines.delete(key);
+    this.changed = true;
+    const wire = state && [state.item, round3(state.at), state.takes];
+    this.broadcast({ t: S.MACHINE, key, state: wire, by: p.id, ...(got && { got }) });
   }
 
   // (crop: a seed to give back; piece: the piece whose cost goes back)
@@ -534,6 +574,7 @@ export class FarmRoom extends Place {
       tilled: this.tilledList(hours),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3((hours - c.plantedAt) * SECONDS_PER_HOUR)]),
       built: [...this.built],
+      machines: machinesToSave(this.machines),
       felled: [...this.felled],
       mined: [...this.mined],
       treeSites: [...this.treeSites],

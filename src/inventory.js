@@ -33,12 +33,15 @@ export const CATEGORIES = {
   Tool: '#6b5a45',
   Seed: '#3f7f24',
   Produce: '#c25a12',
+  Food: '#d0732a',
   Forage: '#9a1b33',
   Animal: '#b5651d',
   Decor: '#3f7f9a',
+  Machine: '#5d6470',
   Material: '#7a4a22',
   Mineral: '#7b3fb0',
   'Key Item': '#b8257a',
+  Recipe: '#8a6a45',
   Relic: '#2f7fa8',
   Fish: '#1f7a8c',
   Junk: '#6b6b6b',
@@ -90,7 +93,7 @@ function iconImg(parent) {
 // building(): the piece build mode has now (null: not building).
 // inChest(item): how many the farm's chest has to build with too.
 // renderSkills(el): draws the Skills tab into el.
-export function createInventory({ onOpenChange, onBuild, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
+export function createInventory({ onOpenChange, onBuild, onAdd, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {} } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
@@ -358,6 +361,7 @@ export function createInventory({ onOpenChange, onBuild, buildProblem = () => ''
       buzz(15);
     }
     render();
+    onAdd?.(id, count); // (a recipe card is read: main.js)
     return true;
   }
 

@@ -1481,6 +1481,67 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.close();
 });
 
+await test('a farm room: machines take things in, and whoever is next to one when it is done collects it', () => {
+  const farms = new Farms({ log: () => {} });
+  const madeA = farms.create({ v: 7, farm: { savedAt: Date.now(), hours: 8, tilled: [], crops: [], built: [['6,3', 'beehive']] }, backpack: {} }, 'pa');
+  const madeB = farms.create(aSave(2), 'pb');
+  const a = farms.auth(bearer(madeA));
+  farms.acceptHelp(farms.invite(a, 'Ann').code, farms.auth(bearer(madeB)), 'Bo');
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const enter = (made, name) => {
+    const conn = fakeConn();
+    const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name, key: name, auth: `${made.id}.${made.token}` });
+    return { conn, p };
+  };
+  const ann = enter(madeA, 'Ann');
+  const bo = enter(madeB, 'Bo');
+  // a beehive built before it made honey makes it now
+  const [hive] = ann.conn.last(S.FARM).machines;
+  assert.deepEqual([hive[0], hive[1]], ['6,3', 'honey']);
+  room.message(bo.p, { t: C.STATE, x: 4, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(bo.p, { t: C.BUILD, key: '5,3', piece: 'cheese_press' });
+  assert.equal(ann.conn.last(S.BUILT).piece, 'cheese_press');
+  room.message(bo.p, { t: C.LOAD, key: '4,3' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'load', 'nothing built there');
+  room.message(bo.p, { t: C.LOAD, key: '5,3' });
+  const loaded = ann.conn.last(S.MACHINE);
+  assert.deepEqual([loaded.key, loaded.state[0], loaded.state[2], loaded.by], ['5,3', 'cheese', { milk: 1 }, bo.p.id]);
+  room.message(bo.p, { t: C.LOAD, key: '5,3' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'load', 'one at a time');
+  room.message(bo.p, { t: C.COLLECT, key: '5,3' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'collect', 'not done yet');
+  // kept in the farm's save, and back from it
+  rooms.write(room);
+  assert.deepEqual(a.save.farm.machines.find(([key]) => key === '5,3').slice(0, 2), ['5,3', 'cheese']);
+  assert.ok(new FarmRoom({ farm: a, admit: () => null }).machines.has('5,3'));
+  assert.ok(!('machines' in room.animals), 'not the animals\'');
+  // four hours on, Ann (next to it) collects it: hers, and the press is empty
+  room.clockBase += 4;
+  room.message(ann.p, { t: C.STATE, x: 5, y: 0.8, z: 4, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.COLLECT, key: '5,3' });
+  assert.deepEqual([bo.conn.last(S.MACHINE).state, bo.conn.last(S.MACHINE).got, bo.conn.last(S.MACHINE).by], [null, 'cheese', ann.p.id]);
+  // the campfire: only its own dishes
+  room.message(bo.p, { t: C.BUILD, key: '4,4', piece: 'campfire' });
+  room.message(bo.p, { t: C.LOAD, key: '4,4', dish: 'pancakes' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'load', 'a kitchen dish');
+  room.message(bo.p, { t: C.LOAD, key: '4,4', dish: 'fried_egg' });
+  assert.deepEqual(bo.conn.last(S.MACHINE).state.slice(0, 1), ['fried_egg']);
+  // taken down while it cooks, what went in comes back
+  room.message(bo.p, { t: C.UNBUILD, key: '4,4' });
+  assert.deepEqual(ann.conn.last(S.UNBUILT).back, { egg: 1 });
+  assert.ok(!room.machines.has('4,4'));
+  // a beehive built now: honey on its way; collected once ready, it starts again
+  room.message(bo.p, { t: C.BUILD, key: '3,4', piece: 'beehive' });
+  assert.equal(ann.conn.last(S.MACHINE).state[0], 'honey');
+  room.clockBase += 24;
+  room.message(bo.p, { t: C.COLLECT, key: '3,4' });
+  const honey = ann.conn.last(S.MACHINE);
+  assert.equal(honey.got, 'honey');
+  assert.ok(honey.state[1] > room.hours() + 23, 'the next jar, a day off');
+  room.close();
+});
+
 console.log('bosses');
 await test('a boss sleeps till someone comes, fights, gets tougher with more farmers, and turns friendly when bopped enough', () => {
   const fight = new BossFight('parsnip', mulberry32(7));

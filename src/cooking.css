@@ -1,0 +1,6 @@
+/* Cooking: the campfire's dishes and the kitchen's recipe book, laid out
+   like the workbench (workbench.css) */
+.cook-row.unknown { opacity: 0.55; }
+.cook-row.unknown .bench-icon img { filter: grayscale(1) brightness(0.6); }
+.cook-boost { font-size: 16px; color: var(--inv-green, #3f7f24); }
+.cook-count { margin-top: 8px; font-size: 18px; opacity: 0.8; text-align: right; }
