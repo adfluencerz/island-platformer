@@ -1205,6 +1205,89 @@ ITEMS.parsnip_mount = {
   ],
 };
 
+// The super lion's key pieces, statue and mount
+ITEMS.mane_tuft = {
+  name: 'Mane Tuft',
+  category: 'Key Item',
+  description: 'A tuft of golden-orange mane, tied with a red ribbon. Three of them build the super lion\'s portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0xd9792b,
+  palette: { o: '#5a2a0a', M: '#d9792b', m: '#b85c1e', r: '#d6453a', R: '#f07a6a' },
+  sprite: [
+    '................',
+    '.....o..o.......',
+    '....oMo.oMo.....',
+    '...oMmMooMmo....',
+    '..oMmmMMMmmMo...',
+    '..oMmmmMmmmmo...',
+    '...oMmmmmmmo....',
+    '....oMmmmmo.....',
+    '.....orrro......',
+    '.....oRrRo......',
+    '......omo.......',
+    '.....oMmMo......',
+    '....oMmmmMo.....',
+    '....omo.omo.....',
+    '.....o...o......',
+    '................',
+  ],
+};
+ITEMS.lion_statue = {
+  name: 'Lion Statue',
+  category: 'Decor',
+  description: 'The super lion, in stone, mid-roar (a friendly one). For beating it. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'lion_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66' },
+  sprite: [
+    '....oooooooo....',
+    '...oMMMMMMMMo...',
+    '..oMMLLLLLLMMo..',
+    '..oMLLdLLdLLMo..',
+    '..oMLLLLLLLLMo..',
+    '..oMLLLddLLLMo..',
+    '..oMMLLLLLLMMo..',
+    '...oMMLLLLMMo...',
+    '....oMMMMMMo....',
+    '.....oooooo.....',
+    '....oLLLLLLo....',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oddddddddo...',
+    '...oooooooooo...',
+  ],
+};
+ITEMS.lion_mount = {
+  name: 'Lion Steed',
+  category: 'Mount',
+  description: 'The super lion, friends now, cape and all. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'lion',
+  color: 0xe8a83e,
+  palette: { o: '#4a2a0a', M: '#b85c1e', L: '#e8a83e', d: '#2a1a10', r: '#d6453a', R: '#f07a6a' },
+  sprite: [
+    '................',
+    '..oooo..........',
+    '.oMMMMo.........',
+    'oMLLLLMo........',
+    'oMLdLdMo........',
+    'oMLLLLMoooooo...',
+    '.oMLLMLLrrRRLo..',
+    '..oMMLLLLLLLLLoo',
+    '....oLLLLLLLLo.o',
+    '....oLLLLLLLLo..',
+    '....oLo.oLo.Lo..',
+    '....oLo.oLo.Lo..',
+    '....ooo.ooo.oo..',
+    '................',
+    '................',
+    '................',
+  ],
+};
+
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
 // What the machines make, the machines, the dishes and the recipes (src/foods.js)
@@ -2721,3 +2804,5 @@ export const PIECE_ICONS = {
     ],
   },
 };
+// (the super lion's portal: the parsnip's arch, round an orange swirl)
+PIECE_ICONS.lion_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#c0661f', P: '#f0a050', w: '#fff0d8' } };

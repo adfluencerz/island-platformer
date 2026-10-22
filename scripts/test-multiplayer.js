@@ -1710,6 +1710,25 @@ await test('a boss sleeps till someone comes, fights, gets tougher with more far
   assert.equal(fight.hp, BOSSES.parsnip.hp);
 });
 
+await test('the super lion pounces and roars rings of shockwaves, in an arena of its own', () => {
+  const fight = new BossFight('lion', mulberry32(3));
+  const at = ARENAS.lion;
+  assert.equal(arenaAt(at.x, at.z), 'lion');
+  assert.notDeepEqual(ARENAS.lion, ARENAS.parsnip);
+  const a = { id: 1, x: at.x, y: GROUND_STAND_Y, z: at.z + 6 };
+  const fx = [];
+  const moves = new Set();
+  for (let i = 0; i < 600; i++) {
+    fx.push(...fight.step(0.05, [a]));
+    moves.add(fight.move);
+  }
+  assert.ok(moves.has('pounce') && moves.has('roar') && !moves.has('roll') && !moves.has('seeds'), 'its own moves');
+  assert.ok(fx.some((f) => f.e === 'wave' && f.roar && f.max === BOSSES.lion.roar.max), 'a roar');
+  assert.ok(fx.some((f) => f.e === 'wave' && !f.roar && f.max === BOSSES.lion.pounce.waveMax), 'a pounce lands');
+  assert.deepEqual(PIECES.lion_portal.cost, { mane_tuft: 3 });
+  assert.equal(PIECES.lion_statue.statue, 'lion');
+});
+
 await test('a boss fight on a farm with helpers: its portal, the bops, and the portal used up when it is beaten', () => {
   const room = new FarmRoom({ farm: { id: 'bossfarm', save: null }, admit: () => ({ id: 'bossfarm', owner: true }) });
   const a = join(room, 'Ann');

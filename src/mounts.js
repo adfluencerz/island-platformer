@@ -94,7 +94,62 @@ function parsnip() {
   };
 }
 
-const MOUNTS = { parsnip };
+// The super lion, friends now: a saddle on its back, its mane round a happy
+// face at the front, its cape on and its tail swishing
+const LION = { coat: mat(0xe8a83e), coatLight: mat(0xf6d08a), mane: mat(0xb85c1e), cape: mat(0xd6453a) };
+function lion() {
+  const { coat, coatLight, mane } = LION;
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 0.7;
+  root.add(body);
+  part(body, ball, coat, [0, 0, 0], [0.8, 0.6, 1.3]);
+  part(body, box, MATS.saddle, [0, 0.3, -0.05], [0.56, 0.1, 0.55]);
+  for (const sx of [-1, 1]) part(body, box, MATS.saddleDark, [sx * 0.31, 0.08, -0.05], [0.04, 0.4, 0.12]);
+  part(body, box, LION.cape, [0, 0.27, 0.42], [0.7, 0.04, 0.3]); // (its cape, rolled over its shoulders)
+  const head = new THREE.Group();
+  head.position.set(0, 0.32, 0.62);
+  body.add(head);
+  part(head, ball, mane, [0, 0, -0.08], [0.78, 0.78, 0.4]);
+  part(head, ball, coat, [0, 0, 0.06], [0.5, 0.48, 0.45]);
+  part(head, ball, coatLight, [0, -0.1, 0.25], [0.3, 0.2, 0.18]);
+  part(head, ball, MATS.dark, [0, -0.02, 0.34], [0.09, 0.06, 0.05]);
+  for (const sx of [-1, 1]) {
+    part(head, ball, MATS.white, [sx * 0.11, 0.08, 0.24], [0.1, 0.11, 0.05]);
+    part(head, ball, MATS.dark, [sx * 0.11, 0.07, 0.27], [0.05, 0.06, 0.03]);
+    part(head, ball, MATS.blush, [sx * 0.18, -0.06, 0.22], [0.08, 0.04, 0.03]);
+  }
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.1, -0.62);
+  body.add(tail);
+  part(tail, ball, coat, [0, 0.12, -0.2], [0.08, 0.08, 0.5]).rotation.x = -0.6;
+  part(tail, ball, mane, [0, 0.28, -0.4], [0.16, 0.16, 0.16]);
+  const legs = [[-1, 1], [1, 1], [-1, -1], [1, -1]].map(([sx, sz], i) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.24, 0.5, sz * 0.38);
+    root.add(pivot);
+    part(pivot, ball, coat, [0, -0.24, 0], [0.18, 0.5, 0.2]);
+    part(pivot, ball, coatLight, [0, -0.48, 0.04], [0.2, 0.1, 0.24]);
+    return { pivot, phase: i === 0 || i === 3 ? 0 : Math.PI };
+  });
+  let phase = 0;
+  return {
+    root,
+    seat: 0.7 + 0.36,
+    animate(dt, walk, t) {
+      phase += dt * 11 * walk;
+      for (const leg of legs) leg.pivot.rotation.x = Math.sin(phase + leg.phase) * 0.6 * walk;
+      body.position.y = 0.7 + Math.abs(Math.sin(phase)) * 0.05 * walk + Math.sin(t * 2.2) * 0.01;
+      tail.rotation.y = Math.sin(t * 3) * 0.4;
+      head.rotation.x = Math.sin(t * 2 + phase) * 0.05;
+    },
+    dispose() {
+      root.traverse((obj) => obj.isMesh && obj.geometry !== ball && obj.geometry !== box && obj.geometry !== cone && obj.geometry !== ring && obj.geometry.dispose());
+    },
+  };
+}
+
+const MOUNTS = { parsnip, lion };
 
 // A new mount of this kind (a boss's id), or null for one this page doesn't know
 export const createMount = (kind) => MOUNTS[kind]?.() ?? null;

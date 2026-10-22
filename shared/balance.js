@@ -193,7 +193,7 @@ export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockSca
 // farmer past the first). The rest are its moves' (shared/bosses.js).
 // Beating one gives everyone who fought: its statue and its mount the first
 // time (`statue`, `mount`: items), and a shiny animal for the farm every time.
-// (Only the parsnip is in so far.)
+// (The parsnip and the lion are in so far.)
 export const BOSSES = {
   parsnip: {
     name: 'Evil Parsnip', key: 'parsnip_seal', pieces: 3, hp: 40, perPlayer: 0.7, pause: [1.3, 2.1], quicken: 0.12,
@@ -201,7 +201,16 @@ export const BOSSES = {
     roll: { windup: 0.8, speed: 10, time: 1.8, dizzy: 1.4 }, // a roll at someone, bouncing off the arena's edge, then a moment's dizzy
     seeds: { windup: 0.6, count: 10, perPlayer: 2, speed: 6, volleys: 2, gap: 0.6 }, // seeds shot all round
     walk: 1.6, // its pace, between moves
+    moves: ['hop', 'roll', 'seeds'], // (one after another, never the same twice running)
     statue: 'parsnip_statue', mount: 'parsnip_mount',
+  },
+  lion: {
+    name: 'Super Lion', key: 'mane_tuft', pieces: 3, hp: 50, perPlayer: 0.7, pause: [1.1, 1.8], quicken: 0.12,
+    pounce: { windup: 0.55, air: 0.6, height: 2.2, reach: 9, hops: [1, 3], wave: 9, waveMax: 2.4 }, // a pounce at someone, and a puff of dust where it lands
+    roar: { windup: 0.8, count: 3, gap: 0.55, speed: 6.5, max: 10 }, // rings of shockwave, out to the arena's edge
+    walk: 2.2,
+    moves: ['pounce', 'roar'],
+    statue: 'lion_statue', mount: 'lion_mount',
   },
 };
 // What every boss fight shares. `hitsOut`: a farmer the boss bops this many

@@ -29,6 +29,16 @@ const MATS = {
   wood: mat(0xa8713f),
   sign: mat(0xe8c98f),
 };
+// each boss's arena its own colors (the parsnip's a green meadow, the lion's golden savanna grass)
+const LOOKS = {
+  parsnip: { grass: MATS.grass, grassDark: MATS.grassDark, swirl: MATS.swirl, swirlLight: MATS.swirlLight },
+  lion: {
+    grass: mat(0xd9c46a),
+    grassDark: mat(0xbfa548),
+    swirl: mat(0xb8561a, { emissive: 0xc0661f, emissiveIntensity: 0.9 }),
+    swirlLight: mat(0xffd08a, { emissive: 0xf0a050, emissiveIntensity: 1 }),
+  },
+};
 const box = new THREE.BoxGeometry(1, 1, 1);
 const ball = new THREE.IcosahedronGeometry(0.5, 1);
 
@@ -59,6 +69,7 @@ export function createArenas(world) {
 
   for (const id of BOSS_IDS) {
     const { x: ax, z: az } = ARENAS[id];
+    const look = LOOKS[id] ?? LOOKS.parsnip;
     const arena = new THREE.Group();
     arena.name = `arena-${id}`;
     arena.position.set(ax, 0, az);
@@ -70,13 +81,13 @@ export function createArenas(world) {
     sides.position.y = -1.25;
     sides.receiveShadow = true;
     arena.add(sides);
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.1, 40), MATS.grass);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.1, 40), look.grass);
     top.position.y = -0.05;
     top.receiveShadow = true;
     arena.add(top);
     solid({ x: ax, y: -0.6, z: az, w: 2 * r, h: 1.2, d: 2 * r }, { ground: true });
     // a ring of darker grass, the boss's ground
-    const ring = new THREE.Mesh(new THREE.RingGeometry(ARENA_R * 0.55, ARENA_R * 0.58, 48).rotateX(-Math.PI / 2), MATS.grassDark);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(ARENA_R * 0.55, ARENA_R * 0.58, 48).rotateX(-Math.PI / 2), look.grassDark);
     ring.position.y = 0.01;
     arena.add(ring);
 
@@ -115,7 +126,7 @@ export function createArenas(world) {
       const fx = Math.sin(a) * d;
       const fz = Math.cos(a) * d;
       if (Math.hypot(fx - (exit.x - ax), fz - (exit.z - az)) < 2.5) continue;
-      part(arena, box, MATS.grassDark, fx, 0.12, fz, 0.06, 0.24, 0.06);
+      part(arena, box, look.grassDark, fx, 0.12, fz, 0.06, 0.24, 0.06);
       if (i % 3 === 0) part(arena, ball, MATS.petals[i % 4], fx, 0.26, fz, 0.14, 0.1, 0.14);
     }
 
@@ -130,9 +141,9 @@ export function createArenas(world) {
     const swirl = new THREE.Group();
     swirl.position.set(0, 1.15, 0);
     door.add(swirl);
-    part(swirl, ball, MATS.swirl, 0, 0, 0, 1.06, 2.05, 0.06);
+    part(swirl, ball, look.swirl, 0, 0, 0, 1.06, 2.05, 0.06);
     for (let i = 0; i < 3; i++) {
-      const arm = part(swirl, box, MATS.swirlLight, 0, 0, 0, 0.07, 0.7, 0.02);
+      const arm = part(swirl, box, look.swirlLight, 0, 0, 0, 0.07, 0.7, 0.02);
       arm.rotation.z = (i * Math.PI * 2) / 3;
       arm.position.set(-Math.sin(arm.rotation.z) * 0.24, Math.cos(arm.rotation.z) * 0.24, 0.05);
     }
