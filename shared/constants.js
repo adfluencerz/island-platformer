@@ -1,7 +1,7 @@
 // Numbers both the server and the client go by. Pure JS: no DOM, no three.js,
 // no Node modules, so the same file runs in the browser and on the server.
 
-export const PROTOCOL_VERSION = 11; // v4: chopping trees; v5: farms with helpers; v6: mining rocks; v7: building on farms, bopping in lobbies; v8: giant trees and rocks; v9: lobbies as matches, friends and invitations; v10: the server places the trees and rocks; v11: party games
+export const PROTOCOL_VERSION = 12; // v4: chopping trees; v5: farms with helpers; v6: mining rocks; v7: building on farms, bopping in lobbies; v8: giant trees and rocks; v9: lobbies as matches, friends and invitations; v10: the server places the trees and rocks; v11: bosses, and riding; v12: party games
 
 // Starting a lobby with friends (server/presence.js): it opens PARTY_MS after
 // the invitations go out, and each lapses unanswered after INVITE_MS

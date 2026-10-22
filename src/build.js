@@ -12,7 +12,8 @@ import { createItemMesh } from './itemmesh.js';
 // log towers, stone blocks, mossy or not, and pillars), wells, stone
 // lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water
 // troughs, stone benches, sundials, wheelbarrows, torches, log fences,
-// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, the workbench and what it makes for the farm, the arcade, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
+// mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, rope fences,
+// boulders, log benches, compost bins, milk churns, dovecotes, the workbench and what it makes for the farm, the arcade, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
 // up with the fences and walls beside it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
@@ -58,6 +59,8 @@ const MATS = {
   cloth: mat(0xb5483a),
   clothDark: mat(0x8a3229),
   sack: mat(0xd9c08a),
+  portal: mat(0x6a2f94, { emissive: 0x7a3fa0, emissiveIntensity: 0.9 }), // (a boss's portal: its swirl)
+  portalLight: mat(0xd9a8ff, { emissive: 0xc58cf0, emissiveIntensity: 1 }),
   sackDark: mat(0xbfa26c),
   crow: mat(0x26262c),
   beak: mat(0xe0a23a),
@@ -72,6 +75,11 @@ const MATS = {
   brass: mat(0xb8893a, { roughness: 0.5, metalness: 0.5 }),
   linen: mat(0xf2ede0),
   blueCloth: mat(0x4a78b5),
+  tin: mat(0xbcc4ca, { roughness: 0.45, metalness: 0.5 }),
+  tinDark: mat(0x7f8a92, { roughness: 0.5, metalness: 0.5 }),
+  dove: mat(0xeceae4),
+  doveGrey: mat(0xa3a8ae),
+  lichen: mat(0xb8b46a),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
@@ -82,6 +90,7 @@ const shaft = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
 const tip = new THREE.ConeGeometry(0.5, 1, 8);
 const barrel = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
 const pyramid = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4); // a square base 1 across
+const shoulder = new THREE.CylinderGeometry(0.3, 0.5, 1, 12); // narrowing to the top, as a churn does
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // ---------- Light at night ----------
@@ -95,6 +104,7 @@ const GLOWS = {
   house: [0, 0, 0], // (set below: the lamp over the door)
   torch: [0, 1.5, 0],
   ...Object.fromEntries(Object.keys(PIECES).filter((id) => PIECES[id].relic).map((id) => [id, [0, 1.2, 0]])), // (a relic)
+  ...Object.fromEntries(Object.keys(PIECES).filter((id) => PIECES[id].portal).map((id) => [id, [0, 1, 0.3]])), // (a boss's portal)
 };
 const FLICKERS = new Set(['torch']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
@@ -663,6 +673,27 @@ function model(id, gx, gz, joined) {
       }
       part(g, box, MATS.plankA, 0, h - 0.04, 0, w, 0.08, w);
       [-0.24, 0, 0.24].forEach((o) => part(g, box, MATS.plankB, o, h + 0.005, 0, 0.02, 0.01, w - 0.04).castShadow = false);
+    } else if (id === 'boulder') {
+      // a rough boulder, worn flat on top where it is stood on, with chunks
+      // of it bulging out at the sides and lichen on some
+      const r = hash(gx, gz);
+      part(g, box, MATS.stoneDark, 0, h / 2, 0, w - 0.3, h, w - 0.3);
+      for (let i = 0; i < 8; i++) {
+        // four big chunks low at its corners, four smaller ones higher up its sides
+        const low = i < 4;
+        const a = (i / 4) * Math.PI * 2 + (low ? Math.PI / 4 : 0) + (r - 0.5) * 0.4;
+        const k = (low ? 0.56 : 0.46) + ((r * 10 + i) % 3) * 0.03;
+        const d = low ? 0.24 : 0.22;
+        const chunk = part(g, ball, (i + Math.floor(r * 4)) % 3 ? MATS.stone : MATS.stoneLight, Math.cos(a) * d, low ? 0.24 : 0.56, Math.sin(a) * d, k, k * 0.8, k);
+        chunk.rotation.y = a + r * 3;
+      }
+      const top = part(g, flag, r < 0.5 ? MATS.stone : MATS.stoneLight, 0, h - 0.06, 0, w - 0.06, 0.12, w - 0.1);
+      top.rotation.y = r * 2;
+      if (r < 0.6) {
+        const a = r * 10;
+        part(g, flag, MATS.lichen, Math.cos(a) * 0.18, h + 0.003, Math.sin(a) * 0.18, 0.26, 0.006, 0.2).castShadow = false;
+        part(g, flag, MATS.moss, -Math.cos(a) * 0.2, h + 0.003, -Math.sin(a) * 0.12, 0.16, 0.006, 0.14).castShadow = false;
+      }
     } else if (id === 'mossy_stone_block') {
       // old stone grown over with moss: a cushion of it on top, spilling
       // down the sides in patches
@@ -1169,6 +1200,111 @@ function model(id, gx, gz, joined) {
       for (const s of [-1, 1]) part(g, box, MATS.plankA, x + s * 0.06, 1.44, z, 0.02, 0.06, 0.03).castShadow = false; // the pegs
     });
     solids.push({ x: 0, y: 0.75, z: 0, w: 0.94, h: 1.5, d: 0.34 });
+  } else if (id === 'rope_fence') {
+    // stout round posts with a thick rope slung between them, sagging a
+    // little to the middle of each run, and tied round every post
+    part(g, log, MATS.bark, 0, 0.45, 0, 0.18, 0.9, 0.18);
+    part(g, log, MATS.endGrain, 0, 0.905, 0, 0.15, 0.01, 0.15).castShadow = false;
+    part(g, log, MATS.twine, 0, 0.72, 0, 0.21, 0.07, 0.21).castShadow = false;
+    solids.push({ x: 0, y: FENCE_H / 2, z: 0, w: 0.3, h: FENCE_H, d: 0.3 });
+    for (const [dx, dz] of joined) {
+      // from the knot on this post down to the tile's edge, where it meets
+      // the half from the post beside it
+      const rope = part(g, flag, MATS.twine, dx * 0.25, 0.66, dz * 0.25, 0.05, 0.52, 0.05);
+      if (dx) rope.rotation.z = Math.PI / 2 - dx * 0.235;
+      else rope.rotation.x = Math.PI / 2 + dz * 0.235;
+      solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.2, h: FENCE_H, d: dz ? 0.5 : 0.2 });
+    }
+  } else if (id === 'log_bench') {
+    // a log, split along its top for a seat, on two short stumps, facing
+    // the camera
+    const r = hash(gx, gz);
+    for (const s of [-1, 1]) part(g, log, MATS.bark, s * 0.3, 0.15, 0, 0.24, 0.3, 0.24);
+    const seat = part(g, log, MATS.bark, 0, 0.42, 0, 0.32, 0.94, 0.32);
+    seat.rotation.z = Math.PI / 2;
+    part(g, box, MATS.crate, 0, 0.555, 0, 0.92, 0.03, 0.22);
+    for (const s of [-1, 1]) {
+      const end = part(g, log, MATS.endGrain, s * 0.472, 0.42, 0, 0.27, 0.01, 0.27);
+      end.rotation.z = Math.PI / 2;
+      end.castShadow = false;
+    }
+    // a knot in the bark, somewhere along the front
+    part(g, ball, MATS.crateDark, (r - 0.5) * 0.6, 0.42, 0.155, 0.07, 0.07, 0.03).castShadow = false;
+    solids.push({ x: 0, y: 0.29, z: 0, w: 0.94, h: 0.58, d: 0.34 });
+  } else if (id === 'compost_bin') {
+    // a bin of slats with gaps between them for the air, on corner posts,
+    // the earth inside showing through, and peelings and greens heaped on top
+    const r = hash(gx, gz);
+    part(g, box, MATS.soil, 0, 0.3, 0, 0.7, 0.58, 0.7);
+    part(g, ball, MATS.soil, 0, 0.6, 0, 0.66, 0.22, 0.66);
+    for (const [x, z] of [[-0.38, -0.38], [0.38, -0.38], [-0.38, 0.38], [0.38, 0.38]]) part(g, box, MATS.post, x, 0.35, z, 0.08, 0.7, 0.08);
+    for (const [fx, fz] of DIRS) {
+      for (let i = 0; i < 4; i++) part(g, box, i % 2 ? MATS.plankA : MATS.plankB, fx * 0.38, 0.1 + i * 0.165, fz * 0.38, fz ? 0.74 : 0.04, 0.12, fz ? 0.04 : 0.74);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = i * 2.4 + r * 6;
+      const d = 0.08 + (i % 3) * 0.08;
+      const bit = i % 3 === 2 ? MATS.beak : i % 2 ? MATS.leaf : MATS.hedgeLight;
+      part(g, ball, bit, Math.cos(a) * d, 0.7 - d * 0.3, Math.sin(a) * d, 0.12, 0.05, 0.08).rotation.y = a;
+    }
+    solids.push({ x: 0, y: 0.36, z: 0, w: 0.84, h: 0.72, d: 0.84 });
+  } else if (id === 'milk_churns') {
+    // tin churns stood on a plank, waiting for the milk: two tall ones and
+    // a short one in front, its lid off on some
+    const r = hash(gx, gz);
+    part(g, box, MATS.plankA, 0, 0.04, 0, 0.9, 0.08, 0.7);
+    const churn = (x, z, k, lid) => {
+      const y0 = 0.08;
+      part(g, barrel, MATS.tin, x, y0 + 0.24 * k, z, 0.3 * k, 0.48 * k, 0.3 * k);
+      part(g, shoulder, MATS.tin, x, y0 + 0.54 * k, z, 0.3 * k, 0.12 * k, 0.3 * k);
+      part(g, barrel, MATS.tin, x, y0 + 0.65 * k, z, 0.15 * k, 0.1 * k, 0.15 * k);
+      for (const y of [0.04, 0.44]) part(g, barrel, MATS.tinDark, x, y0 + y * k, z, 0.31 * k, 0.03, 0.31 * k).castShadow = false;
+      if (lid) {
+        part(g, barrel, MATS.tinDark, x, y0 + 0.71 * k, z, 0.18 * k, 0.03, 0.18 * k);
+        part(g, ball, MATS.tinDark, x, y0 + 0.74 * k, z, 0.06, 0.04, 0.06).castShadow = false;
+      } else {
+        part(g, barrel, MATS.picket, x, y0 + 0.695 * k, z, 0.12 * k, 0.005, 0.12 * k).castShadow = false; // the milk
+      }
+      for (const s of [-1, 1]) part(g, box, MATS.tinDark, x + s * 0.16 * k, y0 + 0.5 * k, z, 0.03, 0.08, 0.06).castShadow = false; // its handles
+    };
+    churn(-0.2, -0.12, 1, true);
+    churn(0.2, -0.14, 1, true);
+    churn((r - 0.5) * 0.3, 0.2, 0.7, r < 0.6);
+    solids.push({ x: 0, y: 0.4, z: 0, w: 0.86, h: 0.8, d: 0.66 });
+  } else if (id === 'dovecote') {
+    // a little house for doves up on a post: doorways under a tiled roof,
+    // a perch along its front, and a few doves on it and about the roof
+    const r = hash(gx, gz);
+    const top = 1.55;
+    part(g, box, MATS.post, 0, top / 2, 0, 0.12, top, 0.12);
+    for (const s of [-1, 1]) {
+      const brace = part(g, box, MATS.post, s * 0.12, top - 0.14, 0, 0.05, 0.3, 0.05);
+      brace.rotation.z = -s * 0.7;
+    }
+    part(g, box, MATS.plankB, 0, top + 0.02, 0, 0.6, 0.05, 0.56);
+    part(g, box, MATS.picket, 0, top + 0.24, 0, 0.5, 0.4, 0.46);
+    for (const x of [-0.12, 0.12]) {
+      part(g, box, MATS.hole, x, top + 0.2, 0.231, 0.1, 0.13, 0.01).castShadow = false;
+      part(g, box, MATS.plankA, x, top + 0.12, 0.27, 0.16, 0.02, 0.08);
+    }
+    part(g, pyramid, MATS.roofTile, 0, top + 0.6, 0, 0.66, 0.32, 0.62);
+    part(g, box, MATS.roofDark, 0, top + 0.45, 0, 0.66, 0.04, 0.62).castShadow = false;
+    const dove = (x, y, z, a) => {
+      const bird = new THREE.Group();
+      part(bird, ball, MATS.dove, 0, 0.06, 0, 0.12, 0.1, 0.17);
+      part(bird, ball, MATS.dove, 0, 0.13, 0.07, 0.08, 0.08, 0.08);
+      part(bird, box, MATS.doveGrey, 0, 0.07, -0.11, 0.07, 0.02, 0.1).rotation.x = 0.3; // its tail
+      for (const s of [-1, 1]) part(bird, box, MATS.doveGrey, s * 0.055, 0.07, -0.01, 0.02, 0.05, 0.12).castShadow = false;
+      part(bird, tip, MATS.beak, 0, 0.13, 0.12, 0.02, 0.04, 0.02).rotation.x = Math.PI / 2;
+      bird.position.set(x, y, z);
+      bird.rotation.y = a;
+      g.add(bird);
+    };
+    dove((r - 0.5) * 0.3, top + 0.13, 0.28, (r - 0.5) * 1.2);
+    if (r < 0.7) dove(0.16 - r * 0.2, top + 0.68, 0.04, r * 6);
+    if (r < 0.35) dove(0.3, top + 0.02, -0.08, Math.PI / 2);
+    solids.push({ x: 0, y: top / 2, z: 0, w: 0.24, h: top, d: 0.24 });
+    solids.push({ x: 0, y: top + 0.4, z: 0, w: 0.6, h: 0.8, d: 0.56 });
   } else if (id === 'lamp_post') {
     part(g, box, MATS.iron, 0, 0.08, 0, 0.36, 0.16, 0.36);
     part(g, box, MATS.iron, 0, 1.05, 0, 0.1, 2, 0.1);
@@ -1202,6 +1338,37 @@ function model(id, gx, gz, joined) {
     relic.castShadow = true;
     g.add(relic);
     solids.push({ x: 0, y: 0.4, z: 0, w: 0.6, h: 0.8, d: 0.6 });
+  } else if (PIECES[id]?.portal) {
+    // A boss's portal (shared/bosses.js): a stone arch round a purple swirl
+    // that turns (setNight). Walked up to, not into.
+    part(g, box, MATS.stoneDark, 0, 0.06, 0, 1, 0.12, 0.5);
+    for (const x of [-0.43, 0.43]) part(g, box, MATS.stone, x, 0.95, 0, 0.18, 1.7, 0.3);
+    part(g, box, MATS.stoneLight, 0, 1.86, 0, 1.08, 0.2, 0.34);
+    part(g, box, MATS.moss, -0.3, 1.97, 0.05, 0.3, 0.04, 0.2);
+    const swirl = new THREE.Group();
+    swirl.name = 'swirl';
+    swirl.position.set(0, 0.98, 0);
+    g.add(swirl);
+    part(swirl, ball, MATS.portal, 0, 0, 0, 0.68, 1.6, 0.06);
+    for (let i = 0; i < 3; i++) {
+      const arm = part(swirl, box, MATS.portalLight, 0, 0, 0.04, 0.05, 0.5, 0.02);
+      arm.rotation.z = (i * Math.PI * 2) / 3;
+      arm.position.set(Math.sin(-arm.rotation.z) * 0.16, Math.cos(arm.rotation.z) * 0.16, 0.04);
+    }
+    solids.push({ x: 0, y: 0.06, z: 0, w: 1, h: 0.12, d: 0.5 });
+  } else if (PIECES[id]?.statue) {
+    // A boss's statue: the evil parsnip in stone, on a plinth
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    const root = part(g, tip, MATS.stoneLight, 0, 0.98, 0, 0.62, 1.1, 0.62);
+    root.rotation.x = Math.PI; // (point down)
+    part(g, ball, MATS.stoneLight, 0, 1.5, 0, 0.62, 0.2, 0.62);
+    for (const [x, z, r] of [[0, 0, 0], [0.1, 0.05, 0.4], [-0.1, -0.02, -0.4]]) {
+      const leaf = part(g, box, MATS.moss, x, 1.75, z, 0.08, 0.42, 0.04);
+      leaf.rotation.z = r;
+    }
+    for (const x of [-0.12, 0.12]) part(g, box, MATS.stoneDark, x, 1.25, 0.25, 0.14, 0.04, 0.04).rotation.z = x > 0 ? 0.4 : -0.4; // (grumpy brows)
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
   } else if (id === 'planter') {
     part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
     part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
@@ -1228,6 +1395,7 @@ export function createBuildings(world) {
 
   const glows = new Map(); // key -> { at: where a light-giving piece's flame is, in the world, flicker, flame }
   const relics = new Map(); // key -> the relic floating over its pedestal (it turns)
+  const swirls = new Map(); // key -> a boss's portal's swirl (it turns too)
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
     const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
     light.castShadow = false;
@@ -1242,6 +1410,7 @@ export function createBuildings(world) {
     world.root.remove(piece.group);
     glows.delete(piece.key);
     relics.delete(piece.key);
+    swirls.delete(piece.key);
     for (const c of piece.colliders) world.platforms.splice(world.platforms.indexOf(c), 1);
     piece.group = null;
     piece.colliders = [];
@@ -1261,6 +1430,8 @@ export function createBuildings(world) {
     piece.key = key;
     const relic = group.getObjectByName('relic');
     if (relic) relics.set(key, relic);
+    const swirl = group.getObjectByName('swirl');
+    if (swirl) swirls.set(key, swirl);
     const flame = GLOWS[piece.id];
     if (flame) {
       glows.set(key, {
@@ -1389,6 +1560,7 @@ export function createBuildings(world) {
         relic.rotation.y = t * 0.8 + relic.parent.position.x;
         relic.position.y = 1.25 + Math.sin(t * 1.6 + relic.parent.position.z) * 0.06;
       }
+      for (const swirl of swirls.values()) swirl.rotation.z = -t * 2.2;
       const nearest = night > 0.01 && focus
         ? [...glows.values()].sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
         : [];
