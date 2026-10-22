@@ -2,22 +2,26 @@ import './workbench.css';
 import './cooking.css';
 import { ITEMS, spriteURL } from './items.js';
 import { el, button } from './ui/dom.js';
-import { DISHES, CAMPFIRE_HOURS, BOOSTS, BOOST_SECONDS } from '../shared/balance.js';
+import { DISHES, CAMPFIRE_HOURS, CAMPFIRE_MOST, KITCHEN_MOST, BOOSTS, BOOST_SECONDS, ANY } from '../shared/balance.js';
 
 // ---------- Cooking ----------
 // Two places to cook (DISHES, shared/balance.js), one window:
-// - a campfire built on the farm: pick a dish, what it needs comes out of the
-//   backpack, and an hour (CAMPFIRE_HOURS) later it is ready to collect from
-//   the fire (main.js keeps the fire's timer, shared/machines.js);
+// - a campfire built on the farm: pick a dish (up to CAMPFIRE_MOST of it),
+//   what it needs comes out of the backpack, and an hour (CAMPFIRE_HOURS)
+//   later it is ready to collect from the fire (main.js keeps the fire's
+//   timer, shared/machines.js);
 // - the kitchen in the house: the recipe book, cooked straight away from
 //   what is in the backpack. The recipes not in the book yet show greyed,
 //   with where they are to be had.
-// Eating a dish (E with it in hand: main.js) gives a boost for a while.
+// What can be cooked now comes first. A need of 'any_fish' takes the
+// cheapest fish there are (ANY). Eating a dish (E with it in hand: main.js)
+// gives a boost for a while.
 //
 //   Cook          cook one
+//   ×n            cook as many as there is for (up to the most at once)
 //   E / Esc / ×   close
 
-export const BOOST_NAMES = { quick: 'Quick feet', strong: 'Strong arms', bouncy: 'Bouncy' };
+export const BOOST_NAMES = { quick: 'Quick feet', strong: 'Strong arms', bouncy: 'Bouncy', lucky: 'Lucky rod' };
 const LEARN_WHERE = {
   shop: 'Not in your recipe book yet: the merchant sells it',
   find: 'Not in your recipe book yet: found on old recipe cards in the lobbies',
@@ -27,12 +31,30 @@ const LEARN_WHERE = {
 export function boostText(dish) {
   const d = DISHES[dish];
   const minutes = Math.round(BOOST_SECONDS[d.cook] / 60);
-  return `${d.boost.map((b) => BOOST_NAMES[b]).join(' + ')}${d.cook === 'kitchen' ? ' (strong)' : ''}, ${minutes} min`;
+  return `${d.boost.map((b) => BOOST_NAMES[b]).join(' + ')}${d.cook === 'kitchen' ? ' (strong)' : ''}, ${minutes} min${d.shared ? ', for the whole farm' : ''}`;
+}
+
+// A need's look: an item, or for a group (ANY) its first one's icon
+export const needName = (id) => (ANY[id] ? 'Any fish' : ITEMS[id].name);
+export const needIcon = (id) => spriteURL(ITEMS[ANY[id]?.[0] ?? id]);
+// How many of a need the backpack has
+export const haveOf = (inventory, id) => (ANY[id] ? ANY[id].reduce((sum, it) => sum + inventory.count(it), 0) : inventory.count(id));
+// Take n of a need out of the backpack (a group's cheapest first): { item: count } taken
+export function takeOf(inventory, id, n, took = {}) {
+  for (const it of ANY[id] ?? [id]) {
+    const k = Math.min(n, inventory.count(it));
+    if (!k) continue;
+    inventory.remove(it, k);
+    took[it] = (took[it] ?? 0) + k;
+    n -= k;
+  }
+  return took;
 }
 
 // inventory: from createInventory. known(dish): is it in the recipe book?
-// onCampfire(key, dish): cook it on the campfire on tile key. onKitchen(dish):
-// cook it in the kitchen. onOpenChange(open): the game pauses input.
+// onCampfire(key, dish, n, took): cook n of it on the campfire on tile key
+// (took: what came out of the backpack). onKitchen(dish, n): cook n of it in
+// the kitchen. onOpenChange(open): the game pauses input.
 export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenChange }) {
   let open = false;
   let fire = null; // the campfire's tile key, or null: the kitchen
@@ -49,15 +71,21 @@ export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenC
 
   const dishes = () => Object.keys(DISHES).filter((id) => DISHES[id].cook === (fire ? 'campfire' : 'kitchen'));
 
-  // Why this can't be cooked right now ('': it can)
-  function problem(dish) {
+  // How many of it there is for in the backpack (up to the most at once)
+  const most = () => (fire ? CAMPFIRE_MOST : KITCHEN_MOST);
+  const howMany = (dish) => Math.min(most(), ...Object.entries(DISHES[dish].needs).map(([id, n]) => Math.floor(haveOf(inventory, id) / n)));
+
+  // Why n of this can't be cooked right now ('': it can)
+  function problem(dish, n = 1) {
     if (!fire && !known(dish)) return LEARN_WHERE[DISHES[dish].learn] ?? 'Not in your recipe book yet';
-    for (const [id, n] of Object.entries(DISHES[dish].needs)) {
-      if (inventory.count(id) < n) return `Not enough ${ITEMS[id].name.toLowerCase()}`;
+    for (const [id, k] of Object.entries(DISHES[dish].needs)) {
+      if (haveOf(inventory, id) < k * n) return `Not enough ${needName(id).toLowerCase()}`;
     }
-    if (!fire && !inventory.canAdd(dish)) return 'No room in the backpack';
+    if (!fire && !inventory.canAdd(dish, n)) return 'No room in the backpack';
     return '';
   }
+  // (what can be cooked first, then what is short of something, then what isn't in the book)
+  const rank = (dish) => (!fire && !known(dish) ? 2 : problem(dish) ? 1 : 0);
 
   function render() {
     tabEl.textContent = fire ? 'Campfire' : 'Kitchen';
@@ -65,7 +93,7 @@ export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenC
       ? `Pick something to cook: it is ready ${CAMPFIRE_HOURS === 1 ? 'an hour' : `${CAMPFIRE_HOURS} hours`} later, to collect from the fire. Eat a dish (E with it in hand) for a little boost.`
       : 'Your recipe book: cook straight away from what is in your backpack. Kitchen dishes give the stronger boosts.';
     listEl.textContent = '';
-    for (const dish of dishes()) {
+    for (const dish of dishes().sort((a, b) => rank(a) - rank(b))) {
       const def = ITEMS[dish];
       const unknown = !fire && !known(dish);
       const row = el('div', 'bench-row cook-row' + (unknown ? ' unknown' : ''), listEl);
@@ -76,14 +104,21 @@ export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenC
       el('div', 'cook-boost', text, boostText(dish));
       const needs = el('div', 'bench-needs', text);
       for (const [id, n] of Object.entries(DISHES[dish].needs)) {
-        const have = inventory.count(id);
+        const have = haveOf(inventory, id);
         const need = el('span', 'bench-need' + (have < n ? ' short' : ''), needs);
-        el('img', 'inv-icon', need).src = spriteURL(ITEMS[id]);
+        el('img', 'inv-icon', need).src = needIcon(id);
+        need.title = needName(id);
         need.append(`${n} (${have})`);
       }
       const why = problem(dish);
-      const cook = button('ui-btn bench-make', row, 'Cook', () => cookIt(dish));
+      const buttons = el('div', 'cook-buttons', row);
+      const cook = button('ui-btn bench-make', buttons, 'Cook', () => cookIt(dish, 1));
       cook.disabled = !!why;
+      const many = !why && howMany(dish);
+      if (many > 1 && !problem(dish, many)) {
+        const more = button('ui-btn bench-make cook-more', buttons, `×${many}`, () => cookIt(dish, many));
+        more.title = `Cook ${many} at once`;
+      }
       if (why) {
         cook.title = why;
         el('div', 'bench-why', text, why);
@@ -93,14 +128,15 @@ export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenC
     countEl.textContent = fire ? '' : `Recipe book: ${all.filter(known).length} of ${all.length}`;
   }
 
-  function cookIt(dish) {
-    if (problem(dish)) return;
-    for (const [id, n] of Object.entries(DISHES[dish].needs)) inventory.remove(id, n);
+  function cookIt(dish, n) {
+    if (problem(dish, n)) return;
+    const took = {};
+    for (const [id, k] of Object.entries(DISHES[dish].needs)) takeOf(inventory, id, k * n, took);
     if (fire) {
-      onCampfire(fire, dish);
+      onCampfire(fire, dish, n, took);
       setOpen(false); // (it is on the fire now)
     } else {
-      onKitchen(dish);
+      onKitchen(dish, n);
       render();
     }
   }

@@ -32,13 +32,14 @@ export const C = {
   CHEST_SPEND: 'chestSpend', // { id, items: { item: count } }: use up some of what is in the chest, for what the workbench makes (the owner only); answered with CHEST_SPENT
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture()), and the farm's upgrade `levels`
-  CAST: 'cast', // { n, x, z, rod, level }: cast the line, the bobber landing on the water at x, z (n: the page's count of its casts, said back in BITE and CAUGHT; rod: the one in hand, RODS in shared/balance.js; level: our fishing skill's; in a lobby)
+  CAST: 'cast', // { n, x, z, rod, level, sooner? }: cast the line, the bobber landing on the water at x, z (n: the page's count of its casts, said back in BITE and CAUGHT; rod: the one in hand, RODS in shared/balance.js; level: our fishing skill's; sooner: a lucky meal's BOOSTS.lucky.bite; in a lobby)
   REEL: 'reel', // {}: E with the line out: lands what bit if it is in time (BITE), else just reels in
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
   BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
-  LOAD: 'load', // { key, dish? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js)
+  LOAD: 'load', // { key, dish?, n? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js; n of it, up to CAMPFIRE_MOST)
   COLLECT: 'collect', // { key }: what the machine on tile key has ready, for the backpack
+  FEAST: 'feast', // { dish }: we just ate a dish that is `shared` (DISHES): everyone on the farm gets its boost
 };
 
 // lobby -> client
@@ -87,7 +88,8 @@ export const S = {
   BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
   BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp } a bop that landed
   BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
-  MACHINE: 'machine', // { key, state, by, got? }: what is in the machine on tile key now ([item, at, takes], or null: empty), after player `by` loaded or collected it (got: the item collected, for `by`'s backpack)
+  MACHINE: 'machine', // { key, state, by, got?, n? }: what is in the machine on tile key now ([item, at, takes, n], or null: empty), after player `by` loaded or collected it (got: the item collected, n of it, for `by`'s backpack)
+  FEAST: 'feast', // { dish, by }: player `by` ate a shared dish on this farm: its boost is ours too
 };
 
 // Presence (server/presence.js): every logged in page keeps one more socket,

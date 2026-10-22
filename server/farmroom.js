@@ -56,7 +56,7 @@ import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } f
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
-import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS } from '../shared/balance.js';
+import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES } from '../shared/balance.js';
 import { loadFor, fillsItself, isReady, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
@@ -67,6 +67,7 @@ const MAX_STACK = CHEST.stack; // of one item in the chest
 const MAX_ANIMALS = 16 * 1024; // bytes of the animals' state
 const CLOCK_EVERY = 10_000; // ms between FARM_CLOCKs
 const SOIL_EVERY = 1000; // ms between looks at the bare soil
+const FEAST_EVERY = 5000; // ms: the fewest between one farmer's feasts
 // (as in a lobby: shared/room.js)
 const CHOP_REACH = 2.6;
 const CHOP_EVERY = 1000; // ms
@@ -338,9 +339,17 @@ export class FarmRoom extends Place {
         // (what goes in came out of the loader's backpack: on a deny it goes back)
         const { key } = msg;
         const at = onFarm(key) && this.covered.get(key);
-        const state = at && !this.machines.has(at) && this.near(p, key) && loadFor(this.built.get(at), this.hours(), msg.dish);
+        const state = at && !this.machines.has(at) && this.near(p, key) && loadFor(this.built.get(at), this.hours(), msg.dish, msg.n ?? 1);
         if (!state) return this.deny(p, 'load', key);
         this.setMachine(at, state, p);
+        break;
+      }
+      case C.FEAST: {
+        // (the page keeps the backpack: the room only passes the boost round, now and then)
+        const now = Date.now();
+        if (!Object.hasOwn(DISHES, msg.dish ?? '') || !DISHES[msg.dish].shared || now - (p.feastAt ?? 0) < FEAST_EVERY) return;
+        p.feastAt = now;
+        this.broadcast({ t: S.FEAST, dish: msg.dish, by: p.id });
         break;
       }
       case C.COLLECT: {
@@ -349,7 +358,7 @@ export class FarmRoom extends Place {
         const state = at && this.machines.get(at);
         const hours = this.hours();
         if (!isReady(state, hours) || !this.near(p, key)) return this.deny(p, 'collect', key);
-        this.setMachine(at, fillsItself(this.built.get(at), hours), p, state.item);
+        this.setMachine(at, fillsItself(this.built.get(at), hours), p, state.item, state.n);
         break;
       }
       case C.CHOP: {
@@ -498,13 +507,13 @@ export class FarmRoom extends Place {
   }
 
   // What is in the machine on tile key now (null: nothing), after p loaded or
-  // collected it (got: what p collected)
-  setMachine(key, state, p, got) {
+  // collected it (got: what p collected, n of it)
+  setMachine(key, state, p, got, n = 1) {
     if (state) this.machines.set(key, state);
     else this.machines.delete(key);
     this.changed = true;
-    const wire = state && [state.item, round3(state.at), state.takes];
-    this.broadcast({ t: S.MACHINE, key, state: wire, by: p.id, ...(got && { got }) });
+    const wire = state && [state.item, round3(state.at), state.takes, state.n ?? 1];
+    this.broadcast({ t: S.MACHINE, key, state: wire, by: p.id, ...(got && { got, n }) });
   }
 
   // (crop: a seed to give back; piece: the piece whose cost goes back)
