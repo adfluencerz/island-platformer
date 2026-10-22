@@ -192,7 +192,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   font: 700 18px var(--inv-font);
   white-space: nowrap;
 }
-
+.ui-help-head { margin: 6px 0 0; font-size: 20px; font-weight: 700; }
 /* ---------- Player list (top left, under the controls hint) ---------- */
 .ui-players {
   position: fixed;

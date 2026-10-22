@@ -15,29 +15,52 @@ import { isTouch } from './touch.js';
 
 // The controls: [keys, what they do]
 const CONTROLS = [
-  ['WASD', 'Walk (or click the ground)'],
-  ['Space', 'Jump'],
-  ['E', 'Till, plant, harvest, gather, chop, mine, or trade at the stall'],
+  ['WASD', 'Walk (or the arrow keys; or click the ground, or hold the mouse button to steer)'],
+  ['Space', 'Jump, and again in the air for a double jump (from overall skill level 15)'],
+  ['E', 'Till, plant and harvest; gather, chop or mine (hold to keep at it)'],
+  ['E', 'Use what is in front of you: the stall, the workbench, the chest, a machine, the arcade, the kitchen, a door, a portal'],
+  ['E', 'With a rod: cast at the water, then again when it bites. With a dish: eat it. With a mount: get on or off'],
+  ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
+  ['E', 'At the signpost in a lobby: start or join a party game'],
   ['1 – =', 'Pick an item (or scroll over the bar)'],
   ['Scroll', 'Zoom'],
   ['I', 'Backpack'],
   ['B', 'Build on your farm'],
-  ['L', 'Visit a lobby'],
-  ['Enter', 'Chat'],
+  ['K', 'Skills'],
+  ['L', 'Play online'],
+  ['Enter', 'Chat (in a lobby, or on a farm with helpers)'],
   ['Hold T', 'Speed up time at home'],
-  ['Right click', 'Cancel: stop building or walking, put down what you carry in the backpack, or close it'],
-  ['Esc', 'Menu'],
+  ['Right click', 'Cancel: stop building or walking'],
+  ['Esc', 'Menu, or close what is open'],
   ['`', 'Developer tools: grow a giant tree or rock'],
-  ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
+];
+// In the backpack (inventory.js)
+const BAG_CONTROLS = [
+  ['Click', 'Pick up, put down, swap or stack'],
+  ['Right click', 'Take one (Shift: half); or put one down'],
+  ['Ctrl+click', 'Take one'],
+  ['Shift+click', 'Move a stack to or from the toolbar'],
+  ['Click outside', 'Drop what you carry on the ground'],
+  ['Bin', 'Throw away what you carry (not tools)'],
 ];
 const TOUCH_CONTROLS = [
   ['Stick', 'Walk (or tap the ground)'],
   ['Tap', 'Till, plant, harvest, gather, chop, mine, or trade at the stall'],
-  ['Use', 'The same, where you stand'],
-  ['Bag', 'Backpack, and its Build tab'],
+  ['Use', 'Whatever E does: the workbench, the chest, a machine, a door; cast a rod, eat a dish, get on a mount'],
+  ['Jump', 'Jump, and again in the air for a double jump (from overall skill level 15)'],
+  ['Bag', 'Backpack, and its Skills tab'],
+  ['Build', 'Build on your farm'],
+  ['Chat', 'Chat (in a lobby, or on a farm with helpers)'],
   ['Pinch', 'Zoom'],
   ['Hold clock', 'Speed up time at home'],
   ['Tap farmer', 'With a sword or mallet in a lobby: bop them'],
+  ['Menu', 'In the panel at the top left'],
+];
+const TOUCH_BAG_CONTROLS = [
+  ['Tap', 'Pick up, put down, swap or stack'],
+  ['Hold', 'Take one'],
+  ['Tap outside', 'Drop what you carry on the ground'],
+  ['Bin', 'Throw away what you carry (not tools)'],
 ];
 
 // The hints the place panel goes round under its name, a new one every
@@ -80,7 +103,11 @@ function keyList(parent, className, rows) {
 // The controls, for the keyboard or for a touch screen (touch.js shows the one in use)
 export function addHelp(parent) {
   keyList(parent, 'mouse-only', CONTROLS);
+  el('div', 'ui-help-head mouse-only', parent, 'In the backpack');
+  keyList(parent, 'mouse-only', BAG_CONTROLS);
   keyList(parent, 'touch-only', TOUCH_CONTROLS);
+  el('div', 'ui-help-head touch-only', parent, 'In the backpack');
+  keyList(parent, 'touch-only', TOUCH_BAG_CONTROLS);
 }
 
 const CHAT_FADE_MS = 10_000;
