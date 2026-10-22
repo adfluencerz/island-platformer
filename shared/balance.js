@@ -470,6 +470,7 @@ export const WEAPONS = {
 export const BOP_GRACE = 2500; // ms a farmer who was just bopped can't be again
 export const SAFE_CIRCLE = 3.5; // nobody bops or is bopped this close to where farmers arrive
 export const DROP_MS = 45_000; // a drop nobody picks up fades after this (ms)
+export const DROP_OWN_MS = 3000; // the farmer a bop knocked it out of can't take it straight back: for this long it is for anyone else (ms)
 
 // ---------- Fishing ----------
 // With a rod in hand, E facing water casts; a while later the bobber dips,

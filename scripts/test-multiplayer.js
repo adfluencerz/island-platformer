@@ -13,7 +13,7 @@ import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
-import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
 import { FISHING, RODS, SHOP } from '../shared/balance.js';
@@ -650,14 +650,28 @@ await test('bopping: the farmer in front, in reach, knocked back; what they gath
   assert.deepEqual([drop.item, drop.count], ['wood', 1]);
   room.message(a.p, { t: C.BOP, weapon: 'wooden_sword', yaw: 0 });
   assert.equal(b.conn.all(S.BOPPED).length, 1, 'not again so soon');
-  // the drop: too far for A, B walks into it and gets it back (to be knocked loose again)
+  // the drop: not straight back to B, standing on it (A gets a look in)
+  assert.deepEqual([drop.from, drop.wait], [b.p.id, DROP_OWN_MS]);
+  room.message(b.p, { t: C.PICKUP, id: drop.id });
+  assert.equal(b.conn.last(S.DROP_DENY).id, drop.id, 'not straight back');
+  // too far for A; a while later, B walks into it and gets it back (to be knocked loose again)
   at(a, 12, 0);
   room.message(a.p, { t: C.PICKUP, id: drop.id });
   assert.equal(a.conn.last(S.DROP_DENY).id, drop.id);
+  room.drops.get(drop.id).ownAt = Date.now() - 1;
   room.message(b.p, { t: C.PICKUP, id: drop.id });
   assert.deepEqual([a.conn.last(S.PICKED).by, b.p.bag.wood], [b.p.id, 3]);
   room.message(a.p, { t: C.PICKUP, id: drop.id });
   assert.equal(a.conn.all(S.DROP_DENY).length, 2, 'gone');
+  // and knocked loose again, A can take it straight away
+  at(a, 8, 0);
+  b.p.boppedAt = 0;
+  a.p.bopAt = 0;
+  room.message(a.p, { t: C.BOP, weapon: 'wooden_sword', yaw: 0 });
+  const again = a.conn.last(S.DROP);
+  at(a, 8, 1.2);
+  room.message(a.p, { t: C.PICKUP, id: again.id });
+  assert.deepEqual([a.conn.last(S.PICKED).id, a.conn.last(S.PICKED).by], [again.id, a.p.id]);
   // rare finds stay put; the stone circle is for resting
   at(a, 8, 0);
   b.p.bag = { golden_seeds: 1 };
@@ -670,7 +684,7 @@ await test('bopping: the farmer in front, in reach, knocked back; what they gath
   b.p.boppedAt = 0;
   a.p.bopAt = 0;
   room.message(a.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
-  assert.equal(b.conn.all(S.BOPPED).length, 2, 'nobody is bopped by the spawn');
+  assert.equal(b.conn.all(S.BOPPED).length, 3, 'nobody is bopped by the spawn');
   // drops fade, and a newcomer sees the ones still about
   at(a, 8, 0);
   at(b, 8, 1.2);
@@ -679,7 +693,9 @@ await test('bopping: the farmer in front, in reach, knocked back; what they gath
   a.p.bopAt = 0;
   room.message(a.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
   assert.deepEqual(b.conn.last(S.BOPPED).drop, ['stone', 2]);
-  assert.equal(join(room, 'C').conn.last(S.WELCOME).drops.length, 1);
+  const seen = join(room, 'C').conn.last(S.WELCOME).drops;
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0][6], b.p.id, 'whose it was, for a newcomer too');
   room.update(Date.now() + DROP_MS + 100);
   assert.equal(a.conn.last(S.PICKED).by, 0);
   assert.equal(room.drops.size, 0);
