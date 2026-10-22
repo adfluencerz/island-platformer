@@ -164,7 +164,7 @@ export class Place {
         p.y = y;
         p.z = z;
         p.yaw = yaw;
-        p.f = msg.f & 0xff;
+        p.f = msg.f & 0x3ff; // (STATEF)
         break;
       }
       case C.CHAT: {

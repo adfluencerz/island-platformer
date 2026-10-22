@@ -168,6 +168,7 @@ export const PIECES = {
   lamp_post: { name: 'Lamp post', solid: true },
   garden_bench: { name: 'Garden bench', solid: true },
   planter: { name: 'Flower planter', solid: true },
+  pond: { name: 'Fish pond', solid: true, size: [3, 3] }, // (fished in: shared/fishing.js)
   // a relic from a sky isle on a pedestal, to show it off (`relic`: one of those)
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, { name: found.replace(/^An? (.)/, (_, c) => c.toUpperCase()), solid: true, relic: true }])),
 };
@@ -177,7 +178,7 @@ for (const [id, piece] of Object.entries(PIECES)) piece.cost = BUILD_COSTS[id] ?
 // and what joins them (gates, arches, arbors, hedges); paths, walked on;
 // blocks, climbed; the buildings, that do something; the decorations; the relics
 export const BUILD_GROUPS = ['Fences & walls', 'Paths', 'Blocks', 'Buildings', 'Decor', 'Relics'];
-const BUILDINGS = new Set(['workbench', 'farm_chest', 'house', 'stone_well']);
+const BUILDINGS = new Set(['workbench', 'farm_chest', 'house', 'stone_well', 'pond']);
 for (const [id, piece] of Object.entries(PIECES)) {
   piece.group = piece.relic ? 'Relics'
     : BUILDINGS.has(id) ? 'Buildings'
@@ -240,6 +241,12 @@ export const RARE = {
   golden_seeds: 'Golden seeds',
   key: 'An old key',
   ...Object.fromEntries(SKY_STYLES.map(({ relic, found }) => [relic, found])), // (the sky isles' relics)
+  // the rarest fish (rarity 2 and up in FISHING, shared/balance.js)
+  pufferfish: 'A pufferfish',
+  moonfish: 'A moonfish',
+  koi: 'A koi',
+  glowfish: 'A glowfish',
+  golden_carp: 'A golden carp',
 };
 
 // Roll a spot's loot: [item, count]. rand: () => [0, 1)
@@ -256,8 +263,11 @@ export function rollSpot(island, kind, x, z, rand = Math.random) {
 }
 
 // What is in a chest of this kind (SKY_CHESTS): [[item, count], ...]
-export function rollChest(kind, rand = Math.random) {
-  const { rolls: [lo, hi], loot } = SKY_CHESTS[kind];
+export const rollChest = (kind, rand = Math.random) => rollBundle(SKY_CHESTS[kind], rand);
+
+// What is in a chest that has `rolls` things from `loot` (the same thing
+// twice is one stack): [[item, count], ...]
+export function rollBundle({ rolls: [lo, hi], loot }, rand = Math.random) {
   const got = new Map();
   for (let n = lo + Math.floor(rand() * (hi - lo + 1)); n > 0; n--) {
     const [item, count] = pick(loot, rand);
@@ -267,7 +277,7 @@ export function rollChest(kind, rand = Math.random) {
 }
 
 // One of loot ([item, weight, min, max], ...) by weight: [item, count]
-function pick(loot, rand) {
+export function pick(loot, rand) {
   let r = rand() * loot.reduce((sum, [, w]) => sum + w, 0);
   for (const [item, w, min, max] of loot) {
     r -= w;

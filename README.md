@@ -10,6 +10,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
 - Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, and a sword and a mallet for bopping other farmers in lobbies
+- Fishing with a rod from the workbench: in the sea round any island, in a fish pond built on the farm, and in a lobby's water, where the rarer fish are
 - A saved home farm, and online lobbies (up to 8 farmers) you start with friends, where rare finds turn up (see below)
 - Keyboard, mouse (click to walk) and touch controls, and it installs as an app on a phone or tablet
 
@@ -99,11 +100,18 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
   - a **flower planter** (4 stone, 1 wood), put down from the Build tab like the rest;
   - sturdier tools, made from your old one: a **sturdy axe** and a **sturdy pickaxe** take two swings instead of four and three, and a **wide hoe** tills three tiles side by side;
-  - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below).
+  - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below);
+  - a **fishing rod** (5 wood, 2 flax), and from it a **sturdy rod** (15 wood, 10 stone, 4 flax), and from that a **golden rod** (20 wood, 2 sky gems): see Fishing, below.
+- A **fish pond** (30 stone), 3 tiles by 3, built from the middle of its front row: still water in a ring of stones, to fish in.
 - A **farm chest** (8 wood, 2 stone), one to a farm: somewhere to keep things. What your backpack is short of when you build comes out of it.
 - A **house** (500 wood, 200 stone), one to a farm and one more for each helper, 5 tiles across and 4 deep, built from the middle of its front where the door is. `E` at the door (or a tap on the house) goes inside (every house on the farm opens into the same room): a room of 200 tiles (20 by 10) with a bed, a table, a fireplace and a shelf of books, and a field of earth (8 by 6) to till and plant like the farm's. `E` at the door inside goes back out. Its windows light up at night (`HOUSE_ROOM` in `shared/level.js`, `src/house.js`).
 - **Take down** (in the Build tab) takes a piece away and gives back what it cost.
 - Nothing goes on tilled soil, in the animals' pens, by the stall's counter, where farmers arrive on the plaza, or on someone standing there. What's built is saved with the farm, and on a farm with helpers everyone can build (each pays from their own backpack) and the farm's room keeps it, like the soil (`PIECES` in `shared/level.js`, `src/build.js`).
+
+**Fishing.** With a rod in hand, face the water (the sea past the sand, or a fish pond) and press `E` (**Use** on a phone): the line goes out and the bobber floats. When it dips with a splash and a **!** (on a phone the Use button pulses and the phone buzzes), press `E` again, quickly: the rarer the fish, the less time you have. Too slow and it gets away; `E` before anything bites, or walking off, just reels in.
+- The sea round the farm has sardines, mackerel and sea bass, seaweed, and a moonfish late at night; a pufferfish takes a sturdy rod. A fish pond has minnows and perch, sunfish around midday, catfish in the evening, and a koi for a sturdy rod. A lobby's water has the rarer ones (see the lobbies, below).
+- Now and then it's an old boot, some driftwood, an old key or a little chest of loot.
+- A better rod gets bites sooner and rarer fish on the line. The merchant buys every fish (`FISHING` and `RODS` in `shared/balance.js`, `shared/fishing.js`, `src/fishing.js`).
 
 **Helpers: farming together.** Friends can help on your farm, any time, even while you're away. Open the menu (`Esc`), pick **Helpers** and **Invite a helper**: you get a code like `K7P4-QM2X` and a link (good once, for a day). Your friend opens the link (or types the code under **Farms you help on** on the title screen) and is one of your helpers from then on: the farm is on their title screen, to **Visit** whenever they like. The same menu lists your helpers, with **Remove** to take someone off (they're sent home if they're there).
 
@@ -123,6 +131,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - Berry bushes and mushrooms are picked with `E`; treasures out in the meadow and up on the ledges are collected by walking into them. Whoever gets there first takes it, and it stays empty.
 - Now and then something rare turns up (golden seeds, an old key) with a golden glint over it, and the whole lobby hears about it in chat. Golden seeds grow a golden turnip at home.
 - **Bopping**: with a wooden sword or a mallet (made at a workbench) in hand, `E` bops the nearest farmer in reach (or tap them to go and bop them). They stumble back and drop a little of what they gathered on this visit, one thing with the sword, two with the mallet, for anyone to walk into: never a rare find or gold. Nobody gets hurt. A farmer just bopped can't be again for a few seconds, and nobody bops or is bopped in the stone circle where you arrive (`WEAPONS` in `shared/balance.js`).
+- **Fishing** works in a lobby too: its sea and its pond have the rarer fish (a rainbow trout, a glowfish late at night, now and then a golden carp), the lobby rolls what bites, and the whole lobby hears about a rare one.
 - The player list shows how much everyone has found (and chopped) this visit; the lobby list shows how many rare finds are lying about.
 - Every lobby has a code: 6 characters for a public lobby, 10 for an invite-only one (unlisted, so only its link gets you in). While you're there the address bar carries `?lobby=CODE`, so the address is the invite link; **Copy invite** puts it on the clipboard.
 - Reloading or losing the connection keeps your place in the lobby (and your finds) for 20 seconds: the page reconnects by itself, or join again from the invite card after a reload.
@@ -174,7 +183,8 @@ island-platformer/
 │   ├── chest.js         # the farm chest on a farm with helpers, and its window
 │   ├── build.js         # what is built on the farm: fences, gates, walls, paths, blocks, the workbench, decorations
 │   ├── house.js         # inside the house: its room, with a field to farm
-│   ├── workbench.js     # the workbench's window: decorations, sturdy tools, the sword and the mallet
+│   ├── workbench.js     # the workbench's window: decorations, sturdy tools, the sword, the mallet and the rods
+│   ├── fishing.js       # casting, the bobber and the line (ours and everyone else's), landing what bit
 │   ├── animals.js       # the hen yard and the pasture, the hens, cows and sheep, eggs
 │   ├── remotes.js       # other players: interpolation, name tags
 │   ├── net/
@@ -189,6 +199,7 @@ island-platformer/
 │   ├── constants.js     # tick rate, limits
 │   ├── balance.js       # every balancing number: regrow times, prices, costs, loot, recipes
 │   ├── level.js         # resource spots, rare finds, building pieces
+│   ├── fishing.js       # what bites where, with which rod, at what hour; casting a line
 │   └── worldgen.js      # islands from seeds (and the classic island)
 ├── server/
 │   ├── index.js         # HTTP API + WebSocket + built client, one port

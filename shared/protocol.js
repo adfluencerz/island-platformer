@@ -26,6 +26,8 @@ export const C = {
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
   CLOCK: 'clock', // { hours }: the farm's clock (the owner only, alone on the farm: fast-forwarding)
   ANIMALS: 'animals', // { state }: the animals as the owner's page has them (src/animals.js capture())
+  CAST: 'cast', // { n, x, z, rod }: cast the line, the bobber landing on the water at x, z (n: the page's count of its casts, said back in BITE and CAUGHT; rod: the one in hand, RODS in shared/balance.js; in a lobby)
+  REEL: 'reel', // {}: E with the line out: lands what bit if it is in time (BITE), else just reels in
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
 };
@@ -48,6 +50,8 @@ export const S = {
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
   DROP: 'drop', // { id, item, count, x, y, z }: something dropped, for anyone to walk into
   PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
+  BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms
+  CAUGHT: 'caught', // { n, item, count, items? }: what we landed on cast n (item null: nothing, it got away; 'chest': a little chest, its items [[item, count], ...])
   DROP_DENY: 'dropDeny', // { id }: that pickup did not count (someone was quicker, or too far)
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
@@ -101,6 +105,9 @@ export const STATEF = {
   PICK: 16, // has the pickaxe in hand
   SWORD: 32, // has the wooden sword in hand
   MALLET: 64, // has the mallet in hand
+  ROD: 128, // has a fishing rod in hand
+  CAST: 256, // ...with its line out
+  BITE: 512, // ...and the bobber is dipping
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;

@@ -180,6 +180,7 @@ const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4e
   dots: new THREE.MeshStandardMaterial({ color: dots, roughness: 0.6 }),
 }));
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
+export const LOBBY_POND_Y = -0.12; // the lobby pond's surface (where a bobber floats: src/fishing.js)
 const pondWaterMat = addRipples(new THREE.MeshStandardMaterial({ color: 0x3aa0a8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 }));
 const padMat = new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 });
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
@@ -230,7 +231,7 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
   const { pond } = island;
   const water = new THREE.Mesh(new THREE.CircleGeometry(pond.r + 0.9, 40), pondWaterMat);
   water.rotation.x = -Math.PI / 2;
-  water.position.set(pond.x, -0.12, pond.z);
+  water.position.set(pond.x, LOBBY_POND_Y, pond.z);
   root.add(water);
   const pads = [];
   for (let i = 0; i < 9; i++) {
