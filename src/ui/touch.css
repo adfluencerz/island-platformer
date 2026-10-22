@@ -93,6 +93,17 @@ body.in-menu .tc { display: none; }
   box-shadow: inset 0 4px 0 var(--inv-wood-light), inset 0 -4px 0 #a3530c, 0 3px 0 rgba(0, 0, 0, 0.3);
   opacity: 0.92;
 }
+/* Jump and Use also take a tap just beside them (an invisible ring round each, part of the button),
+   not a walk to that spot. Where they face each other the ring is thin: the gap between them is split */
+.tc-use, .tc-jump { --halo: 14px; --halo-next: 4px; }
+.tc-use::before, .tc-jump::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--halo));
+  border-radius: 999px;
+}
+.tc-use::before { left: calc(-1 * var(--halo-next)); } /* (Jump is to its left) */
+.tc-jump::before { right: calc(-1 * var(--halo-next)); } /* (...and Use to its right) */
 .tc-btn.down { transform: translateY(2px); box-shadow: inset 0 4px 0 #a3530c, 0 1px 0 rgba(0, 0, 0, 0.3); }
 .tc-use { right: 0; bottom: 0; width: 78px; height: 78px; font-size: 27px; }
 .tc-use.ready { background: #4f9e3c; box-shadow: inset 0 4px 0 #7ed957, inset 0 -4px 0 #2f6b25, 0 0 0 4px rgba(255, 230, 120, 0.8); }
@@ -307,6 +318,9 @@ body.in-menu .tc { display: none; }
   /* the buttons stacked up beside the toolbar rather than along it */
   :root.touch { --inv-slot: 34px; }
   .tc-jump { right: 3px; bottom: 88px; }
+  /* (stacked, Jump over Use: it is the tops and bottoms that face each other) */
+  .tc-use::before { left: calc(-1 * var(--halo)); top: calc(-1 * var(--halo-next)); }
+  .tc-jump::before { right: calc(-1 * var(--halo)); bottom: calc(-1 * var(--halo-next)); }
   /* Bag, Build and Chat in a row under the coin counter (no room for a column over Jump) */
   .tc-side { flex-direction: row-reverse; }
   :root.touch .ui-build { right: calc(var(--safe-r) + 190px); }
