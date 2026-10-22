@@ -28,6 +28,11 @@
 // it next has them (src/animals.js restore()). The farm's upgrades (`levels`:
 // its workbench's and pens', bought by the owner) go along with them.
 //
+// What a farmer drops out of their backpack (THROW) lies where they stood,
+// for anyone on the farm to walk into (PICKUP), not straight back to them
+// (DROP_OWN_MS), as in a lobby; but it doesn't fade: it is kept with the farm
+// (`dropped`), as the page keeps it when the farm is played alone (src/finds.js).
+//
 // The bosses' arenas are out past the sea on the farm's world (shared/bosses.js):
 // the room keeps a BossFight for each, moving its boss while anyone is in its
 // arena and counting the bops (BOSS_BOP). Beaten, its portal goes (UNBUILT,
@@ -51,7 +56,7 @@ import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } f
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
-import { unmake, BOSSES, WEAPONS } from '../shared/balance.js';
+import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS } from '../shared/balance.js';
 import { loadFor, fillsItself, isReady, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
@@ -71,6 +76,9 @@ const BOSS_EVERY = 0.8; // of a weapon's `every` (WEAPONS): the fewest ms betwee
 const BOSS_SEND = 2; // ticks between a boss's BOSSes
 const ITEM_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const KEY_RE = /^-?\d{1,3},-?\d{1,3}$/;
+const MAX_DROPS = 200; // things lying about on the farm at once
+const THROW_EVERY = 200; // ms: the fewest between two things one farmer drops
+const PICK_REACH = 2.2; // the page picks up within 1.4; the slack covers a position up to ~150 ms old
 // where the farm's trees and rocks stand (shared/wilds.js), the same on every farm and every page
 const WILDS = wildsFromWire(HOME_WILDS);
 const MAX_TREES = WILDS.trees.length;
@@ -127,11 +135,21 @@ export class FarmRoom extends Place {
     this.treeSites = siteMap(saved?.treeSites, MAX_TREES);
     this.rockSites = siteMap(saved?.rockSites, MAX_ROCKS);
     this.giants = Giants.fromSave(saved?.giants, this.rand); // (shared/giants.js)
+    // id -> { id, item, count, x, y, z, from, ownAt }: dropped out of a backpack
+    // (y: where a farmer standing there would be; the save keeps the ground's)
+    this.drops = new Map();
+    this.dropId = 0;
+    for (const d of Array.isArray(saved?.dropped) ? saved.dropped : []) {
+      const [item, count, x, y, z] = Array.isArray(d) ? d : [];
+      if (this.drops.size < MAX_DROPS && droppable(item) && Number.isInteger(count) && count >= 1 && count <= 999 && [x, y, z].every(Number.isFinite)) {
+        this.dropAt(item, count, x, y + GROUND_STAND_Y, z, 0, 0);
+      }
+    }
     this.giants.setCounts(MAX_TREES, MAX_ROCKS);
     // the rest of the farm is the animals', as the owner's page saved them
     // (and the chest the page keeps when it plays the farm alone: the owner's
     // page puts what is in it into this one when it comes)
-    const { savedAt, hours, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, ...animals } = saved ?? {};
+    const { savedAt, hours, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, dropped, ...animals } = saved ?? {};
     this.animals = animals;
     this.chest = unmake(farm.chest); // (a lamp post or bench made at the workbench, back in wood and stone)
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
@@ -187,6 +205,7 @@ export class FarmRoom extends Place {
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
       giants: this.giants.toSave(),
+      drops: [...this.drops.values()].map((d) => [d.id, d.item, d.count, d.x, d.y, d.z, d.from, Math.max(0, d.ownAt - Date.now())]),
       bosses: Object.fromEntries([...this.fights].filter(([, f]) => f.phase !== 'sleep').map(([id, f]) => [id, f.toWire()])),
       chest: this.chest,
       hours: round3(this.hours()),
@@ -217,6 +236,33 @@ export class FarmRoom extends Place {
 
   act(p, msg) {
     switch (msg?.t) {
+      case C.THROW: {
+        // Out of their backpack, at their feet (the page has taken it out
+        // already: THROW_DENY hands it back)
+        const now = Date.now();
+        const count = Number.isInteger(msg.count) ? msg.count : 0;
+        if (!droppable(msg.item) || count < 1 || count > 999 || now - (p.throwAt ?? 0) < THROW_EVERY || this.drops.size >= MAX_DROPS) {
+          this.send(p, { t: S.THROW_DENY, item: typeof msg.item === 'string' ? msg.item : null, count });
+          return;
+        }
+        p.throwAt = now;
+        const drop = this.dropAt(msg.item, count, p.x, p.y, p.z, p.id, now + DROP_OWN_MS);
+        this.changed = true;
+        this.broadcast({ t: S.DROP, id: drop.id, item: drop.item, count, x: drop.x, y: drop.y, z: drop.z, from: p.id, wait: DROP_OWN_MS });
+        break;
+      }
+      case C.PICKUP: {
+        const drop = this.drops.get(msg.id);
+        const mine = drop?.from === p.id && Date.now() < drop.ownAt; // (not straight back: they are still standing on it)
+        if (!drop || mine || Math.hypot(drop.x - p.x, drop.y - p.y, drop.z - p.z) > PICK_REACH) {
+          this.send(p, { t: S.DROP_DENY, id: msg.id });
+          return;
+        }
+        this.drops.delete(drop.id);
+        this.changed = true;
+        this.broadcast({ t: S.PICKED, id: drop.id, by: p.id, item: drop.item, count: drop.count });
+        break;
+      }
       case C.TILL: {
         const { key } = msg;
         if (!this.farmable(key) || this.tilled.has(key) || this.covered.has(key) || !this.near(p, key)) return this.deny(p, 'till', key);
@@ -597,8 +643,22 @@ export class FarmRoom extends Place {
       treeSites: [...this.treeSites],
       rockSites: [...this.rockSites],
       giants: this.giants.toSave(),
+      dropped: [...this.drops.values()].map((d) => [d.item, d.count, d.x, round3(d.y - GROUND_STAND_Y), d.z]),
     };
   }
+
+  // count of item lying at x, y (where a farmer standing there would be), z,
+  // from farmer `from` (0: nobody), who can't take it back till ownAt
+  dropAt(item, count, x, y, z, from, ownAt) {
+    const drop = { id: ++this.dropId, item, count, x: round3(x), y: round3(y), z: round3(z), from, ownAt };
+    this.drops.set(drop.id, drop);
+    return drop;
+  }
+}
+
+// What can be dropped out of a backpack: what has a price (never a tool, coins or a key piece)
+function droppable(item) {
+  return typeof item === 'string' && ITEM_RE.test(item) && Object.hasOwn(SHOP, item) && item !== 'coin';
 }
 
 // What a farm is called to its helpers

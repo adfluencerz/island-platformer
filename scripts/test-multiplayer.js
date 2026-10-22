@@ -1557,6 +1557,60 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.close();
 });
 
+await test('a farm room: things dropped lie there for anyone (not straight back to whoever dropped them), kept with the farm', () => {
+  const farms = new Farms({ log: () => {} });
+  const madeA = farms.create({ v: 7, farm: { savedAt: Date.now(), hours: 8, tilled: [], crops: [], built: [], dropped: [['wood', 2, 1, 0, 3], ['axe', 1, 0, 0, 0], ['nonsense', 1, 0, 0, 0], ['stone', 0, 0, 0, 0]] }, backpack: {} }, 'pa');
+  const madeB = farms.create(aSave(2), 'pb');
+  const a = farms.auth(bearer(madeA));
+  farms.acceptHelp(farms.invite(a, 'Ann').code, farms.auth(bearer(madeB)), 'Bo');
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const enter = (made, name) => {
+    const conn = fakeConn();
+    const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name, key: name, auth: `${made.id}.${made.token}` });
+    return { conn, p };
+  };
+  const ann = enter(madeA, 'Ann');
+  const bo = enter(madeB, 'Bo');
+  // what was dropped while the farm was played alone is there (only real things)
+  const [kept] = ann.conn.last(S.FARM).drops;
+  assert.equal(ann.conn.last(S.FARM).drops.length, 1);
+  assert.deepEqual(kept.slice(1, 6), ['wood', 2, 1, GROUND_STAND_Y, 3]);
+  assert.equal(ann.conn.last(S.FARM).animals.dropped, undefined, 'not taken for the animals');
+  // Bo drops some stone: for Ann, not straight back for Bo
+  room.message(bo.p, { t: C.STATE, x: 4, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(bo.p, { t: C.THROW, item: 'stone', count: 3 });
+  const drop = ann.conn.last(S.DROP);
+  assert.deepEqual([drop.item, drop.count, drop.x, drop.y, drop.z, drop.from, drop.wait], ['stone', 3, 4, 0.8, 3, bo.p.id, DROP_OWN_MS]);
+  room.message(bo.p, { t: C.PICKUP, id: drop.id });
+  assert.equal(bo.conn.last(S.DROP_DENY).id, drop.id, 'not straight back');
+  room.message(ann.p, { t: C.PICKUP, id: drop.id });
+  assert.equal(ann.conn.last(S.DROP_DENY).id, drop.id, 'too far');
+  room.message(ann.p, { t: C.STATE, x: 4.5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.PICKUP, id: drop.id });
+  assert.deepEqual([bo.conn.last(S.PICKED).id, bo.conn.last(S.PICKED).by], [drop.id, ann.p.id]);
+  // never a tool, coins or nonsense; not too fast
+  for (const [item, count] of [['axe', 1], ['coin', 3], ['nonsense', 1], ['wood', 0]]) {
+    bo.p.throwAt = 0;
+    room.message(bo.p, { t: C.THROW, item, count });
+    assert.deepEqual([bo.conn.last(S.THROW_DENY).item, bo.conn.last(S.THROW_DENY).count], [item, count]);
+  }
+  bo.p.throwAt = 0;
+  room.message(bo.p, { t: C.THROW, item: 'egg', count: 2 });
+  room.message(bo.p, { t: C.THROW, item: 'egg', count: 1 });
+  assert.deepEqual([bo.conn.last(S.THROW_DENY).item, bo.conn.last(S.THROW_DENY).count], ['egg', 1], 'not so fast');
+  // kept with the farm (the ground's height, as the page keeps it), and back from it
+  assert.deepEqual(room.toFarm().dropped, [['wood', 2, 1, 0, 3], ['egg', 2, 4, 0, 3]]);
+  rooms.write(room);
+  room.close();
+  rooms.rooms.delete(a.id);
+  const again = rooms.open(a.id);
+  const ann2 = fakeConn();
+  again.join(ann2, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${madeA.id}.${madeA.token}` });
+  assert.deepEqual(ann2.last(S.FARM).drops.map((d) => [d[1], d[2]]), [['wood', 2], ['egg', 2]]);
+  again.close();
+});
+
 await test('a farm room: machines take things in, and whoever is next to one when it is done collects it', () => {
   const farms = new Farms({ log: () => {} });
   const madeA = farms.create({ v: 7, farm: { savedAt: Date.now(), hours: 8, tilled: [], crops: [], built: [['6,3', 'beehive']] }, backpack: {} }, 'pa');
