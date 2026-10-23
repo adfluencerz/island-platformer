@@ -1,7 +1,7 @@
 // Numbers both the server and the client go by. Pure JS: no DOM, no three.js,
 // no Node modules, so the same file runs in the browser and on the server.
 
-export const PROTOCOL_VERSION = 21; // v4: chopping trees; v5: farms with helpers; v6: mining rocks; v7: building on farms, bopping in lobbies; v8: giant trees and rocks; v9: lobbies as matches, friends and invitations; v10: the server places the trees and rocks; v11: bosses, and riding; v12: party games; v13: fishing; v14: machines and cooking; v15: dropping things out of the backpack; v16: and on a farm with helpers; v17: weighed fish, a lobby's board of its biggest catches, fishing contests, aquariums; v18: king of the hill; v19: last one standing; v20: watering cans; v21: tomatoes, pumpkins and berry bushes (UPROOT)
+export const PROTOCOL_VERSION = 22; // v4: chopping trees; v5: farms with helpers; v6: mining rocks; v7: building on farms, bopping in lobbies; v8: giant trees and rocks; v9: lobbies as matches, friends and invitations; v10: the server places the trees and rocks; v11: bosses, and riding; v12: party games; v13: fishing; v14: machines and cooking; v15: dropping things out of the backpack; v16: and on a farm with helpers; v17: weighed fish, a lobby's board of its biggest catches, fishing contests, aquariums; v18: king of the hill; v19: last one standing; v20: watering cans; v21: tomatoes, pumpkins and berry bushes (UPROOT); v22: bounce shrooms, lily leaves, cloud cotton
 
 // Starting a lobby with friends (server/presence.js): it opens PARTY_MS after
 // the invitations go out, and each lapses unanswered after INVITE_MS

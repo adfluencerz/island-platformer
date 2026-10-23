@@ -21,7 +21,7 @@ export function chestHasRoom(items, item, count) {
 // (Seconds from planting to ripe: CROP_GROW_TIME, shared/balance.js; src/crops.js draws them)
 // what a ripe crop gives when it is harvested (on a farm with helpers the
 // server hands it out, into the farm's chest)
-export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', sunflower: 'sunflower', golden_turnip: 'golden_turnip', vine_bean: 'beans', tomato: 'tomato', pumpkin: 'pumpkin', berry_bush: 'berries' };
+export const CROP_PRODUCE = { turnip: 'turnip', carrot: 'carrot', flax: 'flax', sunflower: 'sunflower', golden_turnip: 'golden_turnip', vine_bean: 'beans', tomato: 'tomato', pumpkin: 'pumpkin', berry_bush: 'berries', bounce_shroom: 'mushroom', cloud_cotton: 'cloud_cotton' }; // (a lily leaf has nothing to pick: PLATFORM_PLANTS)
 
 // ---------- Lobby resources ----------
 // What can stand on a spot (each island says where its spots are). `use`: 'gather' is picked with E from nearby,

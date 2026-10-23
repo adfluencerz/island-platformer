@@ -116,6 +116,8 @@ const SOUNDS = {
   land: (b) => noise(b, { len: 0.09, freq: 380, gain: 0.35 }),
   step: (b) => noise(b, { len: 0.05, freq: 700 * r(0.25), gain: 0.07 }),
   glide: (b) => noise(b, { len: 0.45, filter: 'bandpass', freq: 500, to: 1100, q: 0.7, gain: 0.22, attack: 0.08 }),
+  boing: (b) => (noise(b, { len: 0.08, freq: 500, gain: 0.25 }), tone(b, { freq: 150, to: 620, len: 0.32, gain: 0.3 })), // (off a bounce shroom)
+  wilt: (b) => tone(b, { freq: 520, to: 180, len: 0.4, type: 'triangle', gain: 0.14 }),
   // farming
   till: (b) => (noise(b, { len: 0.14, filter: 'bandpass', freq: 500, q: 0.7, gain: 0.45 }), tone(b, { freq: 110, to: 70, len: 0.12, gain: 0.25 })),
   plant: (b) => (noise(b, { len: 0.08, freq: 900, gain: 0.18 }), tone(b, { freq: 660 * r(0.04), len: 0.09, gain: 0.12, at: 0.04 })),

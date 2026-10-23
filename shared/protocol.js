@@ -26,7 +26,7 @@ export const C = {
   // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
   TILL: 'till', // { key }: till tile key ("gx,gz") underfoot
   PLANT: 'plant', // { key, crop }: plant a seed from the backpack on tilled tile key
-  HARVEST: 'harvest', // { key }: the ripe crop on tile key, into the farm's chest
+  HARVEST: 'harvest', // { key }: the ripe crop on tile key, into the farm's chest (a lily leaf: it wilts, after its landings)
   WATER: 'water', // { key }: water the crop growing on tile key (WATERED_GROWTH in shared/balance.js)
   UPROOT: 'uproot', // { key }: dig up the plant on tile key, one that stays when it's picked (MORE_CROPS `again`, shared/balance.js)
   CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest

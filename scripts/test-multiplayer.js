@@ -22,7 +22,7 @@ import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, B
 import { fingerprint } from './seed-fingerprint.js';
 import { requestFor } from '../src/requests.js';
 import { REQUESTS } from '../shared/balance.js';
-import { MORE_CROPS } from '../shared/balance.js';
+import { MORE_CROPS, PLATFORM_PLANTS } from '../shared/balance.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
@@ -1899,6 +1899,44 @@ await test('a farm room: a tomato plant and a berry bush stay when they are pick
   room.message(p, { t: C.UPROOT, key: '4,3' });
   assert.deepEqual([conn.last(S.UPROOTED).key, conn.last(S.UPROOTED).by], ['4,3', p.id]);
   assert.ok(!room.crops.has('4,3') && room.tilled.has('4,3'));
+  room.close();
+});
+
+await test('a farm room: platform plants: a bounce shroom gives mushrooms and grows back, a lily leaf wilts, cloud cotton is picked from on top', () => {
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3', '5,3'], crops: [] }, backpack: {} }, 'pw');
+  const a = farms.auth(bearer(made));
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const conn = fakeConn();
+  const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${made.id}.${made.token}` });
+  room.message(p, { t: C.STATE, x: 4, y: GROUND_STAND_Y, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.PLANT, key: '3,3', crop: 'bounce_shroom' });
+  room.message(p, { t: C.PLANT, key: '4,3', crop: 'lily_leaf' });
+  room.message(p, { t: C.PLANT, key: '5,3', crop: 'cloud_cotton' });
+  const hour = 24 / DAY_LENGTH_SECONDS; // (game hours in a second)
+  room.clockBase += Math.max(...Object.values(PLATFORM_PLANTS).map((c) => c.grow)) * hour; // (all ripe)
+  // a bounce shroom: two mushrooms, and its cap grows back
+  room.message(p, { t: C.HARVEST, key: '3,3' });
+  assert.equal(room.chest.mushroom, 2);
+  assert.ok(room.crops.has('3,3'));
+  // a lily leaf wilts (a pick of nothing) and grows back
+  room.message(p, { t: C.HARVEST, key: '4,3' });
+  const wilted = conn.last(S.HARVESTED);
+  assert.deepEqual([wilted.key, wilted.item], ['4,3', undefined]);
+  assert.ok(room.crops.has('4,3'));
+  assert.equal(Object.keys(room.chest).length, 1, 'nothing more in the chest');
+  // cloud cotton: picked from on top of it, up in the air
+  room.message(p, { t: C.STATE, x: 5, y: GROUND_STAND_Y + PLATFORM_PLANTS.cloud_cotton.top, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.HARVEST, key: '5,3' });
+  assert.equal(room.chest.cloud_cotton, 1);
+  assert.ok(!room.crops.has('5,3'), 'picked, it is gone');
+  room.message(p, { t: C.STATE, x: 3, y: GROUND_STAND_Y + 6, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.UPROOT, key: '3,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'uproot', 'too high up to dig');
+  room.message(p, { t: C.STATE, x: 3, y: GROUND_STAND_Y, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.UPROOT, key: '3,3' });
+  assert.equal(conn.last(S.UPROOTED).key, '3,3');
   room.close();
 });
 
