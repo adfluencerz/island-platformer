@@ -222,7 +222,7 @@ export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockSca
 // farmer past the first). The rest are its moves' (shared/bosses.js).
 // Beating one gives everyone who fought: its statue and its mount the first
 // time (`statue`, `mount`: items), and a shiny animal for the farm every time.
-// (All four are in: the parsnip, the lion, the bee queen and the crow.)
+// (All five are in: the parsnip, the lion, the bee queen, the crow and the toad.)
 export const BOSSES = {
   parsnip: {
     name: 'Evil Parsnip', key: 'parsnip_seal', pieces: 3, hp: 40, perPlayer: 0.7, pause: [1.3, 2.1], quicken: 0.12,
@@ -258,6 +258,15 @@ export const BOSSES = {
     walk: 1.8,
     moves: ['swoop', 'gust'],
     statue: 'crow_statue', mount: 'crow_mount',
+  },
+  toad: {
+    name: 'Bog Toad', key: 'bog_pearl', pieces: 3, hp: 60, perPlayer: 0.7, pause: [1.2, 1.9], quicken: 0.12,
+    hop: { windup: 0.6, air: 0.9, height: 5, reach: 8, hops: [2, 3], wave: 8, waveMax: 5 }, // great heavy hops, a splash of a shockwave where it lands
+    swarm: { windup: 0.8, count: 3, perPlayer: 1, spread: 0.3, speed: 5, life: 3 }, // flies it puffs out, off at the farmers (as the bee queen's swarms)
+    roar: { windup: 1.0, count: 2, gap: 0.8, speed: 5.5, max: 10 }, // a great croak: rings of it out to the edge (as the lion's roar)
+    walk: 1.4,
+    moves: ['hop', 'swarm', 'roar'],
+    statue: 'toad_statue', mount: 'toad_mount',
   },
 };
 // What every boss fight shares. `hitsOut`: a farmer the boss bops this many
