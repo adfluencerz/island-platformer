@@ -5,10 +5,17 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 ## What's included
 - A stylized farmer with walk, jump, landing and tool-swing animations, a hoe, an axe and a pickaxe, and a camera that follows from an angled overhead view
 - A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, wind-swayed grass and flowers, and grass-topped platforms to jump between; trees fade out when they block the view of the player
-- Farming: till, plant and harvest turnips, carrots, flax and sunflowers, in a backpack-and-toolbar inventory
+- Farming: till, plant and harvest turnips, carrots, flax and sunflowers, in a backpack-and-toolbar inventory; a watering can makes a crop grow the rest of the way twice as fast (a big one from the workbench waters three by three)
+- A vine bean that grows into a beanstalk: climb its leaves to pick the beans at the top (plants that are platforms: the Beanstalk idea in `docs/CONCEPTS.md`)
+- A first-day guide for a new farmer (till, plant, harvest, sell, then off to a lobby), shown once and easy to skip
+- Seasons on the farm: spring, summer, autumn and winter, a week each, turn its trees, grass and ground (`src/seasons.js`)
+- A glider leaf from the workbench: hold Jump on the way down to float
 - A day/night cycle with a sun and moon, fireflies and a clock
 - Sound effects and a gentle tune that changes at night, all made on the spot with the Web Audio API (`src/sound.js`, no sound files); `M` or the menu turns them off
-- A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
+- A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find, and asks for something each day, for good gold (`src/requests.js`)
+- A collection book (`O`): the crops, wild finds, rare finds, dishes, fish and relics you've had, and the bosses you've beaten
+- Five bosses (the evil parsnip, the super lion, the bee queen, the giant crow and the bog toad), each in an arena through a portal on the farm, with a mount to win: riding one is faster and jumps higher
+- Party games in lobbies: a coin rush, a fishing contest, king of the hill, last one standing and a hop race across the water
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
 - Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, rope fences, log benches, compost bins, milk churns, dovecotes, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, boulders, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, a sword and a mallet for bopping other farmers in lobbies, and machines
 - Fishing with a rod from the workbench: in the sea round any island, in a fish pond built on the farm, and in a lobby's water, where the rarer fish are
@@ -38,6 +45,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `I` — backpack. In it: click picks up, places, swaps or merges a stack; right click or `Ctrl`+click (`Cmd` on a Mac) takes one (`Shift`+right click: half); `Shift`+click moves a stack to or from the toolbar; the bin destroys what you carry (not tools); and a click outside the window drops what you carry on the ground at your feet (below)
 - `B` — build (the backpack's Build tab), in groups: fences & walls, paths, blocks to climb, buildings (the workbench, the farm chest, the house, the well), decor, and relics once you have one to show (`BUILD_GROUPS` in `shared/level.js`)
 - `K` — your skills (the backpack's Skills tab)
+- `J` — your fishing journal; `O` — your collection book (the backpack's tabs)
 - `M` — sound and music on or off (the menu has a switch for each)
 - `L` — the menu, on **Play online** (from home)
 - `Enter` — chat (in a lobby)

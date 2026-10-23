@@ -10,78 +10,77 @@ Last updated: 2026-10-23
 ---
 
 ## In progress
-Nothing open right now.
+Open pull requests, each from the backlog below:
+
+- [ ] **World generation 11**: a strawberry bank on the newest lobby islands (#69)
+- [ ] **Weather**: rain that waters the crops, storms with wind, snow in winter (#70)
+- [ ] **More crops**: tomatoes and berry bushes that keep giving, pumpkins to grow; the hoe digs a plant up (#71)
+- [ ] **More Beanstalk plants**: a bounce shroom, a lily leaf, cloud cotton (#72, on #71)
+- [ ] **Trading** between farmers in a lobby (#73, on #72)
+- [ ] **Visiting** a friend's farm to look round (#74)
 
 ---
 
 ## Next up
-Picked to go first, roughly in this order:
-
-1. [ ] **A first-day guide.** A few hints for a new farmer: till, plant,
-   harvest, sell, then go to a lobby. Shown once, can be skipped.
-2. [ ] **Watering can.** Watered crops grow faster; an upgrade at the
-   workbench waters 3×3.
+1. [ ] **Weeds and crows**: first answer the open question below (do they fit
+   a cozy game?), then build them as light as that answer says.
+2. [ ] **More party games**: a fifth one, now that the hop race has shown how
+   (`shared/arenas.js`, `shared/minigame.js`).
 
 ---
 
 ## Backlog by theme
 
 ### Farming
-- [ ] Watering can (see **Next up**)
-- [ ] More crops with seeds from the merchant (tomatoes, pumpkins to grow
-      rather than only cook, berries on bushes on the farm)
 - [ ] Weeds that spread onto untilled ground and have to be hoed away
 - [ ] Crows that land on crops and eat them unless you shoo them (a
       scarecrow keeps them off)
+- [ ] The seed packets say the wrong times (turnip seeds: "about 20
+      seconds"; a turnip takes 100, `CROP_GROW_TIME` in `shared/balance.js`)
 
 ### Beanstalk: plants as platforms
-The original big idea (CONCEPTS.md), not started. A grown plant is one more
-entry in the world's platforms.
-- [ ] A first slice: a vine bean you plant, which grows into a stalk you can
-      climb to reach something you couldn't before
-- [ ] More of them: a bounce shroom, a lily leaf, a stone pumpkin to push, a
-      cloud cotton that is solid only from above
-
-### Getting around
-- [ ] A glider leaf for falling slowly
-- [ ] Faster mounts, or a mount you can ride in a lobby (mounts are just for
-      show now)
+- [ ] A stone pumpkin to push, that holds down switches. It needs two things
+      first: switches (or something else for it to do), and the pushed
+      pumpkin kept in step on a farm with helpers (new messages, and saving
+      where it was pushed to)
+- [ ] Things up high on the farm that only plants reach (the concept's "a gem
+      only the grown plant reaches")
 
 ### World
-- [ ] Weather: rain that waters the crops, wind, a storm now and then
-- [ ] Seasons on the farm (maps can already dress trees in a season's colors)
-- [ ] A new world generation (`CURRENT_GEN` in `shared/worldgen.js`): a new
-      biome for the lobby islands
+- [ ] Weather in lobbies too (the farm has it: #70)
 
 ### Things to do
-- [ ] Quests or requests: the merchant or a neighbour asks for something,
-      for a reward
-- [ ] Achievements or a collection book (fish, relics, recipes, bosses)
-- [ ] A fifth boss
-- [ ] More party games
-
-### Playing together
-- [ ] Trading between farmers in a lobby
-- [ ] Visiting a friend's farm without being a helper (to look round)
+- [ ] More party games (see **Next up**)
 
 ### Tech
-- [ ] Link farms to accounts, so a farm follows you to a new device
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or
       `rapier3d`) once shapes get more complex
-- [ ] Make movement server-authoritative if cheating ever matters
+- [ ] Make movement server-authoritative if cheating ever matters (a trade,
+      #73, trusts each page with its own backpack, as dropping things does)
 
 ---
 
 ## Open questions
 - How hard should falling be? (Now: no cost.)
 - Do crows and weeds fit a cozy game, or should pressure stay very light?
-- Should the Beanstalk climbing be on the home farm, or in its own zone?
+- Should the Beanstalk climbing be on the home farm, or in its own zone? (Now: on the home farm.)
 
 ---
 
 ## Done
 The big pieces so far, newest first:
 
+- A fifth boss, the bog toad, with its arena and mount (#68)
+- The hop race, a fourth party game: hop across the water to the flag (#67)
+- Seasons on the farm (#66)
+- Faster mounts, and riding one in a lobby (#65)
+- The merchant's request of the day (#64)
+- A vine bean that grows into a beanstalk to climb (#63)
+- A collection book (#62)
+- A glider leaf (#61)
+- A watering can, and a big one that waters 3×3 (#60)
+- A first-day guide for a new farmer (#59)
+- Farms linked to accounts: log in on a new device and the farm comes with you
 - Sound and music, made on the spot (no sound files), with M and the menu
   to turn them off; jump buffering and a lower jump when Jump is let go early
 - Party games: king of the hill and last one standing, next to the coin
