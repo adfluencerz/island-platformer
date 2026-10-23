@@ -125,6 +125,7 @@ export function wildMap(island) {
       patch: { color: 0x8a7a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
       glen: { color: 0x3d6b3a, jitter: 0.04, top: [0.006, 0.02], lush: true },
       dune: { color: 0xd9c188, jitter: 0.03, top: [0.006, 0.02] },
+      bank: { color: 0x5f9a3e, jitter: 0.04, top: [0.006, 0.024], lush: true },
     },
     decorTypes: WILD_DECOR,
     foliage: {
@@ -138,6 +139,7 @@ export function wildMap(island) {
       patch: { tufts: 2.2, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.2, light: [0.3, 0.4], hue: [0.1, 0.16] },
       glen: { tufts: 3.2, lushTufts: 1.8, flowerLush: -2, flowerChance: 0, light: [0.22, 0.32], hue: [0.3, 0.36] },
       dune: { tufts: 1.2, lushTufts: 0.6, flowerLush: -2, flowerChance: 0, light: [0.5, 0.6], hue: [0.12, 0.16] },
+      bank: { tufts: 1.8, lushTufts: 1, flowerLush: -2, flowerChance: 0.35, light: [0.32, 0.42], hue: [0.26, 0.32] },
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
@@ -176,6 +178,11 @@ const glenFrondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness
 const plumeGeo = new THREE.ConeGeometry(0.07, 1, 5).translate(0, 0.5, 0);
 const plumeMat = new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 });
 const driftGeo = new THREE.CylinderGeometry(0.13, 0.15, 1, 7).rotateZ(Math.PI / 2);
+// strawberry plants on the bank (generation 11): a low clump of leaves with a berry or two
+const bankLeafGeo = new THREE.SphereGeometry(0.16, 6, 4);
+const bankLeafMat = new THREE.MeshStandardMaterial({ color: 0x3f8f3a, roughness: 0.8 });
+const bankBerryGeo = new THREE.ConeGeometry(0.05, 0.09, 6).rotateX(Math.PI);
+const bankBerryMat = new THREE.MeshStandardMaterial({ color: 0xe0303a, roughness: 0.5 });
 const driftMat = foliageMat(0xb8a58a);
 const driftEndMat = foliageMat(0xd9cdb4);
 const fieldStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1, 5);
@@ -391,6 +398,18 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
       log.castShadow = true;
       log.receiveShadow = true;
       root.add(log);
+    });
+  }
+
+  // Generation 11: low strawberry plants all over the bank (after everything
+  // else drew from rng); you walk through them
+  if (island.bank) {
+    scatter(40, 1, (x, z) => tileAt(x, z) === 'bank' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + rand(0, 1);
+        addDecor(bankLeafGeo, bankLeafMat, x + Math.cos(a) * 0.12, 0.05, z + Math.sin(a) * 0.12, 1, 0.35, 1, root);
+      }
+      for (let i = 0, n = 1 + Math.floor(rng() * 2); i < n; i++) addDecor(bankBerryGeo, bankBerryMat, x + rand(-0.15, 0.15), 0.08, z + rand(-0.15, 0.15), 1, 1, 1, root);
     });
   }
 

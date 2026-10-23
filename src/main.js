@@ -526,11 +526,16 @@ const GATHER_REACH = 1.6;
 const USE_HEIGHT = 1.2; // how far above or below the feet E reaches (from a step or a platform)
 // Standing (not mid-jump) with the feet within USE_HEIGHT of y (crops, trees and rocks: the ground's 0)
 const footReach = (y = 0) => player.onGround && Math.abs(player.position.y - GROUND_STAND_Y - y) < USE_HEIGHT;
-const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins', fern: 'Pick ferns', seashell: 'Collect shells', sky_chest: 'Open the chest', sky_vault: 'Unlock the chest' };
+const GATHER_VERB = { bush: 'Pick berries', mushroom: 'Pick mushrooms', heather: 'Pick heather', cattail: 'Cut cattails', bluebell: 'Pick bluebells', sunflower: 'Pick sunflowers', pumpkin: 'Pick pumpkins', fern: 'Pick ferns', seashell: 'Collect shells', sky_chest: 'Open the chest', sky_vault: 'Unlock the chest', strawberry: 'Pick strawberries' };
 const CHEST_ROOM = 3; // free backpack slots a sky isle's chest asks for, since what is in it is a surprise
 
 const berryGeo = new THREE.SphereGeometry(0.085, 6, 5);
 const berryMat = new THREE.MeshStandardMaterial({ color: 0xd8344f, roughness: 0.35 });
+// (wild strawberries, generation 11: a low clump of leaves, red berries)
+const strawberryLeafGeo = new THREE.SphereGeometry(0.2, 6, 4);
+const strawberryLeafMat = new THREE.MeshStandardMaterial({ color: 0x3f8f3a, roughness: 0.8 });
+const strawberryGeo = new THREE.ConeGeometry(0.07, 0.13, 6).rotateX(Math.PI);
+const strawberryMat = new THREE.MeshStandardMaterial({ color: 0xe0303a, roughness: 0.45 });
 const stalkGeo = new THREE.CylinderGeometry(0.07, 0.09, 0.28, 7).translate(0, 0.14, 0);
 const capGeo = new THREE.SphereGeometry(0.25, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.25, 0);
 const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf2e8d0, roughness: 0.8 });
@@ -620,6 +625,22 @@ function makeSpotView(spot) {
       frond.rotation.set(Math.sin(a) * 0.55, 0, -Math.cos(a) * 0.55);
       frond.scale.set(1, 0.8 + (i % 3) * 0.15, 1);
       content.add(frond);
+    }
+  } else if (spot.kind === 'strawberry') {
+    // A low leafy clump, ripe red berries peeping out
+    content = new THREE.Group();
+    for (let i = 0; i < 6; i++) {
+      const a = i * 2.4;
+      const leaf = new THREE.Mesh(strawberryLeafGeo, strawberryLeafMat);
+      leaf.position.set(Math.cos(a) * 0.2, 0.07, Math.sin(a) * 0.2);
+      leaf.scale.set(1, 0.4, 1);
+      content.add(leaf);
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = i * 1.9 + 0.5;
+      const berry = new THREE.Mesh(strawberryGeo, strawberryMat);
+      berry.position.set(Math.cos(a) * 0.24, 0.1, Math.sin(a) * 0.24);
+      content.add(berry);
     }
   } else if (spot.kind === 'seashell') {
     // A few shells half sunk in the sand

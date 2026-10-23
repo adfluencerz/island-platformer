@@ -50,6 +50,7 @@ export const SHOP = {
   pumpkin: { sell: 50 },
   fern: { sell: 40 },
   seashell: { sell: 40 },
+  strawberry: { sell: 30 },
   gem: { sell: 200 },
   ...Object.fromEntries(RELICS.map((relic) => [relic, { sell: 400 }])), // (the sky isles' relics)
   wood: { sell: 6 },
@@ -310,6 +311,7 @@ export const LOBBY_SPOTS = {
   pumpkin: { regrow: [30, 45], loot: [['pumpkin', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 7)
   fern: { regrow: [30, 45], loot: [['fern', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 8)
   seashell: { regrow: [30, 45], loot: [['seashell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 9)
+  strawberry: { regrow: [30, 45], loot: [['strawberry', 0.93, 2, 4], ['golden_seeds', 0.07, 1, 1]] }, // (generation 11)
   meadow: {
     regrow: [30, 50],
     loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.04, 1, 1], ...bossPieces(0.025)],

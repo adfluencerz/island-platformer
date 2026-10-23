@@ -25,6 +25,7 @@
 // Generation 7 added the pumpkin patch. Generation 8 added the fern glen.
 // Generation 9 added the shell dunes. Generation 10 added the sky isles
 // (shared/skyisles.js): landmasses floating overhead, up stairs of floating steps.
+// Generation 11 added the strawberry bank.
 
 import { growSkyIsles, skyOver as skyOverIn, checkSky } from './skyisles.js';
 
@@ -34,13 +35,14 @@ export const WILD_HALF = 34; // tiles reach this far from the middle, on both ax
 const WIDE_HALF = 68; // and from generation 3 on: twice as wide
 export const STONE_CIRCLE = 3.6; // radius of the standing stones around the arrival spot
 export const THEMES = ['spring', 'autumn', 'blossom'];
-export const CURRENT_GEN = 10;
+export const CURRENT_GEN = 11;
 export const HEATH_RADIUS = [4.5, 6]; // the heath's size (gen 2)
 export const GLADE_RADIUS = [4.5, 6.5]; // the bluebell glade's size (gen 5, on islands twice as wide)
 export const FIELD_RADIUS = [5, 7]; // the sunflower field's size (gen 6, on islands twice as wide)
 export const PATCH_RADIUS = [4.5, 6.5]; // the pumpkin patch's size (gen 7, on islands twice as wide)
 export const GLEN_RADIUS = [4.5, 6.5]; // the fern glen's size (gen 8, on islands twice as wide)
 export const DUNES_RADIUS = [4.5, 6.5]; // the shell dunes' size (gen 9, on islands twice as wide)
+export const BANK_RADIUS = [4, 5.5]; // the strawberry bank's size (gen 11, on islands twice as wide)
 export const MARSH_RADIUS = [5, 7]; // the reed marsh's size (gen 4, on islands twice as wide)
 
 // Which generation of the world a seed grows: "...-v2" is 2 (up to "-v19"), any other seed 1
@@ -159,6 +161,7 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 //   glen: { x, z, r } | undefined: a fern glen (generation 8 and up)
 //   dunes: { x, z, r } | undefined: shell dunes by the shore (generation 9 and up)
 //   sky: [isle, ...] | undefined: the sky isles (generation 10 and up; shared/skyisles.js)
+//   bank: { x, z, r } | undefined: a strawberry bank (generation 11 and up)
 //   spots: [[kind, x, y, z], ...]: a spot's id is its index
 function finishIsland(desc) {
   const { coast, pond } = desc;
@@ -186,8 +189,9 @@ function finishIsland(desc) {
   // what the ground is at (x, z): null (the sea), 'pond', 'sand', 'stone' (the
   // stone circle), 'path', 'meadow', 'heath' (the moor), 'marsh' (the reeds),
   // 'glade' (the bluebells), 'field' (the sunflowers), 'patch' (the pumpkins),
-  // 'glen' (the ferns), 'dune' (the shell dunes), 'moss' (the woods) or 'grass'
-  const { spawn, meadow, trails, heath, marsh, glade, field, patch, glen, dunes } = desc;
+  // 'glen' (the ferns), 'dune' (the shell dunes), 'bank' (the strawberries),
+  // 'moss' (the woods) or 'grass'
+  const { spawn, meadow, trails, heath, marsh, glade, field, patch, glen, dunes, bank } = desc;
   const groundAt = (x, z) => {
     if (!isLand(x, z)) return null;
     if (inPond(x, z)) return 'pond';
@@ -223,6 +227,10 @@ function finishIsland(desc) {
     if (dunes) {
       const d = Math.atan2(z - dunes.z, x - dunes.x);
       if (Math.hypot(x - dunes.x, z - dunes.z) < dunes.r + Math.sin(d * 5 + 3) * 0.9) return 'dune';
+    }
+    if (bank) {
+      const b = Math.atan2(z - bank.z, x - bank.x);
+      if (Math.hypot(x - bank.x, z - bank.z) < bank.r + Math.sin(b * 4 + 1) * 0.8) return 'bank';
     }
     if (woodsAt(x, z) > 0) return 'moss';
     return 'grass';
@@ -326,6 +334,7 @@ const SUNFLOWER_SPOTS = 5; // (gen 6)
 const PUMPKIN_SPOTS = 5; // (gen 7)
 const FERN_SPOTS = 5; // (gen 8)
 const SEASHELL_SPOTS = 5; // (gen 9)
+const STRAWBERRY_SPOTS = 6; // (gen 11)
 // How big an island grows and how much is on it: up to generation 2 as it
 // always did; from generation 3 on twice as wide, with more of everything
 // (several climbs and rings of toadstools, more woods, trails out to them all)
@@ -764,6 +773,14 @@ function growIsland(seed, attempt) {
     dunes = growDunes(seed, attempt, { draft, shoreDist, groundOk, inland, taken, pond, meadow, spawn, others: [...others, glen?.area], grow: size.heath });
     for (const spot of dunes?.spots ?? []) spots.push(spot);
   }
+  // Generation 11: the strawberry bank. (Its spots before the sky isles', so
+  // those still come last; generation 10 islands grow none, so theirs keep
+  // their ids.)
+  let bank;
+  if (genOf(seed) >= 11) {
+    bank = growBank(seed, attempt, { draft, shoreDist, groundOk, inland, taken, pond, meadow, spawn, others: [...others, glen?.area, dunes?.area], grow: size.heath });
+    for (const spot of bank?.spots ?? []) spots.push(spot);
+  }
   // Generation 10: the sky isles, last of all. (Up there, so they only keep
   // clear of what is on the ground where their stairs come down.)
   let sky;
@@ -771,7 +788,7 @@ function growIsland(seed, attempt) {
     sky = growSkyIsles({ stream, draft, shoreDist, inland, taken, onTrail: (x, z) => distToPaths(x, z, trails) < 2.2, spawn, circle: STONE_CIRCLE });
     for (const spot of sky?.spots ?? []) spots.push(spot);
   }
-  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }), ...(patch && { patch: patch.area }), ...(glen && { glen: glen.area }), ...(dunes && { dunes: dunes.area }), ...(sky && { sky: sky.sky }) });
+  const island = finishIsland({ ...draft, spots, ...(heath && { heath: heath.area }), ...(marsh && { marsh: marsh.area }), ...(glade && { glade: glade.area }), ...(field && { field: field.area }), ...(patch && { patch: patch.area }), ...(glen && { glen: glen.area }), ...(dunes && { dunes: dunes.area }), ...(bank && { bank: bank.area }), ...(sky && { sky: sky.sky }) });
   return checkIsland(island).length ? null : island;
 }
 
@@ -1019,6 +1036,11 @@ const growGlen = (seed, attempt, opts) =>
 // driftwood and seashells to collect
 const growDunes = (seed, attempt, opts) =>
   growPlace(seed, attempt, { ...opts, name: 'dunes', kind: 'seashell', radius: DUNES_RADIUS, near: [0.6, 0.9], shore: 0.5, edge: 1.4, want: SEASHELL_SPOTS });
+
+// Generation 11: a sunny bank of wild strawberries, low and leafy, with
+// berries to pick
+const growBank = (seed, attempt, opts) =>
+  growPlace(seed, attempt, { ...opts, name: 'bank', kind: 'strawberry', radius: BANK_RADIUS, near: [0.15, 0.95], shore: 0.5, edge: 1.5, want: STRAWBERRY_SPOTS });
 
 const round1 = (v) => Math.round(v * 10) / 10;
 const round2 = (v) => Math.round(v * 100) / 100;

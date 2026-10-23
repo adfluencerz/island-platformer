@@ -49,7 +49,7 @@ const waves = (a, list) => list.reduce((sum, [amp, freq, phase]) => sum + amp * 
 // How far an isle's edge is from its middle, by direction
 export const rimAt = (isle, angle) => isle.r + waves(angle, isle.waves);
 const rimMin = (isle) => isle.r - isle.waves.reduce((sum, [amp]) => sum + amp, 0);
-const rimMax = (isle) => isle.r + isle.waves.reduce((sum, [amp]) => sum + amp, 0);
+export const rimMax = (isle) => isle.r + isle.waves.reduce((sum, [amp]) => sum + amp, 0); // (as far out as its rim goes)
 export const onIsle = (isle, x, z, margin = 0) => Math.hypot(x - isle.x, z - isle.z) < rimAt(isle, Math.atan2(z - isle.z, x - isle.x)) + margin;
 
 // The isle, or the step, over (x, z), give or take margin: { x, z, w, d, top } (an isle's w and d are its widest)
