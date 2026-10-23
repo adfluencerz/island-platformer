@@ -42,6 +42,8 @@ import { CROPS, createCropView, BEAN_LEDGES, BEAN_CROWN } from './crops.js';
 import { BEANSTALK } from '../shared/balance.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { createSeasons } from './seasons.js';
+import { createWeather } from './weather.js';
+import { rainSince } from '../shared/weather.js';
 import * as sound from './sound.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
@@ -181,6 +183,8 @@ const startHour = Number(new URLSearchParams(location.search).get('hour') ?? 6);
 const dayNight = createDayNight({ scene, sun, hemi, startHour: Number.isFinite(startHour) ? startHour : 6 });
 // The farm's seasons (seasons.js): its colors, by its clock
 const seasons = createSeasons(HOME);
+// ...and its weather (weather.js): rain, storms, snow in winter
+const weather = createWeather({ scene, dayNight, count: LOWGFX ? 300 : 900 });
 
 // ---------- Worlds ----------
 // Two places to be (maps.js, built by world.js): your farm's island, and the
@@ -410,6 +414,13 @@ function markWatered(key) {
   if (!crop) return;
   crop.watered = true;
   setWet(key, true);
+}
+
+// Rain from `from` to `to` (the farm's game hours) waters every crop growing
+// out in it (shared/weather.js). On a farm with helpers the room does (WATERED).
+function rainOnCrops(from, to) {
+  if (farmNet || rainSince(from, to) === null) return;
+  for (const [key, crop] of crops) if (!crop.ripe && !crop.watered && !crop.pending) markWatered(key);
 }
 
 // Returns true if there was a ripe crop here (even if the bag was too full to take it).
@@ -3892,8 +3903,14 @@ function showFarm(farm) {
   machines.restore(farm.machines, farmHours()); // (what was in them, done or not by now)
   placeChest();
   showFarmWilds(farm);
+  // (rain while we were away watered what was growing then: shared/weather.js)
+  const rained = rainSince(farm.hours, farmHours());
+  const hour = DAY_LENGTH_SECONDS / 24;
   for (const [key, cropId, age, watered] of farm.crops) {
-    if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, age + away * (watered ? WATERED_GROWTH : 1)) && watered) markWatered(key);
+    if (!CROPS[cropId]) continue;
+    const wet = watered || (rained !== null && age + (rained - farm.hours) * hour < CROPS[cropId].growTime);
+    const rainy = wet && !watered ? (farmHours() - rained) * hour * (WATERED_GROWTH - 1) : 0; // (growing faster from when it came)
+    if (plantAt(...keyXZ(key), cropId, age + away * (watered ? WATERED_GROWTH : 1) + rainy) && wet) markWatered(key);
   }
   animals.restore(farm, farmHours()); // (the eggs due while we were away are in the nest)
 }
@@ -4051,7 +4068,11 @@ function update(dt) {
   const glide = !player.onGround && player.velocity.y < 0 && keys.has('Space') && !inputBlocked() && inventory.count('glider_leaf') > 0;
   if (glide && !gliding) sound.play('glide');
   gliding = glide;
-  if (gliding) player.velocity.y = Math.max(player.velocity.y, -GLIDE.fall);
+  if (gliding) {
+    player.velocity.y = Math.max(player.velocity.y, -GLIDE.fall);
+    player.velocity.x += weather.wind.x; // (a storm's wind takes a glider with it: src/weather.js)
+    player.velocity.z += weather.wind.z;
+  }
   glider.update(dt, gliding, clock.elapsedTime);
 
   const prevY = player.position.y;
@@ -4135,7 +4156,7 @@ function update(dt) {
   rollFarmGiants();
   bosses.update(dt, t);
   giantBars.update(t);
-  windTime.value = t;
+  windTime.value += dt * (1 + weather.wind.length() * 0.6); // (the grass sways harder in a storm's wind)
   _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
   world.updateTreeFade(dt, _chest, camera);
   if (place === 'lobby') updateSkyFade(dt, _chest, camera); // (and sky isles over us: src/skyisles.js)
@@ -4162,8 +4183,11 @@ function update(dt) {
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
+  if (place === 'home') rainOnCrops(hoursBefore - 24, farmHours()); // (hoursBefore counts from day 1's end)
   buildings.setNight(dayNight.night(), player.position);
-  dayNight.setNote(place !== 'lobby' ? seasons.update(dayNight.day(), dayNight.hour(), dayNight.night()) : null); // (a lobby's island keeps its own)
+  const season = place !== 'lobby' ? seasons.update(dayNight.day(), dayNight.hour(), dayNight.night()) : null; // (a lobby's island keeps its own)
+  const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: houseRoom.inside(player.position) });
+  dayNight.setNote(season && (sky ? `${season} · ${sky}` : season));
   machines.update(farmHours(), t, dt);
   updateMeal(dt);
   houseRoom.setNight(dayNight.night());
@@ -4243,7 +4267,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, weather };
 }
 
 loadGame();
