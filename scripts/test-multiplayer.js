@@ -959,7 +959,7 @@ await test('king of the hill: time on the crown counts, a second a point; empty 
   assert.ok(new Map(c.conn.last(S.GAME_SCORE).scores).get(a.p.id) <= 4);
   // empty hands shove in this arena; not in the lobby
   room.message(b.p, { t: C.BOP, weapon: 'shove', yaw: -Math.PI / 2 });
-  assert.equal(a.conn.last(S.BOPPED).knock, MINIGAMES.king_of_hill.shove.knock);
+  assert.equal(a.conn.last(S.BOPPED).knock, MINIGAMES.shove.knock);
   stand(c, 0, 0.8, -20);
   const before = a.conn.all(S.BOPPED).length;
   room.message(c.p, { t: C.BOP, weapon: 'shove', yaw: 0 });
@@ -972,6 +972,68 @@ await test('king of the hill: time on the crown counts, a second a point; empty 
   const end = c.conn.last(S.GAME_END);
   assert.equal(end.winner, a.p.id);
   assert.match(c.conn.last(S.CHAT).text, /Ann won the king of the hill with \d+ s on top!/);
+});
+// Last one standing's arena's fingerprint: its tiles, the order they drop in, the islet
+const floorPrint = (a) => arenaPrint({ coast: a.coast, bales: [a.tiles, a.order], coins: [] });
+const FLOOR_SEEDS = { 'meadow': 3168082783, 'dewy-glade-31': 408035169 }; // (as for coin rush: these must never change)
+await test('every seed grows a sound last one standing arena, the same every time', () => {
+  const { ms, graceMs, quietMs, keep } = MINIGAMES.last_one;
+  for (let i = 0; i < 200; i++) {
+    const seed = `floor-${i}`;
+    const arena = arenaFor('last_one', seed, { cached: false });
+    assert.ok(arena, seed);
+    assert.deepEqual(checkArena(arena), [], seed);
+    const falls = arena.fallAt.filter(Number.isFinite);
+    assert.equal(falls.length, arena.tiles.length - keep, seed);
+    assert.ok(Math.min(...falls) > graceMs && Math.max(...falls) <= ms - quietMs + 1, seed);
+    assert.ok(arena.isLand(arena.watch(0, 1).x, arena.watch(0, 1).z), `${seed}: washed up on the islet`);
+    assert.equal(floorPrint(arenaFor('last_one', seed, { cached: false })), floorPrint(arena));
+  }
+  for (const [seed, print] of Object.entries(FLOOR_SEEDS)) assert.equal(floorPrint(arenaFor('last_one', seed, { cached: false })), print, seed);
+});
+
+// a and b (and c, if `three`) in a game of last one standing, playing from `now`
+function lastOneRoom(three = false) {
+  const party = partyRoom();
+  const { room, a, b, c, sign, stand } = party;
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'last_one' });
+  room.message(b.p, { t: C.GAME_JOIN });
+  if (three) room.message(c.p, { t: C.GAME_JOIN });
+  let now = Date.now() + MINIGAMES.gatherMs + 10;
+  room.update(now);
+  room.update((now += MINIGAMES.readyMs));
+  return { ...party, now };
+}
+await test('last one standing: whoever falls in is out; the last one up wins, there and then', () => {
+  let { room, a, b, c, stand, now } = lastOneRoom(true);
+  const { arena } = room.party.game;
+  assert.deepEqual(room.party.wire(now).top, [a.p.id, b.p.id, c.p.id]);
+  room.update((now += 5000));
+  stand(a, a.p.x, -1, a.p.z); // splash
+  room.update((now += 50));
+  const score = b.conn.last(S.GAME_SCORE);
+  assert.deepEqual(score.top, [b.p.id, c.p.id]);
+  assert.equal(new Map(score.scores).get(a.p.id), 5);
+  stand(a, a.p.x, 0.8, a.p.z); // (back up: still out)
+  const islet = arena.watch(0, 3);
+  stand(c, islet.x, islet.y, islet.z); // washed up on the islet: out too
+  room.update((now += 3000));
+  const end = b.conn.last(S.GAME_END);
+  assert.deepEqual(end.winners, [b.p.id]);
+  assert.equal(end.winner, b.p.id);
+  assert.deepEqual(end.scores.map(([id]) => id), [b.p.id, c.p.id, a.p.id]);
+  assert.match(b.conn.last(S.CHAT).text, /Bo won the last one standing with 8 s up!/);
+  assert.equal(new Map(end.prizes).get(b.p.id).length, 2);
+});
+
+await test('last one standing: everyone still up when the time runs out wins', () => {
+  let { room, a, b, now } = lastOneRoom();
+  room.update((now += MINIGAMES.last_one.ms + 50));
+  const end = a.conn.last(S.GAME_END);
+  assert.deepEqual(end.winners.toSorted(), [a.p.id, b.p.id].toSorted());
+  assert.ok(end.prizes.every(([, got]) => got.length === 2), 'a prize each');
+  assert.match(a.conn.last(S.CHAT).text, /(Ann and Bo|Bo and Ann) won the last one standing/);
 });
 
 await test('bigger rocks give more stone, within the sizes rocks come in', () => {

@@ -686,10 +686,18 @@ export const MINIGAMES = {
   // Coin rush: the most coins picked up before the time runs out (the coins
   // are the game's, only for the score; the prize is real ones)
   coin_rush: { ms: 60_000, coins: [36, 48], high: 0.3 }, // high: the share of coins up on the hay bales
-  // King of the hill: the most seconds stood on top of the hill. Anyone in
-  // the arena can shove with empty hands (as WEAPONS, a little weaker than
-  // the wooden sword); a sword or mallet in hand bops as ever.
-  king_of_hill: { ms: 60_000, shove: { reach: 1.7, knock: 6, every: 900 } },
+  // King of the hill: the most seconds stood on top of the hill
+  king_of_hill: { ms: 60_000 },
+  // Last one standing: the tiles drop one by one after graceMs, each warnMs
+  // after it starts to wobble, the first ones `slowdown` times further apart
+  // than the last; all but `keep` are down quietMs before the end. Whoever
+  // falls in is out. Last up wins; if a few are still up at the end, they
+  // all win. startR: how far round the middle everyone starts.
+  last_one: { ms: 60_000, graceMs: 4000, warnMs: 1200, slowdown: 3, quietMs: 8000, keep: 2, startR: 3 },
+  // In the arenas of the games that say so (GAMES), empty hands shove (as
+  // WEAPONS, a little weaker than the wooden sword); a sword or mallet in
+  // hand bops as ever
+  shove: { reach: 1.7, knock: 6, every: 900 },
   // Fishing contest: the most weight of fish landed (FISHING.contest, a rod
   // lent to anyone without one), off the shore of a little island. `bite`:
   // seconds till a bite, for every rod alike

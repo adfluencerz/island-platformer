@@ -56,6 +56,7 @@ import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn, onBoard, weightText } from './fishing.js';
 import { DAY_LENGTH_SECONDS, SKILLS, SHOP, BOOSTS, MINIGAMES } from './balance.js';
+import { GAMES } from './arenas.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 
@@ -317,9 +318,9 @@ export class Room extends Place {
         break;
       }
       case C.BOP: {
-        // (in king of the hill's arena, empty hands shove)
-        const shoving = msg.weapon === 'shove' && p.game && this.party.game?.kind === 'king_of_hill';
-        const weapon = shoving ? MINIGAMES.king_of_hill.shove : Object.hasOwn(WEAPONS, msg.weapon) ? WEAPONS[msg.weapon] : null;
+        // (in the arenas of games that say so, GAMES, empty hands shove)
+        const shoving = msg.weapon === 'shove' && p.game && GAMES[this.party.game?.kind]?.shove;
+        const weapon = shoving ? MINIGAMES.shove : Object.hasOwn(WEAPONS, msg.weapon) ? WEAPONS[msg.weapon] : null;
         const now = Date.now();
         if (!weapon || now - p.bopAt < weapon.every - 150 || this.resting(p)) return;
         p.bopAt = now;

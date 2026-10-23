@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { hashSeed } from '../shared/worldgen.js';
+import { TILE, TILE_GAP } from '../shared/arenas.js';
+import { MINIGAMES } from '../shared/balance.js';
 import { createItemMesh } from './itemmesh.js';
 
 // ---------- Party game arenas ----------
@@ -7,7 +9,9 @@ import { createItemMesh } from './itemmesh.js';
 // maps.js are), from the arena a seed grows (shared/arenas.js): a round
 // meadow in the sea with hay bales to climb and, for a coin rush, its coins
 // floating about; for king of the hill, a stepped hill in the middle with a
-// flag on its crown. arenaMap(arena).coins is filled in as the world is built:
+// flag on its crown; for last one standing, a floor of tiles over the sea
+// (arenaMap(arena).dropTiles(ms) drops the ones due by ms into the game) and
+// an islet off to the side. arenaMap(arena).coins is filled in as the world is built:
 // a view per coin, by its id, for the page to hide as they are picked up.
 
 const baleMat = new THREE.MeshStandardMaterial({ color: 0xe0c060, roughness: 0.95, flatShading: true });
@@ -20,7 +24,7 @@ const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, roughness: 0.3
 
 export function arenaMap(arena) {
   const coins = [];
-  return {
+  const map = {
     name: `arena:${arena.game}:${arena.seed}`,
     seed: hashSeed(`arena/${arena.game}/${arena.seed}`),
     half: arena.half,
@@ -37,14 +41,61 @@ export function arenaMap(arena) {
     platforms: [],
     keepClear: [[0, 0, 2.6], ...arena.coins.map(([x, , z]) => [x, z, 0.5]), ...arena.hill.map(([x, z, w, d]) => [x, z, Math.hypot(w, d) / 2])],
     coins,
-    build: (ctx) => buildArena(arena, ctx, coins),
+    dropTiles: () => {},
+    build: (ctx) => buildArena(arena, ctx, coins, map),
     decorate({ scatter, addBush, isOpenGround }) {
+      if (arena.tiles.length) return; // (the islet is for washing up on)
       scatter(10, 3, (x, z) => isOpenGround(x, z, 1) && Math.hypot(x, z) > arena.coast.r - 4, addBush);
     },
   };
+  return map;
 }
 
-function buildArena(arena, { root, addCollider }, coins) {
+// Last one standing's tiles: checkered, cream and mint; one about to drop
+// wobbles and blushes, then falls into the sea
+const tileColors = [0xf3e6c4, 0xbfe3b4];
+const blush = new THREE.Color(0xf2a07a);
+function buildTiles(arena, { root, addCollider, removeCollider }, map) {
+  const size = TILE - TILE_GAP;
+  const geo = new THREE.BoxGeometry(size, 0.5, size);
+  const views = arena.tiles.map(([x, z], id) => {
+    const base = new THREE.Color(tileColors[(Math.round(x / TILE) + Math.round(z / TILE)) & 1]);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: base, roughness: 0.8, flatShading: true }));
+    mesh.position.set(x, -0.25, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    root.add(mesh);
+    const dims = { x, y: -0.25, z, w: size, h: 0.5, d: size };
+    return { id, mesh, base, dims, box: addCollider(dims) };
+  });
+  // Every frame: each tile as it is `ms` into the game
+  const { warnMs } = MINIGAMES.last_one;
+  map.dropTiles = (ms) => {
+    for (const v of views) {
+      const at = arena.fallAt[v.id];
+      const { mesh } = v;
+      if (ms >= at) {
+        if (v.box) removeCollider(v.box);
+        v.box = null;
+        const s = (ms - at) / 1000;
+        mesh.position.y = -0.25 - 9 * s * s;
+        mesh.rotation.set(s * 0.8, 0, s * 0.5);
+        mesh.visible = mesh.position.y > -10;
+        continue;
+      }
+      if (!v.box) v.box = addCollider(v.dims); // (back, for a game afresh)
+      mesh.visible = true;
+      const warn = ms > at - warnMs ? 1 - (at - ms) / warnMs : 0;
+      mesh.position.set(v.dims.x + Math.sin(ms * 0.07) * 0.04 * warn, -0.25 - 0.05 * warn, v.dims.z);
+      mesh.rotation.set(Math.sin(ms * 0.05) * 0.05 * warn, 0, Math.cos(ms * 0.06) * 0.05 * warn);
+      mesh.material.color.copy(v.base).lerp(blush, warn);
+    }
+  };
+}
+
+function buildArena(arena, ctx, coins, map) {
+  const { root, addCollider } = ctx;
+  if (arena.tiles.length) buildTiles(arena, ctx, map);
   // Hay bales, tied round with twine; a stacked one stands on the one under it
   for (const [x, z, w, d, top] of arena.bales) {
     const h = top > 1.2 ? 1.2 : top;

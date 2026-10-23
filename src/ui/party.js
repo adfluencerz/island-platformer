@@ -111,6 +111,14 @@ export class PartyHud {
     }
     const clock = g.phase === 'ready' ? 'Get ready…' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     this.title.textContent = `${name} · ${clock}`;
+    const who = (id) => (id === this.myId ? 'You' : this.nameOf(id));
+    if (g.kind === 'last_one' && g.phase === 'playing') {
+      // who is still up, and how long the others lasted
+      const up = g.players.filter(([id]) => g.top?.includes(id)).map(([id]) => who(id));
+      const out = g.players.filter(([id]) => !g.top?.includes(id)).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      this.line.textContent = [`Up: ${up.join(', ') || 'nobody'}`, ...out.map(([id, score]) => `${who(id)} ${scoreText(g.kind, score)}`)].join(' · ');
+      return;
+    }
     const ranked = [...g.players].sort((a, b) => b[1] - a[1]);
     const mine = ranked.find(([id]) => id === this.myId);
     const top = ranked.slice(0, 3).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(g.kind, score)}`);
@@ -119,14 +127,17 @@ export class PartyHud {
   }
 
   // It is over (GAME_END): who won, and what we got ([[item, count], ...], or null)
-  results({ game, winner, scores }, got, itemName) {
+  results({ game, winner, winners = [winner], scores }, got, itemName) {
     this.game = null;
     this.choosing = false;
     this.root.hidden = false;
     this.root.classList.add('playing');
     this.buttons.textContent = '';
     const name = GAMES[game]?.name ?? 'Party game';
-    this.title.textContent = winner === this.myId ? `You won the ${name.toLowerCase()}!` : winner ? `${this.nameOf(winner)} won the ${name.toLowerCase()}` : `The ${name.toLowerCase()} is over`;
+    const others = winners.filter((id) => id && id !== this.myId).map((id) => this.nameOf(id));
+    this.title.textContent = winners.includes(this.myId)
+      ? `You${others.length ? ` and ${others.join(', ')}` : ''} won the ${name.toLowerCase()}!`
+      : others.length ? `${others.join(' and ')} won the ${name.toLowerCase()}` : `The ${name.toLowerCase()} is over`;
     const board = scores.slice(0, 4).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(game, score)}`).join(' · ');
     const prize = got?.length ? ` · You got ${got.map(([item, count]) => `${count} ${itemName(item, count)}`).join(' and ')}` : '';
     this.line.textContent = board + prize;
