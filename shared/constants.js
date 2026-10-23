@@ -37,6 +37,7 @@ export const PLAYER_COLORS = [0xff5533, 0x3fa7ff, 0xffd23f, 0x7ed957, 0xc77dff, 
 // Close codes a room or the lobby ends a socket with; the client shows the reason
 // instead of trying to reconnect.
 export const CLOSE = {
+  STARTED: 4003, // a lobby whose game is under way (or over) takes nobody new
   NO_GAME: 4004,
   FULL: 4005,
   VERSION: 4006,
@@ -46,6 +47,7 @@ export const CLOSE = {
   NO_ACCOUNT: 4010, // a lobby is for farmers logged in to an account
 };
 export const CLOSE_TEXT = {
+  [CLOSE.STARTED]: 'That lobby’s game has started: start a lobby of your own, or try Quick join.',
   [CLOSE.NO_GAME]: 'That lobby does not exist (any more).',
   [CLOSE.FULL]: 'That lobby is full.',
   [CLOSE.VERSION]: 'The server runs a newer version of the game. Reload the page.',

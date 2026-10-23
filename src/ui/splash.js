@@ -3,10 +3,11 @@
 // for one part, which says where you are and what the big button does: Go to
 // my farm on the title screen, Resume in game, and Go home when away from
 // home. The rest is on pages:
-// - Play online: Start a lobby (ticking the friends to invite: they get an
-//   invitation right away, and PARTY_MS later the lobby opens for everyone who
-//   said yes; server/presence.js), Quick join (the fullest lobby with room, or
-//   a new one), Browse, or a code from a friend: a lobby's, or an invitation
+// - Play online: Start a lobby (picking its party game, shared/minigame.js,
+//   and ticking the friends to invite: they get an invitation right away,
+//   and PARTY_MS later the lobby opens for everyone who said yes;
+//   server/presence.js), Quick join (the fullest lobby with room whose game
+//   hasn't started, or a new loot run), Browse, or a code from a friend: a lobby's, or an invitation
 //   to help on their farm (8 long, so the two can't be mixed up). In a lobby,
 //   its code and invite link, and friends to invite to it now.
 // - Friends: your friends (who is online, asking for new ones by username,
@@ -26,9 +27,12 @@ import { PASSWORD_LENGTH, usernameProblem, passwordProblem } from '../../shared/
 import { listLobbies, lobbyInfo, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode, inviteLink, helpLink } from '../net/lobby.js';
 import { el, button, copyText, hexColor } from './dom.js';
 import { addHelp } from './hud.js';
+import { LOBBY_GAMES } from '../../shared/arenas.js';
 import * as sound from '../sound.js';
 
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
+// ", a loot run": what a lobby is for, after its name ('' for none)
+const gameText = (kind) => (LOBBY_GAMES[kind] ? `, a ${LOBBY_GAMES[kind].name.toLowerCase()}` : '');
 
 const HOME_TIP_STORE = 'tp.homeTip';
 
@@ -56,7 +60,7 @@ export class Splash {
   // onLogout(). onColor(color): a new shirt color.
   // onFriends(): { friends: [{ id, name, color, online, where }], asks: [{ id, name }] }.
   // onAddFriend(username): { name, friends }. onAnswerFriend(id, yes). onRemoveFriend(id).
-  // onStartParty(ids): start a lobby, inviting those friends (partyStatus() and
+  // onStartParty(ids, game): start a lobby for that game (LOBBY_GAMES), inviting those friends (partyStatus() and
   // partyOver() say how it goes). onCancelParty(). onInviteToLobby(ids): to the one we are in.
   constructor(options) {
     Object.assign(this, options);
@@ -140,16 +144,21 @@ export class Splash {
     button('ui-btn', row, 'Quick join', () => this.play(''));
     button('ui-btn', row, 'Browse lobbies', () => this.showBrowse());
     this.codeForm(online, 'Code from a friend');
-    el('div', 'ui-muted', online, 'A lobby lasts as long as farmers are on it, and nothing on its island grows back.');
+    el('div', 'ui-muted', online, 'A lobby is one party game: everyone in it plays, and then heads home. Nothing on its island grows back.');
 
     // ---- Browse ----
     const browse = this.page('browse', 'Lobbies', 'online');
     this.list = el('div', 'ui-list', browse);
     button('ui-btn ui-btn-ghost', browse, 'Refresh', () => this.showBrowse());
 
-    // ---- Start a lobby: the friends to invite ----
+    // ---- Start a lobby: its game, and the friends to invite ----
     const startPage = this.page('start', 'Start a lobby', 'online');
-    el('div', 'ui-muted', startPage, `Tick the friends to invite: they get an invitation right away. The lobby opens in ${PARTY_MS / 1000} seconds, for everyone who said yes.`);
+    el('div', 'ui-sub', startPage, 'Which game?');
+    this.gameButtons = el('div', 'ui-game-pick', startPage);
+    this.gameBlurb = el('div', 'ui-muted', startPage);
+    this.pickGame('loot_run');
+    el('div', 'ui-sub', startPage, 'Who’s coming?');
+    el('div', 'ui-muted', startPage, `Tick the friends to invite: they get an invitation right away. The lobby opens in ${PARTY_MS / 1000} seconds, for everyone who said yes; then the game starts, and afterwards everyone heads back to their farm.`);
     this.startList = el('div', 'ui-helper-list', startPage);
     button('ui-btn ui-btn-big', startPage, 'Start', () => this.startParty());
 
@@ -455,7 +464,7 @@ export class Splash {
     this.lobbyCard.hidden = place !== 'lobby';
     if (place !== 'lobby') return;
     this.lobbyText.textContent = '';
-    this.lobbyText.append('You’re in ', el('b', '', null, session.room.name), ` · code ${session.code}`);
+    this.lobbyText.append('You’re in ', el('b', '', null, session.room.name), `${gameText(session.room.game)} · code ${session.code}`);
     this.showLobbyFriends();
   }
 
@@ -503,9 +512,10 @@ export class Splash {
         const info = el('div', 'ui-game-info', row);
         el('b', '', info, l.name);
         const rare = l.rare ? ` · ${l.rare} rare find${l.rare === 1 ? '' : 's'} about` : '';
-        el('span', 'ui-muted', info, `${l.players}/${l.max} farmers${rare}`);
-        const join = button('ui-btn ui-btn-small', row, l.full ? 'Full' : 'Join', () => this.play(l.code));
-        join.disabled = l.full;
+        el('span', 'ui-muted', info, `${LOBBY_GAMES[l.game]?.name ?? 'Lobby'} · ${l.players}/${l.max} farmers${rare}`);
+        const closed = l.open === false; // (its game is under way)
+        const join = button('ui-btn ui-btn-small', row, l.full ? 'Full' : closed ? 'Playing' : 'Join', () => this.play(l.code));
+        join.disabled = l.full || closed;
       }
     } catch {
       this.list.textContent = NO_SERVER;
@@ -549,8 +559,19 @@ export class Splash {
     }
   }
 
+  // The game the lobby will be for (LOBBY_GAMES): its button lit, and what it is
+  pickGame(kind) {
+    this.game = kind;
+    this.gameButtons.textContent = '';
+    for (const [k, { name }] of Object.entries(LOBBY_GAMES)) {
+      const b = button(`ui-btn ui-btn-small${k === kind ? '' : ' ui-btn-ghost'}`, this.gameButtons, name, () => this.pickGame(k));
+      b.setAttribute('aria-pressed', String(k === kind));
+    }
+    this.gameBlurb.textContent = `${LOBBY_GAMES[kind].blurb}.`;
+  }
+
   startParty() {
-    if (!this.onStartParty([...this.picked])) return this.setStatus('Not connected to the server right now. Try again in a moment.', true);
+    if (!this.onStartParty([...this.picked], this.game)) return this.setStatus('Not connected to the server right now. Try again in a moment.', true);
     this.party = { ms: PARTY_MS, friends: [] };
     this.showPage('party');
     this.partyClock.textContent = this.picked.size ? `${PARTY_MS / 1000}` : 'Opening your lobby…';
@@ -605,10 +626,10 @@ export class Splash {
       const l = await lobbyInfo(code);
       this.inviteText.textContent = '';
       el('div', 'ui-invite-title', this.inviteText, `You are invited to “${l.name}”`);
-      el('div', 'ui-muted', this.inviteText, `${l.players}/${l.max} farmers · code ${l.code}${l.seed ? ` · island ${l.seed}` : ''}`);
-      if (l.full) {
+      el('div', 'ui-muted', this.inviteText, `${LOBBY_GAMES[l.game]?.name ?? 'Lobby'} · ${l.players}/${l.max} farmers · code ${l.code}${l.seed ? ` · island ${l.seed}` : ''}`);
+      if (l.full || l.open === false) {
         this.inviteJoin.disabled = true;
-        this.setStatus('That lobby is full right now.', true);
+        this.setStatus(l.full ? 'That lobby is full right now.' : 'That lobby’s game has started: too late to join.', true);
       }
     } catch (e) {
       this.inviteText.textContent = e.status === 404 ? `Lobby ${code} has closed (or never opened).` : NO_SERVER;

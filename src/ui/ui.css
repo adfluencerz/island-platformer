@@ -172,6 +172,9 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 }
 .ui-game-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .ui-game-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Start a lobby: its game, one button lit */
+.ui-game-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.ui-game-pick .ui-btn { flex: 1 1 auto; }
 .ui-status { min-height: 1.2em; font-size: 21px; font-weight: 600; }
 .ui-status.error { color: var(--inv-red); }
 /* the controls: a key, then what it does */

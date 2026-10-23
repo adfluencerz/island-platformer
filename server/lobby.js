@@ -7,12 +7,14 @@
 // whoever opens one may name the seed (the same seed, the same island),
 // otherwise it gets a fresh one.
 //
-// A lobby is a match: a farmer starts one, most often with friends they
-// invited (server/presence.js gathers them first), anyone may drop in while
-// it runs, and nothing on it grows back. Once the last farmer has left (and
-// IDLE_MS more, for a reload) it is thrown away. Public lobbies are listed
-// (Browse) and are where Quick join puts you; invite-only ones are reached
-// only by their link.
+// A lobby is a match: a farmer starts one for a party game of their choice
+// (shared/minigame.js), most often with friends they invited
+// (server/presence.js gathers them first), anyone may drop in till the game
+// is under way (a loot run: while it runs), and nothing on it grows back.
+// Once its game is over everyone heads home: it closes once they have gone
+// (OVER_MS at the most). Once the last farmer has left (and IDLE_MS more, for
+// a reload) it is thrown away. Public lobbies are listed (Browse) and are
+// where Quick join puts you; invite-only ones are reached only by their link.
 //
 // Given a store (server/store.js), the running lobbies are saved every few
 // seconds when something has changed (and by flush(), when the server stops),
@@ -20,6 +22,7 @@
 // seats are held for RESTART_HOLD_MS so the pages get back in.
 import { randomInt } from 'node:crypto';
 import { Room } from '../shared/room.js';
+import { LOBBY_GAMES } from '../shared/arenas.js';
 import { MAX_PLAYERS } from '../shared/constants.js';
 import { cleanText } from '../shared/protocol.js';
 import { normalizeSeed, randomSeed } from '../shared/worldgen.js';
@@ -29,6 +32,7 @@ const PUBLIC_CODE = 6;
 const PRIVATE_CODE = 10;
 export const CODE_RE = /^[A-Z2-9]{6,10}$/;
 const IDLE_MS = 30_000; // an empty lobby is thrown away after this
+const OVER_MS = 60_000; // a lobby whose game is over closes after this, even with someone still in it
 const MAX_GAMES = 200;
 const RESTART_HOLD_MS = 60_000;
 const SAVE_EVERY = 2000;
@@ -65,8 +69,9 @@ export class Lobby {
     return room;
   }
 
-  // { name, seed, inviteOnly, maxPlayers } -> the Room, or { error, status }
-  make({ name, seed, inviteOnly = false, maxPlayers = MAX_PLAYERS } = {}, address = null) {
+  // { name, seed, game, inviteOnly, maxPlayers } -> the Room, or { error, status }
+  // (game: its party game, LOBBY_GAMES in shared/arenas.js; a loot run if none)
+  make({ name, seed, game, inviteOnly = false, maxPlayers = MAX_PLAYERS } = {}, address = null) {
     if (this.rooms.size >= MAX_GAMES) return { error: 'The server is full right now. Join a lobby that is already open.', status: 503 };
     if (address && !this.allowCreate(address)) return { error: 'You are making lobbies too fast. Try again in a minute.', status: 429 };
     const code = this.newCode(inviteOnly ? PRIVATE_CODE : PUBLIC_CODE);
@@ -74,12 +79,13 @@ export class Lobby {
       code,
       name: cleanText(name, 32) || `Meadow ${code.slice(0, 3)}`,
       seed: normalizeSeed(seed) || randomSeed(),
+      game: gameOf(game),
       inviteOnly: !!inviteOnly,
       maxPlayers,
       log: this.log,
     });
     this.add(room);
-    this.log(`lobby ${code} made (${room.inviteOnly ? 'invite-only' : 'public'}, ${room.maxPlayers} seats, island ${room.seed})`);
+    this.log(`lobby ${code} made (${room.game}, ${room.inviteOnly ? 'invite-only' : 'public'}, ${room.maxPlayers} seats, island ${room.seed})`);
     return room;
   }
 
@@ -91,13 +97,14 @@ export class Lobby {
   // Dev mode: create a lobby with a specific code for testing. Its island's
   // seed is the code, so a lobby the server opens again after a restart is
   // the same place.
-  makeWithCode(code, { name, inviteOnly = false, maxPlayers = MAX_PLAYERS } = {}) {
+  makeWithCode(code, { name, game, inviteOnly = false, maxPlayers = MAX_PLAYERS } = {}) {
     const known = this.find(code);
     if (known) return known;
     const room = new Room({
       code,
       name: cleanText(name, 32) || `Dev lobby ${code}`,
       seed: normalizeSeed(code),
+      game: gameOf(game),
       inviteOnly: !!inviteOnly,
       maxPlayers,
       log: this.log,
@@ -107,20 +114,20 @@ export class Lobby {
     return room;
   }
 
-  // Quick join: the fullest public lobby with a seat free (more people to
-  // meet); failing that, a new public one.
+  // Quick join: the fullest public lobby with a seat free that can still be
+  // joined (more people to meet); failing that, a new public loot run.
   quick() {
     let best = null;
     for (const r of this.rooms.values()) {
-      if (r.inviteOnly || r.players.size >= r.maxPlayers) continue;
+      if (r.inviteOnly || r.players.size >= r.maxPlayers || !r.party.joinable()) continue;
       if (!best || r.players.size > best.players.size) best = r;
     }
     return best ?? this.make({ name: 'Open meadow' });
   }
 
-  // The public lobbies running now
+  // The public lobbies running now (not ones whose game is over)
   list() {
-    return [...this.rooms.values()].filter((r) => !r.inviteOnly).map((r) => r.info());
+    return [...this.rooms.values()].filter((r) => !r.inviteOnly && !r.party.over).map((r) => r.info());
   }
 
   allowCreate(address) {
@@ -137,11 +144,13 @@ export class Lobby {
   reap() {
     const now = Date.now();
     for (const [code, room] of this.rooms) {
-      if (room.players.size || now - room.emptySince < IDLE_MS) continue;
+      // (its game over: once everyone has headed home, or OVER_MS on anyway)
+      const over = room.party.over && (!room.connected() || now - room.party.overAt > OVER_MS);
+      if (!over && (room.players.size || now - room.emptySince < IDLE_MS)) continue;
       room.close();
       this.rooms.delete(code);
       this.changed = true;
-      this.log(`lobby ${code} is over (everyone left)`);
+      this.log(`lobby ${code} is over (${over ? 'its game is done' : 'everyone left'})`);
     }
     for (const [address, a] of this.creates) {
       if (now - a.at > CREATE_BURST * CREATE_EVERY * 1000) this.creates.delete(address);
@@ -169,14 +178,15 @@ export class Lobby {
     this.save(true);
   }
 
-  // The lobbies as the store had them. Ones with players in them run again,
-  // their seats held for the players to come back; empty ones were over.
+  // The lobbies as the store had them. Ones with players in them run again
+  // (their game from the start), their seats held for the players to come
+  // back; empty ones, and ones whose game was over, were over.
   restore(data) {
     if (!data) return;
     const now = Date.now();
     let running = 0;
     for (const save of data.rooms ?? []) {
-      if (!CODE_RE.test(save?.code) || !save.seats?.length) continue;
+      if (!CODE_RE.test(save?.code) || !save.seats?.length || save.over) continue;
       try {
         this.add(Room.fromSave(save, { log: this.log, holdUntil: now + RESTART_HOLD_MS }));
         running++;
@@ -188,3 +198,6 @@ export class Lobby {
     this.log(`lobbies put back: ${running} running`);
   }
 }
+
+// The game a lobby is opened for: one of LOBBY_GAMES (else a loot run)
+const gameOf = (game) => (typeof game === 'string' && Object.hasOwn(LOBBY_GAMES, game) ? game : 'loot_run');

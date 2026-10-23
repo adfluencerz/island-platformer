@@ -17,9 +17,6 @@ export const C = {
   THROW: 'throw', // { item, count }: dropped out of the backpack (the page has taken it out already), at our feet, for anyone to walk into
   HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
-  GAME_START: 'gameStart', // { game }: start a party game of this kind (GAMES in shared/arenas.js), at the signpost (shared/minigame.js)
-  GAME_JOIN: 'gameJoin', // {}: into the party game gathering now
-  GAME_LEAVE: 'gameLeave', // {}: out of the party game (gathering: not coming after all; in the arena: back to the lobby)
   GAME_COIN: 'gameCoin', // { id }: walked into coin id in the arena (coin rush)
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
@@ -60,10 +57,10 @@ export const S = {
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
   DROP: 'drop', // { id, item, count, x, y, z, from, wait }: something dropped (knocked loose by a bop, or THROW), for anyone to walk into (but from, the farmer it came from, for wait ms)
-  GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire()), whenever that changes
+  GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire(): ms -1, gathering till someone is there), whenever that changes
   GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
-  GAME_SCORE: 'gameScore', // { by, score }: player `by` has score now (a fishing contest: grams landed); or { scores: [[id, score]], top: [id, ...] }: the scores now, and who is up on king of the hill's crown (last one standing: who is still up)
-  GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, winners, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (winner: the first of winners, 0: nobody; last one standing can have a few)
+  GAME_SCORE: 'gameScore', // { by, score }: player `by` has score now (a fishing contest: grams landed; a loot run: points); or { scores: [[id, score]], top: [id, ...] }: the scores now, and who is up on king of the hill's crown (last one standing: who is still up)
+  GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, winners, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (a loot run: there already), and heads home (winner: the first of winners, 0: nobody; last one standing can have a few)
   PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
   BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms
   CAUGHT: 'caught', // { n, item, count, grams?, items? }: what we landed on cast n (item null: nothing, it got away; grams: a fish's weight; 'chest': a little chest, its items [[item, count], ...])
@@ -102,7 +99,7 @@ export const S = {
 export const PC = {
   HELLO: 'hello', // { v, auth }: the first message (auth: "<farm id>.<token>", a farm with an account)
   WHERE: 'where', // { place }: 'home', 'lobby' or 'farm' (for the friends list)
-  PARTY: 'party', // { invite: [friend farm ids] }: start a lobby, inviting them (the lobby opens PARTY_MS later)
+  PARTY: 'party', // { invite: [friend farm ids], game }: start a lobby for that game (LOBBY_GAMES in shared/arenas.js), inviting them (the lobby opens PARTY_MS later)
   CANCEL: 'cancel', // {}: the party we started is called off
   ANSWER: 'answer', // { party, yes }: to an invitation
   INVITE: 'invite', // { code, invite: [friend farm ids] }: to the lobby we are in, now
@@ -110,7 +107,7 @@ export const PC = {
 // server -> page
 export const PS = {
   READY: 'ready', // { id, name }: we are online (our farm id and name)
-  INVITED: 'invited', // { party, from, color, ms, late }: friend `from` invites us; it lapses in ms (late: to a lobby already running)
+  INVITED: 'invited', // { party, from, color, ms, late, game }: friend `from` invites us to a lobby for that game; it lapses in ms (late: to a lobby already running)
   PARTY: 'party', // { party, ms, friends: [[id, name, state]] }: our party: it opens in ms; state 'waiting', 'yes' or 'no'
   GO: 'go', // { party, code }: off to lobby code
   GONE: 'gone', // { party }: that invitation is over for us (it lapsed, or another tab answered it)

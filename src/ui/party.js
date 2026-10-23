@@ -1,21 +1,25 @@
 // A lobby's party game on screen (shared/minigame.js): a card at the top.
-// At the signpost with no game on, which game to start; while it gathers, how long until it starts and who is in, with Join (or Not
-// coming); while it is on, the time left and the scores; when it is over, who
-// won and what you got, a few seconds.
+// While it gathers, how long until it starts and how many are in it; while it
+// is on, the time left and the scores (in an arena, Head home); when it is
+// over, who won and what you got, a few seconds, and then home.
 import { el, button } from './dom.js';
-import { GAMES } from '../../shared/arenas.js';
+import { LOBBY_GAMES as GAMES } from '../../shared/arenas.js';
 import { weightText } from '../../shared/fishing.js';
 import './party.css';
 
 const RESULT_MS = 7000;
-// A score as shown: coins picked up, seconds on the hill (GAMES' unit), or in
-// a fishing contest the weight landed
-const scoreText = (kind, score) => (kind === 'fishing_contest' ? weightText(score) : `${score}${GAMES[kind]?.unit ?? ''}`);
+// A score as shown: coins picked up, seconds on the hill (GAMES' unit), in
+// a fishing contest the weight landed, in a loot run points
+function scoreText(kind, score) {
+  if (kind === 'fishing_contest') return weightText(score);
+  if (kind === 'loot_run') return `${score} pt${score === 1 ? '' : 's'}`;
+  return `${score}${GAMES[kind]?.unit ?? ''}`;
+}
 
 export class PartyHud {
-  // onJoin(), onLeave(): the buttons. nameOf(id): a player's name.
-  constructor({ onJoin, onLeave, nameOf }) {
-    Object.assign(this, { onJoin, onLeave, nameOf });
+  // onLeave(): Head home (and once the results have been up a while). nameOf(id): a player's name.
+  constructor({ onLeave, nameOf }) {
+    Object.assign(this, { onLeave, nameOf });
     this.root = el('div', 'ui-party inv-frame', document.body);
     this.root.hidden = true;
     this.title = el('div', 'ui-party-title', this.root);
@@ -25,33 +29,10 @@ export class PartyHud {
     this.myId = 0;
     this.endsAt = 0; // performance.now() when the phase is over
     this.resultTimer = 0;
-    this.choosing = false; // the games to pick from are up
-  }
-
-  // At the signpost: a button for each of its games (GAMES, but the board's), onPick(kind)
-  choose(onPick) {
-    if (this.game) return;
-    this.hideResults();
-    this.choosing = true;
-    this.root.hidden = false;
-    this.root.classList.remove('playing');
-    this.title.textContent = 'Party games';
-    this.line.textContent = 'Which game? Whoever is in the lobby can join.';
-    this.buttons.textContent = '';
-    for (const [kind, { name, board }] of Object.entries(GAMES)) if (!board) button('ui-btn ui-btn-small', this.buttons, name, () => onPick(kind));
-  }
-
-  // Walked away from the signpost (or picked)
-  stopChoosing() {
-    if (!this.choosing) return;
-    this.choosing = false;
-    if (!this.game && !this.resultTimer) this.root.hidden = true;
   }
 
   // The game as the lobby has it (null: none), and who we are
   show(game, myId) {
-    if (game) this.choosing = false;
-    else if (this.choosing) return;
     this.game = game;
     this.myId = myId;
     if (!game) {
@@ -65,12 +46,8 @@ export class PartyHud {
     this.root.hidden = false;
     this.root.classList.toggle('playing', game.phase !== 'gathering');
     this.buttons.textContent = '';
-    if (game.phase === 'gathering') {
-      if (this.isIn()) button('ui-btn ui-btn-small ui-btn-ghost', this.buttons, 'Not coming', () => this.onLeave());
-      else button('ui-btn ui-btn-small', this.buttons, 'Join', () => this.onJoin());
-    } else if (this.isIn()) {
-      button('ui-btn ui-btn-small ui-btn-ghost', this.buttons, 'Back to the lobby', () => this.onLeave());
-    }
+    // (off in an arena, the way out: home)
+    if (game.phase !== 'gathering' && game.kind !== 'loot_run' && this.isIn()) button('ui-btn ui-btn-small ui-btn-ghost', this.buttons, 'Head home', () => this.onLeave());
     this.update();
   }
 
@@ -106,7 +83,7 @@ export class PartyHud {
     if (g.phase === 'gathering') {
       this.title.textContent = `${name} starts in ${s} s`;
       const n = g.players.length;
-      this.line.textContent = `${n} joined${this.isIn() ? ' (you too)' : ''} · ${GAMES[g.kind]?.blurb ?? ''}`;
+      this.line.textContent = `${n > 1 ? `${n} farmers` : 'Just you so far'} · ${GAMES[g.kind]?.blurb ?? ''}`;
       return;
     }
     const clock = g.phase === 'ready' ? 'Get ready…' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -133,10 +110,10 @@ export class PartyHud {
     this.line.textContent = top.join(' · ');
   }
 
-  // It is over (GAME_END): who won, and what we got ([[item, count], ...], or null)
+  // It is over (GAME_END): who won, and what we got ([[item, count], ...], or
+  // null); a few seconds, then home (onLeave)
   results({ game, winner, winners = [winner], scores }, got, itemName) {
     this.game = null;
-    this.choosing = false;
     this.root.hidden = false;
     this.root.classList.add('playing');
     this.buttons.textContent = '';
@@ -148,9 +125,13 @@ export class PartyHud {
     const board = scores.slice(0, 4).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(game, score)}`).join(' · ');
     const prize = got?.length ? ` · You got ${got.map(([item, count]) => `${count} ${itemName(item, count)}`).join(' and ')}` : '';
     this.line.textContent = board + prize;
-    button('ui-btn ui-btn-small', this.buttons, 'OK', () => this.hideResults());
+    const home = () => {
+      this.hideResults();
+      this.onLeave();
+    };
+    button('ui-btn ui-btn-small', this.buttons, 'Head home', home);
     clearTimeout(this.resultTimer);
-    this.resultTimer = setTimeout(() => this.hideResults(), RESULT_MS);
+    this.resultTimer = setTimeout(home, RESULT_MS);
   }
 
   hideResults() {
@@ -161,7 +142,6 @@ export class PartyHud {
 
   clear() {
     this.game = null;
-    this.choosing = false;
     this.hideResults();
     this.root.hidden = true;
   }

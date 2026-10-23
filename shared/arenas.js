@@ -31,7 +31,7 @@
 // Arenas are versioned the way islands are: never change how a kind of arena
 // grows from a seed once players know it; a new look is a new kind (or a new
 // generation of seeds, as for islands).
-import { mulberry32, hashSeed, normalizeSeed, randomSeed, STONE_CIRCLE } from './worldgen.js';
+import { mulberry32, hashSeed, normalizeSeed, randomSeed } from './worldgen.js';
 import { GROUND_STAND_Y } from './level.js';
 import { MINIGAMES } from './balance.js';
 import { weightText } from './fishing.js';
@@ -56,9 +56,19 @@ export const GAMES = {
   },
   fishing_contest: {
     name: 'Fishing contest', ms: MINIGAMES.fishing_contest.ms, blurb: 'Land the most weight of fish before the time runs out',
-    unit: '', scored: (n) => `${weightText(n)} of fish`, nobody: 'nobody landed a fish', board: true, // (started at the board by the pond, not the signpost)
+    unit: '', scored: (n) => `${weightText(n)} of fish`, nobody: 'nobody landed a fish',
   },
 };
+
+// A loot run is played on the lobby's own island, not in an arena
+// (shared/minigame.js): the most loot found before the time runs out
+export const LOOT_RUN = {
+  name: 'Loot run', ms: MINIGAMES.loot_run.ms, blurb: 'Gather the most from the island before the time runs out: rare finds count extra',
+  unit: ' pts', scored: (n) => `${n} point${n === 1 ? '' : 's'}`, nobody: 'nobody found a thing',
+};
+
+// The games a lobby can be opened for (shared/room.js): the loot run first
+export const LOBBY_GAMES = { loot_run: LOOT_RUN, ...GAMES };
 
 export const COIN_FLOAT = 0.7; // how high over what it is over a coin floats (a farmer standing there touches it)
 const BALE_RISE = 1.2; // a bale's height (a stack is two)
@@ -422,19 +432,4 @@ export function arenaFor(game, seed, { cached = true } = {}) {
   arenas.set(key, arena);
   if (arenas.size > 8) arenas.delete(arenas.keys().next().value);
   return arena;
-}
-
-// ---------- The signpost ----------
-// Where a lobby's party games start: a signpost just inside the stone circle
-// where farmers arrive, in front of the standing stone that faces the middle
-// of the island most. (Nothing grows there or lies there: shared/wilds.js
-// keeps the circle clear, shared/worldgen.js the spots.)
-export const SIGN_REACH = 2.2; // E this close to it
-export function signFor(island) {
-  const { spawn, stones } = island;
-  const toMiddle = Math.atan2(-spawn.z, -spawn.x);
-  const off = (a) => Math.abs(Math.atan2(Math.sin(a - toMiddle), Math.cos(a - toMiddle)));
-  const a = stones.length ? stones.reduce((best, s) => (off(s) < off(best) ? s : best)) : toMiddle;
-  const r = STONE_CIRCLE - 0.75;
-  return { x: round1(spawn.x + Math.cos(a) * r), z: round1(spawn.z + Math.sin(a) * r), yaw: Math.atan2(-Math.cos(a), -Math.sin(a)) };
 }

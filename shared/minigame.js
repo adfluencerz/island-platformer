@@ -1,12 +1,18 @@
-// A lobby's party games (shared/room.js keeps one Party). One at a time:
+// A lobby's party game (shared/room.js keeps one Party). Whoever opens a
+// lobby picks its game (LOBBY_GAMES in shared/arenas.js), and the lobby plays
+// that one game, with everyone in it:
 //
-//   gathering  someone pressed E at the signpost (shared/arenas.js signFor),
-//              or for a fishing contest at the board by the pond (boardFor,
-//              shared/fishing.js):
-//              everyone in the lobby hears, and has MINIGAMES.gatherMs to join
-//   ready      whoever joined is in the arena, grown from the game's seed
+//   gathering  the lobby is open: everyone who gets there is in the game. It
+//              starts MINIGAMES.gatherMs after the first farmer arrives
+//   ready      everyone is in the arena, grown from the game's seed
 //              (shared/arenas.js), at their start, for readyMs: a look about
-//   playing    the game, for its time (GAMES); coin rush: walking into a
+//              (a loot run: back in the lobby's stone circle, where it starts)
+//   playing    the game, for its time (LOBBY_GAMES); a loot run: every spot
+//              emptied on the lobby's island scores (rare finds more: the
+//              room's TAKE, shared/room.js); farmers may still drop in, and
+//              play from then on. It is over early once the island is
+//              picked clean;
+//              coin rush: walking into a
 //              coin (GAME_COIN) scores it, checked against where the room
 //              last heard the player was, the way a lobby's spots are;
 //              king of the hill: every tick a player's feet are up on the
@@ -23,20 +29,23 @@
 //              fishing contest: every fish landed off the arena's shore
 //              scores its weight (the room's CAST and REEL, shared/room.js)
 //   over       the scores to everyone, the prize to the winner (and a few
-//              coins to everyone else who played), and all of them back in
-//              the lobby, where they arrive. The next game can start
-//              cooldownMs later.
+//              coins to everyone else who played), and all of them back on
+//              the lobby's island, from where their pages take them home.
+//              The lobby is over: it takes nobody new (server/lobby.js
+//              closes it).
 //
-// A player in the game has p.game (its id; 0 in the lobby): the room keeps
+// A player in an arena has p.game (its id; 0 in the lobby): the room keeps
 // them out of the lobby's own doings while they are away, and pages only
-// draw the players where they are (the roster says). Whoever leaves the game
-// (or the lobby) is out of it; once nobody is left in it, it is called off.
-// A game isn't kept when the lobby is saved: a restart calls it off.
+// draw the players where they are (the roster says). Whoever leaves the lobby
+// is out of the game; once nobody is left in it, it is called off (and the
+// lobby is over; before it starts, it waits for whoever comes next). Once an
+// arena game is under way, nobody new gets in.
+// A game isn't kept when the lobby is saved: a restart starts it over.
 import { S } from './protocol.js';
-import { GAMES, arenaFor, arenaSeed, signFor, SIGN_REACH } from './arenas.js';
+import { LOBBY_GAMES as GAMES, arenaFor, arenaSeed } from './arenas.js';
 import { GROUND_STAND_Y } from './level.js';
 import { MINIGAMES } from './balance.js';
-import { boardFor, BOARD_REACH } from './fishing.js';
+import { boardFor } from './fishing.js';
 import { STONE_CIRCLE } from './worldgen.js';
 
 const COIN_REACH = 1.8; // the page picks a coin up within 0.6; the slack covers a position up to ~150 ms old
@@ -64,30 +73,33 @@ export function prizesFor(ids, winners, rand = Math.random) {
 }
 
 export class Party {
-  // room: the lobby's Room (its players, island, rand, say and broadcast)
+  // room: the lobby's Room (its players, island, rand, say and broadcast; its
+  // game: the kind it was opened for, null for none)
   constructor(room) {
     this.room = room;
-    this.sign = signFor(room.island);
-    // where a fishing contest starts: the board by the pond, clear of the
-    // trees, rocks and spots, and out of the stone circle (the signpost's)
+    // the board of the biggest catches by the pond: clear of the trees,
+    // rocks and spots, and out of the stone circle
     const { island, wilds, spots } = room;
     const sites = [...wilds.trees, ...wilds.rocks].flatMap((w) => w.sites);
     this.board = boardFor(island, (x, z) =>
-      Math.hypot(x - island.spawn.x, z - island.spawn.z) < STONE_CIRCLE + 1.5 || Math.hypot(x - this.sign.x, z - this.sign.z) < SIGN_REACH + BOARD_REACH + 1 ||
+      Math.hypot(x - island.spawn.x, z - island.spawn.z) < STONE_CIRCLE + 1.5 ||
       sites.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 1.7) || spots.some((s) => Math.hypot(s.x - x, s.z - z) < 1.3) ||
       island.terraces.some(([tx, tz, w, d]) => Math.abs(x - tx) < w / 2 + 0.9 && Math.abs(z - tz) < d / 2 + 0.9));
     this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at, held, out }, taken: Set of coin ids, top: ids on the crown (still up; across the hop race, in order), last }
     this.count = 0; // games so far (each one's id)
-    this.nextAt = 0; // when the next one can start (ms)
+    this.over = false; // the lobby's game is over (or was called off): nobody new comes in
+    this.overAt = 0; // ...since when (ms)
+    if (room.game) this.open(room.game);
   }
 
   // The game as pages hear of it (null: none). until is sent as `ms`, how long
-  // the phase has left, so pages need not agree with the room on the time.
+  // the phase has left, so pages need not agree with the room on the time
+  // (gathering, before anyone is there: ms -1).
   wire(now = Date.now()) {
     const g = this.game;
     if (!g) return null;
     return {
-      id: g.id, kind: g.kind, seed: g.seed, phase: g.phase, ms: Math.max(0, g.until - now),
+      id: g.id, kind: g.kind, seed: g.seed, phase: g.phase, ms: Number.isFinite(g.until) ? Math.max(0, g.until - now) : -1,
       players: [...g.players].map(([id, { score }]) => [id, score]),
       taken: [...g.taken],
       top: g.top,
@@ -98,57 +110,73 @@ export class Party {
     this.room.broadcast({ t: S.GAME, game: this.wire(now) });
   }
 
-  // ---------- What players do ----------
-  // E at the signpost: a game of this kind starts gathering, with p in it.
-  // Returns why not ('' : it did).
-  start(p, kind, now = Date.now()) {
-    if (!Object.hasOwn(GAMES, kind)) return 'There is no such game.';
-    if (this.game) return 'A game is on already.';
-    if (now < this.nextAt) return 'The next game can start in a few seconds.';
-    const fishing = kind === 'fishing_contest';
-    const at = fishing ? this.board : this.sign;
-    if (Math.hypot(p.x - at.x, p.z - at.z) > (fishing ? BOARD_REACH : SIGN_REACH) + 0.6 || Math.abs(p.y - 0.8) > 1.5) {
-      return fishing ? 'Start a fishing contest at the board by the pond.' : 'Start a game at the signpost.';
-    }
+  // ---------- The lobby's game ----------
+  // The lobby opens for a game of this kind (LOBBY_GAMES): it gathers till
+  // gatherMs after the first farmer gets there (arrive)
+  open(kind) {
     const seed = arenaSeed(this.room.rand);
     this.game = {
-      id: ++this.count, kind, seed, arena: arenaFor(kind, seed), phase: 'gathering', until: now + MINIGAMES.gatherMs,
+      id: ++this.count, kind, seed, arena: arenaFor(kind, seed), phase: 'gathering', until: Infinity,
       players: new Map(), taken: new Set(), top: [], last: 0,
     };
-    this.game.players.set(p.id, { score: 0, at: 0, held: 0, out: 0 });
-    const where = fishing ? 'the board by the pond' : 'the signpost in the stone circle';
-    this.room.say(`${p.name} is starting a ${GAMES[kind].name.toLowerCase()}! Join at ${where} (${Math.round(MINIGAMES.gatherMs / 1000)} s).`);
-    this.tell(now);
-    return '';
   }
 
-  join(p, now = Date.now()) {
+  // p is here (new, or back): in the game, if it can still be joined. (Their
+  // page hears the game in its WELCOME; the room tells everyone else.)
+  arrive(p, now = Date.now()) {
     const g = this.game;
-    if (!g || g.phase !== 'gathering' || g.players.has(p.id)) return;
+    if (!g || g.players.has(p.id) || !this.joinable()) return;
     g.players.set(p.id, { score: 0, at: 0, held: 0, out: 0 });
-    this.tell(now);
+    if (g.phase === 'gathering' && !Number.isFinite(g.until)) {
+      g.until = now + MINIGAMES.gatherMs;
+      this.room.say(`${GAMES[g.kind].name} starts in ${Math.round(MINIGAMES.gatherMs / 1000)} s: ${GAMES[g.kind].blurb.toLowerCase()}.`);
+    }
   }
 
-  // p is out of the game: not coming after all, back to the lobby from the
-  // arena, or gone from the lobby (gone: no need to put them back)
-  leave(p, { gone = false, now = Date.now() } = {}) {
+  // Whether someone new can come into the lobby: not once it is over, nor
+  // once an arena game is under way (a loot run they can drop in on)
+  joinable() {
+    if (this.over) return false;
+    const g = this.game;
+    return !g || g.phase === 'gathering' || g.kind === 'loot_run';
+  }
+
+  // Whether p can empty the lobby's spots now: not in a loot run that hasn't
+  // started (nor, its lobby, once it is over)
+  canLoot() {
+    const g = this.game;
+    if (this.room.game !== 'loot_run') return true;
+    return g?.kind === 'loot_run' && g.phase === 'playing';
+  }
+
+  // p is out of the game: gone from the lobby
+  leave(p, now = Date.now()) {
     const g = this.game;
     if (!g?.players.has(p.id)) return;
     g.players.delete(p.id);
     g.top = g.top.filter((id) => id !== p.id);
     p.line = null; // (a line out in the arena, or for the contest, comes in)
-    if (p.game) {
-      p.game = 0;
-      this.room.rosterDirty = true;
-      if (!gone) Object.assign(p, this.room.spawnFor(p.id)); // (where they arrive: their page puts them there too)
-    }
-    if (!g.players.size) {
+    p.game = 0;
+    if (!g.players.size && g.phase === 'gathering') {
+      this.open(g.kind); // (nobody waiting: it waits for whoever comes next)
+    } else if (!g.players.size) {
       this.game = null;
-      this.nextAt = now + MINIGAMES.cooldownMs;
-      if (g.phase !== 'gathering') this.room.say(`The ${GAMES[g.kind].name.toLowerCase()} was called off: everyone headed back.`);
-      else this.room.say(`The ${GAMES[g.kind].name.toLowerCase()} was called off.`);
+      this.over = true;
+      this.overAt = now;
+      this.room.say(`The ${GAMES[g.kind].name.toLowerCase()} was called off: everyone headed home.`);
     }
     this.tell(now);
+  }
+
+  // Loot run: p emptied a spot, with `rares` rare finds in it
+  looted(p, rares, now = Date.now()) {
+    const g = this.game;
+    const me = g?.kind === 'loot_run' && g.phase === 'playing' ? g.players.get(p.id) : null;
+    if (!me) return;
+    const { find, rare } = MINIGAMES.loot_run;
+    me.score += find + rare * rares;
+    me.at = now;
+    this.room.broadcast({ t: S.GAME_SCORE, by: p.id, score: me.score });
   }
 
   // Coin rush: p walked into coin id
@@ -252,18 +280,20 @@ export class Party {
       if (!this.game) return;
     }
     if (!g || now < g.until) {
-      // coin rush: over as soon as every coin is picked up
+      // coin rush: over as soon as every coin is picked up (a loot run: the island picked clean)
       if (g?.phase === 'playing' && g.kind === 'coin_rush' && g.taken.size >= g.arena.coins.length) this.end(now);
+      if (g?.phase === 'playing' && g.kind === 'loot_run' && this.room.spots.every((s) => !s.item)) this.end(now);
       return;
     }
     if (g.phase === 'gathering') {
-      // Off to the arena, each to a start of their own
+      // Off to the arena, each to a start of their own (a loot run: to the stone circle)
       g.phase = 'ready';
       g.until = now + MINIGAMES.readyMs;
       const ids = [...g.players.keys()];
       ids.forEach((id, i) => {
         const p = this.room.players.get(id);
-        Object.assign(p, g.arena.start(i, ids.length), { game: g.id });
+        if (g.arena) Object.assign(p, g.arena.start(i, ids.length), { game: g.id });
+        else Object.assign(p, this.room.spawnFor(id));
       });
       if (g.kind === 'last_one') g.top = ids; // (all up, to begin with)
       this.room.rosterDirty = true;
@@ -280,11 +310,12 @@ export class Party {
 
   // It is over: the winner (the most, and of those whoever got there first;
   // last one standing: whoever is still up, or else fell in last, a few if
-  // they are level), the prizes, and everyone back in the lobby
+  // they are level), the prizes, and everyone back in the lobby, and on home
   end(now) {
     const g = this.game;
     this.game = null;
-    this.nextAt = now + MINIGAMES.cooldownMs;
+    this.over = true;
+    this.overAt = now;
     if (g.kind === 'last_one') {
       const lasted = Math.floor((now - (g.until - GAMES[g.kind].ms)) / 1000);
       for (const id of g.top) Object.assign(g.players.get(id), { score: lasted, at: -Number.MAX_SAFE_INTEGER });
@@ -301,6 +332,7 @@ export class Party {
       const p = this.room.players.get(id);
       p.game = 0;
       p.line = null;
+      if (!g.arena) continue; // (a loot run: they are on the island already)
       const at = this.room.spawnFor(id);
       Object.assign(p, at);
       pos.push([id, round2(at.x), round2(at.y), round2(at.z)]);

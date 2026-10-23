@@ -710,15 +710,17 @@ export const LUCKY_JOKERS = {
 };
 
 // ---------- Party games (lobbies: shared/minigame.js, shared/arenas.js) ----------
-// E at the signpost in the stone circle starts one: everyone in the lobby
-// hears, and has gatherMs to join (at the sign, or from the pop-up). Then
-// whoever joined is off to an arena grown from a seed, readyMs to look about
-// before it starts, and back to the lobby once it is over. The next game can
-// start cooldownMs later. (ms throughout)
+// Whoever opens a lobby picks its game. It starts gatherMs after the first
+// farmer gets there (time for the friends they invited to arrive too), with
+// everyone in the lobby in it. Then they are off to an arena grown from a
+// seed (or, for a loot run, back to the lobby's stone circle), readyMs to look
+// about before it starts; once it is over, everyone heads home. (ms throughout)
 export const MINIGAMES = {
-  gatherMs: 20_000,
+  gatherMs: 15_000,
   readyMs: 3000,
-  cooldownMs: 10_000,
+  // Loot run: the lobby's own island, against the clock. Every spot emptied
+  // (shared/level.js) scores `find`, and every rare find in it `rare` more
+  loot_run: { ms: 300_000, find: 1, rare: 4 },
   // Coin rush: the most coins picked up before the time runs out (the coins
   // are the game's, only for the score; the prize is real ones)
   coin_rush: { ms: 60_000, coins: [36, 48], high: 0.3 }, // high: the share of coins up on the hay bales
