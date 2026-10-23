@@ -64,9 +64,12 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 // A phone draws fewer pixels (and a smaller shadow map, below): on its small
 // screen it looks the same, and it runs cooler and lasts longer
 const PHONE = isTouch();
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2));
+// (testing: ?lowgfx draws a quarter of the pixels and no shadows, for a
+// headless browser without a GPU; scripts/browser.mjs)
+const LOWGFX = new URLSearchParams(location.search).has('lowgfx');
+renderer.setPixelRatio(LOWGFX ? 0.5 : Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !LOWGFX;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
@@ -1398,7 +1401,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') jumpPressed = true;
   if (e.code === 'Space' && !e.repeat) {
     jumpTapped = true;
-    jumpTappedAt = performance.now();
+    jumpTappedAt = clock.elapsedTime;
   }
   if (e.code === 'KeyE' && !e.repeat) useAction();
   if (e.code === 'KeyM' && !e.repeat) inventory.notify(sound.toggle() ? 'Sound on' : 'Sound off');
@@ -1611,7 +1614,7 @@ function jump() {
 const COYOTE_TIME = 0.1; // seconds
 const JUMP_BUFFER = 0.12; // seconds
 const JUMP_CUT = 0.5; // what is left of the speed up when Jump is let go early
-let jumpTappedAt = -Infinity; // when Jump was last pressed (performance.now() ms)
+let jumpTappedAt = -Infinity; // when Jump was last pressed (clock.elapsedTime)
 let jumpRising = false; // on the way up from a jump of our own (not a bop's)
 let airTime = 0; // seconds since the farmer was last on the ground
 const STEP_EVERY = 0.32; // seconds between footsteps at a walk
@@ -3884,7 +3887,7 @@ function update(dt) {
   } else airTime += dt;
   if (!inputBlocked()) {
     const offLedge = airTime < COYOTE_TIME && player.velocity.y <= 0;
-    const buffered = performance.now() - jumpTappedAt < JUMP_BUFFER * 1000;
+    const buffered = clock.elapsedTime - jumpTappedAt < JUMP_BUFFER;
     if ((keys.has('Space') || jumpPressed || buffered) && (player.onGround || offLedge)) jump();
     else if (jumpTapped && airJumps > 0) airJump();
   }
@@ -4041,11 +4044,34 @@ function homePrompt() {
   return hint ? `E  ${hint}` : '';
 }
 
+let frozen = false; // (testing: the game moves only by __game.step, below)
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  update(dt);
-  renderer.render(scene, camera);
+  if (!frozen) {
+    update(dt);
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(animate);
+}
+
+// Testing: `seconds` of game time, in steps of `dt`, as fast as they compute
+// (nothing is drawn: draw() for a screenshot), whatever the frame rate.
+// Freezes the game between steps, so what a test sees is what its steps did.
+function step(seconds, dt = 1 / 30) {
+  frozen = true;
+  clock.getDelta(); // (the time spent frozen doesn't count)
+  for (let t = 0; t < seconds - 1e-9; t += dt) {
+    clock.elapsedTime += dt;
+    update(dt);
+  }
+}
+
+// Testing: hold a key (a KeyboardEvent code: 'Space', 'KeyD', ...) for
+// `seconds` of game time
+function hold(code, seconds) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+  step(seconds);
+  window.dispatchEvent(new KeyboardEvent('keyup', { code }));
 }
 
 // Built pages: installable, and the farm opens without a connection (public/sw.js).
@@ -4056,7 +4082,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

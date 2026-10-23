@@ -260,6 +260,11 @@ npm test
 ```
 Checks the islands (the classic one and hundreds of seeds: every spot reachable, the same seed always the same island), the lobby's rules (taking spots, regrowth, rare finds, rejoin, chat limits) and the server end to end over real sockets.
 
+```bash
+npm run browser -- -e 'g.hold("Space", 0.3); return g.player.position' --shot shot.png
+```
+Plays the game in a headless Chromium (`scripts/browser.mjs`): it logs a test account in, walks onto the farm and freezes it, then runs a test that moves the game on by game time (`window.__game.step`), however slowly the page draws. See `.claude/skills/browser-test/SKILL.md`.
+
 ## Build for production
 ```bash
 npm run build

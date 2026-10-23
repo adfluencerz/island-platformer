@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "test": "node scripts/test-multiplayer.js",
+    "browser": "node scripts/browser.mjs",
     "island": "node scripts/island.js",
     "wilds": "node scripts/wilds.js"
   },
@@ -19,6 +20,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "playwright-core": "1.56.0",
     "vite": "^5.4.0"
   }
 }
