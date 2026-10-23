@@ -1699,7 +1699,7 @@ const MOVE_SPEED = 7;
 const JUMP_SPEED = 10;
 
 function jump() {
-  player.velocity.y = JUMP_SPEED * boostOf(meal, 'jump');
+  player.velocity.y = JUMP_SPEED * boostOf(meal, 'jump') * (arenaId ? 1 : bosses.jump()); // (after a meal, or riding, maybe higher: not in a party game's arena)
   player.onGround = false;
   anim.squash = -0.2; // stretch on takeoff
   jumpRising = true;
@@ -4028,7 +4028,7 @@ function update(dt) {
 
   const moveVec = new THREE.Vector3(moveX, 0, moveZ);
   const moving = moveVec.lengthSq() > 0;
-  if (moving) moveVec.multiplyScalar((MOVE_SPEED * devSpeed * bosses.speed() * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length()); // (dizzy from a boss: slower; after a meal, maybe faster)
+  if (moving) moveVec.multiplyScalar((MOVE_SPEED * devSpeed * (arenaId ? 1 : bosses.speed()) * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length()); // (dizzy from a boss: slower; riding, or after a meal, maybe faster; in a party game's arena everyone runs alike)
   player.velocity.x = moveVec.x + knock.x;
   player.velocity.z = moveVec.z + knock.z;
   knock.multiplyScalar(Math.exp(-dt * 5)); // (a bop's stumble fades)

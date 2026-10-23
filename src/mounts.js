@@ -2,7 +2,8 @@ import * as THREE from 'three';
 
 // ---------- Mounts ----------
 // What a farmer rides once a boss is beaten (its `mount` item, src/items.js):
-// just for show, no faster than walking. A mount goes under the farmer
+// quicker than walking, and some jump higher (MOUNTS, shared/balance.js). A
+// mount goes under the farmer
 // (character.js ride()), at their feet, facing where they face; `seat` is
 // how high they sit on it. animate(dt, walk, t): walk 0..1, how much they
 // are walking.
