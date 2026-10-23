@@ -27,6 +27,7 @@ const CONTROLS = [
   ['I', 'Backpack'],
   ['B', 'Build on your farm'],
   ['K', 'Skills'],
+  ['O', 'Your collection book'],
   ['L', 'Play online'],
   ['Enter', 'Chat (in a lobby, or on a farm with helpers)'],
   ['Hold T', 'Speed up time at home'],

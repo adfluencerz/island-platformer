@@ -1,0 +1,17 @@
+/* ---------- The Book tab (src/book.js), in the Skills tab's look (skills.css) ---------- */
+.bk-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.bk-part { display: flex; flex-direction: column; gap: 6px; }
+.bk-count { font-size: 20px; color: var(--ui-soft, #86522a); }
+.bk-count.done { color: #2f7f24; }
+.bk-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.bk-icon { width: 36px; height: 36px; image-rendering: pixelated; }
+.bk-icon.unseen { filter: brightness(0); opacity: 0.3; }
+:root.compact .bk-list { grid-template-columns: 1fr; }
+:root.compact .bk-icon { width: 30px; height: 30px; }
