@@ -1,0 +1,67 @@
+/* Trading in a lobby: built from the backpack's and the chest's pieces
+   (inventory.css, chest.css), like the shop */
+.trade-window {
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  margin-top: 30px; /* room for the tab */
+}
+
+/* What each gives, side by side (stacked on a narrow screen) */
+.trade-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.trade-side {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.trade-offer {
+  max-width: calc(var(--inv-slot) * 6 + 28px);
+  min-height: calc(var(--inv-slot) + 12px);
+}
+.trade-theirs-ready .trade-side:last-child .trade-offer {
+  box-shadow: inset 0 3px 0 #3d1a04, 0 0 0 3px #7fd36a;
+}
+
+.trade-gold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 36px;
+  font-size: 22px;
+}
+.trade-gold .inv-icon { width: 28px; height: 28px; }
+.trade-gold-in {
+  width: 120px;
+  padding: 4px 8px;
+  font-size: 20px;
+}
+
+.trade-status {
+  font-size: 22px;
+  opacity: 0.9;
+}
+.trade-ready:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Someone asks to trade: a note at the top, with its buttons */
+.trade-ask {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 22px;
+}
+.trade-ask[hidden] { display: none; }
+
+/* The Trade button by a farmer's name in the lobby's list (src/ui/hud.js) */
+.ui-trade-btn { flex: none; padding: 1px 8px; font-size: 17px; }

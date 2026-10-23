@@ -23,6 +23,7 @@ import { fingerprint } from './seed-fingerprint.js';
 import { requestFor } from '../src/requests.js';
 import { REQUESTS } from '../shared/balance.js';
 import { MORE_CROPS, PLATFORM_PLANTS } from '../shared/balance.js';
+import { TRADE, cleanOffer } from '../shared/trade.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
@@ -678,6 +679,79 @@ await test('dropping things out of the backpack: at your feet, for anyone (not s
   at(a, 8, 0);
   a.p.game = 1;
   deny({ item: 'stone', count: 1 }, 'in an arena');
+});
+
+await test('trading in a lobby: ask and ask back, offer, both ready on the same offers, and each hears what to give and get', () => {
+  const room = new Room({ code: 'TRADE' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const c = join(room, 'C');
+  const { x: sx, z: sz } = room.island.spawn;
+  const at = (who, x, z) => room.message(who.p, { t: C.STATE, x: sx + x, y: 0.8, z: sz + z, yaw: 0, f: 1 });
+  at(a, 0, 0);
+  at(b, TRADE.reach + 1, 0);
+  at(c, 1, 0);
+  room.message(a.p, { t: C.TRADE_ASK, id: b.p.id });
+  assert.equal(b.conn.last(S.TRADE_ASKED), undefined, 'too far off to ask');
+  at(b, 2, 0);
+  room.trades.asks.clear();
+  room.message(a.p, { t: C.TRADE_ASK, id: b.p.id });
+  assert.deepEqual([b.conn.last(S.TRADE_ASKED).from, b.conn.last(S.TRADE_ASKED).name], [a.p.id, 'A']);
+  assert.equal(a.conn.last(S.TRADE), undefined, 'not open till they ask back');
+  room.message(b.p, { t: C.TRADE_ASK, id: a.p.id });
+  const opened = a.conn.last(S.TRADE);
+  assert.deepEqual([opened.with, opened.mine, opened.theirs, opened.ready], [b.p.id, { items: {}, gold: 0 }, { items: {}, gold: 0 }, false]);
+  // someone else can't butt in
+  room.message(c.p, { t: C.TRADE_ASK, id: a.p.id });
+  assert.equal(a.conn.all(S.TRADE_ASKED).length, 0);
+  // offers: what can be traded, made sane
+  a.p.bag = { berries: 5 };
+  room.message(a.p, { t: C.TRADE_OFFER, items: { berries: 3 }, gold: 10 });
+  room.message(b.p, { t: C.TRADE_OFFER, items: { wood: 5 } });
+  for (const bad of [{ items: { axe: 1 } }, { items: { coin: 5 } }, { items: { wood: 0 } }, { items: { wood: 1.5 } }, { items: { wood: 1 }, gold: -1 }, { items: [] , gold: 'x' }]) {
+    assert.equal(cleanOffer(bad), null, JSON.stringify(bad));
+  }
+  room.message(b.p, { t: C.TRADE_OFFER, items: { axe: 1 } });
+  let now = b.conn.last(S.TRADE);
+  assert.deepEqual([now.mine, now.theirs], [{ items: { wood: 5 }, gold: 0 }, { items: { berries: 3 }, gold: 10 }], 'a bad offer changes nothing');
+  // ready, on the offers as they were seen: a change takes both back
+  room.message(a.p, { t: C.TRADE_READY, ready: true, v: now.v });
+  assert.equal(b.conn.last(S.TRADE).theirsReady, true);
+  room.message(a.p, { t: C.TRADE_OFFER, items: { berries: 2 }, gold: 10 });
+  now = b.conn.last(S.TRADE);
+  assert.equal(now.theirsReady, false, 'changing an offer takes the ready back');
+  room.message(b.p, { t: C.TRADE_READY, ready: true, v: now.v - 1 });
+  assert.equal(a.conn.last(S.TRADE).theirsReady, false, 'ready on an old offer: no');
+  room.message(b.p, { t: C.TRADE_READY, ready: true, v: now.v });
+  room.message(a.p, { t: C.TRADE_READY, ready: true, v: now.v });
+  const doneA = a.conn.last(S.TRADE_DONE);
+  const doneB = b.conn.last(S.TRADE_DONE);
+  assert.deepEqual([doneA.give, doneA.get], [{ items: { berries: 2 }, gold: 10 }, { items: { wood: 5 }, gold: 0 }]);
+  assert.deepEqual([doneB.give, doneB.get], [doneA.get, doneA.give]);
+  assert.equal(a.p.bag.berries, 3, 'what they gave a bop can no longer knock loose');
+  assert.equal(room.trades.open.size, 0);
+  // walking apart ends one, and so does calling it off
+  room.message(a.p, { t: C.TRADE_ASK, id: b.p.id });
+  room.trades.asks.get(a.p.id).at -= TRADE.askEvery;
+  room.message(b.p, { t: C.TRADE_ASK, id: a.p.id });
+  assert.equal(room.trades.open.size, 2);
+  at(b, TRADE.far + 1, 0);
+  room.update();
+  assert.deepEqual([a.conn.last(S.TRADE_END).why, b.conn.last(S.TRADE_END).why], ['far', 'far']);
+  at(b, 2, 0);
+  room.trades.asks.clear();
+  room.message(a.p, { t: C.TRADE_ASK, id: b.p.id });
+  room.message(b.p, { t: C.TRADE_ASK, id: a.p.id });
+  room.message(b.p, { t: C.TRADE_CANCEL });
+  assert.deepEqual([a.conn.last(S.TRADE_END).why, a.conn.last(S.TRADE_END).by], ['cancelled', b.p.id]);
+  // and going away
+  room.trades.asks.clear();
+  room.message(a.p, { t: C.TRADE_ASK, id: b.p.id });
+  room.message(b.p, { t: C.TRADE_ASK, id: a.p.id });
+  room.leave(b.p);
+  room.update();
+  assert.deepEqual([a.conn.last(S.TRADE_END).why, a.conn.last(S.TRADE_END).by], ['gone', b.p.id]);
+  room.close();
 });
 
 await test('bopping: the farmer in front, in reach, knocked back; what they gathered drops, for anyone to pick up', () => {

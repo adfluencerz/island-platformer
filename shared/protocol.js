@@ -15,6 +15,11 @@ export const C = {
   BOP: 'bop', // { weapon, yaw }: a swing of the weapon in hand (WEAPONS in shared/level.js), facing yaw
   PICKUP: 'pickup', // { id }: walked into drop id
   THROW: 'throw', // { item, count }: dropped out of the backpack (the page has taken it out already), at our feet, for anyone to walk into
+  // trading with another farmer in a lobby (shared/trade.js)
+  TRADE_ASK: 'tradeAsk', // { id }: ask farmer id to trade (or say yes, when they asked us)
+  TRADE_OFFER: 'tradeOffer', // { items: { item: count }, gold, n }: what we'll give (both "ready"s are taken back; n: our count of offers, said back in TRADE)
+  TRADE_READY: 'tradeReady', // { ready, v }: happy with the swap as it stood at TRADE's v
+  TRADE_CANCEL: 'tradeCancel', // {}: call the trade off
   HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   GAME_START: 'gameStart', // { game }: start a party game of this kind (GAMES in shared/arenas.js), at the signpost (shared/minigame.js)
@@ -71,6 +76,10 @@ export const S = {
   BOARD: 'board', // { board, by? }: the lobby's board of its biggest catches, [[name, item, grams], ...] (shared/fishing.js onBoard), after player `by` got on it
   DROP_DENY: 'dropDeny', // { id }: that pickup did not count (someone was quicker, or too far)
   THROW_DENY: 'throwDeny', // { item, count }: that could not be dropped here: back into the backpack with it
+  TRADE_ASKED: 'tradeAsked', // { from, name }: farmer `from` asks to trade with us (TRADE_ASK them back: yes)
+  TRADE: 'trade', // { with, v, n, mine, theirs, ready, theirsReady }: how the trade stands (offers: { items, gold }; n: the last of our offers it has)
+  TRADE_DONE: 'tradeDone', // { with, give, get }: both were ready: take out `give`, put in `get`
+  TRADE_END: 'tradeEnd', // { why, by }: it's off ('cancelled', 'gone', 'far', 'game'; by: whose doing, 0: nobody's)
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
