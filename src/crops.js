@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CROP_GROW_TIME } from '../shared/level.js';
-import { BEANSTALK } from '../shared/balance.js';
+import { BEANSTALK, MORE_CROPS } from '../shared/balance.js';
 
 // ---------- Crops ----------
 // What each seed grows into. `growTime` is seconds from planting to ripe
@@ -171,6 +171,67 @@ function buildBeanstalk() {
   return g;
 }
 
+// A tomato plant: a stake with the plant tied up it, leaves all the way up,
+// and its tomatoes (`userData.fruit`: only on it when it's ripe)
+const stakeMat = mat(0x8a5a2e);
+const tomatoMat = mat(0xe0402a);
+const stakeGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.95, 5);
+const tomatoGeo = new THREE.SphereGeometry(0.075, 8, 6);
+
+function buildTomato() {
+  const g = new THREE.Group();
+  g.add(mesh(stakeGeo, stakeMat, [0.06, 0.47, 0]));
+  g.add(mesh(flaxStemGeo, stemMat, [0, 0.4, 0], [1.2, 0.8, 1.2]));
+  for (let i = 0; i < 6; i++) g.add(leaf(i * 2.1, { y: 0.15 + i * 0.12, length: 0.16, width: 0.08, lean: 1.0, material: i % 2 ? leafMat : darkLeafMat }));
+  const fruit = new THREE.Group();
+  for (const [x, y, z] of [[0.13, 0.32, 0.06], [-0.1, 0.45, 0.1], [0.08, 0.6, -0.11], [-0.12, 0.26, -0.08], [0.02, 0.72, 0.12]]) {
+    fruit.add(mesh(tomatoGeo, tomatoMat, [x, y, z], [1, 0.9, 1]));
+  }
+  g.add(fruit);
+  g.userData.fruit = fruit;
+  return g;
+}
+
+// A pumpkin: a fat ribbed orange ball on its vine, big leaves round it
+const pumpkinMat = mat(0xe8862a);
+const pumpkinStalkMat = mat(0x6b5a2a);
+const pumpkinRibGeo = new THREE.SphereGeometry(0.17, 8, 6);
+
+function buildPumpkin() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const rib = mesh(pumpkinRibGeo, pumpkinMat, [Math.cos(a) * 0.1, 0.17, Math.sin(a) * 0.1], [0.75, 0.95, 1.15]);
+    rib.rotation.y = -a;
+    g.add(rib);
+  }
+  g.add(mesh(sproutStemGeo, pumpkinStalkMat, [0, 0.36, 0], [2.5, 0.8, 2.5]));
+  for (let i = 0; i < 4; i++) g.add(leaf(i * 1.6 + 0.4, { y: 0.04, length: 0.24, width: 0.16, lean: 1.35, material: i % 2 ? leafMat : darkLeafMat }));
+  return g;
+}
+
+// A berry bush: a round leafy bush, red berries on it (`userData.fruit`)
+const bushMat = mat(0x3f8a3a);
+const bushLightMat = mat(0x5aa83f);
+const berryMat = mat(0xd8344f);
+const berryGeo = new THREE.SphereGeometry(0.045, 6, 4);
+
+function buildBerryBush() {
+  const g = new THREE.Group();
+  for (const [x, y, z, r, m] of [[0, 0.28, 0, 0.3, bushMat], [0.16, 0.22, 0.1, 0.2, bushLightMat], [-0.15, 0.24, 0.08, 0.21, bushLightMat], [0.02, 0.4, -0.12, 0.2, bushMat]]) {
+    g.add(mesh(leafGeo, m, [x, y, z], [r, r * 0.85, r]));
+  }
+  const fruit = new THREE.Group();
+  for (let i = 0; i < 9; i++) {
+    const a = i * 2.4;
+    const up = 0.18 + (i % 3) * 0.12;
+    fruit.add(mesh(berryGeo, berryMat, [Math.cos(a) * 0.29, up, Math.sin(a) * 0.29]));
+  }
+  g.add(fruit);
+  g.userData.fruit = fruit;
+  return g;
+}
+
 export const CROPS = {
   turnip: { growTime: CROP_GROW_TIME.turnip, produce: 'turnip', build: buildTurnip },
   carrot: { growTime: CROP_GROW_TIME.carrot, produce: 'carrot', build: buildCarrot },
@@ -183,10 +244,17 @@ export const CROPS = {
   },
   // (`climb`: its beans are picked from the top, see BEAN_LEDGES)
   vine_bean: { growTime: CROP_GROW_TIME.vine_bean, produce: 'beans', build: buildBeanstalk, climb: true },
+  // (`again`: it stays when it's picked, ripe again so many seconds later;
+  // `gives`: so many a pick; `name`: the plant's, to dig it up)
+  tomato: { growTime: CROP_GROW_TIME.tomato, produce: 'tomato', build: buildTomato, again: MORE_CROPS.tomato.again, name: 'tomato plant' },
+  pumpkin: { growTime: CROP_GROW_TIME.pumpkin, produce: 'pumpkin', build: buildPumpkin },
+  berry_bush: { growTime: CROP_GROW_TIME.berry_bush, produce: 'berries', build: buildBerryBush, again: MORE_CROPS.berry_bush.again, gives: MORE_CROPS.berry_bush.gives, name: 'berry bush' },
 };
 
 // Growth stages by progress (0..1): seeds in the soil, a sprout, then the crop
-// itself filling out until it's ripe at 1.
+// itself filling out until it's ripe at 1. A plant that stays when it's
+// picked (`again`) is whole from where a pick takes it back to, its fruit on
+// it only when it's ripe.
 const SPROUT_AT = 0.2;
 const PLANT_AT = 0.55;
 
@@ -205,13 +273,16 @@ export function createCropView(cropId) {
 
   const plant = CROPS[cropId].build();
   group.add(seeds, sprout, plant);
+  const { again, growTime } = CROPS[cropId];
+  const whole = again ? 1 - again / growTime : PLANT_AT;
 
   function setProgress(p) {
     seeds.visible = p < SPROUT_AT;
-    sprout.visible = p >= SPROUT_AT && p < PLANT_AT;
-    sprout.scale.setScalar(THREE.MathUtils.mapLinear(Math.min(p, PLANT_AT), SPROUT_AT, PLANT_AT, 0.6, 1.3));
-    plant.visible = p >= PLANT_AT;
-    plant.scale.setScalar(p >= 1 ? 1 : THREE.MathUtils.mapLinear(p, PLANT_AT, 1, 0.4, 0.8));
+    sprout.visible = p >= SPROUT_AT && p < whole;
+    sprout.scale.setScalar(THREE.MathUtils.mapLinear(Math.min(p, whole), SPROUT_AT, whole, 0.6, 1.3));
+    plant.visible = p >= whole;
+    plant.scale.setScalar(p >= 1 || again ? 1 : THREE.MathUtils.mapLinear(p, PLANT_AT, 1, 0.4, 0.8));
+    if (plant.userData.fruit) plant.userData.fruit.visible = p >= 1;
   }
   setProgress(0);
 

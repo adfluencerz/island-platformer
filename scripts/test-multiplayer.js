@@ -22,6 +22,7 @@ import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, B
 import { fingerprint } from './seed-fingerprint.js';
 import { requestFor } from '../src/requests.js';
 import { REQUESTS } from '../shared/balance.js';
+import { MORE_CROPS } from '../shared/balance.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
@@ -1859,6 +1860,45 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   rooms.turnOut(a.id, madeB.id);
   assert.equal(bo.conn.closed, CLOSE.NOT_HELPER);
   assert.equal(room.players.size, 1);
+  room.close();
+});
+
+await test('a farm room: a tomato plant and a berry bush stay when they are picked, ripe again in a while; the hoe digs one up', () => {
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3', '5,3'], crops: [] }, backpack: {} }, 'pw');
+  const a = farms.auth(bearer(made));
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const conn = fakeConn();
+  const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${made.id}.${made.token}` });
+  room.message(p, { t: C.STATE, x: 3.5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.PLANT, key: '3,3', crop: 'tomato' });
+  room.message(p, { t: C.PLANT, key: '4,3', crop: 'berry_bush' });
+  room.message(p, { t: C.PLANT, key: '5,3', crop: 'pumpkin' });
+  room.message(p, { t: C.UPROOT, key: '5,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'uproot', 'a pumpkin comes up when it is picked: no digging it up');
+  const hour = 24 / DAY_LENGTH_SECONDS; // (game hours in a second)
+  room.clockBase += Math.max(...Object.values(MORE_CROPS).map((c) => c.grow)) * hour; // (all ripe)
+  for (const key of ['3,3', '4,3', '5,3']) room.message(p, { t: C.HARVEST, key });
+  assert.deepEqual(conn.all(S.HARVESTED).map((m) => [m.key, m.item]), [['3,3', 'tomato'], ['4,3', 'berries'], ['5,3', 'pumpkin']]);
+  assert.deepEqual([room.chest.tomato, room.chest.berries, room.chest.pumpkin], [1, 2, 1], 'a berry bush gives two');
+  assert.ok(room.crops.has('3,3') && room.crops.has('4,3'), 'the tomato plant and the bush stay');
+  assert.ok(!room.crops.has('5,3') && room.tilled.has('5,3'), 'the pumpkin is pulled up, the soil left');
+  // ripe again only in a while
+  room.message(p, { t: C.HARVEST, key: '3,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'harvest', 'not ripe again yet');
+  room.clockBase += MORE_CROPS.tomato.again * hour;
+  room.message(p, { t: C.HARVEST, key: '3,3' });
+  assert.equal(room.chest.tomato, 2);
+  // kept in the save, part grown
+  rooms.write(room);
+  const saved = Object.fromEntries(a.save.farm.crops.map(([key, crop, age]) => [key, [crop, Math.round(age)]]));
+  assert.deepEqual(saved['3,3'], ['tomato', MORE_CROPS.tomato.grow - MORE_CROPS.tomato.again]);
+  assert.equal(saved['4,3'][0], 'berry_bush');
+  // the hoe digs the bush up, for good
+  room.message(p, { t: C.UPROOT, key: '4,3' });
+  assert.deepEqual([conn.last(S.UPROOTED).key, conn.last(S.UPROOTED).by], ['4,3', p.id]);
+  assert.ok(!room.crops.has('4,3') && room.tilled.has('4,3'));
   room.close();
 });
 

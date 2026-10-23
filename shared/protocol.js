@@ -28,6 +28,7 @@ export const C = {
   PLANT: 'plant', // { key, crop }: plant a seed from the backpack on tilled tile key
   HARVEST: 'harvest', // { key }: the ripe crop on tile key, into the farm's chest
   WATER: 'water', // { key }: water the crop growing on tile key (WATERED_GROWTH in shared/balance.js)
+  UPROOT: 'uproot', // { key }: dig up the plant on tile key, one that stays when it's picked (MORE_CROPS `again`, shared/balance.js)
   CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
   CHEST_SPEND: 'chestSpend', // { id, items: { item: count } }: use up some of what is in the chest, for what the workbench makes (the owner only); answered with CHEST_SPENT
@@ -79,6 +80,7 @@ export const S = {
   //   machines: [[key, item, at, takes], ...] (shared/machines.js). chest: { item: count }. hours: the farm's clock, in game hours since it began)
   TILLED: 'tilled', // { key, by }
   UNTILLED: 'untilled', // { key }: left bare too long (SOIL_BARE_HOURS), back to grass
+  UPROOTED: 'uprooted', // { key, by }: the plant on tile key was dug up (one that stays when it's HARVESTED: ripe again in a while)
   PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
   HARVESTED: 'harvested', // { key, by, item }
   WATERED: 'watered', // { key, at, by }: the crop on tile key was watered at `at` (the farm's game hours): it grows faster from then (by 0: rain, shared/weather.js)

@@ -15,9 +15,10 @@ import { FISH_LIST } from '../shared/fishing.js';
 // the backpack now.
 
 // The parts of the book: [title, item ids]
+const WILD = ['berries', 'mushroom', 'heather', 'cattail', 'bluebell', 'pumpkin', 'fern', 'seashell', 'strawberry'];
 const PARTS = [
-  ['Crops', [...new Set(Object.values(CROP_PRODUCE))]],
-  ['From the wild islands', ['berries', 'mushroom', 'heather', 'cattail', 'bluebell', 'pumpkin', 'fern', 'seashell', 'strawberry']], // (an item the game doesn't have yet is left out)
+  ['Crops', [...new Set(Object.values(CROP_PRODUCE))].filter((id) => !WILD.includes(id))], // (berries and pumpkins grow on the farm too: they're in the wild part)
+  ['From the wild islands', WILD], // (an item the game doesn't have yet is left out)
   ['Rare finds', ['golden_seeds', 'gem', 'key', 'recipe_card']],
   ['From the animals and the machines', ['egg', 'large_egg', 'milk', 'wool', 'honey', 'cheese', 'mayonnaise', 'cloth']],
   ['Dishes', Object.keys(DISHES)],
