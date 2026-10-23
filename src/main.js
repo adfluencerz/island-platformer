@@ -256,7 +256,7 @@ const inventory = createInventory({
   },
   onEat: (id) => eat(id, false),
   onDrop: ({ id, count }) => dropFromBackpack(id, count),
-  buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
+  buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : farmVisit?.visitor ? 'You\'re looking round: only the farm\'s helpers build here.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
   renderSkills: (el) => skills.render(el),
@@ -856,6 +856,7 @@ function treeInReach() {
 
 // Swing at the tree in reach (if the last swing is done). False: no tree here.
 function swingAxe() {
+  if (justLooking()) return true;
   const tree = treeInReach();
   if (!tree) return false;
   const now = clock.elapsedTime;
@@ -964,6 +965,7 @@ function rockInReach() {
 
 // Swing at the rock in reach (if the last swing is done). False: no rock here.
 function swingPick() {
+  if (justLooking()) return true;
   const rock = rockInReach();
   if (!rock) return false;
   const now = clock.elapsedTime;
@@ -1394,7 +1396,7 @@ function updateDrops(dt, t) {
     drop.group.visible = !drop.pending;
     const near = Math.hypot(drop.x - player.position.x, drop.y - player.position.y, drop.z - player.position.z) < TOUCH_RADIUS + 0.4;
     if (!drop.away) drop.away = !near;
-    if (!near || !drop.away || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count)) continue;
+    if (!near || !drop.away || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor) continue; // (a visitor leaves it be)
     drop.pending = true;
     (place === 'lobby' ? net : farmNet)?.send({ t: C.PICKUP, id: drop.id });
   }
@@ -1509,6 +1511,7 @@ window.addEventListener('keydown', (e) => {
 // ripe crop on the tile in front, otherwise use the selected toolbar item. Farming,
 // chopping and mining reach USE_HEIGHT up or down (from a step or a platform).
 function useAction() {
+  if (place === 'home' && farmVisit?.visitor) return lookRound();
   if (!building && bosses.use()) return; // (a boss's portal or arena, or a mount in hand)
   if (place === 'lobby' && (!arenaId || (inContest() && partyGame.phase === 'playing')) && fishing.use()) return;
   if (place === 'lobby') {
@@ -1557,6 +1560,7 @@ function useAction() {
 // Harvest the ripe crop on the tile at x, z (E: the one in front), else till
 // or plant it with what is in hand
 function tendAnimal(animal) {
+  if (justLooking()) return;
   let asked = false; // (she was ready: milked or sheared, or the backpack was full)
   animals.tend(animal, player.position, (item) => ((asked = true), collectProduce(item)));
   const day = Math.floor(farmHours() / 24);
@@ -1590,7 +1594,7 @@ function tilesAhead(x, z, [wide, deep] = [1, 1]) {
 }
 
 function farmHere(x, z) {
-  if (!footReach()) return;
+  if (!footReach() || justLooking()) return;
   if (x === undefined) [x, z] = keyXZ(frontTile());
   if (harvestAt(x, z)) return sound.play('harvest');
 
@@ -2084,6 +2088,9 @@ function arrived(d) {
 function arrive() {
   const { kind, farm, spot, tree, rock, animal, key, x, z } = walk;
   stopWalking();
+  if (['build', 'workbench', 'machine', 'chest', 'animal', 'tree', 'rock'].includes(kind) || (kind === 'tile' && farm)) {
+    if (justLooking()) return; // (a visitor)
+  }
   if (kind === 'build') {
     if (building) buildAt(key);
   } else if (kind === 'workbench') workbench.open();
@@ -2107,6 +2114,43 @@ function arrive() {
     if (holding() !== 'pickaxe') inventory.notify('Take the pickaxe in hand to mine');
     else if (swingPick()) mining = rock;
   }
+}
+
+// ---------- Visiting a friend's farm ----------
+// A friend come to look round (not a helper: server/farmroom.js lets them in
+// as a visitor) farms nothing here: no tilling, planting or picking, no
+// building, chopping or mining, nothing in or out of the chest, the machines
+// or the workbench, nothing done for the animals, no bosses. They walk about,
+// go in the house, fish, eat what they brought, trade with the merchant, play
+// at the arcade and cook in the kitchen (with their own things).
+function justLooking() {
+  if (!(place === 'home' && farmVisit?.visitor)) return false;
+  inventory.notify(`Just looking round: only ${farmVisit.owner || 'the farmer'} and their helpers farm here`);
+  return true;
+}
+
+// E, looking round
+function lookRound() {
+  if (fishing.use()) return;
+  if (houseDoorInReach()) return goInside();
+  if (houseRoom.exitInReach(player.position)) return goOutside();
+  if (buildings.nearest('arcade', player.position, BENCH_REACH)) return arcade.open();
+  if (houseRoom.kitchenInReach(player.position) || houseRoom.shelfInReach(player.position)) return cooking.openKitchen();
+  if (atStall(player.position)) return shop.open();
+  if (ITEMS[inventory.selectedId()]?.dish) return eat();
+  justLooking();
+}
+
+// What E does for a visitor, for the prompt
+function lookRoundPrompt() {
+  const fish = fishing.prompt();
+  if (fish) return fish;
+  if (houseDoorInReach()) return 'E  Go inside';
+  if (houseRoom.exitInReach(player.position)) return 'E  Go outside';
+  if (buildings.nearest('arcade', player.position, BENCH_REACH)) return 'E  Play at the arcade';
+  if (houseRoom.kitchenInReach(player.position)) return 'E  Cook in the kitchen';
+  if (atStall(player.position)) return 'E  Trade with the merchant';
+  return eatHint() ? `E  ${eatHint()}` : '';
 }
 
 // Holding the left mouse button down walks toward wherever it points, for as
@@ -2680,6 +2724,7 @@ function dropFromBackpack(id, count) {
   const def = ITEMS[id];
   const no = (text) => (inventory.notify(text), false);
   if (!def || def.trashable === false || !Object.hasOwn(SHOP, id) || def.currency) return no(`${def?.name ?? 'That'} can't be dropped`);
+  if (place === 'home' && farmVisit?.visitor) return no('You\'re looking round: keep your things with you');
   if (!player.onGround) return no('Land first, then drop it');
   if (place === 'lobby' && net && !arenaId) {
     net.send({ t: C.THROW, item: id, count });
@@ -2904,6 +2949,7 @@ function machinePrompt(key) {
 
 // E (or a tap) at the machine on tile key
 function useMachine(key) {
+  if (justLooking()) return;
   const piece = buildings.get(key);
   const state = machines.get(key);
   const hours = farmHours();
@@ -3193,7 +3239,7 @@ async function joinFarm(id) {
     }
     place = 'home';
     enterWorld('home');
-    farmVisit = { id: m.farm.id, name: m.farm.name, owner: m.farm.owner, mine: m.mine, alone: true, helpers: m.farm.helpers ?? 0 };
+    farmVisit = { id: m.farm.id, name: m.farm.name, owner: m.farm.owner, mine: m.mine, visitor: !!m.visitor, alone: true, helpers: m.farm.helpers ?? 0 };
     myId = m.id;
     farmer.setShirt(m.color);
     showRoomFarm(m);
@@ -4228,6 +4274,7 @@ function update(dt) {
 // What E does here at home, for the prompt
 function homePrompt() {
   if (menuOpen()) return '';
+  if (farmVisit?.visitor) return lookRoundPrompt();
   const boss = bosses.prompt();
   if (boss || bosses.inArena()) return boss;
   const fish = fishing.prompt();

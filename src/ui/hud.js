@@ -73,6 +73,7 @@ const TIPS = [
   { text: 'Till, plant and harvest. When you fancy company, visit a lobby to gather and hunt for rare finds.', place: 'home' },
   { text: 'Your helpers can farm here any time, you here or not. What anyone harvests goes in the chest by the plaza.', place: 'farm' },
   { text: 'Till, plant and harvest with what you brought: the harvest goes in the farm\'s chest, for the farmer.', place: 'visit' },
+  { text: 'You\'re looking round a friend\'s farm: only they and their helpers farm here. Fish, go in the house, or trade with the merchant.', place: 'look' },
   { text: 'Whoever gets there first takes it. Nothing here grows back, and now and then something rare turns up.', place: 'lobby' },
   { text: 'Hold E to keep chopping or mining.', keys: true },
   { text: 'B opens the Build tab in your backpack.', keys: true },
@@ -208,7 +209,7 @@ export class Hud {
     this.session = null;
     this.myId = myId;
     this.placeName.textContent = visit.mine ? this.farmName || 'My farm' : visit.name;
-    this.startTips(visit.mine ? 'farm' : 'visit');
+    this.startTips(visit.mine ? 'farm' : visit.visitor ? 'look' : 'visit');
     this.chatLog.textContent = '';
     this.setConnStatus('');
   }
@@ -301,7 +302,7 @@ export class Hud {
       el('i', 'ui-dot', row).style.background = hexColor(p.color);
       el('span', 'ui-player-name', row, p.name);
       if (p.away) el('span', 'ui-muted', row, 'away');
-      else if (this.place === 'farm') el('span', 'ui-found', row, p.owner ? 'the farmer' : 'helping');
+      else if (this.place === 'farm') el('span', 'ui-found', row, p.owner ? 'the farmer' : p.visitor ? 'looking round' : 'helping');
       else if (p.game) el('span', 'ui-found', row, 'at a party game');
       else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}${p.stone ? ` · ${p.stone} stone` : ''}`);
     }

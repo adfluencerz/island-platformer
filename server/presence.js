@@ -22,10 +22,13 @@ import { PC, PS } from '../shared/protocol.js';
 const PLACES = new Set(['home', 'lobby', 'farm']);
 
 export class Presence {
-  // farms: server/farms.js. lobby: server/lobby.js
-  constructor({ farms, lobby, log = console.log }) {
+  // farms: server/farms.js. lobby: server/lobby.js. onHome(id): farm id's
+  // farmer is at home on their page (server/farmroom.js: friends looking
+  // round a farm without helpers go)
+  constructor({ farms, lobby, onHome = () => {}, log = console.log }) {
     this.farms = farms;
     this.lobby = lobby;
+    this.onHome = onHome;
     this.log = log;
     this.online = new Map(); // farm id -> Set of connections
     this.parties = new Map(); // party id -> { id, host, conn, name, color, invited: farm id -> 'waiting' | 'yes' | 'no', answered: farm id -> conn, startsAt, until, code }
@@ -67,6 +70,7 @@ export class Presence {
     this.online.get(farm.id).add(conn);
     this.send(conn, { t: PS.READY, id: farm.id, name: farm.account.name });
     if (first) this.tellFriends(farm.id);
+    this.onHome(farm.id); // (a page starts at home)
     return true;
   }
 
@@ -83,6 +87,7 @@ export class Presence {
           const was = this.whereIs(conn.farmId);
           conn.place = msg.place;
           if (this.whereIs(conn.farmId) !== was) this.tellFriends(conn.farmId);
+          if (msg.place === 'home') this.onHome(conn.farmId);
         }
         break;
       case PC.PARTY:

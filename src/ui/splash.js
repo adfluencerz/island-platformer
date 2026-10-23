@@ -668,8 +668,11 @@ export class Splash {
       button('ui-btn ui-btn-small ui-btn-ghost', row, 'No', answer(false));
     }
     if (!friends.length && !asks.length) el('div', 'ui-muted', list, 'No friends yet. Add one by their username: once they say yes you can invite each other to lobbies.');
+    const here = this.where().visit?.id;
     for (const f of friends.sort((a, b) => b.online - a.online)) {
       const row = this.friendRow(list, f);
+      // (their farm, to look round: server/farmroom.js lets a friend in as a visitor)
+      if (f.id !== here) button('ui-btn ui-btn-small', row, 'Visit', () => this.visit(f.id, f.name)).title = `Look round ${f.name}'s farm`;
       button('ui-btn ui-btn-small ui-btn-ghost', row, '✕', async () => {
         if (!confirm(`Take ${f.name} off your friends?`)) return;
         try {

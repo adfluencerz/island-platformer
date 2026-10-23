@@ -42,8 +42,9 @@ export const CLOSE = {
   VERSION: 4006,
   ENDED: 4007,
   REPLACED: 4008, // the same player came back on another socket
-  NOT_HELPER: 4009, // a farm's owner hasn't (or no longer has) them down as a helper
+  NOT_HELPER: 4009, // a farm's owner hasn't (or no longer has) them down as a helper, or as a friend to look round
   NO_ACCOUNT: 4010, // a lobby is for farmers logged in to an account
+  AT_HOME: 4011, // a friend come to look round, while the farmer plays their farm (without helpers) on their own (or once they are home)
 };
 export const CLOSE_TEXT = {
   [CLOSE.NO_GAME]: 'That lobby does not exist (any more).',
@@ -51,6 +52,7 @@ export const CLOSE_TEXT = {
   [CLOSE.VERSION]: 'The server runs a newer version of the game. Reload the page.',
   [CLOSE.ENDED]: 'The lobby was closed.',
   [CLOSE.REPLACED]: 'You joined this lobby from another tab.',
-  [CLOSE.NOT_HELPER]: 'You are not on that farm\'s helpers any more.',
+  [CLOSE.NOT_HELPER]: 'You are not on that farm\'s helpers or friends (any more).',
   [CLOSE.NO_ACCOUNT]: 'Log in to play online. (Your login may have run out: log out and in again.)',
+  [CLOSE.AT_HOME]: 'They are home, farming on their own: come and look round when they are out (or ask to help).',
 };

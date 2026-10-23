@@ -165,6 +165,7 @@ export class FarmRoom extends Place {
     this.soilAt = now;
     this.fights = new Map(BOSS_IDS.map((id) => [id, new BossFight(id, this.rand)])); // boss -> its fight (shared/bosses.js)
     this.bossAt = now;
+    this.workedOn = false; // (the farmer or a helper has been on it: only then is it written back)
   }
 
   // the farm's clock now, in game hours
@@ -175,11 +176,13 @@ export class FarmRoom extends Place {
   // ---------- Who is here ----------
   join(conn, msg) {
     const who = this.admit(msg?.auth, msg?.name);
-    if (!who) {
-      conn.close(CLOSE.NOT_HELPER, CLOSE_TEXT[CLOSE.NOT_HELPER]);
+    if (!who || who.busy) {
+      const why = who?.busy ? CLOSE.AT_HOME : CLOSE.NOT_HELPER;
+      conn.close(why, CLOSE_TEXT[why]);
       return null;
     }
-    const p = super.join(conn, msg, { farmId: who.id, owner: who.owner });
+    const p = super.join(conn, msg, { farmId: who.id, owner: who.owner, visitor: !!who.visitor });
+    if (p && !p.visitor) this.workedOn = true; // (the farmer or a helper: the farm is played here, and kept)
     if (p?.owner) this.ownerName = p.name;
     return p;
   }
@@ -189,11 +192,11 @@ export class FarmRoom extends Place {
   }
 
   playerExtra(p) {
-    return { owner: p.owner };
+    return { owner: p.owner, ...(p.visitor && { visitor: true }) };
   }
 
   greet(p) {
-    this.say(p.owner ? `${p.name} is home.` : `${p.name} came to help.`);
+    this.say(p.owner ? `${p.name} is home.` : p.visitor ? `${p.name} came to look round.` : `${p.name} came to help.`);
   }
 
   welcome(p, resumed) {
@@ -204,6 +207,7 @@ export class FarmRoom extends Place {
       color: p.color,
       farm: { id: this.farmId, name: this.name, owner: this.ownerName, helpers: this.helpers() },
       mine: p.owner,
+      ...(p.visitor && { visitor: true }), // (a friend looking round: they farm nothing)
       tilled: this.tilledList(this.hours()),
       crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt), ...(c.wateredAt !== undefined ? [round3(c.wateredAt)] : [])]),
       built: [...this.built],
@@ -225,9 +229,9 @@ export class FarmRoom extends Place {
   }
 
   // The owner took them off the helpers: out they go
-  turnOut(helperFarmId) {
+  turnOut(helperFarmId, { visitor = false } = {}) {
     for (const p of [...this.players.values()]) {
-      if (p.farmId !== helperFarmId || p.owner) continue;
+      if (p.farmId !== helperFarmId || p.owner || (visitor && !p.visitor)) continue;
       p.conn?.close(CLOSE.NOT_HELPER, CLOSE_TEXT[CLOSE.NOT_HELPER]);
       p.conn = null;
       this.remove(p);
@@ -245,6 +249,7 @@ export class FarmRoom extends Place {
   }
 
   act(p, msg) {
+    if (p.visitor && msg?.t !== C.FEAST) return this.lookingRound(p, msg);
     switch (msg?.t) {
       case C.THROW: {
         // Out of their backpack, at their feet (the page has taken it out
@@ -535,6 +540,17 @@ export class FarmRoom extends Place {
   }
 
   // (crop: a seed to give back; piece: the piece whose cost goes back)
+  // A visitor (a friend looking round) farms nothing: what they ask for is
+  // turned down (with what a page needs to put back what it did already)
+  lookingRound(p, msg) {
+    const op = { [C.TILL]: 'till', [C.PLANT]: 'plant', [C.HARVEST]: 'harvest', [C.WATER]: 'water', [C.BUILD]: 'build', [C.UNBUILD]: 'unbuild', [C.LOAD]: 'load', [C.COLLECT]: 'collect' }[msg?.t];
+    if (op) return this.deny(p, op, msg.key, msg.t === C.PLANT && CROP_GROW_TIME[msg.crop] ? msg.crop : undefined, msg.t === C.BUILD && PIECES[msg.piece] ? msg.piece : undefined);
+    if (msg?.t === C.THROW) return this.send(p, { t: S.THROW_DENY, item: typeof msg.item === 'string' ? msg.item : null, count: Number.isInteger(msg.count) ? msg.count : 0 });
+    if (msg?.t === C.PICKUP) return this.send(p, { t: S.DROP_DENY, id: msg.id });
+    if (msg?.t === C.CHEST_SPEND) return this.send(p, { t: S.CHEST_SPENT, id: msg.id, ok: false });
+    if (msg?.t === C.CHEST_PUT && droppable(msg.item) && Number.isInteger(msg.count) && msg.count > 0) return this.send(p, { t: S.CHEST_GOT, item: msg.item, count: msg.count }); // (back to them)
+  }
+
   deny(p, op, key, crop, piece) {
     this.send(p, { t: S.FARM_DENY, op, key: typeof key === 'string' ? key.slice(0, 16) : '', crop, piece });
   }
@@ -723,8 +739,11 @@ const SAVE_EVERY = 3000;
 const IDLE_MS = 30_000; // an empty farm is put away after this (long enough for a reload)
 
 export class FarmRooms {
-  constructor({ farms, log = console.log }) {
+  // atHome(id): is farm id's farmer at home on their page right now (playing
+  // it on their own, unless it has helpers: server/presence.js knows)
+  constructor({ farms, atHome = () => false, log = console.log }) {
     this.farms = farms;
+    this.atHome = atHome;
     this.log = log;
     this.rooms = new Map(); // farm id -> FarmRoom
     setInterval(() => this.save(), SAVE_EVERY).unref();
@@ -752,28 +771,63 @@ export class FarmRooms {
     return room;
   }
 
-  // Who is joining: the owner (their device's token for this farm), or a
-  // helper (a token for a farm the owner has down as a helper)
+  // Who is joining: the owner (their device's token for this farm), a
+  // helper (a token for a farm the owner has down as a helper), or a friend
+  // of the owner's come to look round (a visitor: they farm nothing)
+  // A farm without helpers has the farmer first: friends look round it only
+  // while they're out (busy: they're home), and go when they come home
+  // (ownerHome). A room only friends have been in never writes the farm:
+  // they change nothing on it. (One turned away: the room they opened goes
+  // again, empty, so the farmer's page goes on saving the farm.)
   admit(farm, auth, name) {
     const theirs = typeof auth === 'string' ? this.farms.auth(`Bearer ${auth}`) : null;
-    if (!theirs) return null;
-    if (theirs.id === farm.id) {
+    if (theirs?.id === farm.id) {
       this.farms.seenOwner(farm, name);
       return { id: farm.id, owner: true };
     }
-    if (!this.farms.seenHelper(farm, theirs.id, name)) return null;
-    return { id: theirs.id, owner: false };
+    if (theirs && this.farms.seenHelper(farm, theirs.id, name)) return { id: theirs.id, owner: false };
+    const friend = theirs && this.farms.areFriends(farm, theirs);
+    if (friend && (farm.helpers?.length || !this.atHome(farm.id))) return { id: theirs.id, owner: false, visitor: true };
+    queueMicrotask(() => this.dropIfEmpty(farm.id));
+    return friend ? { busy: true } : null;
   }
 
-  // Taken off a farm's helpers: out of it, if they are on it
-  turnOut(farmId, helperId) {
-    this.rooms.get(farmId)?.turnOut(helperId);
+  // Farm id's farmer is home (server/presence.js): a farm without helpers is
+  // theirs alone again, so friends looking round it go
+  ownerHome(id) {
+    const room = this.rooms.get(id);
+    if (!room || this.farms.get(id)?.helpers?.length) return;
+    for (const p of [...room.players.values()]) {
+      if (!p.visitor) continue;
+      p.conn?.close(CLOSE.AT_HOME, CLOSE_TEXT[CLOSE.AT_HOME]);
+      p.conn = null;
+      room.remove(p);
+    }
+    if (!room.workedOn) this.drop(id);
+  }
+
+  drop(id) {
+    this.rooms.get(id)?.close();
+    this.rooms.delete(id);
+  }
+
+  // A room nobody is in (yet) and nothing has happened on, put away now
+  dropIfEmpty(id) {
+    const room = this.rooms.get(id);
+    if (!room || room.players.size || (room.changed && room.workedOn)) return;
+    this.drop(id);
+  }
+
+  // Taken off a farm's helpers: out of it, if they are on it (visitor: only
+  // if they are looking round, off the owner's friends)
+  turnOut(farmId, helperId, { visitor = false } = {}) {
+    this.rooms.get(farmId)?.turnOut(helperId, { visitor });
   }
 
   write(room) {
     const farm = this.farms.get(room.farmId);
-    if (!farm) return;
     room.changed = false;
+    if (!farm || !room.workedOn) return; // (only friends looking round: they changed nothing)
     farm.save = { ...farm.save, farm: room.toFarm() };
     farm.chest = { ...room.chest };
     farm.roomRev = (farm.roomRev ?? 0) + 1;
