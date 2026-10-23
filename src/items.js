@@ -1243,12 +1243,12 @@ ITEMS.parsnip_statue = {
     '...oooooooooo...',
   ],
 };
-// `mount`: which boss it is (src/mounts.js draws it). Just for show: it goes
-// no faster, and you get off to use anything else.
+// `mount`: which boss it is (src/mounts.js draws it). Quicker than walking
+// (MOUNTS, shared/balance.js), and you get off to use anything else.
 ITEMS.parsnip_mount = {
   name: 'Parsnip Steed',
   category: 'Mount',
-  description: 'The evil parsnip, friends now and happy to carry you about. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  description: 'The evil parsnip, friends now and happy to carry you about: a third faster than walking, and springy, so you jump higher. With it in hand, E gets on (or off); you hop off to use anything else.',
   maxStack: 1,
   trashable: false,
   mount: 'parsnip',
@@ -1331,7 +1331,7 @@ ITEMS.lion_statue = {
 ITEMS.lion_mount = {
   name: 'Lion Steed',
   category: 'Mount',
-  description: 'The super lion, friends now, cape and all. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  description: 'The super lion, friends now, cape and all, and the fastest of the lot: nearly twice as fast as walking. With it in hand, E gets on (or off); you hop off to use anything else.',
   maxStack: 1,
   trashable: false,
   mount: 'lion',
@@ -1414,7 +1414,7 @@ ITEMS.bee_statue = {
 ITEMS.bee_mount = {
   name: 'Bee Steed',
   category: 'Mount',
-  description: 'The bee queen, friends now, buzzing along just over the grass with you on her back. With her in hand, E gets on (or off). Just for show: she is no faster, and you hop off to use anything else.',
+  description: 'The bee queen, friends now, buzzing along just over the grass with you on her back, half as fast again as walking. With her in hand, E gets on (or off); you hop off to use anything else.',
   maxStack: 1,
   trashable: false,
   mount: 'bee',
@@ -1497,7 +1497,7 @@ ITEMS.crow_statue = {
 ITEMS.crow_mount = {
   name: 'Crow Steed',
   category: 'Mount',
-  description: 'The giant crow, friends now, hopping along with you on its back and its scarf flying. With it in hand, E gets on (or off). Just for show: it is no faster, and you hop off to use anything else.',
+  description: 'The giant crow, friends now, hopping along with you on its back and its scarf flying: half as fast again as walking, and it jumps a good way higher. With it in hand, E gets on (or off); you hop off to use anything else.',
   maxStack: 1,
   trashable: false,
   mount: 'crow',

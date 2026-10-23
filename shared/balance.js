@@ -251,6 +251,14 @@ export const BOSSES = {
     statue: 'crow_statue', mount: 'crow_mount',
   },
 };
+// Riding a boss's mount (once it is beaten): `speed` times as fast as on
+// foot, and `jump` times as high
+export const MOUNTS = {
+  parsnip: { speed: 1.3, jump: 1.2 }, // (a springy one)
+  lion: { speed: 1.7, jump: 1 },
+  bee: { speed: 1.45, jump: 1.1 },
+  crow: { speed: 1.5, jump: 1.25 },
+};
 // What every boss fight shares. `hitsOut`: a farmer the boss bops this many
 // times is sent back to the arena's start (and can go again). `dizzy`:
 // seconds a bopped farmer wobbles (slower, no swinging); `knock`: how hard

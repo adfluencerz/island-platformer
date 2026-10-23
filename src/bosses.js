@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BOSSES, BOSS_FIGHT, WEAPONS } from '../shared/balance.js';
+import { BOSSES, BOSS_FIGHT, WEAPONS, MOUNTS } from '../shared/balance.js';
 import { GROUND_STAND_Y } from '../shared/level.js';
 import { C } from '../shared/protocol.js';
 import {
@@ -29,8 +29,9 @@ import { TILE_SIZE } from './world.js';
 // Beating a boss gives everyone who fought (src/main.js keeps it in the save,
 // record()): its statue and its mount the first time, into the backpack (or
 // as soon as there is room), and a shiny animal every time, on our own farm
-// (now, or the next time we are home). Riding a mount is just for show: E
-// with it in hand gets on or off, and picking anything else gets off.
+// (now, or the next time we are home). Riding a mount is quicker than walking
+// (MOUNTS in shared/balance.js): E with it in hand gets on or off, anywhere,
+// and picking anything else gets off.
 //
 // ctx (from main.js): world (the farm's), player, farmer, inventory, hud,
 // giantBars, buildings, myId(), net() (the farm's room, null playing alone),
@@ -299,7 +300,9 @@ export function createBosses(ctx) {
     inArena: () => !!here(),
 
     // How fast our farmer walks (dizzy: slower)
-    speed: () => (now < dizzyUntil ? 0.45 : 1),
+    // How fast we go, and how high we jump (dizzy: slower; riding: quicker)
+    speed: () => (now < dizzyUntil ? 0.45 : 1) * (riding ? MOUNTS[riding].speed : 1),
+    jump: () => (riding ? MOUNTS[riding].jump : 1),
 
     // The mount we are on, for STATEF (1 + its boss's place in BOSS_IDS; 0: none)
     mountBits: () => (riding ? BOSS_IDS.indexOf(riding) + 1 : 0),
