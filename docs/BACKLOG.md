@@ -10,10 +10,7 @@ Last updated: 2026-10-23
 ---
 
 ## In progress
-Open pull requests, waiting to be merged:
-
-- [ ] **King of the hill**: a second party game (#51)
-- [ ] **Last one standing**: a third party game (#54)
+Nothing open right now.
 
 ---
 
@@ -68,7 +65,7 @@ entry in the world's platforms.
       for a reward
 - [ ] Achievements or a collection book (fish, relics, recipes, bosses)
 - [ ] A fifth boss
-- [ ] More party games (after #51 and #54)
+- [ ] More party games
 
 ### Playing together
 - [ ] Trading between farmers in a lobby
@@ -92,6 +89,8 @@ entry in the world's platforms.
 ## Done
 The big pieces so far, newest first:
 
+- Party games: king of the hill and last one standing, next to the coin
+  rush and the fishing contest
 - More fishing: weighed fish, a journal, bait, a contest, fish shadows, an
   aquarium
 - Four bosses (evil parsnip, super lion, bee queen, giant crow), each with
