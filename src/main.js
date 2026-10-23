@@ -3483,7 +3483,7 @@ function showRemotes() {
 // The lobby's party game as it is now (null: none). pos: where the lobby has
 // us (a WELCOME's: back in the arena after a reload)
 function showParty(game, pos = null) {
-  const was = partyGame?.id === game?.id ? partyGame.phase : null;
+  const was = game && partyGame?.id === game.id ? partyGame.phase : null;
   partyGame = game;
   partyHud.show(game, myId);
   // a loot run: everyone off from the stone circle together
