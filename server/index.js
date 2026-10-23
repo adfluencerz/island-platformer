@@ -65,8 +65,8 @@ const DATA = process.env.GAME_DATA || fileURLToPath(new URL('../data/lobbies.jso
 
 const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)) });
 const farms = new Farms({ dir: DATA === 'off' ? null : join(dirname(resolve(DATA)), 'farms') });
-const farmRooms = new FarmRooms({ farms });
-const presence = new Presence({ farms, lobby });
+const farmRooms = new FarmRooms({ farms, atHome: (id) => presence.whereIs(id) === 'home' });
+const presence = new Presence({ farms, lobby, onHome: (id) => farmRooms.ownerHome(id) });
 setInterval(() => presence.tick(), 250).unref();
 
 // ---------- HTTP ----------
@@ -222,6 +222,11 @@ async function farmApi(req, res, path) {
     } else if (route === 'POST /api/friends/remove') {
       out = farms.removeFriend(farm, String(body?.id ?? ''));
       presence.sendTo(String(body?.id ?? ''), { t: PS.FRIENDS });
+      // (and neither looks round the other's farm any more)
+      if (!out?.error) {
+        farmRooms.turnOut(farm.id, String(body.id), { visitor: true });
+        farmRooms.turnOut(String(body.id), farm.id, { visitor: true });
+      }
     }
     else if (route === 'POST /api/farms/me/helpers') out = { helpers: farms.helpersOf(farm) };
     else if (route === 'POST /api/farms/me/helpers/invite') out = farms.invite(farm, body?.name);
@@ -245,7 +250,7 @@ server.on('upgrade', (req, socket, head) => {
   if (url.pathname !== '/ws') return socket.destroy();
   wss.handleUpgrade(req, socket, head, (ws) => {
     if (url.searchParams.has('presence')) return attachPresence(ws);
-    // a farm (its owner, or one of its helpers: the room asks who they are)
+    // a farm (its owner, one of its helpers, or a friend to look round: the room asks who they are)
     const farmId = url.searchParams.get('farm');
     if (farmId !== null) {
       const room = /^[a-f0-9]{16}$/.test(farmId) ? farmRooms.open(farmId) : null;

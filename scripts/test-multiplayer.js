@@ -1961,6 +1961,78 @@ await test('a farm room: things dropped lie there for anyone (not straight back 
   again.close();
 });
 
+await test('a farm room: a friend of the farmer comes to look round (a visitor), farming nothing; the farmer home, or off their friends, out', async () => {
+  const farms = new Farms({ log: () => {} });
+  const madeA = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3'], crops: [] }, backpack: {} }, 'pa');
+  const madeB = farms.create(aSave(), 'pb');
+  const madeC = farms.create(aSave(), 'pc');
+  const [a, b] = [madeA, madeB].map((made) => farms.auth(bearer(made)));
+  let home = true; // (Ann at home on her page: server/presence.js)
+  const rooms = new FarmRooms({ farms, atHome: () => home, log: () => {} });
+  let room = rooms.open(a.id);
+  const joinAs = (made, name) => {
+    const conn = fakeConn();
+    return { conn, p: room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name, key: name, auth: `${made.id}.${made.token}` }) };
+  };
+  // someone who is neither a helper nor a friend: no
+  const cy = joinAs(madeC, 'Cy');
+  assert.deepEqual([cy.p, cy.conn.closed], [null, CLOSE.NOT_HELPER]);
+  // a friend, while the farmer plays the farm (no helpers) on their own: not now
+  a.friends = [b.id];
+  b.friends = [a.id];
+  const early = joinAs(madeB, 'Bo');
+  assert.deepEqual([early.p, early.conn.closed], [null, CLOSE.AT_HOME]);
+  await Promise.resolve();
+  assert.ok(!rooms.has(a.id), 'the room they opened is put away again, so her page keeps saving the farm');
+  // ...and once she's out: in, to look round
+  home = false;
+  room = rooms.open(a.id);
+  const rev = a.rev;
+  const bo = joinAs(madeB, 'Bo');
+  assert.equal(bo.conn.last(S.FARM).visitor, true);
+  assert.equal(bo.conn.last(S.FARM).mine, false);
+  assert.equal(room.rosterList().find((p) => p.id === bo.p.id).visitor, true);
+  assert.match(bo.conn.last(S.CHAT).text, /came to look round/);
+  // they farm nothing: each ask turned down, with what a page needs to put back
+  room.message(bo.p, { t: C.STATE, x: 3.5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(bo.p, { t: C.PLANT, key: '3,3', crop: 'turnip' });
+  assert.deepEqual([bo.conn.last(S.FARM_DENY).op, bo.conn.last(S.FARM_DENY).crop], ['plant', 'turnip'], 'the seed back');
+  room.message(bo.p, { t: C.TILL, key: '5,3' });
+  assert.equal(bo.conn.last(S.FARM_DENY).op, 'till');
+  room.message(bo.p, { t: C.BUILD, key: '6,6', piece: 'wood_crate' });
+  assert.deepEqual([bo.conn.last(S.FARM_DENY).op, bo.conn.last(S.FARM_DENY).piece], ['build', 'wood_crate'], 'its cost back');
+  room.message(bo.p, { t: C.THROW, item: 'wood', count: 2 });
+  assert.deepEqual([bo.conn.last(S.THROW_DENY).item, bo.conn.last(S.THROW_DENY).count], ['wood', 2]);
+  room.message(bo.p, { t: C.CHEST_PUT, item: 'wood', count: 2 });
+  assert.deepEqual([bo.conn.last(S.CHEST_GOT).item, bo.conn.last(S.CHEST_GOT).count], ['wood', 2], 'back to them');
+  assert.ok(!room.crops.size && !room.built.size && !room.drops.size && !Object.keys(room.chest).length, 'the farm as it was');
+  room.changed = true;
+  rooms.save();
+  assert.equal(a.rev, rev, 'only a friend looking round: the farm is never written back');
+  // the farmer comes home: friends looking round go, and the room with them
+  rooms.ownerHome(a.id);
+  assert.equal(bo.conn.closed, CLOSE.AT_HOME);
+  assert.ok(!rooms.has(a.id));
+  // with helpers it's played on the server, with them, and friends can look round any time
+  a.helpers = [{ id: madeC.id, name: 'Cy', since: Date.now() }];
+  room = rooms.open(a.id);
+  const again = joinAs(madeB, 'Bo');
+  assert.equal(again.conn.last(S.FARM).visitor, true);
+  rooms.ownerHome(a.id);
+  assert.ok(!again.conn.closed, 'a farm with helpers: they stay');
+  // the farmer farms on
+  const ann = joinAs(madeA, 'Ann');
+  room.message(ann.p, { t: C.STATE, x: 3.5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.PLANT, key: '3,3', crop: 'turnip' });
+  assert.ok(room.crops.has('3,3'));
+  // no longer friends: out (a visitor only: rooms.turnOut with visitor)
+  farms.removeFriend(a, b.id);
+  rooms.turnOut(a.id, b.id, { visitor: true });
+  assert.equal(again.conn.closed, CLOSE.NOT_HELPER);
+  assert.ok(!ann.conn.closed, 'the farmer stays');
+  room.close();
+});
+
 await test('a farm room: a beanstalk grows like any crop, and its beans are picked from up on its crown', () => {
   const farms = new Farms({ log: () => {} });
   const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3'], crops: [] }, backpack: {} }, 'pv');
