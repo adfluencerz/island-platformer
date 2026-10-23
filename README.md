@@ -7,6 +7,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, wind-swayed grass and flowers, and grass-topped platforms to jump between; trees fade out when they block the view of the player
 - Farming: till, plant and harvest turnips, carrots, flax and sunflowers, in a backpack-and-toolbar inventory
 - A day/night cycle with a sun and moon, fireflies and a clock
+- Sound effects and a gentle tune that changes at night, all made on the spot with the Web Audio API (`src/sound.js`, no sound files); `M` or the menu turns them off
 - A merchant at a market stall on the farm who sells seeds and animals and buys what you grow and find
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
 - Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, rope fences, log benches, compost bins, milk churns, dovecotes, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, boulders, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, a sword and a mallet for bopping other farmers in lobbies, and machines
@@ -32,11 +33,12 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 
 ## Controls
 - `W`/`A`/`S`/`D` or arrow keys — move
-- `Space` — jump (only from the ground; once your overall skill level reaches 15, once more in the air: a double jump)
+- `Space` — jump (let go early for a lower jump; pressed just before landing it still jumps; only from the ground; once your overall skill level reaches 15, once more in the air: a double jump)
 - `E` — at home: till / plant / harvest, trade at the merchant's stall, pet an animal (or milk the cow, shear the sheep), let out the animal in hand in her pen, chop a tree with the axe, or mine a rock with the pickaxe; in a lobby: gather (berries, mushrooms), chop a tree with the axe in hand, or mine a rock with the pickaxe (hold to keep swinging)
 - `I` — backpack. In it: click picks up, places, swaps or merges a stack; right click or `Ctrl`+click (`Cmd` on a Mac) takes one (`Shift`+right click: half); `Shift`+click moves a stack to or from the toolbar; the bin destroys what you carry (not tools); and a click outside the window drops what you carry on the ground at your feet (below)
 - `B` — build (the backpack's Build tab), in groups: fences & walls, paths, blocks to climb, buildings (the workbench, the farm chest, the house, the well), decor, and relics once you have one to show (`BUILD_GROUPS` in `shared/level.js`)
 - `K` — your skills (the backpack's Skills tab)
+- `M` — sound and music on or off (the menu has a switch for each)
 - `L` — the menu, on **Play online** (from home)
 - `Enter` — chat (in a lobby)
 - `Esc` — the menu: the same one as the title screen, with **Resume** (and **Go home** when away), and pages for **Play online**, **Friends** (farms you help on, your helpers) and **Controls**. `Esc` on a page goes back.

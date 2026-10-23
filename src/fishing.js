@@ -3,6 +3,7 @@ import { ITEMS } from './items.js';
 import { RARE } from '../shared/level.js';
 import { C } from '../shared/protocol.js';
 import { CAST_EVERY, castLine, weightText } from '../shared/fishing.js';
+import { play } from './sound.js';
 
 // ---------- Fishing, on the page ----------
 // With a rod in hand, E facing water casts (the rules: shared/fishing.js).
@@ -151,12 +152,14 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
       line.biteAt = now + line.local.bite * 1000;
     }
     farmer.swing(); // (a flick of the rod)
+    play('cast');
     setTimeout(() => line?.at === at && ripples.ring(at.x, at.y, at.z, 0.9), 250); // (plop)
   }
 
   // Something bit: E within window ms
   function bite(window) {
     line.phase = 'bite';
+    play('bite');
     line.closeAt = performance.now() + window + LEEWAY;
     touch.setBite(true);
     try {
@@ -182,6 +185,7 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     if (was) {
       const { x, y, z } = was.at;
       ripples.splash(x, y, z);
+      play('splash');
       ripples.leap(items ? items[0][0] : item, new THREE.Vector3(x, y, z), new THREE.Vector3(player.position.x, player.position.y + 0.4, player.position.z));
       // the bait and lure on the hook are used up
       for (const it of ['bait', 'lure']) if (was.hooked?.[it] && inventory.count(it)) inventory.remove(it, 1);
@@ -196,6 +200,7 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
     inventory.add(item, count);
     const name = RARE[item] ?? ITEMS[item].name;
     const what = item === 'old_boot' ? 'An old boot…' : item === 'wood' ? 'Driftwood!' : grams ? `${name}, ${weightText(grams)}!` : `${name}!`;
+    if (record || first) play('cheer');
     hud.flash(record ? `${what} Your heaviest!` : first ? `${what} A new fish!` : what);
   }
 
