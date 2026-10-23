@@ -59,6 +59,7 @@ import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES
 import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 import { BEANSTALK } from '../shared/balance.js';
+import { rainSince } from '../shared/weather.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
@@ -627,6 +628,7 @@ export class FarmRoom extends Place {
         this.broadcast({ t: S.GIANT, kind, id, hp: giantMax(kind), max: giantMax(kind), by: 0 });
         this.say(kind === 'tree' ? 'A giant tree has grown on the farm!' : 'A giant rock has surfaced on the farm!');
       }
+      this.rain(hours);
       for (const [key, { since, life }] of this.tilled) {
         if (this.crops.has(key) || hours - since < life) continue;
         this.tilled.delete(key);
@@ -637,6 +639,20 @@ export class FarmRoom extends Place {
     if (now - this.clockSentAt < CLOCK_EVERY) return;
     this.clockSentAt = now;
     if (this.connected()) this.broadcast({ t: S.FARM_CLOCK, hours: round3(this.hours(now)) });
+  }
+
+  // Rain (shared/weather.js) waters what is growing out in it: each crop not
+  // watered yet that it has fallen on since it was planted, from when it did
+  // (and one left growing while nobody was on the farm, when it opens again)
+  rain(hours) {
+    for (const [key, c] of this.crops) {
+      if (c.wateredAt !== undefined || cropAge(c, hours) >= CROP_GROW_TIME[c.crop]) continue; // (ripe now, watered or not)
+      const at = rainSince(c.plantedAt, hours);
+      if (at === null || cropAge(c, at) >= CROP_GROW_TIME[c.crop]) continue; // (dry, or it was ripe by then)
+      c.wateredAt = round3(at);
+      this.changed = true;
+      this.broadcast({ t: S.WATERED, key, at: c.wateredAt, by: 0 });
+    }
   }
 
   // The bosses, while anyone is in their arenas (or till they fall asleep again)

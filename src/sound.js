@@ -6,6 +6,7 @@
 //                    once at most, so holding E doesn't pile them up)
 //   music(mood)      the tune that plays: 'day', 'night' or null (none). It
 //                    changes at the next bar.
+//   rain(level)      the hiss of rain while it falls (src/weather.js), 0 to 1
 //   settings()       { effects, music }: on or off, kept in this browser
 //   setEffects(on), setMusic(on), toggle(): M mutes and unmutes both
 //
@@ -137,6 +138,8 @@ const SOUNDS = {
   splash: (b) => noise(b, { len: 0.45, freq: 2600, to: 300, gain: 0.4, attack: 0.01 }),
   // food and machines
   eat: (b) => (noise(b, { len: 0.06, filter: 'bandpass', freq: 1200, q: 2, gain: 0.3 }), noise(b, { len: 0.06, filter: 'bandpass', freq: 1000, q: 2, gain: 0.3, at: 0.14 })),
+  // the weather (src/weather.js): a crack, then the long rumble
+  thunder: (b) => (noise(b, { len: 0.4, freq: 1400, to: 300, gain: 0.3 }), noise(b, { len: 2.6, freq: 240, to: 50, gain: 0.7, attack: 0.08 })),
   // something to cheer: a catch, a win, a level, a find
   cheer: (b) => [523, 659, 784, 1046].map((freq, i) => tone(b, { freq, len: 0.22, type: 'triangle', gain: 0.16, at: i * 0.08 })).at(-1),
 };
@@ -150,6 +153,29 @@ export function play(name) {
   playing.set(name, n + 1);
   const last = SOUNDS[name](effectsBus);
   last.onended = () => playing.set(name, (playing.get(name) ?? 1) - 1);
+}
+
+// ---------- Rain ----------
+// Noise on a loop, through a band of the higher notes, as loud as `level`
+let rainAmp = null;
+let rainLevel = 0;
+export function rain(level) {
+  if (!ctx || Math.abs(level - rainLevel) < 0.02) return;
+  rainLevel = level;
+  if (!rainAmp) {
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+    src.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 1700;
+    band.Q.value = 0.45;
+    rainAmp = ctx.createGain();
+    rainAmp.gain.value = 0;
+    src.connect(band).connect(rainAmp).connect(effectsBus);
+    src.start();
+  }
+  rainAmp.gain.setTargetAtTime(level * 0.4, ctx.currentTime, 0.4);
 }
 
 // ---------- The music ----------

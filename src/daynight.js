@@ -141,6 +141,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   const ui = createClockUI();
   let shownLabel = '';
   let note = ''; // after the day (setNote: the farm's season)
+  let cloud = 0; // how overcast it is, 0 to 1, and lightning's flash (setWeather: src/weather.js)
+  let flash = 0;
 
   // Warm light around the player at night so the world stays readable. It
   // always exists (intensity 0 by day) so the scene's light count never
@@ -168,15 +170,26 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     return lerped;
   }
 
+  // Rain clouds: the sky and the light greyer and dimmer (as bright as they
+  // were, less a quarter, so a rainy night is no lighter)
+  function overcast(color) {
+    const grey = (color.r * 0.3 + color.g * 0.59 + color.b * 0.11) * 0.75;
+    color.lerp(_grey.setRGB(grey * 0.92, grey * 0.97, grey * 1.08), cloud * 0.8);
+  }
+  const _grey = new THREE.Color();
+  const FLASH = new THREE.Color(0xe6ecff);
+
   function apply() {
     const s = sample(hour);
+    if (cloud > 0) for (const p of COLOR_PROPS) overcast(s[p]);
+    if (flash > 0) s.sky.lerp(FLASH, flash * 0.7);
     scene.background.copy(s.sky);
     scene.fog.color.copy(s.sky);
     hemi.color.copy(s.hemiSky);
     hemi.groundColor.copy(s.hemiGround);
-    hemi.intensity = s.hemiI;
+    hemi.intensity = s.hemiI * (1 - cloud * 0.25) + flash * 2.5;
     sun.color.copy(s.light);
-    sun.intensity = s.lightI;
+    sun.intensity = s.lightI * (1 - cloud * 0.65);
 
     // The sun arcs east (+X) to west (-X) between sunrise and sunset; at
     // night the same light becomes the moon on the opposite side. It never
@@ -231,7 +244,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       }
       ui.root.classList.toggle('fast', fastForward && !paused);
       const night = apply();
-      fireflies.update(elapsed, focus, night);
+      fireflies.update(elapsed, focus, night * (1 - cloud)); // (not out in the rain)
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {
@@ -249,5 +262,10 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       apply();
     },
     night: () => nightAmount(hour), // 0 by day, 1 at night
+    /** How overcast it is (0 to 1) and lightning's flash (0 to 1): from the next update. */
+    setWeather(overcastBy, flashBy) {
+      cloud = overcastBy;
+      flash = flashBy;
+    },
   };
 }

@@ -36,6 +36,7 @@ import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, black
 import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
 import { arenaFor, checkArena, signFor, HOP } from '../shared/arenas.js';
 import { MINIGAMES } from '../shared/balance.js';
+import { WEATHER, spellOn, weatherAt, rainSince } from '../shared/weather.js';
 
 // spot kinds only later generations grow (2 and up)
 const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS, 'strawberry']);
@@ -1907,6 +1908,73 @@ await test('a farm room: a watered crop grows the rest of the way twice as fast,
   assert.equal(crop, 'turnip');
   assert.ok(Number.isFinite(wateredAt));
   room.close();
+});
+
+await test('the weather: the same on every page and farm, from the clock; dry on the first day, no storm in the first few', () => {
+  assert.equal(spellOn(0), null, 'the first day is dry');
+  const kinds = { rain: 0, storm: 0, dry: 0 };
+  for (let day = 0; day < 1000; day++) {
+    const spell = spellOn(day);
+    assert.deepEqual(spell, spellOn(day), 'the same every time');
+    kinds[spell?.kind ?? 'dry']++;
+    if (!spell) continue;
+    if (day < WEATHER.calm) assert.equal(spell.kind, 'rain', `day ${day}: a shower, not a storm`);
+    assert.ok(spell.from >= day * 24 && spell.to <= day * 24 + 23 && spell.to > spell.from, `day ${day}: within the day`);
+    const mid = (spell.from + spell.to) / 2;
+    assert.equal(weatherAt(mid).kind, spell.kind);
+    assert.equal(weatherAt(spell.from - 0.01), null);
+    assert.equal(weatherAt(spell.to), null);
+    assert.ok(weatherAt(spell.from + 0.01).amount < 0.1, 'it starts gently');
+  }
+  assert.ok(kinds.rain > 250 && kinds.storm > 50 && kinds.dry > 500, JSON.stringify(kinds));
+  // when rain first fell: as it came, or straight away when it was raining already
+  const day = [...Array(50).keys()].find((d) => spellOn(d));
+  const { from, to } = spellOn(day);
+  assert.equal(rainSince(from - 5, from + 1), from);
+  assert.equal(rainSince(from + 0.5, to + 3), from + 0.5);
+  assert.equal(rainSince(from - 1, from - 0.5), null);
+  assert.equal(rainSince(to + 0.01, to + 0.02), null);
+});
+
+await test('a farm room: rain waters the crops growing out in it, and what grew while nobody was on the farm', () => {
+  const day = [...Array(50).keys()].find((d) => spellOn(d));
+  const { from: rainFrom } = spellOn(day);
+  const hour = 24 / DAY_LENGTH_SECONDS; // (game hours in a second)
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: rainFrom - 0.5, tilled: ['3,3', '4,3', '5,3'], crops: [] }, backpack: {} }, 'pw');
+  const a = farms.auth(bearer(made));
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const conn = fakeConn();
+  const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${made.id}.${made.token}` });
+  room.message(p, { t: C.STATE, x: 3.5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.PLANT, key: '3,3', crop: 'turnip' });
+  room.crops.get('3,3').plantedAt -= 100 * hour; // (planted long enough ago to be ripe)
+  room.message(p, { t: C.PLANT, key: '4,3', crop: 'turnip' });
+  room.tickPlace(Date.now() + 1500);
+  assert.equal(conn.all(S.WATERED).length, 0, 'dry still');
+  // the rain comes: the growing one is watered from then, by nobody; not the ripe one
+  room.clockBase = rainFrom + 0.1;
+  room.tickPlace(Date.now() + 3000);
+  const watered = conn.all(S.WATERED);
+  assert.deepEqual(watered.map((m) => [m.key, m.by]), [['4,3', 0]]);
+  assert.ok(Math.abs(watered[0].at - rainFrom) < 0.01, 'from when it came');
+  // planted while it rains: watered straight away
+  room.message(p, { t: C.PLANT, key: '5,3', crop: 'turnip' });
+  room.tickPlace(Date.now() + 4500);
+  assert.equal(conn.last(S.WATERED).key, '5,3');
+  room.message(p, { t: C.WATER, key: '5,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'water', 'the rain watered it already');
+  // kept watered in the save
+  rooms.write(room);
+  assert.equal(a.save.farm.crops.find(([key]) => key === '4,3')[3], 1);
+  room.close();
+  // a farm left before the rain and opened once it has come: what was growing
+  // then was watered from when it came (5 s grown, 30 more till the rain)
+  const left = farms.create({ v: 5, farm: { savedAt: Date.now() - (0.8 * 1000) / hour, hours: rainFrom - 0.5, tilled: ['3,3'], crops: [['3,3', 'turnip', 5]] }, backpack: {} }, 'pw2');
+  const reopened = new FarmRoom({ farm: farms.auth(bearer(left)), admit: () => null });
+  reopened.tickPlace(Date.now() + 1500);
+  assert.ok(Math.abs(reopened.crops.get('3,3').wateredAt - rainFrom) < 0.01);
 });
 
 await test('a farm room: things dropped lie there for anyone (not straight back to whoever dropped them), kept with the farm', () => {

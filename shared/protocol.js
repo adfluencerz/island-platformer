@@ -81,7 +81,7 @@ export const S = {
   UNTILLED: 'untilled', // { key }: left bare too long (SOIL_BARE_HOURS), back to grass
   PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
   HARVESTED: 'harvested', // { key, by, item }
-  WATERED: 'watered', // { key, at, by }: the crop on tile key was watered at `at` (the farm's game hours): it grows faster from then
+  WATERED: 'watered', // { key, at, by }: the crop on tile key was watered at `at` (the farm's game hours): it grows faster from then (by 0: rain, shared/weather.js)
   BUILT: 'built', // { key, piece, by }
   UNBUILT: 'unbuilt', // { key, piece, by, back? }: taken down; `by` gets the cost back (and back: { item: count }, what was in a machine)
   FARM_DENY: 'farmDeny', // { op, key, crop, piece }: that did not count (crop: a seed to give back; piece: a piece whose cost goes back; op 'load': what went in comes back)
