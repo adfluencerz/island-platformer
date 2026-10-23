@@ -40,14 +40,16 @@
 // (BOARD; one for each farmer at most); a new heaviest the lobby hears of.
 // In a fishing contest (a party game) the line goes into the arena's sea.
 //
-// At the signpost in the stone circle, a farmer can start a party game
-// (shared/minigame.js): whoever joins is off to an arena of its own for a
-// while, out of the lobby's doings, and back with a prize for the winner.
+// A lobby is opened for one party game (shared/minigame.js), its `game`: a
+// loot run on the lobby's own island, or a game in an arena of its own, out
+// of the lobby's doings. Everyone who comes is in it, and once it is over
+// (a prize for the winner) they head home. Once an arena game is under way
+// the lobby takes nobody new (a loot run, they may drop in on).
 //
 // The players, their seats, chat and position snapshots are shared/place.js;
 // what is here is the lobby's own.
 //
-import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, devToolsOn } from './constants.js';
+import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, CLOSE, CLOSE_TEXT, devToolsOn } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, DROP_OWN_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
@@ -56,7 +58,7 @@ import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
 import { RODS, CAST_EVERY, CAST_REACH, castLine, waterOn, onBoard, weightText } from './fishing.js';
 import { DAY_LENGTH_SECONDS, SKILLS, SHOP, BOOSTS, MINIGAMES } from './balance.js';
-import { GAMES } from './arenas.js';
+import { GAMES, LOBBY_GAMES } from './arenas.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
 import { Trades } from './trade.js';
@@ -75,9 +77,10 @@ const KEEPS = new Set(['coin', ...Object.keys(RARE)]); // (never knocked loose)
 const KEY_KINDS = new Set(['meadow', 'ledge', 'sky']); // where a lobby's one sure key can go (Room.hideKey)
 
 export class Room extends Place {
-  // seed: the island's (shared/worldgen.js). rand: () => [0, 1), for the loot
-  // rolls and regrow times (tests pass their own)
-  constructor({ code, name = 'Lobby', seed = CLASSIC_SEED, inviteOnly = false, maxPlayers = MAX_PLAYERS, rand = Math.random, log = () => {} }) {
+  // seed: the island's (shared/worldgen.js). game: the party game it is
+  // opened for (LOBBY_GAMES in shared/arenas.js; none: a lobby to roam).
+  // rand: () => [0, 1), for the loot rolls and regrow times (tests pass their own)
+  constructor({ code, name = 'Lobby', seed = CLASSIC_SEED, game = null, inviteOnly = false, maxPlayers = MAX_PLAYERS, rand = Math.random, log = () => {} }) {
     const island = islandFor(seed);
     super({ code, name, maxPlayers, worldLimit: island.half + 40, rand, log });
     this.island = island;
@@ -86,6 +89,7 @@ export class Room extends Place {
     this.wilds = growWilds(island);
     this.wildsWire = wildsToWire(this.wilds);
     this.inviteOnly = inviteOnly;
+    this.game = Object.hasOwn(LOBBY_GAMES, game) ? game : null; // (the Party opens it)
     // Every spot starts out full
     // (a chest up on a sky isle has a bundle of things in it: shared/level.js rollSpot)
     this.spots = this.island.spots.map(([kind, x, y, z], id) => ({ id, kind, x, y, z, ...rollSpot(this.island, kind, x, z, rand), regrowAt: 0 }));
@@ -130,6 +134,8 @@ export class Room extends Place {
       max: this.maxPlayers,
       full: this.players.size >= this.maxPlayers,
       inviteOnly: this.inviteOnly,
+      game: this.game,
+      open: this.party.joinable(), // (its game isn't under way, or over: shared/minigame.js)
       rare, // rare finds lying about right now
     };
   }
@@ -163,12 +169,24 @@ export class Room extends Place {
     });
   }
 
+  // Once its game is under way (or over) the lobby takes nobody new, bar
+  // those coming back to their seat
+  join(conn, msg, extra) {
+    const key = typeof msg?.key === 'string' ? msg.key.slice(0, 64) : '';
+    if (!this.party.joinable() && !(key && [...this.players.values()].some((p) => p.key === key))) {
+      conn.close(CLOSE.STARTED, CLOSE_TEXT[CLOSE.STARTED]);
+      return null;
+    }
+    return super.join(conn, msg, extra);
+  }
+
   remove(p) {
     super.remove(p);
-    this.party.leave(p, { gone: true });
+    this.party.leave(p);
   }
 
   welcome(p, resumed) {
+    this.party.arrive(p); // (into the game: their WELCOME has it, everyone else hears below)
     this.send(p, {
       t: S.WELCOME,
       id: p.id,
@@ -176,7 +194,7 @@ export class Room extends Place {
       color: p.color,
       code: this.code,
       seed: this.seed,
-      room: { name: this.name, inviteOnly: this.inviteOnly, maxPlayers: this.maxPlayers },
+      room: { name: this.name, inviteOnly: this.inviteOnly, maxPlayers: this.maxPlayers, game: this.game },
       spots: this.spots.map(({ id, kind, x, y, z, item, count }) => [id, kind, x, y, z, item, count]),
       felled: [...this.felled.keys()],
       mined: [...this.mined.keys()],
@@ -193,23 +211,12 @@ export class Room extends Place {
       boardAt: this.party.board,
       resumed,
     });
+    this.party.tell();
   }
 
   // ---------- Messages ----------
   act(p, msg) {
-    switch (msg?.t) {
-      case C.GAME_START: {
-        const why = this.party.start(p, msg.game);
-        if (why) this.send(p, { t: S.CHAT, from: 0, text: why });
-        return;
-      }
-      case C.GAME_JOIN:
-        return this.party.join(p);
-      case C.GAME_LEAVE:
-        return this.party.leave(p);
-      case C.GAME_COIN:
-        return this.party.coin(p, msg.id);
-    }
+    if (msg?.t === C.GAME_COIN) return this.party.coin(p, msg.id);
     // (off in a party game's arena: nothing of the lobby's, bar a bop at
     // whoever is there too, and in a fishing contest, fishing)
     const fishing = msg?.t === C.CAST || msg?.t === C.REEL;
@@ -222,8 +229,9 @@ export class Room extends Place {
     switch (msg?.t) {
       case C.TAKE: {
         const spot = this.spots[msg.id];
-        // (the locked chest on a sky isle takes an old key, out of the page's backpack as on a farm)
-        if (!spot?.item || !this.inReach(p, spot) || (spot.kind === 'sky_vault' && msg.key !== true)) {
+        // (the locked chest on a sky isle takes an old key, out of the page's backpack as on a farm;
+        // a loot run's lobby: only while it is on)
+        if (!spot?.item || !this.inReach(p, spot) || (spot.kind === 'sky_vault' && msg.key !== true) || !this.party.canLoot()) {
           this.send(p, { t: S.DENY, id: msg.id });
           return;
         }
@@ -231,10 +239,12 @@ export class Room extends Place {
         spot.item = null; // (for good)
         spot.count = 0;
         p.finds++;
+        let rares = 0;
         for (const [it, n] of bundle ?? [[item, count]]) {
           this.gathered(p, it, n);
           if (RARE[it]) {
             p.rares++;
+            rares++;
             this.say(`${p.name} found ${RARE[it].toLowerCase()}!`);
           }
         }
@@ -242,6 +252,7 @@ export class Room extends Place {
         this.rosterDirty = true;
         this.changed = true;
         this.broadcast({ t: S.TAKEN, id: spot.id, by: p.id, item, count, ...(bundle && { items: bundle }) });
+        this.party.looted(p, rares); // (a loot run's score)
         break;
       }
       case C.CHOP: {
@@ -564,6 +575,8 @@ export class Room extends Place {
       code: this.code,
       name: this.name,
       seed: this.seed,
+      game: this.game,
+      over: this.party.over,
       inviteOnly: this.inviteOnly,
       maxPlayers: this.maxPlayers,
       createdAt: this.createdAt,
@@ -585,8 +598,8 @@ export class Room extends Place {
   // shared/level.js still loads: whatever changed starts out fresh. The players
   // who were here are away, their seats held until holdUntil.
   static fromSave(save, { holdUntil = Date.now() + HOLD_MS, ...options } = {}) {
-    const { code, name, seed, inviteOnly, maxPlayers } = save;
-    const room = new Room({ ...options, code, name, seed, inviteOnly, maxPlayers });
+    const { code, name, seed, game, inviteOnly, maxPlayers } = save;
+    const room = new Room({ ...options, code, name, seed, game, inviteOnly, maxPlayers });
     if (Number.isFinite(save.createdAt)) room.createdAt = save.createdAt;
     for (const [id, kind, x, z, item, count, regrowAt] of save.spots ?? []) {
       const spot = Number.isInteger(id) ? room.spots[id] : null;

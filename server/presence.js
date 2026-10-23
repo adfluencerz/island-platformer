@@ -18,6 +18,7 @@
 import { randomBytes } from 'node:crypto';
 import { PROTOCOL_VERSION, CLOSE, CLOSE_TEXT, MAX_PLAYERS, PARTY_MS, INVITE_MS } from '../shared/constants.js';
 import { PC, PS } from '../shared/protocol.js';
+import { LOBBY_GAMES } from '../shared/arenas.js';
 
 const PLACES = new Set(['home', 'lobby', 'farm']);
 
@@ -91,7 +92,7 @@ export class Presence {
         }
         break;
       case PC.PARTY:
-        this.startParty(conn, msg.invite, now);
+        this.startParty(conn, msg.invite, msg.game, now);
         break;
       case PC.CANCEL:
         for (const party of this.parties.values()) if (party.conn === conn && !party.code) this.callOff(party, 'They called it off.');
@@ -101,7 +102,7 @@ export class Presence {
         break;
       case PC.INVITE: {
         const room = typeof msg.code === 'string' ? this.lobby.find(msg.code) : null;
-        if (room) this.invite(conn, msg.invite, { code: room.code, name: room.name }, now);
+        if (room?.party.joinable()) this.invite(conn, msg.invite, { code: room.code, name: room.name, game: room.game }, now);
         break;
       }
     }
@@ -131,32 +132,34 @@ export class Presence {
     return out;
   }
 
-  startParty(conn, ids, now) {
+  // game: the party game the lobby is for (LOBBY_GAMES in shared/arenas.js)
+  startParty(conn, ids, game, now) {
     const farm = this.farms.get(conn.farmId);
     if (!farm?.account) return;
     for (const party of this.parties.values()) if (party.conn === conn && !party.code) this.callOff(party, 'They started another lobby.');
-    const party = this.newParty(conn, farm, this.inviteable(farm, ids, MAX_PLAYERS - 1), now, null);
+    game = Object.hasOwn(LOBBY_GAMES, game) ? game : 'loot_run';
+    const party = this.newParty(conn, farm, this.inviteable(farm, ids, MAX_PLAYERS - 1), now, null, game);
     if (!party.invited.size) return this.open(party); // (nobody to wait for)
     this.log(`party ${party.id}: ${party.name} invites ${party.invited.size}`);
     this.status(party, now);
   }
 
-  // Invitations to a lobby already running (room: { code, name })
+  // Invitations to a lobby already running (room: { code, name, game })
   invite(conn, ids, room, now) {
     const farm = this.farms.get(conn.farmId);
     if (!farm?.account) return;
-    const party = this.newParty(conn, farm, this.inviteable(farm, ids, MAX_PLAYERS), now, room.code);
+    const party = this.newParty(conn, farm, this.inviteable(farm, ids, MAX_PLAYERS), now, room.code, room.game);
     if (!party.invited.size) this.parties.delete(party.id);
   }
 
-  newParty(conn, farm, invite, now, code) {
+  newParty(conn, farm, invite, now, code, game) {
     const party = {
       id: randomBytes(6).toString('hex'), host: farm.id, conn, name: farm.account.name, color: farm.color,
       invited: new Map(invite.map((id) => [id, 'waiting'])), answered: new Map(),
-      startsAt: now + PARTY_MS, until: now + INVITE_MS, code,
+      startsAt: now + PARTY_MS, until: now + INVITE_MS, code, game,
     };
     this.parties.set(party.id, party);
-    for (const id of invite) this.sendTo(id, { t: PS.INVITED, party: party.id, from: party.name, color: party.color, ms: INVITE_MS, late: !!code });
+    for (const id of invite) this.sendTo(id, { t: PS.INVITED, party: party.id, from: party.name, color: party.color, ms: INVITE_MS, late: !!code, game });
     return party;
   }
 
@@ -184,7 +187,7 @@ export class Presence {
   // Time's up (or everyone answered): the lobby opens, and off they go
   open(party) {
     this.parties.delete(party.id);
-    const room = this.lobby.make({ name: `${party.name}'s lobby` });
+    const room = this.lobby.make({ name: `${party.name}'s lobby`, game: party.game });
     if (room.error) {
       this.send(party.conn, { t: PS.CALLED_OFF, party: party.id, why: room.error });
       for (const conn of party.answered.values()) this.send(conn, { t: PS.CALLED_OFF, party: party.id, why: room.error });
@@ -197,7 +200,9 @@ export class Presence {
   }
 
   go(party, conn) {
-    if (!this.lobby.find(party.code)) return this.send(conn, { t: PS.CALLED_OFF, party: party.id, why: 'That lobby is over.' });
+    const room = this.lobby.find(party.code);
+    if (!room) return this.send(conn, { t: PS.CALLED_OFF, party: party.id, why: 'That lobby is over.' });
+    if (!room.party.joinable()) return this.send(conn, { t: PS.CALLED_OFF, party: party.id, why: 'Its game has started: too late to join.' });
     this.send(conn, { t: PS.GO, party: party.id, code: party.code });
   }
 

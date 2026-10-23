@@ -21,7 +21,6 @@ const CONTROLS = [
   ['E', 'Use what is in front of you: the stall, the workbench, the chest, a machine, the arcade, the kitchen, a door, a portal'],
   ['E', 'With a rod: cast at the water, then again when it bites. With a dish: eat it. With a mount: get on or off'],
   ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
-  ['E', 'At the signpost in a lobby: start or join a party game'],
   ['1 – =', 'Pick an item (or scroll over the bar)'],
   ['Scroll', 'Zoom'],
   ['I', 'Backpack'],

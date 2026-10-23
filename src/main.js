@@ -47,10 +47,11 @@ import * as sound from './sound.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
-import { arenaFor, signFor, SIGN_REACH, GAMES } from '../shared/arenas.js';
-import { arenaMap, buildSignpost, buildCrown } from './arenas.js';
+import { arenaFor, GAMES } from '../shared/arenas.js';
+import { arenaMap, buildCrown } from './arenas.js';
+import { spawnPoint } from '../shared/level.js';
 import { wildsFromWire } from '../shared/wilds.js';
-import { CAST_REACH, BOARD_REACH, waterOn } from '../shared/fishing.js';
+import { CAST_REACH, waterOn } from '../shared/fishing.js';
 import { HOME_HALF } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
@@ -211,7 +212,6 @@ function enterWorld(name, seed, wire) {
     stale = worlds.wild;
     const island = islandFor(seed);
     worlds.wild = buildWorld(wildMap(island), wildsFromWire(wire) ?? undefined);
-    worlds.wild.root.add(buildSignpost(signFor(island))); // (where party games start)
     if (session?.seed === seed && session.boardAt) fishBoard.placeIn(worlds.wild.root, session.boardAt); // (and the fishing board)
     wildsShown = wilds;
   }
@@ -835,6 +835,11 @@ function clearSpots() {
 // instant; TAKEN (into the backpack) or DENY (it comes back) settles it.
 function takeSpot(spot) {
   if (!spot.item || spot.pending || performance.now() < spot.retryAt) return;
+  if (!canLoot()) {
+    inventory.notify(partyGame ? 'Wait for the loot run to start' : 'The loot run is over');
+    spot.retryAt = performance.now() + 1500;
+    return;
+  }
   const vault = spot.kind === 'sky_vault';
   if (vault && !inventory.count('key')) {
     inventory.notify("It's locked. An old key might fit");
@@ -891,7 +896,7 @@ function updateSpots(dt, t) {
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
-  const hint = atSign() ? signHint() : atBoard() && !fishing.prompt() ? boardHint() : useHint();
+  const hint = useHint();
   if (hint) hud.setPrompt(`E  ${hint}`);
   else hud.setPrompt(gatherSpotInReach()?.kind === 'sky_vault' ? 'Locked: an old key would open it' : '');
 }
@@ -1590,8 +1595,6 @@ function useAction() {
   if (place === 'lobby' && (!arenaId || (inContest() && partyGame.phase === 'playing')) && fishing.use()) return;
   if (place === 'lobby') {
     if (arenaId) return bopWith() && bop(); // (off in a party game's arena)
-    if (atSign()) return useSign();
-    if (atBoard()) return useBoard();
     if (weaponInHand() && (bopTarget() || !gatherSpotInReach())) return bop();
     if (holding() === 'axe' && swingAxe()) return;
     if (holding() === 'pickaxe' && swingPick()) return;
@@ -2582,10 +2585,11 @@ let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone, helpe
 let farmJoining = 0; // (each joinFarm's number: a newer one wins)
 const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
 const visiting = () => !!farmVisit && !farmVisit.mine; // on a friend's farm
-let session = null; // { code, seed, room, wilds, sign } once a lobby has welcomed us (sign: where its signpost stands)
+let session = null; // { code, seed, room, wilds, boardAt } once a lobby has welcomed us (room.game: the party game it is for)
 let myId = 0;
 let partyGame = null; // the lobby's party game as it last said (shared/minigame.js wire()), or null
 let arenaId = 0; // the party game whose arena we are in (0: on the lobby's island)
+let lastFarm = null; // the friend's farm we were on before the lobby (its id; null: our own), to go back to after its game
 let lobbyRoster = []; // (as the lobby last sent it: remotes shows those where we are)
 let sendTimer = 0;
 let farmOnScreen = false; // the home farm's soil and crops are in the scene
@@ -3246,7 +3250,7 @@ const splash = new Splash({
   onAddFriend: (username) => farmSync.addFriend(username),
   onAnswerFriend: (id, yes) => farmSync.answerFriend(id, yes),
   onRemoveFriend: (id) => farmSync.removeFriend(id),
-  onStartParty: (ids) => presence.ready && (presence.send({ t: PC.PARTY, invite: ids }), true),
+  onStartParty: (ids, game) => presence.ready && (presence.send({ t: PC.PARTY, invite: ids, game }), true),
   onCancelParty: () => presence.send({ t: PC.CANCEL }),
   onInviteToLobby: (ids) => session && presence.send({ t: PC.INVITE, code: session.code, invite: ids }),
 });
@@ -3651,55 +3655,31 @@ function leaveLobbyWorld() {
 }
 
 // ---------- Party games ----------
-// At the signpost in a lobby's stone circle (shared/arenas.js signFor), E
-// starts a party game (shared/minigame.js), or joins the one gathering; the
-// card at the top (src/ui/party.js) has Join too. Whoever is in it goes off
-// to its arena (src/arenas.js) once it has gathered, a moment to look about
-// (standing still), then the game; and back on the lobby's island when it is
-// over, with the prize. While we are in the arena the lobby's island is kept
-// as it was (its spots and drops out of sight), and only the farmers in the
-// same place as us are drawn.
+// A lobby is opened for one party game (shared/minigame.js), picked by
+// whoever started it, and everyone there is in it: the card at the top
+// (src/ui/party.js) counts down to it. For an arena game, off to its arena
+// (src/arenas.js) once it has gathered, a moment to look about (standing
+// still), then the game; a loot run is played on the lobby's own island, from
+// the stone circle. While we are in the arena the lobby's island is kept as it
+// was (its spots and drops out of sight), and only the farmers in the same
+// place as us are drawn. Once it is over, the results (and the prize) a
+// moment, and home: to the farm we were on before (backToFarm).
 const partyHud = new PartyHud({
-  onJoin: () => net?.send({ t: C.GAME_JOIN }),
-  onLeave: () => leaveParty(),
+  onLeave: () => backToFarm(),
   nameOf: (id) => lobbyNames.get(id) ?? 'Someone',
 });
 const coinPending = new Map(); // coin id -> when we said we picked it up (performance.now())
 const crowns = new Map(); // king of the hill: player id -> the crown over their head, while they hold the hill
 let readyCount = 0; // the last number of the countdown shown
 const inParty = () => !!partyGame?.players.some(([id]) => id === myId);
-const partyFrozen = () => !!arenaId && partyGame?.phase === 'ready';
-const atSign = () => place === 'lobby' && !arenaId && !!session && footReach() &&
-  Math.hypot(player.position.x - session.sign.x, player.position.z - session.sign.z) < SIGN_REACH;
-
-function signHint() {
-  if (!partyGame) return 'Start a party game';
-  const name = GAMES[partyGame.kind]?.name.toLowerCase() ?? 'party game';
-  if (partyGame.phase !== 'gathering') return '';
-  return inParty() ? `Not coming to the ${name} after all` : `Join the ${name}`;
-}
-
-// kind: a game to start straight away (the board's fishing contest); none,
-// the signpost's games to pick from
-function useSign(kind = null) {
-  if (!partyGame && kind) net?.send({ t: C.GAME_START, game: kind });
-  else if (!partyGame) {
-    partyHud.choose((kind) => {
-      partyHud.stopChoosing();
-      net?.send({ t: C.GAME_START, game: kind });
-    });
-  } else if (partyGame.phase === 'gathering') net?.send({ t: inParty() ? C.GAME_LEAVE : C.GAME_JOIN });
-  else inventory.notify('A game is on: wait for the next one');
-}
+const lootRun = () => partyGame?.kind === 'loot_run' && inParty();
+const partyFrozen = () => partyGame?.phase === 'ready' && (!!arenaId || lootRun());
+// Whether the lobby's spots can be emptied now: a loot run's only while it is on
+const canLoot = () => session?.room.game !== 'loot_run' || (lootRun() && partyGame.phase === 'playing');
 
 // The board of the biggest catches by the lobby's pond (fishboard.js, where
-// the lobby says it stands): E there starts a fishing contest, or joins the
-// game gathering
+// the lobby says it stands)
 const fishBoard = createFishBoard();
-const atBoard = () => place === 'lobby' && !arenaId && !!session?.boardAt && footReach() &&
-  Math.hypot(player.position.x - session.boardAt.x, player.position.z - session.boardAt.z) < BOARD_REACH;
-const boardHint = () => (partyGame ? signHint() : `Start a ${GAMES.fishing_contest.name.toLowerCase()}`);
-const useBoard = () => useSign('fishing_contest');
 
 // The farmers drawn: the ones where we are (the lobby's island, or our arena)
 function showRemotes() {
@@ -3709,9 +3689,16 @@ function showRemotes() {
 // The lobby's party game as it is now (null: none). pos: where the lobby has
 // us (a WELCOME's: back in the arena after a reload)
 function showParty(game, pos = null) {
+  const was = game && partyGame?.id === game.id ? partyGame.phase : null;
   partyGame = game;
   partyHud.show(game, myId);
-  const playing = game && game.phase !== 'gathering' && inParty();
+  // a loot run: everyone off from the stone circle together
+  if (lootRun() && game.phase === 'ready' && was === 'gathering') {
+    putDown(spawnPoint(islandFor(session.seed).spawn, myId % 8, 8)); // (where the lobby has us: shared/room.js spawnFor)
+    readyCount = 0;
+  }
+  if (lootRun() && game.phase === 'playing' && was === 'ready') hud.flash('Go!');
+  const playing = game && GAMES[game.kind] && game.phase !== 'gathering' && inParty();
   if (playing && arenaId !== game.id) {
     fishing.reset(); // (a line out in the lobby comes in)
     enterWorld('arena', game);
@@ -3752,10 +3739,13 @@ function showLobbyThings(on) {
   for (const drop of drops.values()) drop.group.visible = on && !drop.pending;
 }
 
-// Not playing after all: out of the gathering, or back to the lobby from the arena
-function leaveParty() {
-  net?.send({ t: C.GAME_LEAVE });
-  if (arenaId) backFromArena();
+// Off home from the lobby: to the farm we were on before it (ours, or the
+// friend's we were helping on or looking round)
+function backToFarm() {
+  if (place !== 'lobby') return;
+  const friend = lastFarm;
+  goHome();
+  if (friend) joinFarm(friend);
 }
 
 // King of the hill: a crown over the head of each farmer up on the hill (ids)
@@ -3830,15 +3820,7 @@ function updateArena() {
     crown.position.set(pos.x, pos.y + 0.95 + Math.sin(t * 3) * 0.04, pos.z);
     crown.rotation.y = t;
   }
-  if (partyGame?.phase === 'ready') {
-    const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
-    if (left > 0 && left !== readyCount) {
-      readyCount = left;
-      hud.flash(String(left));
-    }
-    return;
-  }
-  if (partyGame?.phase !== 'playing') return;
+  if (countDown() || partyGame?.phase !== 'playing') return;
   const now = performance.now();
   world.coins.forEach((coin, id) => {
     const at = coinPending.get(id);
@@ -3854,6 +3836,18 @@ function updateArena() {
   });
 }
 
+// The seconds before a game starts, as they go (in its arena, or a loot
+// run's stone circle). Whether it is about to.
+function countDown() {
+  if (partyGame?.phase !== 'ready' || !inParty()) return false;
+  const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
+  if (left > 0 && left !== readyCount) {
+    readyCount = left;
+    hud.flash(String(left));
+  }
+  return true;
+}
+
 // GAME_COIN: someone picked a coin up
 function partyCoin(m) {
   if (!partyGame) return;
@@ -3866,25 +3860,27 @@ function partyCoin(m) {
   }
 }
 
-// GAME_END: it is over. Our prize into the backpack, and back to the lobby if we played.
+// GAME_END: it is over. Our prize into the backpack, back to the lobby from
+// the arena, and (once the results have been up a moment) home.
 function partyOver(m) {
-  const played = m.pos.find(([id]) => id === myId);
+  const at = m.pos.find(([id]) => id === myId);
+  const played = m.scores.some(([id]) => id === myId);
   const got = m.prizes.find(([id]) => id === myId)?.[1] ?? null;
   partyGame = null;
-  if (played && arenaId) backFromArena({ x: played[1], y: played[2], z: played[3] });
+  if (arenaId) backFromArena(at && { x: at[1], y: at[2], z: at[3] });
   for (const [item, count] of got ?? []) if (ITEMS[item]) inventory.add(item, count);
   if (played) {
     const named = (item, count) => {
       const name = (ITEMS[item]?.name ?? item).toLowerCase();
       return count > 1 && !name.endsWith('s') ? `${name}s` : name;
     };
-    partyHud.results(m, got, named);
+    partyHud.results(m, got, named); // (then onLeave: home)
     if ((m.winners ?? [m.winner]).includes(myId)) {
       sound.play('cheer');
       hud.flash('You won!');
     }
   } else {
-    partyHud.show(null, myId);
+    backToFarm();
   }
 }
 
@@ -3896,6 +3892,7 @@ function joinLobby({ name, code }) {
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 
   on(S.WELCOME, (m) => {
+    if (place !== 'lobby') lastFarm = farmVisit && !farmVisit.mine ? farmVisit.id : null; // (to go back to after the game)
     if (farmVisit || farmNet) leaveFarm(); // (off a farm with helpers)
     if (place !== 'lobby') {
       // Off we go: the farm stays at home (saved, and growing while we are out)
@@ -3910,7 +3907,7 @@ function joinLobby({ name, code }) {
     }
     place = 'lobby';
     enterWorld('wild', m.seed, m.wilds);
-    session = { code: m.code, seed: m.seed, room: m.room, wilds: m.wilds, sign: signFor(islandFor(m.seed)), boardAt: m.boardAt ?? null };
+    session = { code: m.code, seed: m.seed, room: m.room, wilds: m.wilds, boardAt: m.boardAt ?? null };
     fishBoard.placeIn(worlds.wild.root, session.boardAt);
     fishBoard.show(m.board ?? []);
     arenaId = 0;
@@ -4339,7 +4336,7 @@ function update(dt) {
     updateSpots(dt, t);
     updateDrops(dt, t);
     partyHud.update();
-    if (partyHud.choosing && !atSign()) partyHud.stopChoosing();
+    countDown(); // (a loot run's, in the stone circle)
     sendState(dt);
     remotes.update(dt, t);
   } else {

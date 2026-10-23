@@ -8,6 +8,8 @@ import { join as joinPath } from 'node:path';
 import WebSocket from 'ws';
 import { Room } from '../shared/room.js';
 import { Lobby } from '../server/lobby.js';
+import { Presence } from '../server/presence.js';
+import { PC, PS } from '../shared/protocol.js';
 import { Store } from '../server/store.js';
 import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
@@ -36,7 +38,7 @@ import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
 import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
 import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
 import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
-import { arenaFor, checkArena, signFor, HOP } from '../shared/arenas.js';
+import { arenaFor, checkArena, HOP } from '../shared/arenas.js';
 import { MINIGAMES } from '../shared/balance.js';
 import { WEATHER, spellOn, weatherAt, rainSince } from '../shared/weather.js';
 
@@ -855,55 +857,48 @@ await test('coin rush arenas grow exactly as they always did', () => {
   for (const [seed, print] of Object.entries(ARENA_SEEDS)) assert.equal(arenaPrint(arenaFor('coin_rush', seed, { cached: false })), print, seed);
 });
 
-await test('the signpost stands in the stone circle, on open ground, clear of where farmers arrive', () => {
-  for (const seed of ['classic', ...Array.from({ length: 30 }, (_, i) => `sign-${i}-v${CURRENT_GEN}`), 'sign-old', 'sign-v3']) {
-    const island = islandFor(seed);
-    const sign = signFor(island);
-    const d = Math.hypot(sign.x - island.spawn.x, sign.z - island.spawn.z);
-    assert.ok(d < STONE_CIRCLE - 0.5 && d > 2.7, `${seed}: ${d}`);
-    assert.ok(island.isLand(sign.x, sign.z) && !island.inPond(sign.x, sign.z) && !island.topOver(sign.x, sign.z, 0.5), seed);
-  }
-});
-
-// A party game on the classic island: a and b in it, c stays in the lobby
-function partyRoom() {
-  const room = new Room({ code: 'PARTY1', rand: mulberry32(7) });
-  const [a, b, c] = ['Ann', 'Bo', 'Cy'].map((name) => join(room, name));
-  const sign = room.party.sign;
+// A lobby opened for a party game (on the classic island): Ann, Bo and Cy in
+// it (`who`: the names that come), everyone gathered, from the first one there
+function gameRoom(game, who = ['Ann', 'Bo', 'Cy']) {
+  const room = new Room({ code: 'PARTY1', game, rand: mulberry32(7) });
+  const [a, b, c] = who.map((name) => join(room, name));
   const stand = (who, x, y, z) => room.message(who.p, { t: C.STATE, x, y, z, yaw: 0, f: 1 });
-  return { room, a, b, c, sign, stand };
+  return { room, a, b, c, stand };
 }
-await test('a party game starts at the signpost, gathers whoever joins, and takes them off to its arena', () => {
-  const { room, a, b, c, sign, stand } = partyRoom();
-  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
-  assert.equal(room.party.game, null, 'not away from the signpost');
-  assert.match(a.conn.last(S.CHAT).text, /signpost/);
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'tag' });
-  assert.equal(room.party.game, null, 'not a game there is');
-  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
-  const gathering = c.conn.last(S.GAME).game;
-  assert.equal(gathering.phase, 'gathering');
+await test('a lobby opened for a game: everyone who comes is in it, it starts a while after the first one gets there, and takes nobody new once it is on', () => {
+  const room = new Room({ code: 'PARTY1', game: 'coin_rush', rand: mulberry32(7) });
+  assert.equal(room.party.wire().phase, 'gathering');
+  assert.equal(room.party.wire().ms, -1, 'waiting for the first farmer');
+  assert.deepEqual([room.info().game, room.info().open], ['coin_rush', true]);
+  const a = join(room, 'Ann');
+  const gathering = a.conn.last(S.WELCOME).game;
   assert.deepEqual(gathering.players, [[a.p.id, 0]]);
-  assert.match(c.conn.last(S.CHAT).text, /Ann is starting a coin rush/);
-  room.message(c.p, { t: C.GAME_START, game: 'coin_rush' });
-  assert.match(c.conn.last(S.CHAT).text, /on already/);
-  room.message(b.p, { t: C.GAME_JOIN }); // (from the pop-up: anywhere in the lobby)
-  room.message(c.p, { t: C.GAME_JOIN });
-  room.message(c.p, { t: C.GAME_LEAVE }); // (not coming after all)
-  assert.deepEqual(c.conn.last(S.GAME).game.players.map(([id]) => id), [a.p.id, b.p.id]);
+  assert.ok(gathering.ms > MINIGAMES.gatherMs - 100 && gathering.ms <= MINIGAMES.gatherMs);
+  assert.equal(a.conn.last(S.WELCOME).room.game, 'coin_rush');
+  assert.ok(a.conn.all(S.CHAT).some((m) => /^Coin rush starts in 15 s/.test(m.text)));
+  const b = join(room, 'Bo');
+  const c = join(room, 'Cy');
+  assert.deepEqual(a.conn.last(S.GAME).game.players.map(([id]) => id), [a.p.id, b.p.id, c.p.id]);
+  // (no starting or leaving it from the lobby: everyone there is in it)
+  room.message(c.p, { t: 'gameLeave' });
+  assert.equal(room.party.game.players.size, 3);
 
   const now = Date.now();
   room.update(now + MINIGAMES.gatherMs + 10);
   const { game } = c.conn.last(S.GAME);
   assert.equal(game.phase, 'ready');
   const arena = arenaFor('coin_rush', game.seed);
-  assert.deepEqual([a.p.x, a.p.z], [arena.start(0, 2).x, arena.start(0, 2).z]);
-  assert.deepEqual([b.p.x, b.p.z], [arena.start(1, 2).x, arena.start(1, 2).z]);
-  assert.ok(a.p.game && b.p.game && !c.p.game);
+  assert.deepEqual([a.p.x, a.p.z], [arena.start(0, 3).x, arena.start(0, 3).z]);
+  assert.deepEqual([b.p.x, b.p.z], [arena.start(1, 3).x, arena.start(1, 3).z]);
+  assert.ok(a.p.game && b.p.game && c.p.game);
   const roster = c.conn.last(S.ROSTER).list;
   assert.equal(roster.find((p) => p.id === a.p.id).game, game.id, 'pages know who is away');
-  // a reload in the arena comes back to it
+  // nobody new now...
+  assert.equal(room.info().open, false);
+  const d = join(room, 'Di');
+  assert.equal(d.p, null);
+  assert.equal(d.conn.closed, CLOSE.STARTED);
+  // ...but a reload in the arena comes back to it
   room.leave(b.p);
   const b2 = { conn: fakeConn() };
   room.join(b2.conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bo', key: 'Bo' });
@@ -911,11 +906,8 @@ await test('a party game starts at the signpost, gathers whoever joins, and take
   assert.deepEqual(b2.conn.last(S.WELCOME).pos, { x: b.p.x, y: b.p.y, z: b.p.z });
 });
 
-await test('coin rush: a coin counts once, for whoever is by it, only while it is on; the winner gets the prize', () => {
-  const { room, a, b, c, sign, stand } = partyRoom();
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
-  room.message(b.p, { t: C.GAME_JOIN });
+await test('coin rush: a coin counts once, for whoever is by it, only while it is on; the winner gets the prize, and the lobby is over', () => {
+  const { room, a, b, stand } = gameRoom('coin_rush', ['Ann', 'Bo']);
   const now = Date.now();
   room.update(now + MINIGAMES.gatherMs + 10);
   const arena = room.party.game.arena;
@@ -924,26 +916,21 @@ await test('coin rush: a coin counts once, for whoever is by it, only while it i
   room.message(a.p, { t: C.GAME_COIN, id: 0 });
   assert.equal(a.conn.last(S.GAME_COIN), undefined, 'not before it starts');
   room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20);
-  assert.equal(c.conn.last(S.GAME).game.phase, 'playing');
-  room.message(c.p, { t: C.GAME_COIN, id: 0 });
-  assert.equal(a.conn.last(S.GAME_COIN), undefined, 'not someone back in the lobby');
+  assert.equal(b.conn.last(S.GAME).game.phase, 'playing');
   room.message(b.p, { t: C.GAME_COIN, id: 0 });
   assert.equal(a.conn.last(S.GAME_COIN), undefined, 'not from over there');
   room.message(a.p, { t: C.GAME_COIN, id: 0 });
   room.message(a.p, { t: C.GAME_COIN, id: 0 });
   room.message(a.p, { t: C.GAME_COIN, id: 999 });
-  assert.deepEqual(c.conn.all(S.GAME_COIN), [{ t: S.GAME_COIN, id: 0, by: a.p.id, score: 1 }]);
-  // nothing of the lobby's while away: its spots, and no bopping (or being bopped) from there
+  assert.deepEqual(b.conn.all(S.GAME_COIN), [{ t: S.GAME_COIN, id: 0, by: a.p.id, score: 1 }]);
+  // nothing of the lobby's while away: its spots
   const spot = spotOf('meadow');
   standAt(room, a, spot);
   room.message(a.p, { t: C.TAKE, id: spot });
   assert.deepEqual(a.conn.last(S.DENY), { t: S.DENY, id: spot });
   assert.ok(room.spots[spot].item);
-  stand(a, 0, 0.8, -20);
-  stand(c, 0, 0.8, -19);
-  room.message(c.p, { t: C.BOP, weapon: 'mallet', yaw: Math.PI });
-  assert.equal(a.conn.last(S.BOPPED), undefined, 'the lobby cannot bop someone in an arena');
   // ...but in the arena, playful bops (knocked back, nothing knocked loose)
+  stand(a, 0, 0.8, -20);
   stand(b, 0, 0.8, -21);
   a.p.bag.wood = 3;
   room.message(b.p, { t: C.BOP, weapon: 'mallet', yaw: 0 });
@@ -951,7 +938,7 @@ await test('coin rush: a coin counts once, for whoever is by it, only while it i
   assert.equal(a.conn.last(S.BOPPED).drop, null);
 
   room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
-  const end = c.conn.last(S.GAME_END);
+  const end = b.conn.last(S.GAME_END);
   assert.equal(end.winner, a.p.id);
   assert.deepEqual(end.scores, [[a.p.id, 1], [b.p.id, 0]]);
   const prize = new Map(end.prizes);
@@ -961,42 +948,121 @@ await test('coin rush: a coin counts once, for whoever is by it, only while it i
   assert.ok(MINIGAMES.prize.loot.some(([item]) => item === prize.get(a.p.id)[1][0]));
   const [, n] = prize.get(b.p.id)[0];
   assert.ok(n >= played[0] && n <= played[1]);
-  assert.equal(c.conn.last(S.GAME).game, null);
+  assert.equal(b.conn.last(S.GAME).game, null);
   assert.ok(!a.p.game && !b.p.game);
   assert.ok(Math.hypot(a.p.x - room.island.spawn.x, a.p.z - room.island.spawn.z) < STONE_CIRCLE, 'back where farmers arrive');
-  assert.match(c.conn.last(S.CHAT).text, /Ann won the coin rush with 1 coin!/);
-  // the next one, after a little while
-  stand(b, sign.x, 0.8, sign.z);
-  room.message(b.p, { t: C.GAME_START, game: 'coin_rush' });
-  assert.equal(room.party.game, null);
+  assert.deepEqual(end.pos.map(([id]) => id), [a.p.id, b.p.id]);
+  assert.match(b.conn.last(S.CHAT).text, /Ann won the coin rush with 1 coin!/);
+  // that was the lobby's game: nobody new comes now
+  assert.ok(room.party.over);
+  assert.equal(room.info().open, false);
+  assert.equal(join(room, 'Cy').conn.closed, CLOSE.STARTED);
 });
 
-await test('a party game is called off once everyone in it has gone; nobody scoring means no winner', () => {
-  const { room, a, b, sign, stand } = partyRoom();
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
-  room.message(a.p, { t: C.GAME_LEAVE });
-  assert.equal(room.party.game, null);
-  assert.match(b.conn.last(S.CHAT).text, /called off/);
-  room.party.nextAt = 0;
-  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
-  room.message(b.p, { t: C.GAME_JOIN });
+await test('a lobby\'s game is called off once everyone in it has gone (before it starts, it waits for whoever comes); nobody scoring means no winner', () => {
+  const { room, a, b } = gameRoom('coin_rush', ['Ann', 'Bo']);
+  room.leave(a.p, { hold: false }); // (headed home)
+  room.leave(b.p, { hold: false });
+  assert.equal(room.party.game.phase, 'gathering', 'still waiting');
+  assert.equal(room.party.wire().ms, -1);
+  assert.ok(!room.party.over);
+  const c = join(room, 'Cy');
+  const d = join(room, 'Di');
   const now = Date.now();
   room.update(now + MINIGAMES.gatherMs + 10);
-  room.message(a.p, { t: C.GAME_LEAVE }); // (back to the lobby from the arena)
-  assert.ok(!a.p.game && b.p.game);
-  assert.ok(Math.hypot(a.p.x - room.island.spawn.x, a.p.z - room.island.spawn.z) < STONE_CIRCLE);
-  room.leave(b.p, { hold: false }); // (headed home)
+  assert.equal(room.party.game.phase, 'ready');
+  room.leave(c.p, { hold: false });
+  assert.ok(room.party.game && d.p.game);
+  room.leave(d.p, { hold: false });
   assert.equal(room.party.game, null);
-  room.party.nextAt = 0;
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'coin_rush' });
-  room.update(now + MINIGAMES.gatherMs * 2 + 10);
-  room.update(now + MINIGAMES.gatherMs * 2 + MINIGAMES.readyMs + 20); // (a phase a tick)
-  room.update(now + MINIGAMES.gatherMs * 2 + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
-  assert.equal(a.conn.last(S.GAME_END).winner, 0);
-  assert.deepEqual(a.conn.last(S.GAME_END).prizes, [[a.p.id, a.conn.last(S.GAME_END).prizes[0][1]]]);
-  assert.equal(a.conn.last(S.GAME_END).prizes[0][1][0][0], 'coin', 'a few coins for playing');
+  assert.ok(room.party.over);
+
+  const alone = gameRoom('coin_rush', ['Ann']);
+  alone.room.update(now + MINIGAMES.gatherMs + 10);
+  alone.room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20); // (a phase a tick)
+  alone.room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
+  const end = alone.a.conn.last(S.GAME_END);
+  assert.equal(end.winner, 0);
+  assert.deepEqual(end.prizes, [[alone.a.p.id, end.prizes[0][1]]]);
+  assert.equal(end.prizes[0][1][0][0], 'coin', 'a few coins for playing');
+  assert.match(alone.a.conn.last(S.CHAT).text, /The coin rush is over: nobody picked up a coin./);
+});
+
+await test('a loot run: on the lobby\'s own island, from the stone circle; every find scores (rare ones more), only while it is on; drop in any time', () => {
+  const { room, a, b, stand } = gameRoom('loot_run', ['Ann', 'Bo']);
+  assert.ok(a.conn.all(S.CHAT).some((m) => /^Loot run starts in 15 s/.test(m.text)));
+  const plain = (kind) => room.spots.findIndex((s) => s.item && !RARE[s.item] && !s.bundle && s.kind === kind);
+  const meadow = plain('meadow');
+  const rare = room.spots.findIndex((s) => s.item && RARE[s.item] && !s.bundle && s.kind !== 'sky_vault');
+  assert.ok(meadow >= 0 && rare >= 0, 'every lobby has its old key');
+  standAt(room, a, meadow);
+  room.message(a.p, { t: C.TAKE, id: meadow });
+  assert.deepEqual(a.conn.last(S.DENY), { t: S.DENY, id: meadow }, 'not before it starts');
+  assert.ok(room.spots[meadow].item);
+  let now = Date.now() + MINIGAMES.gatherMs + 10;
+  room.update(now);
+  assert.equal(room.party.game.phase, 'ready');
+  assert.ok(!a.p.game && !b.p.game, 'no arena: still on the island');
+  assert.deepEqual([a.p.x, a.p.z], [room.spawnFor(a.p.id).x, room.spawnFor(a.p.id).z], 'back in the stone circle to start');
+  assert.equal(room.info().open, true, 'a loot run can be dropped in on');
+  room.update((now += MINIGAMES.readyMs));
+  assert.equal(room.party.game.phase, 'playing');
+  // a find: a point; a rare one more
+  standAt(room, a, meadow);
+  room.message(a.p, { t: C.TAKE, id: meadow });
+  assert.deepEqual(b.conn.last(S.GAME_SCORE), { t: S.GAME_SCORE, by: a.p.id, score: MINIGAMES.loot_run.find });
+  standAt(room, b, rare);
+  room.message(b.p, { t: C.TAKE, id: rare });
+  const score = MINIGAMES.loot_run.find + MINIGAMES.loot_run.rare;
+  assert.deepEqual(a.conn.last(S.GAME_SCORE), { t: S.GAME_SCORE, by: b.p.id, score });
+  // farmers may drop in, and play from then on
+  const c = join(room, 'Cy');
+  assert.ok(c.p);
+  assert.deepEqual(c.conn.last(S.WELCOME).game.players.find(([id]) => id === c.p.id), [c.p.id, 0]);
+  // empty hands don't shove here (it isn't an arena)
+  stand(a, 0, 0.8, -20);
+  stand(c, 0, 0.8, -21);
+  room.message(c.p, { t: C.BOP, weapon: 'shove', yaw: 0 });
+  assert.equal(a.conn.last(S.BOPPED), undefined);
+
+  room.update((now += MINIGAMES.loot_run.ms + 50));
+  const end = a.conn.last(S.GAME_END);
+  assert.equal(end.game, 'loot_run');
+  assert.equal(end.winner, b.p.id);
+  assert.deepEqual(end.scores, [[b.p.id, score], [a.p.id, 1], [c.p.id, 0]]);
+  assert.deepEqual(end.pos, [], 'nobody to bring back');
+  assert.equal(new Map(end.prizes).get(b.p.id).length, 2);
+  assert.match(a.conn.last(S.CHAT).text, new RegExp(`Bo won the loot run with ${score} points!`));
+  // over: the island is closed to looting, and to newcomers
+  const left = plain('meadow');
+  standAt(room, a, left);
+  room.message(a.p, { t: C.TAKE, id: left });
+  assert.deepEqual(a.conn.last(S.DENY), { t: S.DENY, id: left });
+  assert.equal(room.info().open, false);
+  assert.equal(join(room, 'Di').conn.closed, CLOSE.STARTED);
+});
+
+await test('a loot run is over early once the island is picked clean', () => {
+  const { room, a } = gameRoom('loot_run', ['Ann']);
+  let now = Date.now() + MINIGAMES.gatherMs + 10;
+  room.update(now);
+  room.update((now += MINIGAMES.readyMs));
+  for (const spot of room.spots) Object.assign(spot, { item: null, count: 0 });
+  room.update((now += 50));
+  assert.equal(a.conn.last(S.GAME_END).game, 'loot_run');
+  assert.ok(room.party.over);
+});
+
+await test('a lobby without a game is a plain one to roam: anyone in, any time, spots for the taking', () => {
+  const room = new Room({ code: 'ROAM', game: 'tag' });
+  assert.equal(room.game, null, 'not a game there is');
+  const a = join(room, 'Ann');
+  assert.equal(a.conn.last(S.WELCOME).game, null);
+  const meadow = spotOf('meadow');
+  standAt(room, a, meadow);
+  room.message(a.p, { t: C.TAKE, id: meadow });
+  assert.equal(a.conn.last(S.TAKEN).id, meadow);
+  assert.equal(room.info().open, true);
 });
 // King of the hill's arena's fingerprint: where its hill and bales are
 const hillPrint = (a) => arenaPrint({ coast: a.coast, bales: [a.hill, a.bales], coins: [] });
@@ -1016,11 +1082,8 @@ await test('every seed grows a sound king of the hill arena, the same every time
   for (const [seed, print] of Object.entries(HILL_SEEDS)) assert.equal(hillPrint(arenaFor('king_of_hill', seed, { cached: false })), print, seed);
 });
 
-await test('king of the hill: time on the crown counts, a second a point; empty hands shove there (only)', () => {
-  const { room, a, b, c, sign, stand } = partyRoom();
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'king_of_hill' });
-  room.message(b.p, { t: C.GAME_JOIN });
+await test('king of the hill: time on the crown counts, a second a point; empty hands shove there', () => {
+  const { room, a, b, stand } = gameRoom('king_of_hill', ['Ann', 'Bo']);
   let now = Date.now() + MINIGAMES.gatherMs + 10;
   room.update(now);
   const { arena } = room.party.game;
@@ -1032,28 +1095,24 @@ await test('king of the hill: time on the crown counts, a second a point; empty 
   for (let i = 0; i < 50; i++) room.update((now += 50)); // 2.5 s
   stand(b, cx + 0.4, top + 0.8, cz); // b climbs up too
   for (let i = 0; i < 25; i++) room.update((now += 50)); // 1.25 s more
-  const score = c.conn.last(S.GAME_SCORE);
+  const score = b.conn.last(S.GAME_SCORE);
   assert.deepEqual(score.top, [a.p.id, b.p.id]);
   assert.deepEqual(new Map(score.scores).get(a.p.id), 3);
   assert.deepEqual(new Map(score.scores).get(b.p.id), 1);
   // a stall in the ticks gives nobody a lot
   room.update((now += 10_000));
-  assert.ok(new Map(c.conn.last(S.GAME_SCORE).scores).get(a.p.id) <= 4);
-  // empty hands shove in this arena; not in the lobby
+  assert.ok(new Map(b.conn.last(S.GAME_SCORE).scores).get(a.p.id) <= 4);
+  // empty hands shove in this arena
   room.message(b.p, { t: C.BOP, weapon: 'shove', yaw: -Math.PI / 2 });
   assert.equal(a.conn.last(S.BOPPED).knock, MINIGAMES.shove.knock);
-  stand(c, 0, 0.8, -20);
-  const before = a.conn.all(S.BOPPED).length;
-  room.message(c.p, { t: C.BOP, weapon: 'shove', yaw: 0 });
-  assert.equal(a.conn.all(S.BOPPED).length, before);
   // down off the hill: nothing more counts
   stand(a, arena.start(0, 2).x, 0.8, arena.start(0, 2).z);
   room.update((now += 50));
-  assert.deepEqual(c.conn.last(S.GAME_SCORE).top, [b.p.id]);
+  assert.deepEqual(b.conn.last(S.GAME_SCORE).top, [b.p.id]);
   room.update((now += MINIGAMES.king_of_hill.ms));
-  const end = c.conn.last(S.GAME_END);
+  const end = b.conn.last(S.GAME_END);
   assert.equal(end.winner, a.p.id);
-  assert.match(c.conn.last(S.CHAT).text, /Ann won the king of the hill with \d+ s on top!/);
+  assert.match(b.conn.last(S.CHAT).text, /Ann won the king of the hill with \d+ s on top!/);
 });
 // Last one standing's arena's fingerprint: its tiles, the order they drop in, the islet
 const floorPrint = (a) => arenaPrint({ coast: a.coast, bales: [a.tiles, a.order], coins: [] });
@@ -1076,12 +1135,8 @@ await test('every seed grows a sound last one standing arena, the same every tim
 
 // a and b (and c, if `three`) in a game of last one standing, playing from `now`
 function lastOneRoom(three = false) {
-  const party = partyRoom();
-  const { room, a, b, c, sign, stand } = party;
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'last_one' });
-  room.message(b.p, { t: C.GAME_JOIN });
-  if (three) room.message(c.p, { t: C.GAME_JOIN });
+  const party = gameRoom('last_one', three ? ['Ann', 'Bo', 'Cy'] : ['Ann', 'Bo']);
+  const { room } = party;
   let now = Date.now() + MINIGAMES.gatherMs + 10;
   room.update(now);
   room.update((now += MINIGAMES.readyMs));
@@ -1136,11 +1191,7 @@ await test('every seed grows a sound hop race, the same every time', () => {
 });
 
 await test('the hop race: whoever gets to the goal is across, first one there wins; over when everyone is', () => {
-  const { room, a, b, c, sign, stand } = partyRoom();
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'hop_race' });
-  room.message(b.p, { t: C.GAME_JOIN });
-  room.message(c.p, { t: C.GAME_JOIN });
+  const { room, a, b, c, stand } = gameRoom('hop_race');
   let now = Date.now() + MINIGAMES.gatherMs + 10;
   room.update(now);
   const { arena } = room.party.game;
@@ -1167,10 +1218,7 @@ await test('the hop race: whoever gets to the goal is across, first one there wi
 });
 
 await test('the hop race: nobody across when the time runs out, nobody wins', () => {
-  const { room, a, b, sign, stand } = partyRoom();
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'hop_race' });
-  room.message(b.p, { t: C.GAME_JOIN });
+  const { room, a } = gameRoom('hop_race', ['Ann', 'Bo']);
   let now = Date.now() + MINIGAMES.gatherMs + 10;
   room.update(now);
   room.update((now += MINIGAMES.readyMs));
@@ -1367,8 +1415,7 @@ await test('a lobby\'s board of its biggest catches: heaviest first, a farmer on
     const at = new Room({ code: 'B', seed }).party.board;
     assert.ok(island.isLand(at.x, at.z) && !island.inPond(at.x, at.z), seed);
     assert.ok(Math.hypot(at.x - island.pond.x, at.z - island.pond.z) < island.pond.r + 7, `${seed}: by the pond`);
-    const sign = signFor(island);
-    assert.ok(Math.hypot(at.x - sign.x, at.z - sign.z) > 5, `${seed}: well away from the signpost`);
+    assert.ok(Math.hypot(at.x - island.spawn.x, at.z - island.spawn.z) > STONE_CIRCLE + 1.5, `${seed}: out of the stone circle`);
   }
 
   const room = new Room({ code: 'BOARD', rand: mulberry32(3) });
@@ -1396,20 +1443,8 @@ await test('a lobby\'s board of its biggest catches: heaviest first, a farmer on
   assert.deepEqual(Room.fromSave(JSON.parse(JSON.stringify(room.toSave()))).board, room.board);
 });
 
-await test('a fishing contest: started at the board by the pond, fished off the arena\'s shore, won by the most weight', () => {
-  const room = new Room({ code: 'DERBY', rand: mulberry32(5) });
-  const [a, b, c] = ['Ann', 'Bo', 'Cy'].map((name) => join(room, name));
-  const stand = (who, x, y, z) => room.message(who.p, { t: C.STATE, x, y, z, yaw: 0, f: 1 });
-  const { sign } = room.party;
-  stand(a, sign.x, 0.8, sign.z);
-  room.message(a.p, { t: C.GAME_START, game: 'fishing_contest' });
-  assert.equal(room.party.game, null, 'not at the signpost');
-  assert.match(a.conn.last(S.CHAT).text, /board by the pond/);
-  const board = room.party.board;
-  stand(a, board.x, 0.8, board.z);
-  room.message(a.p, { t: C.GAME_START, game: 'fishing_contest' });
-  assert.match(c.conn.last(S.CHAT).text, /Ann is starting a fishing contest! Join at the board by the pond/);
-  room.message(b.p, { t: C.GAME_JOIN });
+await test('a fishing contest: fished off the arena\'s shore, won by the most weight', () => {
+  const { room, a, b: c, stand } = gameRoom('fishing_contest', ['Ann', 'Bo']);
   const now = Date.now();
   room.update(now + MINIGAMES.gatherMs + 10);
   const { game } = c.conn.last(S.GAME);
@@ -1434,10 +1469,6 @@ await test('a fishing contest: started at the board by the pond, fished off the 
   room.message(a.p, { t: C.REEL });
   assert.equal(a.conn.last(S.CAUGHT).item, 'carp');
   assert.deepEqual(c.conn.last(S.GAME_SCORE), { t: S.GAME_SCORE, by: a.p.id, score: 2500 });
-  // c is in the lobby: no fishing in the arena's sea from there
-  stand(c, shore, 0.8, 0);
-  room.message(c.p, { t: C.CAST, n: 1, x: shore + 3, z: 0, rod: 'fishing_rod' });
-  assert.equal(c.conn.last(S.CAUGHT)?.n, 1);
   room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.fishing_contest.ms + 50);
   const end = c.conn.last(S.GAME_END);
   assert.equal(end.winner, a.p.id);
@@ -1525,6 +1556,83 @@ await test('an empty lobby is thrown away a little after the last farmer leaves'
   assert.deepEqual(lobby.list(), []);
   lobby.save();
   assert.deepEqual(kept.at(-1).rooms, []);
+});
+
+await test('a lobby is opened for a game (a loot run if none is said); quick join skips ones under way; one whose game is over closes once everyone has gone', () => {
+  const lobby = new Lobby({ log: () => {} });
+  assert.equal(lobby.make({ name: 'Plain' }).game, 'loot_run');
+  assert.equal(lobby.make({ game: 'nope' }).game, 'loot_run');
+  const race = lobby.make({ name: 'Race', game: 'hop_race' });
+  assert.equal(race.game, 'hop_race');
+  assert.deepEqual(lobby.list().find((l) => l.code === race.code).game, 'hop_race');
+  // under way: not for quick join, and listed as closed
+  const a = join(race, 'A');
+  for (const r of lobby.rooms.values()) if (r !== race) r.close(), lobby.rooms.delete(r.code);
+  assert.equal(lobby.quick(), race, 'gathering: anyone can come');
+  race.update(Date.now() + MINIGAMES.gatherMs + 10);
+  assert.equal(lobby.list().find((l) => l.code === race.code).open, false);
+  const fresh = lobby.quick();
+  assert.notEqual(fresh, race);
+  assert.equal(fresh.game, 'loot_run', 'a new loot run instead');
+  // over: off the list, and closed once nobody is left on it
+  race.update(Date.now() + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20);
+  race.update(Date.now() + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.hop_race.ms + 50);
+  assert.ok(race.party.over);
+  assert.ok(!lobby.list().some((l) => l.code === race.code));
+  lobby.reap();
+  assert.equal(lobby.find(race.code), race, 'not while they are still on it (the results)');
+  race.party.overAt = Date.now() - 61_000; // (a minute on)
+  lobby.reap();
+  assert.equal(lobby.find(race.code), null, 'not for long, even so');
+  assert.equal(a.conn.closed, CLOSE.ENDED);
+  const other = lobby.make({ game: 'coin_rush' });
+  const b = join(other, 'B');
+  other.update(Date.now() + MINIGAMES.gatherMs + 10);
+  other.update(Date.now() + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20);
+  other.update(Date.now() + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
+  other.leave(b.p, { hold: false }); // (headed home)
+  lobby.reap();
+  assert.equal(lobby.find(other.code), null, 'straight away, once they have all gone');
+  // kept: its game; one that was over isn't put back after a restart
+  const saved = JSON.parse(JSON.stringify(fresh.toSave()));
+  assert.equal(Room.fromSave(saved).game, 'loot_run');
+  const later = new Lobby({ log: () => {}, store: { load: () => ({ rooms: [{ ...saved, seats: [{ id: 1, key: 'k', name: 'A' }] }, { ...saved, code: 'OVERAB', over: true, seats: [{ id: 1, key: 'k', name: 'A' }] }] }), save: () => {} } });
+  assert.deepEqual([...later.rooms.keys()], [fresh.code]);
+  for (const r of [...lobby.rooms.values(), ...later.rooms.values()]) r.close();
+});
+
+await test('a lobby started with friends is for the game picked: the invitations say which, and it opens for it', () => {
+  const farms = new Map(['a', 'b'].map((id) => [id, { id, account: { name: id === 'a' ? 'Ann' : 'Bo' }, color: PLAYER_COLORS[0], friends: [id === 'a' ? 'b' : 'a'] }]));
+  const presence = new Presence({
+    farms: { auth: (h) => farms.get(h.slice(7)) ?? null, get: (id) => farms.get(id), areFriends: (x, y) => !!y && x.friends.includes(y.id) },
+    lobby: new Lobby({ log: () => {} }),
+    log: () => {},
+  });
+  const [ca, cb] = ['a', 'b'].map((id) => {
+    const conn = fakeConn();
+    assert.ok(presence.hello(conn, { t: PC.HELLO, v: PROTOCOL_VERSION, auth: id }));
+    return conn;
+  });
+  presence.message(ca, { t: PC.PARTY, invite: ['b'], game: 'last_one' });
+  const invited = cb.last(PS.INVITED);
+  assert.equal(invited.game, 'last_one');
+  presence.message(cb, { t: PC.ANSWER, party: invited.party, yes: true });
+  const { code } = ca.last(PS.GO);
+  assert.equal(cb.last(PS.GO).code, code);
+  const room = presence.lobby.find(code);
+  assert.equal(room.game, 'last_one');
+  // more friends, later: only while it can still be joined
+  presence.message(ca, { t: PC.INVITE, code, invite: ['b'] });
+  assert.equal(cb.last(PS.INVITED).game, 'last_one');
+  join(room, 'Ann');
+  room.update(Date.now() + MINIGAMES.gatherMs + 10);
+  const before = cb.all(PS.INVITED).length;
+  presence.message(ca, { t: PC.INVITE, code, invite: ['b'] });
+  assert.equal(cb.all(PS.INVITED).length, before, 'not once its game is on');
+  // a game there isn't: a loot run
+  presence.message(ca, { t: PC.PARTY, invite: [], game: 'tag' });
+  assert.equal(presence.lobby.find(ca.last(PS.GO).code).game, 'loot_run');
+  for (const r of presence.lobby.rooms.values()) r.close();
 });
 
 await test('the store writes atomically and sets aside a file it cannot read', () => {
@@ -2760,7 +2868,8 @@ try {
   });
 
   await test('two players: snapshots, taking a spot, chat; a reload resumes the seat', async () => {
-    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
+    // (a hop race's lobby: its spots are for the taking while it gathers, unlike a loot run's)
+    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"game":"hop_race"}' }).then((r) => r.json());
     const a = client(code, 'reload-key');
     const b = client(code);
     const wa = await a.next(S.WELCOME);
@@ -2864,7 +2973,7 @@ try {
       server = startServer({ GAME_DATA });
       await server.ready;
       botAuth = await signUp('Bot'); // (this server keeps its farms, and its accounts, in dir)
-      const made = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ours', seed: 'sunny knoll 5', inviteOnly: true }) }).then((r) => r.json());
+      const made = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ours', seed: 'sunny knoll 5', inviteOnly: true, game: 'hop_race' }) }).then((r) => r.json());
       const a = client(made.code, 'restart-key');
       const w = await a.next(S.WELCOME);
       const [id, , x, , z] = w.spots.find(([, kind]) => kind === 'meadow');
@@ -2880,7 +2989,7 @@ try {
       await server.ready;
 
       const info = await fetch(`${base}/api/lobbies/${made.code}`).then((r) => r.json());
-      assert.deepEqual([info.name, info.seed, info.inviteOnly], ['Ours', 'sunny-knoll-5', true]);
+      assert.deepEqual([info.name, info.seed, info.inviteOnly, info.game], ['Ours', 'sunny-knoll-5', true, 'hop_race']);
       const again = client(made.code, 'restart-key');
       const w2 = await again.next(S.WELCOME);
       assert.equal(w2.resumed, true);

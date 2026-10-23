@@ -97,10 +97,9 @@ export function cleanLog(saved) {
 // ---------- A lobby's board of its biggest catches ----------
 // A noticeboard on the shore of the lobby's pond, facing the camera: the
 // heaviest fish landed in the lobby, one for each farmer at most (BOARD_SIZE
-// of them). E at it starts a fishing contest. island: islandFor(seed);
-// blocked(x, z): something stands there (a tree, a rock, a spot)
+// of them). island: islandFor(seed); blocked(x, z): something stands there
+// (a tree, a rock, a spot)
 export const BOARD_SIZE = 5;
-export const BOARD_REACH = 2.2; // E this close to it
 export function boardFor(island, blocked = () => false) {
   const { pond, spawn } = island;
   // on the side of the pond toward where farmers arrive, a step out of the water
