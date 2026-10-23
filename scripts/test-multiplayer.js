@@ -17,6 +17,7 @@ import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIE
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
 import { FISHING, RODS, SHOP, FISH_WEIGHT, TACKLE, AQUARIUM } from '../shared/balance.js';
+import { BEANSTALK, DAY_LENGTH_SECONDS as DAY_SECONDS } from '../shared/balance.js';
 import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, BOARD_SIZE } from '../shared/fishing.js';
 import { fingerprint } from './seed-fingerprint.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
@@ -1846,6 +1847,29 @@ await test('a farm room: things dropped lie there for anyone (not straight back 
   again.join(ann2, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${madeA.id}.${madeA.token}` });
   assert.deepEqual(ann2.last(S.FARM).drops.map((d) => [d[1], d[2]]), [['wood', 2], ['egg', 2]]);
   again.close();
+});
+
+await test('a farm room: a beanstalk grows like any crop, and its beans are picked from up on its crown', () => {
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3'], crops: [] }, backpack: {} }, 'pv');
+  const a = farms.auth(bearer(made));
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const conn = fakeConn();
+  const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${made.id}.${made.token}` });
+  room.message(p, { t: C.STATE, x: 3.5, y: GROUND_STAND_Y, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.PLANT, key: '3,3', crop: 'vine_bean' });
+  room.message(p, { t: C.PLANT, key: '4,3', crop: 'turnip' });
+  assert.equal(conn.last(S.PLANTED).crop, 'turnip');
+  room.clockBase += ((BEANSTALK.grow + 5) * 24) / DAY_SECONDS; // (both ripe)
+  // up on the crown, over the ground by the beanstalk's height
+  room.message(p, { t: C.STATE, x: 3, y: GROUND_STAND_Y + BEANSTALK.top, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.HARVEST, key: '4,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'harvest', 'a turnip is picked from the ground');
+  room.message(p, { t: C.HARVEST, key: '3,3' });
+  assert.deepEqual([conn.last(S.HARVESTED).key, conn.last(S.HARVESTED).item], ['3,3', 'beans']);
+  assert.equal(room.chest.beans, 1);
+  room.close();
 });
 
 await test('a farm room: machines take things in, and whoever is next to one when it is done collects it', () => {

@@ -32,6 +32,7 @@ export const SHOP = {
   carrot_seeds: { price: 35, sell: 17 },
   flax_seeds: { price: 45, sell: 22 },
   sunflower_seeds: { price: 60, sell: 30 },
+  bean_seeds: { price: 70, sell: 35 },
   golden_seeds: { sell: 100 },
   // crops
   turnip: { sell: 35 },
@@ -39,6 +40,7 @@ export const SHOP = {
   flax: { sell: 80 },
   sunflower: { sell: 45 }, // (the crop and the lobby's wild sunflower are one item)
   golden_turnip: { sell: 150 },
+  beans: { sell: 140 }, // (picked from the top of a beanstalk)
   // gathered in lobbies
   berries: { sell: 15 },
   mushroom: { sell: 25 },
@@ -144,6 +146,13 @@ export const ANIMALS = {
 };
 export const LAY_HOURS = [8, 16];
 export const EGGS_PER_HEN = 3;
+
+// ---------- The beanstalk ----------
+// A vine bean (bean seeds from the merchant) grows, in `grow` seconds, into
+// a stalk with big leaves round it to climb, up to its crown at `top` (m
+// over the ground), where the beans are picked (src/crops.js draws it)
+export const BEANSTALK = { grow: 240, top: 4.2 };
+CROP_GROW_TIME.vine_bean = BEANSTALK.grow; // (a crop like the rest, to the game server too)
 
 // ---------- Upgrades ----------
 // Bought at the workbench by the farmer, for the whole farm (a helper works
@@ -613,7 +622,7 @@ export const SKILLS = {
   next: [40, 100, 170, 245, 325, 415, 505, 605, 705],
   xp: {
     plant: 1,
-    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10 },
+    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10, vine_bean: 8 },
     pet: 3, // (once a game day for each animal)
     egg: 6,
     milk: 10,

@@ -58,6 +58,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
+import { BEANSTALK } from '../shared/balance.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
@@ -230,9 +231,11 @@ export class FarmRoom extends Place {
   // ---------- What they do ----------
   // Close enough to the tile, and not far above it (a step or a platform is
   // fine: the client reaches 1.2 up or down, USE_HEIGHT in src/main.js)
+  // (a beanstalk's beans are picked from up on its crown)
   near(p, key) {
     const [gx, gz] = key.split(',').map(Number);
-    return Math.hypot(gx - p.x, gz - p.z) <= REACH && Math.abs(p.y - GROUND_STAND_Y) < 1.4;
+    const up = this.crops.get(key)?.crop === 'vine_bean' ? BEANSTALK.top + 1 : 0;
+    return Math.hypot(gx - p.x, gz - p.z) <= REACH && p.y - GROUND_STAND_Y > -1.4 && p.y - GROUND_STAND_Y < 1.4 + up;
   }
 
   act(p, msg) {
