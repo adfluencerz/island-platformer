@@ -250,10 +250,7 @@ island-platformer/
 ```
 
 ## Where to go next
-- Accounts, which can point at the farm ids the server already keeps
-- More crops, tools and things to find in the lobbies
-- Replace the simple AABB resolver with a physics engine (e.g. `cannon-es` or `rapier3d`) once you need more complex shapes
-- Make movement server-authoritative (run the physics on the server too) if cheating ever matters
+See [docs/BACKLOG.md](docs/BACKLOG.md): what is in progress, what is next, and the ideas waiting by theme.
 
 ## Tests
 ```bash
