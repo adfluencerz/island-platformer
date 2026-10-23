@@ -311,7 +311,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     if (cap) {
       const top = new THREE.Mesh(
         roughBox(x, y, z, w + 0.12, 0.2, d + 0.12, CAP_COLORS[cap], { push: 0.03, dark: 0.3, layers: 0 }),
-        turfMat
+        map.turfMat ?? turfMat // (a map may bring its own: the farm's seasons color it)
       );
       top.position.set(x, y + h / 2 - 0.095, z);
       top.castShadow = true;
@@ -480,8 +480,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // Flowers: green stems plus colored heads, two InstancedMeshes sharing matrices
     const stemGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.3, 4).translate(0, 0.15, 0);
     const headGeo = new THREE.IcosahedronGeometry(0.065, 0).translate(0, 0.31, 0);
-    const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 });
-    const headMat = new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true });
+    const stemMat = map.flowerStemMat ?? new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 }); // (the farm's: its seasons)
+    const headMat = map.flowerHeadMat ?? new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true });
     addWind(stemMat, 0.18);
     addWind(headMat, 0.18);
     const stems = new THREE.InstancedMesh(stemGeo, stemMat, flowers.length);
@@ -570,13 +570,17 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const materials = new Map();
     tree.traverse((obj) => {
       if (!obj.isMesh) return;
-      if (!materials.has(obj.material)) materials.set(obj.material, obj.material.clone());
+      if (!materials.has(obj.material)) {
+        const copy = obj.material.clone();
+        copy.userData.from = obj.material; // (what it copies: the farm's seasons color that, src/seasons.js)
+        materials.set(obj.material, copy);
+      }
       obj.material = materials.get(obj.material);
     });
     // Trunk collider; tall enough that you can't jump up into the canopy
     const collider = addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k }, { grows: true });
     trees.push({
-      id: trees.length, group: tree, scale: k, materials: [...materials.values()], fade: 1,
+      id: trees.length, kind, group: tree, scale: k, materials: [...materials.values()], fade: 1,
       x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
       state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
       big: 1, from: 0.01, // (a giant is drawn `big` times its scale; growing: from this scale)

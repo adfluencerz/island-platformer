@@ -43,6 +43,9 @@ export const HOME = {
   pineMats: pineMats.map((m) => m.clone()),
   tuftMat: new THREE.MeshStandardMaterial({ color: 0x6fb043, roughness: 1, vertexColors: true }),
   groundMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
+  turfMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), // (on its platforms)
+  flowerStemMat: new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 }),
+  flowerHeadMat: new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true }),
   build(ctx) {
     buildStall(ctx);
     buildPens(ctx);

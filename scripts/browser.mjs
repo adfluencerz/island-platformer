@@ -9,6 +9,9 @@
 //   --url QUERY    extra query for the page, e.g. --url giant
 //   --shot FILE    a screenshot when the test is done
 //   --live         don't freeze the game (it runs at the page's frame rate)
+//   --full         full graphics (shadows, the whole pixel ratio): no ?lowgfx,
+//                  for judging how it looks (slower to draw)
+//   --size WxH     the window's size (480x320)
 //
 // The game server and Vite are started (and stopped after) unless `npm run
 // dev` is already up. A test account is made once and its login kept in
@@ -24,13 +27,15 @@ const CHROMIUM = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
 
 // ---- the command line ----
 const args = process.argv.slice(2);
-const opts = { query: '', shot: null, live: false, code: null };
+const opts = { query: '', shot: null, live: false, code: null, full: false, size: [480, 320] };
 while (args.length) {
   const a = args.shift();
   if (a === '-e') opts.code = args.shift();
   else if (a === '--url') opts.query = args.shift().replace(/^\?/, '');
   else if (a === '--shot') opts.shot = args.shift();
   else if (a === '--live') opts.live = true;
+  else if (a === '--full') opts.full = true;
+  else if (a === '--size') opts.size = args.shift().split('x').map(Number);
   else opts.code = readFileSync(a, 'utf8');
 }
 
@@ -54,12 +59,14 @@ const browser = await chromium.launch({
 });
 let exitCode = 0;
 try {
-  const context = await browser.newContext({ viewport: { width: 480, height: 320 }, ...(existsSync(STATE) && { storageState: STATE }) });
+  const [width, height] = opts.size;
+  const context = await browser.newContext({ viewport: { width, height }, ...(existsSync(STATE) && { storageState: STATE }) });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto(`${BASE}/?lowgfx${opts.query ? `&${opts.query}` : ''}`);
+  const query = [!opts.full && 'lowgfx', opts.query].filter(Boolean).join('&');
+  await page.goto(`${BASE}/?${query}`);
   const farmButton = page.getByText('Go to my farm');
   await Promise.race([farmButton.waitFor(), page.getByPlaceholder('What farmers call you').waitFor()]);
 

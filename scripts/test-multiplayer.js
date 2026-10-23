@@ -25,7 +25,7 @@ import { REQUESTS } from '../shared/balance.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
-import { seasonAt, SEASON_DAYS } from '../src/seasons.js';
+import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { BOSSES } from '../shared/balance.js';
@@ -2314,6 +2314,14 @@ await test('the farm\'s seasons: a week each, spring to winter and round again, 
   assert.deepEqual(at(SEASON_DAYS + 1, 0), ['Summer', 'Autumn', 0]);
   assert.deepEqual(at(SEASON_DAYS * 3 + 1, 12), ['Winter', 'Spring', 0]);
   assert.deepEqual(at(SEASON_DAYS * 4 + 1, 12), ['Spring', 'Summer', 0], 'and round again');
+  // each dresses all the farm's leaves and needles, and snow lies (and the flowers are gone) in winter only
+  for (const s of SEASONS) {
+    assert.deepEqual([s.leaves.length, s.pines.length], [4, 3], s.name);
+    assert.equal(s.snow > 0, s.name === 'Winter', `${s.name}: snow`);
+    assert.equal(s.flowers === 0, s.name === 'Winter', `${s.name}: flowers`);
+    assert.ok(['petal', 'fluff', 'leaf', 'flake'].includes(s.fall[0]) && s.fall[1] <= 100, `${s.name}: what drifts`);
+  }
+  assert.equal(seasonAt(SEASON_DAYS * 2 + 3, 0).into, 2, 'how far into it');
 });
 
 await test('the arcade: coinflip doubles or loses, blackjack settles by the rules', () => {

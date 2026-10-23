@@ -302,6 +302,9 @@ worlds.home.root.add(merchant.root);
 // farm, and keep on while you're away.
 const animals = createAnimals();
 worlds.home.root.add(animals.root);
+// (the seasons, on what stays put: snow on it, leaves under the trees, and their light: seasons.js)
+merchant.root.userData.noSnow = true;
+seasons.attach({ root: worlds.home.root, trees: worlds.home.trees, sun, hemi, scene });
 const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
 // (on a friend's farm the eggs, milk and wool are the farmer's)
 const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
@@ -4168,6 +4171,7 @@ function update(dt) {
   updateMeal(dt);
   houseRoom.setNight(dayNight.night());
   houseRoom.update(t, player.position);
+  seasons.frame(dt, { home: place !== 'lobby', focus: houseRoom.inside(player.position) ? null : player.position });
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
