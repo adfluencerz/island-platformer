@@ -33,7 +33,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
-import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
+import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, GLIDE, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
 import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
@@ -56,6 +56,7 @@ import { portalOf } from '../shared/bosses.js';
 import { createSkills } from './skills.js';
 import { SKILL_LIST } from '../shared/skills.js';
 import { createPuffs } from './puff.js';
+import { createGlider } from './glider.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
 
@@ -1622,6 +1623,12 @@ const STEP_EVERY = 0.32; // seconds between footsteps at a walk
 let stepTimer = 0;
 let airJumps = 0; // jumps left in the air
 const puffs = createPuffs(scene);
+
+// With a glider leaf in the backpack (made at the workbench), Jump held on
+// the way down opens it over the farmer's head, and they float down no
+// faster than GLIDE.fall (src/glider.js draws it)
+const glider = createGlider(farmer);
+let gliding = false;
 
 function airJump() {
   airJumps--;
@@ -3906,8 +3913,13 @@ function update(dt) {
   jumpPressed = false;
   jumpTapped = false;
 
-  // Gravity
+  // Gravity (gently, gliding)
   player.velocity.y += GRAVITY * dt;
+  const glide = !player.onGround && player.velocity.y < 0 && keys.has('Space') && !inputBlocked() && inventory.count('glider_leaf') > 0;
+  if (glide && !gliding) sound.play('glide');
+  gliding = glide;
+  if (gliding) player.velocity.y = Math.max(player.velocity.y, -GLIDE.fall);
+  glider.update(dt, gliding, clock.elapsedTime);
 
   const prevY = player.position.y;
   const wasOnGround = player.onGround;

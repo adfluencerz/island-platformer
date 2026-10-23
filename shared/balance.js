@@ -429,6 +429,7 @@ export const RECIPES = [
   { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
   { makes: 'wooden_sword', needs: { wood: 8 } },
   { makes: 'mallet', needs: { wood: 4, stone: 6 } },
+  { makes: 'glider_leaf', needs: { flax: 8, wood: 4 } },
   { makes: 'cheese_press', needs: { wood: 20, stone: 10 } },
   { makes: 'mayo_machine', needs: { wood: 15, stone: 15 } },
   { makes: 'loom', needs: { wood: 25, flax: 10 } },
@@ -627,6 +628,9 @@ export const SKILLS = {
   leastSwings: 2,
 };
 export const DOUBLE_JUMP = { level: 15, speed: 9.5 };
+// The glider leaf (made at the workbench): Jump held on the way down, the
+// farmer falls no faster than `fall` (m/s)
+export const GLIDE = { fall: 2.2 };
 // ---------- The arcade (shared/arcade.js) ----------
 // Games against the house for gold, built on the farm. Stakes have no limit
 // (whatever is in the backpack). Payouts are what comes back for each 1g
