@@ -1,0 +1,8 @@
+/* ---------- The Fish tab (src/fishlog.js), in the Skills tab's look (skills.css) ---------- */
+.fl-list { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.fl-card { display: flex; gap: 8px; align-items: center; }
+.fl-icon { width: 48px; height: 48px; flex: none; image-rendering: pixelated; }
+.fl-card.unseen .fl-icon { filter: brightness(0); opacity: 0.35; }
+.fl-card.unseen .sk-name { opacity: 0.55; }
+.fl-text { min-width: 0; }
+.fl-hint { font-size: 17px; line-height: 1.1; opacity: 0.8; }

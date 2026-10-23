@@ -31,6 +31,7 @@
 import { mulberry32, hashSeed, normalizeSeed, randomSeed, STONE_CIRCLE } from './worldgen.js';
 import { GROUND_STAND_Y } from './level.js';
 import { MINIGAMES } from './balance.js';
+import { weightText } from './fishing.js';
 
 // The party games there are, by kind: what they are called and how long they last
 export const GAMES = {
@@ -45,6 +46,10 @@ export const GAMES = {
   last_one: {
     name: 'Last one standing', ms: MINIGAMES.last_one.ms, blurb: 'The tiles drop one by one: be the last one up (shove the others off)',
     unit: ' s', scored: (n) => `${n} s up`, nobody: 'everyone took a splash', shove: true,
+  },
+  fishing_contest: {
+    name: 'Fishing contest', ms: MINIGAMES.fishing_contest.ms, blurb: 'Land the most weight of fish before the time runs out',
+    unit: '', scored: (n) => `${weightText(n)} of fish`, nobody: 'nobody landed a fish', board: true, // (started at the board by the pond, not the signpost)
   },
 };
 
@@ -224,6 +229,17 @@ function fallTimes(order) {
   return at;
 }
 
+// ---------- Fishing contest: a little round island, the sea all round ----------
+// Fished from its shore (shared/fishing.js: the 'contest' water), with a few
+// clumps of reeds along it (the pages') and nothing to climb
+function growFishingContest(seed) {
+  const rng = mulberry32(hashSeed(`fishing_contest/${seed}/coast`));
+  const rand = (min, max) => min + rng() * (max - min);
+  const int = (min, max) => Math.floor(rand(min, max + 1));
+  const coast = { r: round1(rand(9, 11)), waves: [[rand(0.5, 1), int(2, 3), rand(0, 6.3)], [rand(0.2, 0.5), int(4, 6), rand(0, 6.3)]] };
+  return finishArena({ game: 'fishing_contest', seed, half: Math.ceil(coast.r + 3), coast, bales: [], coins: [] });
+}
+
 // The questions everyone asks of an arena
 function finishArena(desc) {
   const { coast, bales, hill = [], startR = 1.6, tiles = [], order = [] } = desc;
@@ -306,7 +322,7 @@ export function checkArena(arena) {
   return problems;
 }
 
-const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill, last_one: growLastOne };
+const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill, last_one: growLastOne, fishing_contest: growFishingContest };
 
 // The arena a kind of game grows from a seed (the same every time,
 // everywhere), or null for a kind there isn't. A seed whose first tries make
