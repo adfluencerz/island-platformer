@@ -33,6 +33,9 @@ export const SHOP = {
   flax_seeds: { price: 45, sell: 22 },
   sunflower_seeds: { price: 60, sell: 30 },
   bean_seeds: { price: 70, sell: 35 },
+  tomato_seeds: { price: 50, sell: 25 },
+  pumpkin_seeds: { price: 55, sell: 27 },
+  berry_cutting: { price: 80, sell: 40 },
   golden_seeds: { sell: 100 },
   // crops
   turnip: { sell: 35 },
@@ -41,6 +44,7 @@ export const SHOP = {
   sunflower: { sell: 45 }, // (the crop and the lobby's wild sunflower are one item)
   golden_turnip: { sell: 150 },
   beans: { sell: 140 }, // (picked from the top of a beanstalk)
+  tomato: { sell: 40 }, // (a tomato plant keeps giving)
   // gathered in lobbies
   berries: { sell: 15 },
   mushroom: { sell: 25 },
@@ -107,6 +111,7 @@ export const SHOP = {
   baked_turnip: { sell: 55 },
   berry_skewer: { sell: 70 },
   roast_carrot: { sell: 90 },
+  roast_tomatoes: { sell: 110 },
   pancakes: { sell: 280 },
   cheese_omelette: { sell: 300 },
   pumpkin_soup: { sell: 250 },
@@ -139,6 +144,19 @@ export const STARTER_KIT = [['hoe', 1], ['axe', 1], ['pickaxe', 1], ['watering_c
 export const CROP_GROW_TIME = { turnip: 100, carrot: 150, flax: 175, sunflower: 225, golden_turnip: 300 };
 // A crop watered with a watering can grows the rest of the way this many times as fast
 export const WATERED_GROWTH = 2;
+// More crops, from the merchant's seeds: tomatoes, pumpkins (the lobbies'
+// pumpkin, to grow at home) and berry bushes (the lobbies' berries). `again`:
+// a plant that stays when it's picked, ripe again so many seconds later (dry
+// again too); one that stays can be dug up with the hoe. `gives`: how many a
+// pick gives, when it's more than one.
+export const MORE_CROPS = {
+  tomato: { grow: 200, again: 110, produce: 'tomato' },
+  pumpkin: { grow: 270, produce: 'pumpkin' },
+  berry_bush: { grow: 180, again: 90, gives: 2, produce: 'berries' },
+};
+for (const [crop, { grow }] of Object.entries(MORE_CROPS)) CROP_GROW_TIME[crop] = grow;
+export const cropAgain = (crop) => MORE_CROPS[crop]?.again ?? 0; // (0: it's pulled up when it's picked)
+export const cropGives = (crop) => MORE_CROPS[crop]?.gives ?? 1;
 
 // ---------- Animals ----------
 // `regrow`: game hours until a cow or sheep has more to give ('morning': the
@@ -509,6 +527,7 @@ export const DISHES = {
   fried_egg: { cook: 'campfire', needs: { egg: 1 }, boost: ['quick'] },
   roasted_mushrooms: { cook: 'campfire', needs: { mushroom: 2 }, boost: ['strong'] },
   baked_turnip: { cook: 'campfire', needs: { turnip: 1 }, boost: ['bouncy'] },
+  roast_tomatoes: { cook: 'campfire', needs: { tomato: 2 }, boost: ['lucky'] },
   berry_skewer: { cook: 'campfire', needs: { berries: 3 }, boost: ['quick'] },
   roast_carrot: { cook: 'campfire', needs: { carrot: 1 }, boost: ['strong'] },
   grilled_fish: { cook: 'campfire', needs: { any_fish: 1 }, boost: ['lucky'] },
@@ -645,7 +664,7 @@ export const SKILLS = {
   next: [40, 100, 170, 245, 325, 415, 505, 605, 705],
   xp: {
     plant: 1,
-    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10, vine_bean: 8 },
+    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10, vine_bean: 8, tomato: 3, pumpkin: 6, berry_bush: 2 },
     pet: 3, // (once a game day for each animal)
     egg: 6,
     milk: 10,

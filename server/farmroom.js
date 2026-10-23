@@ -56,7 +56,7 @@ import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } f
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
-import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH } from '../shared/balance.js';
+import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH, cropAgain, cropGives } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 import { BEANSTALK } from '../shared/balance.js';
 
@@ -296,16 +296,34 @@ export class FarmRoom extends Place {
         const c = this.farmable(key) && this.crops.get(key);
         if (!c || cropAge(c, this.hours()) < CROP_GROW_TIME[c.crop] - RIPE_SLACK || !this.near(p, key)) return this.deny(p, 'harvest', key);
         const item = CROP_PRODUCE[c.crop];
-        if (!this.canStore(item, 1)) {
+        const n = cropGives(c.crop);
+        if (!this.canStore(item, n)) {
           this.send(p, { t: S.CHAT, from: 0, text: 'The farm\'s chest is full: the owner needs to take some things out.' });
           return this.deny(p, 'harvest', key);
         }
-        this.crops.delete(key);
-        this.tilled.set(key, { since: this.hours(), life: this.soilLife() }); // (bare again from now)
-        this.store(item, 1);
+        if (cropAgain(c.crop)) {
+          // (a plant that stays: ripe again in a while, and dry again)
+          c.plantedAt = round3(this.hours() - (CROP_GROW_TIME[c.crop] - cropAgain(c.crop)) / SECONDS_PER_HOUR);
+          delete c.wateredAt;
+        } else {
+          this.crops.delete(key);
+          this.tilled.set(key, { since: this.hours(), life: this.soilLife() }); // (bare again from now)
+        }
+        this.store(item, n);
         this.changed = true;
         this.broadcast({ t: S.HARVESTED, key, by: p.id, item });
         this.broadcast({ t: S.CHEST, items: this.chest });
+        break;
+      }
+      case C.UPROOT: {
+        // (only a plant that stays when it's picked: the rest come up when they are)
+        const { key } = msg;
+        const c = this.farmable(key) && this.crops.get(key);
+        if (!c || !cropAgain(c.crop) || !this.near(p, key)) return this.deny(p, 'uproot', key);
+        this.crops.delete(key);
+        this.tilled.set(key, { since: this.hours(), life: this.soilLife() }); // (bare again from now)
+        this.changed = true;
+        this.broadcast({ t: S.UPROOTED, key, by: p.id });
         break;
       }
       case C.WATER: {

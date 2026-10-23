@@ -430,11 +430,42 @@ function harvestAt(x, z) {
     farmNet.send({ t: C.HARVEST, key });
     return true;
   }
-  if (inventory.add(CROPS[crop.cropId].produce)) {
-    skilled('farming', SKILLS.xp.harvest[crop.cropId] ?? 0, CROPS[crop.cropId].produce);
-    removeCrop(key);
+  const { produce, gives = 1, again } = CROPS[crop.cropId];
+  if (inventory.add(produce, gives)) {
+    skilled('farming', SKILLS.xp.harvest[crop.cropId] ?? 0, produce);
+    if (again) pickAgain(key);
+    else removeCrop(key);
   }
   return true;
+}
+
+// A plant that stays when it's picked (`again`: a tomato plant, a berry
+// bush): ripe again in a while, and dry again (on a farm with helpers, as the
+// room has it: HARVESTED)
+function pickAgain(key) {
+  const crop = crops.get(key);
+  const { growTime, again } = CROPS[crop.cropId];
+  Object.assign(crop, { age: growTime - again, ripe: false, watered: false, pending: false });
+  if (crop.plantedAt !== undefined) {
+    crop.plantedAt = farmHours() - ((growTime - again) * 24) / DAY_LENGTH_SECONDS;
+    crop.wateredAt = undefined;
+  }
+  crop.view.group.visible = true;
+  crop.view.setProgress(crop.age / growTime);
+  setWet(key, false);
+}
+
+// Dig one up with the hoe (it never comes up by being picked); on a farm with
+// helpers the room says it's gone (UPROOTED)
+function uproot(key) {
+  const crop = crops.get(key);
+  if (crop.pending) return;
+  startHoeSwing();
+  sound.play('till');
+  if (!farmNet) return removeCrop(key);
+  crop.pending = true;
+  crop.view.group.visible = false;
+  farmNet.send({ t: C.UPROOT, key });
 }
 
 // Bare ground: untilled, nothing growing (going out to a lobby, or before the
@@ -1575,6 +1606,8 @@ function farmHere(x, z) {
     waterHere(x, z);
   } else if (holding() === 'hoe' && buildings.get(tileKeyFor(x, z))) {
     inventory.notify('Something is built here: take it down to till');
+  } else if (holding() === 'hoe' && CROPS[crops.get(tileKeyFor(x, z))?.cropId]?.again) {
+    uproot(tileKeyFor(x, z));
   } else if (holding() === 'hoe') {
     for (const [tx, tz] of hoeTiles(x, z)) {
       if (tillTileAt(tx, tz) && farmNet) {
@@ -1655,6 +1688,7 @@ function useHint() {
   const held = inventory.selectedId();
   if (inPen(x, z) || offField(x, z)) return '';
   if (holding() === 'can') return canTiles(x, z).some(([tx, tz]) => needsWater(tileKeyFor(tx, tz))) ? 'Water' : '';
+  if (holding() === 'hoe' && crop && CROPS[crop.cropId].again) return crop.pending ? '' : `Dig up the ${CROPS[crop.cropId].name}`;
   if (holding() === 'hoe') return !buildings.get(key) && hoeTiles(x, z).some(([tx, tz]) => !farmTiles.has(tileKeyFor(tx, tz))) ? 'Till' : '';
   if (ITEMS[held]?.plants && farmTiles.has(key) && !crops.has(key)) return `Plant ${ITEMS[held].name.toLowerCase()}`;
   return eatHint();
@@ -3198,6 +3232,7 @@ async function joinFarm(id) {
     removeCrop(m.key);
     untillTile(m.key);
   });
+  on(S.UPROOTED, (m) => removeCrop(m.key));
   on(S.PLANTED, (m) => {
     const crop = crops.get(m.key);
     if (crop?.cropId === m.crop) {
@@ -3248,7 +3283,8 @@ async function joinFarm(id) {
   });
   on(S.HARVESTED, (m) => {
     const crop = crops.get(m.key);
-    removeCrop(m.key);
+    if (crop && CROPS[crop.cropId].again) pickAgain(m.key);
+    else removeCrop(m.key);
     if (m.by !== myId) return;
     inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
     skilled('farming', SKILLS.xp.harvest[crop?.cropId] ?? 0, m.item); // (a bonus one comes to the backpack)
@@ -3260,7 +3296,7 @@ async function joinFarm(id) {
       removeCrop(m.key);
       const seed = Object.keys(ITEMS).find((id) => ITEMS[id].plants === m.crop);
       if (seed) inventory.add(seed, 1, { quiet: true }); // (the seed back)
-    } else if (m.op === 'harvest' && crop) {
+    } else if ((m.op === 'harvest' || m.op === 'uproot') && crop) {
       crop.pending = false;
       crop.view.group.visible = true;
     } else if (m.op === 'water' && crop && crop.wateredAt === undefined) {
