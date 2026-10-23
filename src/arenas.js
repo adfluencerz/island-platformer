@@ -11,7 +11,8 @@ import { createItemMesh } from './itemmesh.js';
 // floating about; for king of the hill, a stepped hill in the middle with a
 // flag on its crown; for last one standing, a floor of tiles over the sea
 // (arenaMap(arena).dropTiles(ms) drops the ones due by ms into the game) and
-// an islet off to the side. arenaMap(arena).coins is filled in as the world is built:
+// an islet off to the side; for the hop race, wooden hops on posts out over
+// the sea to a goal with a flag and an arch. arenaMap(arena).coins is filled in as the world is built:
 // a view per coin, by its id, for the page to hide as they are picked up.
 
 const baleMat = new THREE.MeshStandardMaterial({ color: 0xe0c060, roughness: 0.95, flatShading: true });
@@ -93,9 +94,64 @@ function buildTiles(arena, { root, addCollider, removeCollider }, map) {
   };
 }
 
+// The hop race's hops: a square of planks on a post down into the sea, every
+// other one a little darker; the goal a wide one on four posts, under an
+// arch with bunting, and a flag on its far corner
+const plankMats = [0xc08a4e, 0xa8743e].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true }));
+const rimMat = new THREE.MeshStandardMaterial({ color: 0x7a5432, roughness: 0.9, flatShading: true });
+const goalMat = new THREE.MeshStandardMaterial({ color: 0xf3e6c4, roughness: 0.85, flatShading: true });
+const buntingMats = [0xff7eb6, 0xffe14d, 0x7ec8ff, 0x8fcf5a].map((color) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide }));
+const HOP_DEPTH = 0.35; // how thick a hop's planks are
+function buildHops(arena, { root, addCollider }) {
+  const hop = ([x, z, size, top], mat) => {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(size, HOP_DEPTH, size), [rimMat, rimMat, mat, rimMat, rimMat, rimMat]);
+    deck.position.set(x, top - HOP_DEPTH / 2, z);
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    root.add(deck);
+    addCollider({ x, y: top - HOP_DEPTH / 2, z, w: size, h: HOP_DEPTH, d: size });
+  };
+  const post = (x, z, top) => {
+    const h = top + 3;
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, h, 7), rimMat);
+    p.position.set(x, top - h / 2 - HOP_DEPTH, z);
+    p.castShadow = true;
+    root.add(p);
+  };
+  arena.hops.forEach(([x, z, size, top], i) => {
+    hop([x, z, size, top], plankMats[i % 2]);
+    post(x, z, top);
+  });
+  const [x, z, size, top] = arena.goal;
+  hop(arena.goal, goalMat);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) post(x + sx * (size / 2 - 0.3), z + sz * (size / 2 - 0.3), top);
+  // the arch: two poles and a bar, with bunting along it
+  const [a, b] = [[x - size / 2 + 0.25, z], [x + size / 2 - 0.25, z]];
+  for (const [px, pz] of [a, b]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), twineMat);
+    pole.position.set(px, top + 1.3, pz);
+    root.add(pole);
+  }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(size - 0.4, 0.1, 0.1), twineMat);
+  bar.position.set(x, top + 2.55, z);
+  root.add(bar);
+  for (let i = 0; i < 7; i++) {
+    const flag = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 3), buntingMats[i % buntingMats.length]);
+    flag.rotation.x = Math.PI;
+    flag.position.set(x - (size - 0.8) / 2 + ((size - 0.8) / 6) * i, top + 2.32, z);
+    root.add(flag);
+  }
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2, 6), twineMat);
+  pole.position.set(x + size / 2 - 0.3, top + 1, z + size / 2 - 0.3);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.42, 0.03), new THREE.MeshStandardMaterial({ color: 0xff7eb6, roughness: 0.7 }));
+  flag.position.set(pole.position.x - 0.37, top + 1.75, pole.position.z);
+  root.add(pole, flag);
+}
+
 function buildArena(arena, ctx, coins, map) {
   const { root, addCollider } = ctx;
   if (arena.tiles.length) buildTiles(arena, ctx, map);
+  if (arena.goal) buildHops(arena, ctx);
   // Hay bales, tied round with twine; a stacked one stands on the one under it
   for (const [x, z, w, d, top] of arena.bales) {
     const h = top > 1.2 ? 1.2 : top;

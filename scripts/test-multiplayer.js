@@ -34,7 +34,7 @@ import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
 import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
 import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
 import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
-import { arenaFor, checkArena, signFor } from '../shared/arenas.js';
+import { arenaFor, checkArena, signFor, HOP } from '../shared/arenas.js';
 import { MINIGAMES } from '../shared/balance.js';
 
 // spot kinds only later generations grow (2 and up)
@@ -1038,6 +1038,67 @@ await test('last one standing: everyone still up when the time runs out wins', (
   assert.deepEqual(end.winners.toSorted(), [a.p.id, b.p.id].toSorted());
   assert.ok(end.prizes.every(([, got]) => got.length === 2), 'a prize each');
   assert.match(a.conn.last(S.CHAT).text, /(Ann and Bo|Bo and Ann) won the last one standing/);
+});
+
+// The hop race's arena's fingerprint: its meadow, its hops and its goal
+const racePrint = (a) => arenaPrint({ coast: a.coast, bales: [a.hops, a.goal], coins: [] });
+const RACE_SEEDS = { 'meadow': 3284256935, 'dewy-glade-31': 80847400 }; // (as for coin rush: these must never change)
+await test('every seed grows a sound hop race, the same every time', () => {
+  for (let i = 0; i < 200; i++) {
+    const seed = `race-${i}`;
+    const arena = arenaFor('hop_race', seed, { cached: false });
+    assert.ok(arena, seed);
+    assert.deepEqual(checkArena(arena), [], seed);
+    assert.ok(arena.hops.length >= HOP.count[0] - 1, seed);
+    assert.ok(arena.onGoal(arena.goal[0], arena.goal[3], arena.goal[1]), seed);
+    assert.ok(!arena.onGoal(0, 0, 0), `${seed}: not at the start`);
+    assert.equal(racePrint(arenaFor('hop_race', seed, { cached: false })), racePrint(arena));
+  }
+  for (const [seed, print] of Object.entries(RACE_SEEDS)) assert.equal(racePrint(arenaFor('hop_race', seed, { cached: false })), print, seed);
+});
+
+await test('the hop race: whoever gets to the goal is across, first one there wins; over when everyone is', () => {
+  const { room, a, b, c, sign, stand } = partyRoom();
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'hop_race' });
+  room.message(b.p, { t: C.GAME_JOIN });
+  room.message(c.p, { t: C.GAME_JOIN });
+  let now = Date.now() + MINIGAMES.gatherMs + 10;
+  room.update(now);
+  const { arena } = room.party.game;
+  const [gx, gz, , top] = arena.goal;
+  stand(b, gx, top + 0.8, gz);
+  room.update((now += 100));
+  assert.equal(b.conn.last(S.GAME_SCORE), undefined, 'not before it starts');
+  room.update((now += MINIGAMES.readyMs));
+  room.update((now += 20_000)); // b there 20 s in: 70 s to spare
+  const first = a.conn.last(S.GAME_SCORE);
+  assert.deepEqual(first.top, [b.p.id]);
+  assert.equal(new Map(first.scores).get(b.p.id), 70);
+  assert.match(a.conn.last(S.CHAT).text, /Bo made it across, first!/);
+  stand(a, gx + 0.5, top + 0.8, gz);
+  room.update((now += 5000));
+  assert.deepEqual(c.conn.last(S.GAME_SCORE).top, [b.p.id, a.p.id]);
+  assert.equal(room.party.game?.kind, 'hop_race', 'still on: Cy is hopping');
+  stand(c, gx, top + 1.5, gz - 0.5); // (hopping about on the goal counts)
+  room.update((now += 50));
+  const end = a.conn.last(S.GAME_END);
+  assert.equal(end.winner, b.p.id);
+  assert.deepEqual(end.scores.map(([id]) => id), [b.p.id, a.p.id, c.p.id]);
+  assert.match(a.conn.last(S.CHAT).text, /Bo won the hop race with 70 s to spare!/);
+});
+
+await test('the hop race: nobody across when the time runs out, nobody wins', () => {
+  const { room, a, b, sign, stand } = partyRoom();
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'hop_race' });
+  room.message(b.p, { t: C.GAME_JOIN });
+  let now = Date.now() + MINIGAMES.gatherMs + 10;
+  room.update(now);
+  room.update((now += MINIGAMES.readyMs));
+  room.update((now += MINIGAMES.hop_race.ms + 50));
+  assert.equal(a.conn.last(S.GAME_END).winner, 0);
+  assert.match(a.conn.last(S.CHAT).text, /The hop race is over: nobody made it across./);
 });
 
 await test('bigger rocks give more stone, within the sizes rocks come in', () => {

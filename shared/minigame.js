@@ -17,6 +17,9 @@
 //              where fallen farmers wash up) is out, scoring the seconds they
 //              lasted (GAME_SCORE, with who is still up). It is over once
 //              one is left (or none);
+//              hop race: whoever the room hears is on the goal has made it,
+//              scoring the seconds left (GAME_SCORE, with who has made it,
+//              in order); it is over once everyone has;
 //              fishing contest: every fish landed off the arena's shore
 //              scores its weight (the room's CAST and REEL, shared/room.js)
 //   over       the scores to everyone, the prize to the winner (and a few
@@ -73,7 +76,7 @@ export class Party {
       Math.hypot(x - island.spawn.x, z - island.spawn.z) < STONE_CIRCLE + 1.5 || Math.hypot(x - this.sign.x, z - this.sign.z) < SIGN_REACH + BOARD_REACH + 1 ||
       sites.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 1.7) || spots.some((s) => Math.hypot(s.x - x, s.z - z) < 1.3) ||
       island.terraces.some(([tx, tz, w, d]) => Math.abs(x - tx) < w / 2 + 0.9 && Math.abs(z - tz) < d / 2 + 0.9));
-    this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at, held, out }, taken: Set of coin ids, top: ids on the crown (still up), last }
+    this.game = null; // { id, kind, seed, arena, phase, until, players: Map id -> { score, at, held, out }, taken: Set of coin ids, top: ids on the crown (still up; across the hop race, in order), last }
     this.count = 0; // games so far (each one's id)
     this.nextAt = 0; // when the next one can start (ms)
   }
@@ -202,6 +205,25 @@ export class Party {
     if (!g.top.length || (g.players.size > 1 && g.top.length < 2)) this.end(now);
   }
 
+  // Hop race: who has got to the goal since the last tick (in `top`, in the
+  // order they got there); over once everyone has
+  reachGoal(g, now) {
+    const left = Math.max(1, Math.ceil((g.until - now) / 1000));
+    const there = [...g.players.keys()].filter((id) => {
+      const p = this.room.players.get(id);
+      return !g.top.includes(id) && p?.game === g.id && g.arena.onGoal(p.x, p.y - GROUND_STAND_Y, p.z);
+    });
+    if (!there.length) return;
+    for (const id of there) {
+      Object.assign(g.players.get(id), { score: left, at: now });
+      g.top.push(id);
+      const place = ['first', 'second', 'third'][g.top.length - 1] ?? `number ${g.top.length}`;
+      this.room.say(`${this.room.players.get(id).name} made it across, ${place}!`);
+    }
+    this.room.broadcast({ t: S.GAME_SCORE, scores: [...g.players].map(([id, { score }]) => [id, score]), top: g.top });
+    if (g.top.length >= g.players.size) this.end(now);
+  }
+
   // Fishing contest: the game p is fishing in (null: none, or not now)
   fishingFor(p) {
     const g = this.game;
@@ -223,6 +245,10 @@ export class Party {
     if (g?.phase === 'playing' && g.kind === 'king_of_hill') this.holdHill(g, now);
     if (g?.phase === 'playing' && g.kind === 'last_one') {
       this.standOrFall(g, now);
+      if (!this.game) return;
+    }
+    if (g?.phase === 'playing' && g.kind === 'hop_race') {
+      this.reachGoal(g, now);
       if (!this.game) return;
     }
     if (!g || now < g.until) {

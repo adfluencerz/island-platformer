@@ -715,6 +715,9 @@ export const MINIGAMES = {
   // lent to anyone without one), off the shore of a little island. `bite`:
   // seconds till a bite, for every rod alike
   fishing_contest: { ms: 180_000, bite: [2.5, 6] },
+  // Hop race: first across the water to the flag (shared/arenas.js HOP),
+  // scoring the seconds left when they got there
+  hop_race: { ms: 90_000 },
   // The prize: the winner's coins (more for each other farmer who played) and
   // one roll of loot ([item, weight, min, max]); everyone else who played
   // gets a few coins for joining in

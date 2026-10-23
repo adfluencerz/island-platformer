@@ -19,11 +19,14 @@
 //   tiles: [[x, z], ...]: last one standing's floor over the sea (TILE
 //     apart, their tops at 0); order: which falls when (tile ids, the first
 //     to go first), fallAt[id]: ms into the game it drops (Infinity: it stays)
+//   hops: [[x, z, size, top], ...]: the hop race's wooden hops over the sea,
+//     in the order they are hopped; goal: [x, z, size, top], where it ends
 //   start(i, n): where player i of n starts, round the middle (round the
 //     edge, with a hill there)
 // and answers isLand(x, z), groundAt(x, z) ('grass', 'sand' or null: the sea),
-// topAt(x, z, margin) (the highest bale or step over x, z, or 0) and
-// onCrown(x, feetY, z) (up on the hill's top).
+// topAt(x, z, margin) (the highest bale or step over x, z, or 0),
+// onCrown(x, feetY, z) (up on the hill's top) and onGoal(x, feetY, z) (on
+// the hop race's goal).
 //
 // Arenas are versioned the way islands are: never change how a kind of arena
 // grows from a seed once players know it; a new look is a new kind (or a new
@@ -46,6 +49,10 @@ export const GAMES = {
   last_one: {
     name: 'Last one standing', ms: MINIGAMES.last_one.ms, blurb: 'The tiles drop one by one: be the last one up (shove the others off)',
     unit: ' s', scored: (n) => `${n} s up`, nobody: 'everyone took a splash', shove: true,
+  },
+  hop_race: {
+    name: 'Hop race', ms: MINIGAMES.hop_race.ms, blurb: 'Hop across the water to the flag: first there wins (fall in, start again)',
+    unit: ' s', scored: (n) => `${n} s to spare`, nobody: 'nobody made it across',
   },
   fishing_contest: {
     name: 'Fishing contest', ms: MINIGAMES.fishing_contest.ms, blurb: 'Land the most weight of fish before the time runs out',
@@ -229,6 +236,55 @@ function fallTimes(order) {
   return at;
 }
 
+// ---------- Hop race: hop to hop across the water, to the flag ----------
+// A little start meadow, then a winding line of wooden hops on posts over
+// the sea, up and down a little, each a jump from the last (HOP: the gap
+// between their edges, how much higher or lower), out to the goal: a wide
+// landing with a flag. First onto the goal wins; whoever falls in starts
+// again on the meadow (their page sees to that).
+export const HOP = { gap: [1.1, 2.3], rise: [-0.7, 0.9], size: [1.6, 2.3], count: [10, 14], top: [0.6, 3.4], goal: 4 };
+// the gap between two squares' nearest edges ([x, z, size])
+const edgeGap = ([ax, az, as], [bx, bz, bs]) => Math.hypot(Math.max(0, Math.abs(ax - bx) - (as + bs) / 2), Math.max(0, Math.abs(az - bz) - (as + bs) / 2));
+function growHopRace(seed, attempt) {
+  const stream = streamFor('hop_race', seed, attempt);
+  const c = stream('coast');
+  const coast = { r: round1(c.rand(5.5, 6.5)), waves: [[c.rand(0.2, 0.5), c.int(2, 3), c.rand(0, 6.3)]] };
+  const shoreDist = (x, z) => coast.r + waves(Math.atan2(z, x), coast.waves) - Math.hypot(x, z);
+
+  // Out from the shore, the way it heads wandering a little (never back)
+  const h = stream('hops');
+  const out = h.rand(0, Math.PI * 2);
+  let heading = out;
+  const hops = [];
+  // the next square on from `last`, `gap` from its edge, along the heading
+  const next = (last, size, gap) => {
+    for (let d = (last[2] + size) / 2; d < 12; d += 0.05) {
+      const sq = [round1(last[0] + Math.cos(heading) * d), round1(last[1] + Math.sin(heading) * d), size];
+      if (edgeGap(last, sq) >= gap) return sq;
+    }
+    return null;
+  };
+  // (from the shore: where the land ends, that way)
+  const shore = (coast.r + waves(out, coast.waves)) - 0.6;
+  let last = [Math.cos(out) * shore, Math.sin(out) * shore, 0, 0];
+  const count = h.int(...HOP.count);
+  for (let i = 0; i <= count; i++) {
+    const goal = i === count;
+    const size = goal ? HOP.goal : round1(h.rand(...HOP.size));
+    const gap = h.rand(HOP.gap[0], HOP.gap[1]);
+    const rise = i === 0 ? h.rand(0.6, 0.9) : h.rand(...HOP.rise);
+    heading = out + Math.max(-1, Math.min(1, heading - out + h.rand(-0.5, 0.5)));
+    const sq = next(last, size, gap);
+    if (!sq) return null;
+    const top = round1(Math.max(HOP.top[0], Math.min(HOP.top[1], (last[3] || 0) + rise)));
+    last = [...sq, top];
+    hops.push(last);
+  }
+  const goal = hops.pop();
+  const far = Math.max(...[...hops, goal].map(([x, z, s]) => Math.max(Math.abs(x), Math.abs(z)) + s));
+  return finishArena({ game: 'hop_race', seed, half: Math.ceil(far + 3), coast, bales: [], coins: [], hops, goal });
+}
+
 // ---------- Fishing contest: a little round island, the sea all round ----------
 // Fished from its shore (shared/fishing.js: the 'contest' water), with a few
 // clumps of reeds along it (the pages') and nothing to climb
@@ -242,7 +298,7 @@ function growFishingContest(seed) {
 
 // The questions everyone asks of an arena
 function finishArena(desc) {
-  const { coast, bales, hill = [], startR = 1.6, tiles = [], order = [] } = desc;
+  const { coast, bales, hill = [], startR = 1.6, tiles = [], order = [], hops = [], goal = null } = desc;
   const blocks = [...bales, ...hill];
   const [ox, oz] = [coast.x ?? 0, coast.z ?? 0];
   const shoreDist = (x, z) => coast.r + waves(Math.atan2(z - oz, x - ox), coast.waves) - Math.hypot(x - ox, z - oz);
@@ -274,7 +330,11 @@ function finishArena(desc) {
   const onCrown = (x, y, z) =>
     !!crown && Math.abs(x - crown[0]) < crown[2] / 2 + 0.3 && Math.abs(z - crown[1]) < crown[3] / 2 + 0.3 && y > crown[4] - 0.3 && y < crown[4] + 2.5;
   const fallAt = tiles.length ? fallTimes(order) : [];
-  return { ...desc, hill, tiles, order, isLand, groundAt, topAt, start, crown, onCrown, tileAt, fallAt, watch };
+  // Hop race: whether a farmer with their feet at y is on the goal (standing,
+  // or hopping about on it)
+  const onGoal = (x, y, z) =>
+    !!goal && Math.abs(x - goal[0]) < goal[2] / 2 + 0.3 && Math.abs(z - goal[1]) < goal[2] / 2 + 0.3 && y > goal[3] - 0.3 && y < goal[3] + 2.5;
+  return { ...desc, hill, tiles, order, hops, goal, isLand, groundAt, topAt, start, crown, onCrown, tileAt, fallAt, watch, onGoal };
 }
 
 // What every arena must be: a list of what is wrong with it (empty: nothing).
@@ -291,6 +351,27 @@ export function checkArena(arena) {
     if (!arena.isLand(x, z)) problems.push('the islet is in the sea');
     const gap = Math.min(...arena.tiles.map(([tx, tz]) => Math.hypot(tx - x, tz - z))) - TILE * 0.71 - r - 0.4;
     if (gap < 6) problems.push(`the islet is a jump from the tiles (${gap.toFixed(1)})`);
+  }
+  // hop race: each hop over the sea, a jump on from the one before (the
+  // first from the shore), none in another's way
+  if (arena.goal) {
+    const line = [...arena.hops, arena.goal];
+    const shore = Math.min(...Array.from({ length: 72 }, (_, k) => {
+      const a = (k / 72) * Math.PI * 2;
+      let d = 0;
+      while (arena.isLand(Math.cos(a) * (d + 0.1), Math.sin(a) * (d + 0.1))) d += 0.1;
+      return edgeGap([Math.cos(a) * d, Math.sin(a) * d, 0], line[0]);
+    }));
+    if (shore > HOP.gap[1] + 0.6) problems.push(`the first hop is out of reach of the shore (${shore.toFixed(1)})`);
+    if (line[0][3] > 1) problems.push('the first hop is too high to jump up onto');
+    line.forEach(([x, z, size, top], i) => {
+      if ([[-1, -1], [1, -1], [-1, 1], [1, 1]].some(([sx, sz]) => arena.isLand(x + (sx * size) / 2, z + (sz * size) / 2))) problems.push(`hop ${i} is on land`);
+      if (!i) return;
+      const gap = edgeGap(line[i - 1], line[i]);
+      if (gap > HOP.gap[1] + 0.05 || gap < HOP.gap[0] - 0.05) problems.push(`hop ${i} is ${gap.toFixed(1)} from the one before`);
+      if (top - line[i - 1][3] > HOP.rise[1] + 0.05) problems.push(`hop ${i} is too high a jump`);
+      for (let j = 0; j < i - 1; j++) if (edgeGap(line[j], line[i]) < 1) problems.push(`hops ${j} and ${i} are in each other's way`);
+    });
   }
   for (const [x, z, w, d, top] of arena.bales) {
     if (![[-1, -1], [1, -1], [-1, 1], [1, 1]].every(([sx, sz]) => arena.isLand(x + (sx * w) / 2, z + (sz * d) / 2))) problems.push(`the bale at ${x}, ${z} hangs over the sea`);
@@ -322,7 +403,7 @@ export function checkArena(arena) {
   return problems;
 }
 
-const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill, last_one: growLastOne, fishing_contest: growFishingContest };
+const GROW = { coin_rush: growCoinRush, king_of_hill: growKingOfHill, last_one: growLastOne, hop_race: growHopRace, fishing_contest: growFishingContest };
 
 // The arena a kind of game grows from a seed (the same every time,
 // everywhere), or null for a kind there isn't. A seed whose first tries make
