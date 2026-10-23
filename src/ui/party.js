@@ -119,6 +119,13 @@ export class PartyHud {
       this.line.textContent = [`Up: ${up.join(', ') || 'nobody'}`, ...out.map(([id, score]) => `${who(id)} ${scoreText(g.kind, score)}`)].join(' · ');
       return;
     }
+    if (g.kind === 'hop_race' && g.phase === 'playing') {
+      // who has made it across, in order, and how many are still hopping
+      const across = (g.top ?? []).filter((id) => g.players.some(([p]) => p === id)).map(who);
+      const hopping = g.players.length - across.length;
+      this.line.textContent = [across.length ? `Across: ${across.join(', ')}` : 'Nobody across yet', ...(hopping ? [`${hopping} still hopping`] : [])].join(' · ');
+      return;
+    }
     const ranked = [...g.players].sort((a, b) => b[1] - a[1]);
     const mine = ranked.find(([id]) => id === this.myId);
     const top = ranked.slice(0, 3).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(g.kind, score)}`);

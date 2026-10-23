@@ -3431,11 +3431,17 @@ function showCrowns(ids) {
   }
 }
 
-// GAME_SCORE: the scores, and who holds the hill now (last one standing: who is still up)
+// GAME_SCORE: the scores, and who holds the hill now (last one standing: who
+// is still up; the hop race: who has made it across)
 function partyScores(m) {
   if (!partyGame) return;
+  const across = partyGame.kind === 'hop_race' && !partyGame.top?.includes(myId) && m.top.includes(myId);
   partyGame.top = m.top;
   partyHud.scores(m.scores);
+  if (across) {
+    sound.play('cheer');
+    hud.flash(m.top[0] === myId ? 'First across!' : 'Across!');
+  }
   if (!arenaId || partyGame.kind !== 'king_of_hill') return;
   const had = crowns.has(myId);
   showCrowns(m.top);
@@ -3449,6 +3455,7 @@ function arenaPrompt() {
   const shove = shoving() ? 'E: shove' : 'E: bop';
   if (partyGame.kind === 'king_of_hill') return crowns.has(myId) ? 'You hold the hill!' : `Up the hill! ${shove}`;
   if (partyGame.kind === 'last_one') return partyGame.top?.includes(myId) ? `Stay up! ${shove}` : 'Splash! Watching from the islet';
+  if (partyGame.kind === 'hop_race') return partyGame.top?.includes(myId) ? 'You made it across!' : 'Hop across to the flag!';
   return '';
 }
 
@@ -3466,6 +3473,13 @@ function updateArena() {
       putDown(arena.watch(i, partyGame.players.length));
       if (partyGame.phase === 'playing') hud.flash('Splash!');
     }
+  }
+  // the hop race: fell in, back to the start (on the meadow) for another go
+  if (partyGame?.kind === 'hop_race' && player.position.y < GROUND_STAND_Y - 1.5) {
+    const arena = arenaFor(partyGame.kind, partyGame.seed);
+    const i = Math.max(0, partyGame.players.findIndex(([id]) => id === myId));
+    putDown(arena.start(i, partyGame.players.length));
+    hud.flash('Splash! Back to the start');
   }
   const t = performance.now() / 1000;
   for (const [id, crown] of crowns) {
