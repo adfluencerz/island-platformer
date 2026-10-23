@@ -28,6 +28,7 @@ import { InvitePopups } from './ui/invite.js';
 import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
+import { Guide } from './ui/guide.js';
 import { TouchControls, isTouch } from './ui/touch.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
@@ -2379,6 +2380,17 @@ const hud = new Hud({
   onStopBuilding: () => stopBuilding(),
 });
 
+// A new farmer's first steps, ticked off as they're done (src/ui/guide.js)
+const guide = new Guide({ parent: hud.root, anchor: hud.panel });
+const guideState = () => ({
+  place: place === 'home' && farmVisit ? 'farm' : place,
+  tilled: farmVisit ? 0 : farmTiles.size,
+  planted: farmVisit ? 0 : crops.size,
+  produce: Object.values(CROPS).reduce((n, crop) => n + inventory.count(crop.produce), 0),
+  gold: inventory.gold(),
+  seasoned: inventory.gold() > 0 || skills.overall() > SKILL_LIST.length,
+});
+
 // ---------- Fishing ----------
 // With a rod in hand, E facing the sea or a pond casts (src/fishing.js; in
 // a lobby the room rolls the catch, on a farm the page does). What we land
@@ -3989,6 +4001,7 @@ function update(dt) {
   // still fast-forward it).
   const atHome = place !== 'lobby' && !farmVisit;
   presence.where(place === 'lobby' ? 'lobby' : farmVisit ? 'farm' : 'home'); // (for friends' lists)
+  if (splash.hidden) guide.update(dt, guideState());
   const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour() - devJump; // (and the developer tools' jump, as if it passed now)
   devJump = 0;
