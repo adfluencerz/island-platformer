@@ -301,8 +301,8 @@ export function createBosses(ctx) {
 
     // How fast our farmer walks (dizzy: slower)
     // How fast we go, and how high we jump (dizzy: slower; riding: quicker)
-    speed: () => (now < dizzyUntil ? 0.45 : 1) * (riding ? MOUNTS[riding].speed : 1),
-    jump: () => (riding ? MOUNTS[riding].jump : 1),
+    speed: () => (now < dizzyUntil ? 0.45 : 1) * (MOUNTS[riding]?.speed ?? 1),
+    jump: () => MOUNTS[riding]?.jump ?? 1, // (a mount not in MOUNTS: as on foot)
 
     // The mount we are on, for STATEF (1 + its boss's place in BOSS_IDS; 0: none)
     mountBits: () => (riding ? BOSS_IDS.indexOf(riding) + 1 : 0),
