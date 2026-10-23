@@ -12,7 +12,7 @@ import { Store } from '../server/store.js';
 import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
-import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS } from '../shared/constants.js';
+import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS, DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
@@ -1791,6 +1791,54 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   rooms.turnOut(a.id, madeB.id);
   assert.equal(bo.conn.closed, CLOSE.NOT_HELPER);
   assert.equal(room.players.size, 1);
+  room.close();
+});
+
+await test('a farm room: a watered crop grows the rest of the way twice as fast, and stays watered in the save', () => {
+  const farms = new Farms({ log: () => {} });
+  const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3'], crops: [] }, backpack: {} }, 'pw');
+  const a = farms.auth(bearer(made));
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const conn = fakeConn();
+  const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${made.id}.${made.token}` });
+  room.message(p, { t: C.STATE, x: 3.5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(p, { t: C.PLANT, key: '3,3', crop: 'turnip' });
+  room.message(p, { t: C.PLANT, key: '4,3', crop: 'turnip' });
+  room.message(p, { t: C.WATER, key: '9,9' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'water', 'nothing growing there');
+  const hour = 24 / DAY_LENGTH_SECONDS; // (game hours in a second)
+  room.clockBase += 20 * hour; // 20 s of growing
+  room.message(p, { t: C.WATER, key: '3,3' });
+  const watered = conn.last(S.WATERED);
+  assert.deepEqual([watered.key, watered.by], ['3,3', p.id]);
+  room.message(p, { t: C.WATER, key: '3,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'water', 'watered already');
+  // 20 s, then 40 more: 20 + 80 = 100 s grown, a turnip's time; the other has 60 s
+  room.clockBase += 40 * hour;
+  room.message(p, { t: C.HARVEST, key: '4,3' });
+  assert.equal(conn.last(S.FARM_DENY).op, 'harvest', 'the dry one is still growing');
+  // kept in the save as watered, and growing on as fast when the farm opens again
+  rooms.write(room);
+  const saved = a.save.farm.crops.find(([key]) => key === '3,3');
+  assert.equal(saved[3], 1);
+  assert.ok(Math.abs(saved[2] - 100) < 1, `${saved[2]} s grown`);
+  assert.equal(a.save.farm.crops.find(([key]) => key === '4,3')[3], undefined);
+  const reopened = new FarmRoom({ farm: a, admit: () => null });
+  assert.notEqual(reopened.crops.get('3,3').wateredAt, undefined);
+  assert.equal(reopened.crops.get('4,3').wateredAt, undefined);
+  room.message(p, { t: C.HARVEST, key: '3,3' });
+  assert.equal(conn.last(S.HARVESTED).key, '3,3');
+  // a newcomer hears when it was watered
+  room.message(p, { t: C.WATER, key: '4,3' });
+  const welcome = (() => {
+    const c2 = fakeConn();
+    room.join(c2, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann2', auth: `${made.id}.${made.token}` });
+    return c2.last(S.FARM);
+  })();
+  const [, crop, , wateredAt] = welcome.crops.find(([key]) => key === '4,3');
+  assert.equal(crop, 'turnip');
+  assert.ok(Number.isFinite(wateredAt));
   room.close();
 });
 

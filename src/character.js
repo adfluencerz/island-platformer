@@ -204,6 +204,21 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
   rod.visible = false;
   rightArm.pivot.add(rod);
 
+  // A watering can, hanging from the hand by its handle, its spout forward;
+  // a swing tips it up to pour (setCan: the plain can's green, or the big
+  // one's steel)
+  const can = new THREE.Group();
+  const canMat = ownMat(0x5f9a63, null, { metalness: 0.4, roughness: 0.5 });
+  can.add(part(new THREE.CylinderGeometry(0.12, 0.13, 0.24, 10), canMat, 0, -0.19, 0.03));
+  const spout = part(new THREE.CylinderGeometry(0.02, 0.03, 0.3, 6), canMat, 0, -0.15, 0.2);
+  spout.rotation.x = 1;
+  can.add(spout);
+  can.add(part(new THREE.CylinderGeometry(0.045, 0.028, 0.04, 8), canMat, 0, -0.07, 0.33).rotateX(1)); // the rose
+  can.add(part(new THREE.TorusGeometry(0.08, 0.016, 6, 12, Math.PI), canMat, 0, -0.07, 0.03).rotateY(Math.PI / 2)); // the handle
+  can.position.copy(rightArm.end.position);
+  can.visible = false;
+  rightArm.pivot.add(can);
+
   root.traverse((obj) => {
     if (obj.isMesh) obj.castShadow = true;
   });
@@ -263,6 +278,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     sword.rotation.x = HOE_REST_ANGLE;
     mallet.rotation.x = HOE_REST_ANGLE;
     rod.rotation.x = ROD_REST_ANGLE;
+    can.rotation.x = 0;
     if (anim.swing >= 0) {
       anim.swing += dt / HOE_SWING_TIME;
       if (anim.swing >= 1) {
@@ -276,6 +292,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
         sword.rotation.x = hoeAngle;
         mallet.rotation.x = hoeAngle;
         rod.rotation.x = hoeAngle - HOE_REST_ANGLE + ROD_REST_ANGLE;
+        can.rotation.x = Math.sin(anim.swing * Math.PI) * 0.9; // (tipped to pour)
       }
     }
 
@@ -312,6 +329,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     mallet,
     rod,
     rodTip,
+    can,
     anim,
     animate,
     swing() {
@@ -320,6 +338,10 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     // the pole's color (the plain, sturdy or golden rod)
     setRod(color) {
       poleMat.color.setHex(color);
+    },
+    // the watering can's color (the plain or the big one)
+    setCan(color) {
+      canMat.color.setHex(color);
     },
     // Up on a mount (src/mounts.js createMount()), or (null) down off it
     ride(next) {

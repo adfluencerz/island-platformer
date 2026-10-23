@@ -5,7 +5,7 @@
 // away a little while after the last one leaves.
 //
 // The room owns the farm while it runs: the tilled soil, the crops, what is
-// built, the farm's chest and its clock. Pages ask (TILL, PLANT, HARVEST,
+// built, the farm's chest and its clock. Pages ask (TILL, PLANT, WATER, HARVEST,
 // BUILD, UNBUILD) and the room says what happened to everyone. A piece's cost
 // is paid from the builder's own backpack, and goes back to whoever takes it
 // down (their pages see to that). What is harvested goes into the chest, which
@@ -41,7 +41,7 @@
 // A fight isn't kept: the room goes, and the boss is asleep again.
 //
 // The farm is kept in the farm's own file, in the page's save format (the
-// save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age]], built:
+// save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age, watered?]], built:
 // [[key, piece]], machines: [[key, item, at, takes]], felled and mined: [[tree or rock id, when it comes back (ms)]],
 // treeSites and rockSites: [[id, how often it grew back]], giants (shared/giants.js toSave()),
 // ...the animals }), so the owner's page can always play it, alone, from there; the
@@ -56,7 +56,7 @@ import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } f
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
-import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES } from '../shared/balance.js';
+import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
@@ -84,6 +84,11 @@ const PICK_REACH = 2.2; // the page picks up within 1.4; the slack covers a posi
 const WILDS = wildsFromWire(HOME_WILDS);
 const MAX_TREES = WILDS.trees.length;
 const MAX_ROCKS = WILDS.rocks.length;
+
+// How long crop c has grown by `hours` (the farm's game hours), in seconds:
+// WATERED_GROWTH times as fast from when it was watered
+const cropAge = (c, hours) =>
+  ((hours - c.plantedAt) + (c.wateredAt !== undefined ? Math.max(0, hours - c.wateredAt) * (WATERED_GROWTH - 1) : 0)) * SECONDS_PER_HOUR;
 
 export class FarmRoom extends Place {
   // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
@@ -114,10 +119,10 @@ export class FarmRoom extends Place {
         life: Number.isFinite(life) ? life / SECONDS_PER_HOUR : this.soilLife(),
       });
     }
-    this.crops = new Map(); // key -> { crop, plantedAt (game hours) }
-    for (const [key, crop, age] of saved?.crops ?? []) {
+    this.crops = new Map(); // key -> { crop, plantedAt, wateredAt (game hours; once watered) }
+    for (const [key, crop, age, watered] of saved?.crops ?? []) {
       if (this.tilled.has(key) && CROP_GROW_TIME[crop] && Number.isFinite(age)) {
-        this.crops.set(key, { crop, plantedAt: savedHours - age / SECONDS_PER_HOUR });
+        this.crops.set(key, { crop, plantedAt: savedHours - age / SECONDS_PER_HOUR, ...(watered && { wateredAt: savedHours }) });
       }
     }
     this.built = new Map(); // key -> piece (PIECES), on the tile it was built on
@@ -198,7 +203,7 @@ export class FarmRoom extends Place {
       farm: { id: this.farmId, name: this.name, owner: this.ownerName, helpers: this.helpers() },
       mine: p.owner,
       tilled: this.tilledList(this.hours()),
-      crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt)]),
+      crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(c.plantedAt), ...(c.wateredAt !== undefined ? [round3(c.wateredAt)] : [])]),
       built: [...this.built],
       machines: machinesToSave(this.machines),
       felled: [...this.felled],
@@ -286,8 +291,7 @@ export class FarmRoom extends Place {
       case C.HARVEST: {
         const { key } = msg;
         const c = this.farmable(key) && this.crops.get(key);
-        const age = c && (this.hours() - c.plantedAt) * SECONDS_PER_HOUR;
-        if (!c || age < CROP_GROW_TIME[c.crop] - RIPE_SLACK || !this.near(p, key)) return this.deny(p, 'harvest', key);
+        if (!c || cropAge(c, this.hours()) < CROP_GROW_TIME[c.crop] - RIPE_SLACK || !this.near(p, key)) return this.deny(p, 'harvest', key);
         const item = CROP_PRODUCE[c.crop];
         if (!this.canStore(item, 1)) {
           this.send(p, { t: S.CHAT, from: 0, text: 'The farm\'s chest is full: the owner needs to take some things out.' });
@@ -299,6 +303,17 @@ export class FarmRoom extends Place {
         this.changed = true;
         this.broadcast({ t: S.HARVESTED, key, by: p.id, item });
         this.broadcast({ t: S.CHEST, items: this.chest });
+        break;
+      }
+      case C.WATER: {
+        // (a growing crop, not watered yet: from now it grows faster)
+        const { key } = msg;
+        const c = this.farmable(key) && this.crops.get(key);
+        const hours = this.hours();
+        if (!c || c.wateredAt !== undefined || cropAge(c, hours) >= CROP_GROW_TIME[c.crop] || !this.near(p, key)) return this.deny(p, 'water', key);
+        c.wateredAt = round3(hours);
+        this.changed = true;
+        this.broadcast({ t: S.WATERED, key, at: c.wateredAt, by: p.id });
         break;
       }
       case C.BUILD: {
@@ -643,7 +658,7 @@ export class FarmRoom extends Place {
       savedAt: now,
       hours,
       tilled: this.tilledList(hours),
-      crops: [...this.crops].map(([key, c]) => [key, c.crop, round3((hours - c.plantedAt) * SECONDS_PER_HOUR)]),
+      crops: [...this.crops].map(([key, c]) => [key, c.crop, round3(cropAge(c, hours)), ...(c.wateredAt !== undefined ? [1] : [])]),
       built: [...this.built],
       machines: machinesToSave(this.machines),
       felled: [...this.felled],

@@ -14,7 +14,8 @@ import { FOODS } from './foods.js';
 // the merchant pays for one. No `sell`: not for sale. `tool` says what a tool
 // does (the sturdy, silver and golden ones from the workbench do the same as
 // the plain ones, better: `hits` swings fell a tree or break a rock, and it
-// gives `extra` more; a hoe `tills` [across, ahead] tiles at once). Prices, a
+// gives `extra` more; a hoe `tills` [across, ahead] tiles at once, and a
+// watering can `waters` them). Prices, a
 // coin's worth and the better tools' hits are set in shared/balance.js (see
 // the end of the catalog). `piece`: a thing made at the
 // workbench to be put down on the farm in build mode (PIECES, shared/level.js).
@@ -134,6 +135,35 @@ export const ITEMS = {
       '................',
       '................',
       '................',
+    ],
+  },
+  // A watered crop grows the rest of the way faster (WATERED_GROWTH, shared/balance.js)
+  watering_can: {
+    name: 'Watering can',
+    category: 'Tool',
+    tool: 'can',
+    description: 'Water a crop and it grows the rest of the way twice as fast. Use with E on what you planted.',
+    maxStack: 1,
+    trashable: false,
+    color: 0x5f9a63,
+    palette: { o: '#24343c', m: '#3f6b4a', M: '#5f9a63', L: '#a8d8a0' },
+    sprite: [
+      '................',
+      '...oooooo.......',
+      '..oMMMMMMo......',
+      '..oM....Mo......',
+      '..oM....Mo......',
+      'oooooooooooo....',
+      'oLLLMMMMMMmo...o',
+      'oLLMMMMMMMmo..oM',
+      'oLMMMMMMMMmo.oMo',
+      'oLMMMMMMMMmooMo.',
+      'oLMMMMMMMMmoMo..',
+      'oLMMMMMMMMmMo...',
+      'oLMMMMMMMMmo....',
+      'oMMMMMMMMMmo....',
+      'ommmmmmmmmmo....',
+      'oooooooooooo....',
     ],
   },
   turnip_seeds: {
@@ -867,6 +897,7 @@ ITEMS.silver_hoe = better('hoe', 'Silver hoe', 'Tills five tiles in a row in one
 ITEMS.silver_axe = better('axe', 'Silver axe', 'Fells a tree in two swings. Swing with E (or hold it).', SILVER);
 ITEMS.silver_pickaxe = better('pickaxe', 'Silver pickaxe', 'Breaks a rock in one swing. Swing with E (or hold it).', SILVER);
 ITEMS.golden_hoe = better('hoe', 'Golden hoe', 'Tills a patch three by three in one go. Use with E.', GOLD);
+ITEMS.big_watering_can = { ...better('watering_can', 'Big watering can', 'Waters a patch three by three in one go: watered, a crop grows the rest of the way twice as fast. Use with E.', STEEL), color: 0x5b84b1, waters: [3, 3] };
 ITEMS.golden_axe = better('axe', 'Golden axe', 'Fells a tree in one swing, and gets an extra log out of it. Swing with E (or hold it).', GOLD);
 ITEMS.golden_pickaxe = better('pickaxe', 'Golden pickaxe', 'Breaks a rock in one swing, and gets an extra stone out of it. Swing with E (or hold it).', GOLD);
 
