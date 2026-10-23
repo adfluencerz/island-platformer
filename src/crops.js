@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CROP_GROW_TIME } from '../shared/level.js';
-import { BEANSTALK, MORE_CROPS } from '../shared/balance.js';
+import { BEANSTALK, MORE_CROPS, PLATFORM_PLANTS } from '../shared/balance.js';
 
 // ---------- Crops ----------
 // What each seed grows into. `growTime` is seconds from planting to ripe
@@ -232,6 +232,68 @@ function buildBerryBush() {
   return g;
 }
 
+// ---------- Plants that are platforms ----------
+// (PLATFORM_PLANTS: each is stood on at its `top`; main.js makes that a
+// ledge once it's ripe)
+
+// A bounce shroom: a thick white stem under a big spotted cap, springy
+const shroomStemMat = mat(0xf4efe4);
+const shroomCapMat = mat(0xd84a5a);
+const shroomSpotMat = mat(0xffffff);
+const shroomCapGeo = new THREE.SphereGeometry(0.5, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+const shroomStemGeo = new THREE.CylinderGeometry(0.17, 0.22, 0.5, 8);
+const spotGeo = new THREE.SphereGeometry(0.07, 6, 4);
+
+function buildBounceShroom() {
+  const g = new THREE.Group();
+  const { top } = PLATFORM_PLANTS.bounce_shroom;
+  g.add(mesh(shroomStemGeo, shroomStemMat, [0, 0.25, 0]));
+  g.add(mesh(shroomCapGeo, shroomCapMat, [0, top - 0.3, 0], [1, 0.6, 1]));
+  for (let i = 0; i < 7; i++) {
+    const a = i * 2.4;
+    const out = i ? 0.3 : 0; // (one on top)
+    g.add(mesh(spotGeo, shroomSpotMat, [Math.cos(a) * out, top - 0.02 - (out * out) * 0.5, Math.sin(a) * out], [1, 0.4, 1]));
+  }
+  return g;
+}
+
+// A lily leaf: a stout stalk with a big round leaf flat on top, a notch cut
+// in it and a pink bud by the stalk
+const lilyLeafMat = mat(0x5fbf6a);
+const lilyStalkMat = mat(0x3f8a3a);
+const lilyBudMat = mat(0xf0a0c8);
+const lilyLeafGeo = new THREE.CylinderGeometry(0.72, 0.68, 0.08, 16, 1, false, 0.35, Math.PI * 2 - 0.7);
+const lilyStalkGeo = new THREE.CylinderGeometry(0.08, 0.12, 1.1, 6);
+
+function buildLilyLeaf() {
+  const g = new THREE.Group();
+  const { top } = PLATFORM_PLANTS.lily_leaf;
+  g.add(mesh(lilyStalkGeo, lilyStalkMat, [0, 0.55, 0]));
+  g.add(mesh(lilyLeafGeo, lilyLeafMat, [0, top - 0.04, 0]));
+  g.add(mesh(bellGeo, lilyBudMat, [0.2, top + 0.08, -0.15], [1.4, 1.2, 1.4]));
+  return g;
+}
+
+// Cloud cotton: a thin stem winding up to a cloud of white puffs, floating
+const cottonMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true, emissive: 0x30343c });
+const cottonGeo = new THREE.SphereGeometry(1, 8, 6);
+const cottonStemGeo = new THREE.CylinderGeometry(0.025, 0.035, 0.5, 5);
+
+function buildCloudCotton() {
+  const g = new THREE.Group();
+  const { top } = PLATFORM_PLANTS.cloud_cotton;
+  const bottom = top - 0.3;
+  for (let i = 0; i < 5; i++) {
+    const piece = mesh(cottonStemGeo, stemMat, [Math.sin(i * 1.9) * 0.08, (i + 0.5) * (bottom / 5), Math.cos(i * 1.9) * 0.08], [1, bottom / 5 / 0.5 * 1.1, 1]);
+    piece.rotation.z = Math.sin(i * 2.7) * 0.25;
+    g.add(piece);
+  }
+  for (const [x, y, z, r] of [[0, 0.15, 0, 0.38], [0.32, 0.08, 0.1, 0.27], [-0.3, 0.1, -0.05, 0.29], [0.05, 0.1, 0.3, 0.26], [-0.05, 0.08, -0.32, 0.26], [0.1, 0.24, -0.1, 0.24]]) {
+    g.add(mesh(cottonGeo, cottonMat, [x, bottom + y, z], [r, r * 0.8, r]));
+  }
+  return g;
+}
+
 export const CROPS = {
   turnip: { growTime: CROP_GROW_TIME.turnip, produce: 'turnip', build: buildTurnip },
   carrot: { growTime: CROP_GROW_TIME.carrot, produce: 'carrot', build: buildCarrot },
@@ -242,13 +304,18 @@ export const CROPS = {
     produce: 'golden_turnip',
     build: () => buildTurnip(goldBulbMat, goldTopMat),
   },
-  // (`climb`: its beans are picked from the top, see BEAN_LEDGES)
-  vine_bean: { growTime: CROP_GROW_TIME.vine_bean, produce: 'beans', build: buildBeanstalk, climb: true },
+  // (`climb`: its beans are picked from the top, see BEAN_LEDGES: what to say
+  // to one trying from the ground)
+  vine_bean: { growTime: CROP_GROW_TIME.vine_bean, produce: 'beans', build: buildBeanstalk, climb: 'The beans grow up at the top: climb the leaves to pick them' },
   // (`again`: it stays when it's picked, ripe again so many seconds later;
   // `gives`: so many a pick; `name`: the plant's, to dig it up)
   tomato: { growTime: CROP_GROW_TIME.tomato, produce: 'tomato', build: buildTomato, again: MORE_CROPS.tomato.again, name: 'tomato plant' },
   pumpkin: { growTime: CROP_GROW_TIME.pumpkin, produce: 'pumpkin', build: buildPumpkin },
   berry_bush: { growTime: CROP_GROW_TIME.berry_bush, produce: 'berries', build: buildBerryBush, again: MORE_CROPS.berry_bush.again, gives: MORE_CROPS.berry_bush.gives, name: 'berry bush' },
+  // (`platform`: what it is to stand on, PLATFORM_PLANTS; a lily leaf has nothing to pick)
+  bounce_shroom: { growTime: CROP_GROW_TIME.bounce_shroom, produce: 'mushroom', build: buildBounceShroom, again: PLATFORM_PLANTS.bounce_shroom.again, gives: PLATFORM_PLANTS.bounce_shroom.gives, name: 'bounce shroom', platform: PLATFORM_PLANTS.bounce_shroom },
+  lily_leaf: { growTime: CROP_GROW_TIME.lily_leaf, produce: null, build: buildLilyLeaf, again: PLATFORM_PLANTS.lily_leaf.again, name: 'lily leaf', platform: PLATFORM_PLANTS.lily_leaf },
+  cloud_cotton: { growTime: CROP_GROW_TIME.cloud_cotton, produce: 'cloud_cotton', build: buildCloudCotton, climb: 'Cloud cotton is picked from on top: jump up through it', platform: PLATFORM_PLANTS.cloud_cotton },
 };
 
 // Growth stages by progress (0..1): seeds in the soil, a sprout, then the crop

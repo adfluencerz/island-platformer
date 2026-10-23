@@ -58,7 +58,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
 import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH, cropAgain, cropGives } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
-import { BEANSTALK } from '../shared/balance.js';
+import { BEANSTALK, PLATFORM_PLANTS } from '../shared/balance.js';
 
 const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
@@ -239,7 +239,8 @@ export class FarmRoom extends Place {
   // (a beanstalk's beans are picked from up on its crown)
   near(p, key) {
     const [gx, gz] = key.split(',').map(Number);
-    const up = this.crops.get(key)?.crop === 'vine_bean' ? BEANSTALK.top + 1 : 0;
+    const crop = this.crops.get(key)?.crop; // (a beanstalk is picked from its crown, cloud cotton from on top: higher up)
+    const up = crop === 'vine_bean' ? BEANSTALK.top + 1 : PLATFORM_PLANTS[crop] ? PLATFORM_PLANTS[crop].top + 1 : 0;
     return Math.hypot(gx - p.x, gz - p.z) <= REACH && p.y - GROUND_STAND_Y > -1.4 && p.y - GROUND_STAND_Y < 1.4 + up;
   }
 
@@ -295,9 +296,9 @@ export class FarmRoom extends Place {
         const { key } = msg;
         const c = this.farmable(key) && this.crops.get(key);
         if (!c || cropAge(c, this.hours()) < CROP_GROW_TIME[c.crop] - RIPE_SLACK || !this.near(p, key)) return this.deny(p, 'harvest', key);
-        const item = CROP_PRODUCE[c.crop];
-        const n = cropGives(c.crop);
-        if (!this.canStore(item, n)) {
+        const item = CROP_PRODUCE[c.crop]; // (none: a lily leaf, wilting after its landings)
+        const n = item ? cropGives(c.crop) : 0;
+        if (item && !this.canStore(item, n)) {
           this.send(p, { t: S.CHAT, from: 0, text: 'The farm\'s chest is full: the owner needs to take some things out.' });
           return this.deny(p, 'harvest', key);
         }
@@ -309,7 +310,7 @@ export class FarmRoom extends Place {
           this.crops.delete(key);
           this.tilled.set(key, { since: this.hours(), life: this.soilLife() }); // (bare again from now)
         }
-        this.store(item, n);
+        if (item) this.store(item, n);
         this.changed = true;
         this.broadcast({ t: S.HARVESTED, key, by: p.id, item });
         this.broadcast({ t: S.CHEST, items: this.chest });

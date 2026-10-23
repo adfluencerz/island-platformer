@@ -36,6 +36,9 @@ export const SHOP = {
   tomato_seeds: { price: 50, sell: 25 },
   pumpkin_seeds: { price: 55, sell: 27 },
   berry_cutting: { price: 80, sell: 40 },
+  shroom_spores: { price: 60, sell: 30 },
+  lily_seeds: { price: 50, sell: 25 },
+  cotton_seeds: { price: 90, sell: 45 },
   golden_seeds: { sell: 100 },
   // crops
   turnip: { sell: 35 },
@@ -45,6 +48,7 @@ export const SHOP = {
   golden_turnip: { sell: 150 },
   beans: { sell: 140 }, // (picked from the top of a beanstalk)
   tomato: { sell: 40 }, // (a tomato plant keeps giving)
+  cloud_cotton: { sell: 150 }, // (picked from on top of it, up in the air)
   // gathered in lobbies
   berries: { sell: 15 },
   mushroom: { sell: 25 },
@@ -175,6 +179,21 @@ export const EGGS_PER_HEN = 3;
 // over the ground), where the beans are picked (src/crops.js draws it)
 export const BEANSTALK = { grow: 240, top: 4.2 };
 CROP_GROW_TIME.vine_bean = BEANSTALK.grow; // (a crop like the rest, to the game server too)
+// More plants that are platforms, from the merchant's seeds (src/crops.js
+// draws them; main.js stands on them once they're ripe). `top`: the height
+// of what you stand on (m over the ground), `width` across. A bounce shroom's
+// cap launches you `bounce` times as high as a jump, and gives mushrooms when
+// it's picked (its cap grows back: `again`, as in MORE_CROPS); a lily leaf is
+// a soft step up that wilts after `wilts` landings and grows back (nothing to
+// pick); cloud cotton floats, solid only from above (`oneWay`), and is picked
+// from on top of it.
+export const PLATFORM_PLANTS = {
+  bounce_shroom: { grow: 150, again: 70, gives: 2, produce: 'mushroom', top: 0.75, width: 1, bounce: 2 },
+  lily_leaf: { grow: 120, again: 80, top: 1.15, width: 1, wilts: 3 },
+  cloud_cotton: { grow: 260, produce: 'cloud_cotton', top: 2.7, width: 1.2, oneWay: true },
+};
+Object.assign(MORE_CROPS, PLATFORM_PLANTS); // (picked, or wilted, and grown back, as they are)
+for (const [crop, { grow }] of Object.entries(PLATFORM_PLANTS)) CROP_GROW_TIME[crop] = grow;
 
 // ---------- Upgrades ----------
 // Bought at the workbench by the farmer, for the whole farm (a helper works
@@ -664,7 +683,7 @@ export const SKILLS = {
   next: [40, 100, 170, 245, 325, 415, 505, 605, 705],
   xp: {
     plant: 1,
-    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10, vine_bean: 8, tomato: 3, pumpkin: 6, berry_bush: 2 },
+    harvest: { turnip: 3, carrot: 4, flax: 5, sunflower: 5, golden_turnip: 10, vine_bean: 8, tomato: 3, pumpkin: 6, berry_bush: 2, bounce_shroom: 3, cloud_cotton: 8 },
     pet: 3, // (once a game day for each animal)
     egg: 6,
     milk: 10,
