@@ -4,6 +4,7 @@ import { createItemMesh, itemGeometry } from './itemmesh.js';
 import { createFarmFinds } from './finds.js';
 import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
+import { createRequests } from './requests.js';
 import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './animals.js';
@@ -2559,9 +2560,11 @@ const bosses = createBosses({
   addShiny: (kind) => !!animals.addShiny(kind),
   save: () => saveGame(),
 });
-// (after the HUD: its key handler goes first, see shop.js)
+// (after the HUD: its key handler goes first, see shop.js). The merchant
+// asks for something each game day (requests.js), handed over at the stall.
 const shop = createShop({
   inventory,
+  requests: createRequests({ day: () => dayNight.day(), inventory }),
   onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
 });
 // Now and then something turns up on the farm, to walk into (finds.js):

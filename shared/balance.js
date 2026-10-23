@@ -728,3 +728,23 @@ export const MINIGAMES = {
 
 // ---------- Room to keep things ----------
 export const CHEST = { stack: 999, kinds: 64 }; // the most of one item in a farm chest, and of different items
+
+// ---------- The merchant's requests (src/requests.js) ----------
+// Each game day the merchant asks for some of one thing, [item, least,
+// most], and pays `pays` times what it would sell for, and `plus` gold more
+// (to the nearest 10), with a `bonus` chance of a golden seed on top. The
+// first `easy` days, only the first thing (what a new farmer grows first).
+// (Not wood or stone: a new farmer has plenty of both.)
+export const REQUESTS = {
+  wants: [
+    ['turnip', 4, 8], ['carrot', 3, 6], ['flax', 3, 6], ['sunflower', 3, 5],
+    ['egg', 3, 6], ['milk', 2, 4], ['wool', 1, 3],
+    ['berries', 5, 10], ['mushroom', 4, 8], ['heather', 3, 6],
+    ['sardine', 2, 4], ['mackerel', 2, 3],
+    ['cheese', 1, 2], ['honey', 1, 2], ['mayonnaise', 1, 3],
+  ],
+  pays: 1.5,
+  plus: 40,
+  bonus: 0.25,
+  easy: 2,
+};

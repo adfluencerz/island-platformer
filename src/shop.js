@@ -4,9 +4,10 @@ import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
 import { el, button } from './ui/dom.js';
 
 // ---------- The merchant's shop ----------
-// Opened with E at the stall on the home farm (merchant.js). Seeds and animals to
-// buy up top; below, your backpack (toolbar row first), to sell from. Prices are the
-// items' own `price` and `sell` (items.js).
+// Opened with E at the stall on the home farm (merchant.js). Today's request
+// first (src/requests.js: some of one thing, for good gold); seeds and animals
+// to buy; below, your backpack (toolbar row first), to sell from. Prices are
+// the items' own `price` and `sell` (items.js).
 //
 //   click something to buy  buy one (shift: five)
 //   click a backpack slot   sell the whole stack
@@ -34,6 +35,7 @@ const LINES = {
   poor: ['Ah, you\'re a little short for that one.', 'Come back when the harvest\'s in!'],
   full: ['Your bag\'s full to bursting, friend!'],
   noSale: ['Oh no, you hang on to that.', 'That\'s not something I can buy, I\'m afraid.'],
+  thanks: ['Just what I needed! Thank you kindly.', 'Wonderful, you\'ve saved my day!', 'Perfect! Here, this is for you.'],
 };
 const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
@@ -45,7 +47,8 @@ const coinImg = (parent) => {
 };
 
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
-export function createShop({ inventory, onOpenChange }) {
+// requests: today's request (src/requests.js), or none.
+export function createShop({ inventory, onOpenChange, requests = null }) {
   let open = false;
 
   const menuEl = el('div', 'inv-menu shop-menu', document.body);
@@ -56,6 +59,19 @@ export function createShop({ inventory, onOpenChange }) {
   closeBtn.title = 'Close (E / Esc)';
 
   const sayEl = el('div', 'shop-say', windowEl);
+
+  // Today's request: what, what it pays, and Hand over
+  const askEl = el('div', 'shop-ask', windowEl);
+  askEl.hidden = !requests;
+  const askIcon = el('img', 'inv-icon', askEl);
+  askIcon.alt = '';
+  const askText = el('div', 'shop-ask-text', askEl);
+  const askBtn = button('shop-item shop-ask-btn', askEl, 'Hand over', () => {
+    if (!requests?.handOver()) return;
+    say(LINES.thanks);
+    bumpFunds();
+    render();
+  });
 
   el('div', 'shop-heading', windowEl, 'For sale');
   const stockEl = el('div', 'shop-stock', windowEl);
@@ -99,6 +115,7 @@ export function createShop({ inventory, onOpenChange }) {
 
   // ---------- Rendering ----------
   function render() {
+    renderAsk();
     const gold = inventory.gold();
     fundsText.textContent = `${gold.toLocaleString()}g`;
     for (const { id, row } of stockViews) row.classList.toggle('poor', gold < ITEMS[id].price);
@@ -109,6 +126,21 @@ export function createShop({ inventory, onOpenChange }) {
       view.count.textContent = stack && stack.count > 1 ? stack.count : '';
       view.root.classList.toggle('shop-nosell', !!stack && !ITEMS[stack.id].sell);
     });
+  }
+
+  function renderAsk() {
+    if (!requests) return;
+    const r = requests.today();
+    const def = ITEMS[r.item];
+    const have = inventory.count(r.item);
+    askIcon.src = spriteURL(def);
+    askEl.classList.toggle('done', r.done);
+    askText.textContent = r.done
+      ? 'That\'s today\'s request done. Thank you! Come back tomorrow.'
+      : `Today I'm after ${r.count} × ${def.name.toLowerCase()}: ${r.gold}g for ${r.count > 1 ? 'them' : 'it'}${r.bonus ? ', and a golden seed' : ''}.`;
+    askBtn.hidden = r.done;
+    askBtn.disabled = have < r.count;
+    askBtn.textContent = `Hand over (${Math.min(have, r.count)}/${r.count})`;
   }
 
   function say(lines) {

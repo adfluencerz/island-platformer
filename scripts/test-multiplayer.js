@@ -20,6 +20,8 @@ import { FISHING, RODS, SHOP, FISH_WEIGHT, TACKLE, AQUARIUM } from '../shared/ba
 import { BEANSTALK, DAY_LENGTH_SECONDS as DAY_SECONDS } from '../shared/balance.js';
 import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, BOARD_SIZE } from '../shared/fishing.js';
 import { fingerprint } from './seed-fingerprint.js';
+import { requestFor } from '../src/requests.js';
+import { REQUESTS } from '../shared/balance.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
@@ -2123,6 +2125,19 @@ await test('a boss fight on a farm with helpers: its portal, the bops, and the p
 
 // ---------- Cards and the arcade ----------
 console.log('cards and the arcade');
+await test('the merchant\'s request: the same for everyone on a day, something sold at the stall, paying more than the stall', () => {
+  const days = Array.from({ length: 60 }, (_, d) => requestFor(d + 1));
+  assert.deepEqual(requestFor(7), requestFor(7));
+  assert.deepEqual([requestFor(1).item, requestFor(2).item], ['turnip', 'turnip'], 'what a new farmer grows first');
+  assert.ok(new Set(days.map((r) => r.item)).size > 5, 'a different thing now and then');
+  for (const r of days) {
+    const [, least, most] = REQUESTS.wants.find(([item]) => item === r.item);
+    assert.ok(r.count >= least && r.count <= most, `${r.count} ${r.item}`);
+    assert.ok(r.gold > r.count * SHOP[r.item].sell, `${r.gold}g for ${r.count} ${r.item}`);
+    assert.equal(r.gold % 10, 0);
+  }
+});
+
 await test('poker hands are told apart and ranked, and the best five of seven found', () => {
   const name = (cards) => evaluate(cards.split(' ')).name;
   assert.equal(name('As Ks Qs Js Ts'), 'Straight flush');
