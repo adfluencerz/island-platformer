@@ -16,7 +16,7 @@ import { isTouch } from './touch.js';
 // The controls: [keys, what they do]
 const CONTROLS = [
   ['WASD', 'Walk (or the arrow keys; or click the ground, or hold the mouse button to steer)'],
-  ['Space', 'Jump, and again in the air for a double jump (from overall skill level 15)'],
+  ['Space', 'Jump (let go early for a lower jump), and again in the air for a double jump (from overall skill level 15)'],
   ['E', 'Till, plant and harvest; gather, chop or mine (hold to keep at it)'],
   ['E', 'Use what is in front of you: the stall, the workbench, the chest, a machine, the arcade, the kitchen, a door, a portal'],
   ['E', 'With a rod: cast at the water, then again when it bites. With a dish: eat it. With a mount: get on or off'],
@@ -30,6 +30,7 @@ const CONTROLS = [
   ['L', 'Play online'],
   ['Enter', 'Chat (in a lobby, or on a farm with helpers)'],
   ['Hold T', 'Speed up time at home'],
+  ['M', 'Sound and music on or off'],
   ['Right click', 'Cancel: stop building or walking'],
   ['Esc', 'Menu, or close what is open'],
   ['`', 'Developer tools: grow a giant tree or rock'],

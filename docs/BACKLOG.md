@@ -17,15 +17,9 @@ Nothing open right now.
 ## Next up
 Picked to go first, roughly in this order:
 
-1. [ ] **Sound and music.** The game is silent: footsteps, jumps, tool swings,
-   pickups, the merchant's till, animals, a boss fight, and a calm tune for the
-   farm that changes at night. A mute switch in the menu.
-2. [ ] **Better jumping.** Jump buffering (a Jump pressed just before landing
-   still jumps) and a variable jump height (letting go early jumps lower).
-   Coyote time, the double jump and squash & stretch are already in.
-3. [ ] **A first-day guide.** A few hints for a new farmer: till, plant,
+1. [ ] **A first-day guide.** A few hints for a new farmer: till, plant,
    harvest, sell, then go to a lobby. Shown once, can be skipped.
-4. [ ] **Watering can.** Watered crops grow faster; an upgrade at the
+2. [ ] **Watering can.** Watered crops grow faster; an upgrade at the
    workbench waters 3×3.
 
 ---
@@ -49,7 +43,6 @@ entry in the world's platforms.
       cloud cotton that is solid only from above
 
 ### Getting around
-- [ ] Jump buffering and variable jump height (see **Next up**)
 - [ ] A glider leaf for falling slowly
 - [ ] Faster mounts, or a mount you can ride in a lobby (mounts are just for
       show now)
@@ -89,6 +82,8 @@ entry in the world's platforms.
 ## Done
 The big pieces so far, newest first:
 
+- Sound and music, made on the spot (no sound files), with M and the menu
+  to turn them off; jump buffering and a lower jump when Jump is let go early
 - Party games: king of the hill and last one standing, next to the coin
   rush and the fishing contest
 - More fishing: weighed fish, a journal, bait, a contest, fish shadows, an

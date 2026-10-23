@@ -37,6 +37,7 @@ import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '.
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
 import { CROPS, createCropView } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
+import * as sound from './sound.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
@@ -63,9 +64,12 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 // A phone draws fewer pixels (and a smaller shadow map, below): on its small
 // screen it looks the same, and it runs cooler and lasts longer
 const PHONE = isTouch();
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2));
+// (testing: ?lowgfx draws a quarter of the pixels and no shadows, for a
+// headless browser without a GPU; scripts/browser.mjs)
+const LOWGFX = new URLSearchParams(location.search).has('lowgfx');
+renderer.setPixelRatio(LOWGFX ? 0.5 : Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !LOWGFX;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
@@ -251,6 +255,7 @@ const inventory = createInventory({
 // double jump. Yours wherever you farm: saved with the backpack.
 const skills = createSkills({
   onLevelUp: (title, detail) => {
+    sound.play('cheer');
     hud.flash(title);
     inventory.notify(detail);
   },
@@ -779,6 +784,7 @@ function updateChopping() {
     const tree = world.trees[chop.id];
     if (tree?.state === 'up' && !chop.pending.has(tree.id)) {
       world.shakeTree(tree.id, player.position);
+      sound.play('chop');
       if (tree.big > 1) hitGiant('tree', tree);
       else if (++chop.hits >= swingsWith(TREE.hits, 'woodcutting')) {
         chop.pending.add(tree.id);
@@ -811,6 +817,7 @@ function treeFelled(m) {
   if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
   // it falls away from whoever felled it
   wildsWorld().fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
+  if (m.by === myId) sound.play('fell');
   const got = myShare(m) + extraFrom('axe', m);
   if (got) inventory.add('wood', got);
   if (m.shares) giantDown('tree', m.id, got, 'wood');
@@ -885,6 +892,7 @@ function updateMining() {
     const rock = world.rocks[mine.id];
     if (rock?.state === 'up' && !mine.pending.has(rock.id)) {
       world.shakeRock(rock.id);
+      sound.play('mine');
       if (rock.big > 1) hitGiant('rock', rock);
       else if (++mine.hits >= swingsWith(ROCK.hits, 'mining')) {
         mine.pending.add(rock.id);
@@ -1220,6 +1228,7 @@ function bopped(m) {
     player.velocity.y = 5;
     player.onGround = false;
     anim.squash = -0.2;
+    sound.play('bop');
     hud.flash('Bonk!');
     const [item, count] = m.drop ?? [];
     const lost = item ? Math.min(count, inventory.count(item)) : 0;
@@ -1227,6 +1236,7 @@ function bopped(m) {
     const who = lobbyNames.get(m.by) ?? 'Someone';
     inventory.notify(lost ? `${who} bopped you: you dropped ${lost} ${ITEMS[item].name.toLowerCase()}` : `${who} bopped you`);
   } else if (m.by === myId) {
+    sound.play('bop');
     hud.flash('Bop!');
     // (only what they gathered on this visit can be knocked loose, never a rare find or coins)
     if (!m.drop) inventory.notify(`${lobbyNames.get(m.id) ?? 'They'} had nothing gathered here to drop`);
@@ -1389,8 +1399,12 @@ window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
   keys.add(e.code);
   if (e.code === 'Space') jumpPressed = true;
-  if (e.code === 'Space' && !e.repeat) jumpTapped = true;
+  if (e.code === 'Space' && !e.repeat) {
+    jumpTapped = true;
+    jumpTappedAt = clock.elapsedTime;
+  }
   if (e.code === 'KeyE' && !e.repeat) useAction();
+  if (e.code === 'KeyM' && !e.repeat) inventory.notify(sound.toggle() ? 'Sound on' : 'Sound off');
 });
 
 // E: in a lobby, chop the tree in reach with the axe in hand, else gather
@@ -1477,7 +1491,7 @@ function hoeTiles(x, z) {
 function farmHere(x, z) {
   if (!footReach()) return;
   if (x === undefined) [x, z] = keyXZ(frontTile());
-  if (harvestAt(x, z)) return;
+  if (harvestAt(x, z)) return sound.play('harvest');
 
   const held = inventory.selectedId();
   if (inPen(x, z) && (holding() === 'hoe' || ITEMS[held]?.plants)) {
@@ -1498,8 +1512,10 @@ function farmHere(x, z) {
       }
     }
     startHoeSwing();
+    sound.play('till');
   } else if (ITEMS[held]?.plants) {
     if (plantAt(x, z, ITEMS[held].plants)) {
+      sound.play('plant');
       inventory.consumeSelected();
       skills.gain('farming', SKILLS.xp.plant);
       anim.squash = 0.15; // little crouch to plant
@@ -1546,7 +1562,12 @@ function useHint() {
 
 // With a dish in hand: E eats it
 const eatHint = () => (ITEMS[inventory.selectedId()]?.dish ? `Eat ${ITEMS[inventory.selectedId()].name.toLowerCase()}` : '');
-window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('keyup', (e) => {
+  keys.delete(e.code);
+  // let go of Jump on the way up: a lower jump
+  if (e.code === 'Space' && jumpRising && player.velocity.y > 0) player.velocity.y *= JUMP_CUT;
+  if (e.code === 'Space') jumpRising = false;
+});
 
 window.addEventListener('resize', () => {
   fitCamera();
@@ -1581,12 +1602,23 @@ function jump() {
   player.velocity.y = JUMP_SPEED * boostOf(meal, 'jump');
   player.onGround = false;
   anim.squash = -0.2; // stretch on takeoff
+  jumpRising = true;
+  jumpTappedAt = -Infinity;
+  sound.play('jump');
 }
 
 // Just off a ledge you can still jump for a moment (COYOTE_TIME), and with
 // the double jump unlocked (skills.js) once more in the air, off a puff of air.
+// Jump pressed just before landing still jumps as the farmer lands
+// (JUMP_BUFFER), and letting go of it on the way up jumps lower (JUMP_CUT).
 const COYOTE_TIME = 0.1; // seconds
+const JUMP_BUFFER = 0.12; // seconds
+const JUMP_CUT = 0.5; // what is left of the speed up when Jump is let go early
+let jumpTappedAt = -Infinity; // when Jump was last pressed (clock.elapsedTime)
+let jumpRising = false; // on the way up from a jump of our own (not a bop's)
 let airTime = 0; // seconds since the farmer was last on the ground
+const STEP_EVERY = 0.32; // seconds between footsteps at a walk
+let stepTimer = 0;
 let airJumps = 0; // jumps left in the air
 const puffs = createPuffs(scene);
 
@@ -1594,6 +1626,9 @@ function airJump() {
   airJumps--;
   player.velocity.y = DOUBLE_JUMP.speed;
   anim.squash = -0.25;
+  jumpRising = true;
+  jumpTappedAt = -Infinity;
+  sound.play('airJump');
   puffs.puff(new THREE.Vector3(player.position.x, player.position.y - player.height / 2, player.position.z));
 }
 
@@ -2815,6 +2850,7 @@ function eat(dish = inventory.selectedId(), fromSlot = true) {
   if (!DISHES[dish] || !(fromSlot ? inventory.consumeSelected(1) : inventory.remove(dish, 1))) return;
   meal = { dish, ...boostFrom(dish) };
   anim.squash = 0.15;
+  sound.play('eat');
   inventory.notify(`Mmm, ${ITEMS[dish].name.toLowerCase()}! ${boostText(dish)}`);
   if (DISHES[dish].shared && farmNet) farmNet.send({ t: C.FEAST, dish });
 }
@@ -3487,7 +3523,10 @@ function partyOver(m) {
       return count > 1 && !name.endsWith('s') ? `${name}s` : name;
     };
     partyHud.results(m, got, named);
-    if ((m.winners ?? [m.winner]).includes(myId)) hud.flash('You won!');
+    if ((m.winners ?? [m.winner]).includes(myId)) {
+      sound.play('cheer');
+      hud.flash('You won!');
+    }
   } else {
     partyHud.show(null, myId);
   }
@@ -3848,7 +3887,8 @@ function update(dt) {
   } else airTime += dt;
   if (!inputBlocked()) {
     const offLedge = airTime < COYOTE_TIME && player.velocity.y <= 0;
-    if ((keys.has('Space') || jumpPressed) && (player.onGround || offLedge)) jump();
+    const buffered = clock.elapsedTime - jumpTappedAt < JUMP_BUFFER;
+    if ((keys.has('Space') || jumpPressed || buffered) && (player.onGround || offLedge)) jump();
     else if (jumpTapped && airJumps > 0) airJump();
   }
   jumpPressed = false;
@@ -3867,6 +3907,14 @@ function update(dt) {
   resolveCollisions(prevY, wasOnGround);
   if (player.onGround && !wasOnGround) {
     anim.squash = Math.min(fallSpeed / 20, 1) * 0.3; // squash on landing
+    jumpRising = false;
+    if (fallSpeed > 4) sound.play('land');
+  }
+  // footsteps, walking on something
+  stepTimer -= dt;
+  if (moving && player.onGround && stepTimer <= 0) {
+    sound.play('step');
+    stepTimer = STEP_EVERY / THREE.MathUtils.clamp(moveVec.length() / MOVE_SPEED, 0.5, 1.5);
   }
 
   // Fell off the world -> respawn on the plaza
@@ -3949,6 +3997,7 @@ function update(dt) {
     fastForward,
     focus: player.position,
   });
+  sound.music(dayNight.isNight() ? 'night' : 'day'); // (sound.js: the tune, by the time of day)
   if (farmVisit?.mine) sendFarmClock(fastForward, t);
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
@@ -3995,11 +4044,34 @@ function homePrompt() {
   return hint ? `E  ${hint}` : '';
 }
 
+let frozen = false; // (testing: the game moves only by __game.step, below)
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  update(dt);
-  renderer.render(scene, camera);
+  if (!frozen) {
+    update(dt);
+    renderer.render(scene, camera);
+  }
   requestAnimationFrame(animate);
+}
+
+// Testing: `seconds` of game time, in steps of `dt`, as fast as they compute
+// (nothing is drawn: draw() for a screenshot), whatever the frame rate.
+// Freezes the game between steps, so what a test sees is what its steps did.
+function step(seconds, dt = 1 / 30) {
+  frozen = true;
+  clock.getDelta(); // (the time spent frozen doesn't count)
+  for (let t = 0; t < seconds - 1e-9; t += dt) {
+    clock.elapsedTime += dt;
+    update(dt);
+  }
+}
+
+// Testing: hold a key (a KeyboardEvent code: 'Space', 'KeyD', ...) for
+// `seconds` of game time
+function hold(code, seconds) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+  step(seconds);
+  window.dispatchEvent(new KeyboardEvent('keyup', { code }));
 }
 
 // Built pages: installable, and the farm opens without a connection (public/sw.js).
@@ -4010,7 +4082,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
+  window.__game = { step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; } };
 }
 
 loadGame();

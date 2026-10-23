@@ -26,6 +26,7 @@ import { PASSWORD_LENGTH, usernameProblem, passwordProblem } from '../../shared/
 import { listLobbies, lobbyInfo, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode, inviteLink, helpLink } from '../net/lobby.js';
 import { el, button, copyText, hexColor } from './dom.js';
 import { addHelp } from './hud.js';
+import * as sound from '../sound.js';
 
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
 
@@ -94,6 +95,19 @@ export class Splash {
     nav('Play online', 'online');
     nav('Friends', 'friends');
     nav('Controls', 'controls');
+    // sound effects and music, on or off (M in game does both)
+    const soundRow = el('div', 'ui-row', main);
+    const toggle = (label, key, set) => {
+      const b = button('ui-btn ui-btn-small ui-btn-ghost', soundRow, '', () => {
+        set(!sound.settings()[key]);
+        show();
+      });
+      const show = () => (b.textContent = `${label}: ${sound.settings()[key] ? 'on' : 'off'}`);
+      show();
+      return show;
+    };
+    const shows = [toggle('Sound', 'effects', sound.setEffects), toggle('Music', 'music', sound.setMusic)];
+    this.showSound = () => shows.forEach((show) => show());
 
     // ---- an invitation (?lobby=CODE) ----
     this.invite = this.page('invite');
@@ -354,6 +368,7 @@ export class Splash {
   show({ from = 'game', page = 'main', message = '' } = {}) {
     this.from = from === 'title' ? 'title' : 'game';
     this.hidden = false;
+    this.showSound(); // (M may have changed it)
     this.root.hidden = false;
     this.root.classList.toggle('in-game', this.from === 'game');
     document.body.classList.toggle('in-menu', this.from === 'title');

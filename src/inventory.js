@@ -2,6 +2,7 @@ import './inventory.css';
 import { ITEMS, PIECE_ICONS, spriteURL } from './items.js';
 import { PIECES, BUILD_GROUPS } from '../shared/level.js';
 import { buzz } from './ui/touch.js';
+import { play } from './sound.js';
 
 // ---------- Slot-based inventory (Stardew Valley style) ----------
 // 3 rows x 12 slots. The first row doubles as the always-visible toolbar; the
@@ -368,6 +369,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
       if (now - lastFullNotice > 2000) {
         lastFullNotice = now;
         toast('full', null, () => 'Inventory full', 0);
+        play('full');
       }
       return false;
     }
@@ -375,6 +377,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
     if (!quiet) {
       toast(id, spriteURL(def), (n) => `${def.name} ×${n}`, count);
       buzz(15);
+      play('pickup');
     }
     render();
     onAdd?.(id, count); // (a recipe card is read: main.js)
@@ -385,6 +388,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
     gold += amount;
     toast('gold', spriteURL(ITEMS.coin), (n) => `+${n}g`, amount);
     buzz(15);
+    play('coin');
     fundsEl.classList.remove('bump');
     void fundsEl.offsetWidth;
     fundsEl.classList.add('bump');
@@ -395,6 +399,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   function spend(amount) {
     if (gold < amount) return false;
     gold -= amount;
+    if (amount > 0) play('spend');
     render();
     return true;
   }
