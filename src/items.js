@@ -926,6 +926,35 @@ ITEMS.mallet = {
   ],
 };
 
+// For getting about: kept in the backpack, it opens over the farmer's head
+// when Jump is held on the way down (GLIDE, shared/balance.js; src/glider.js)
+ITEMS.glider_leaf = {
+  name: 'Glider leaf',
+  category: 'Tool',
+  description: 'A leaf as big as an umbrella. Keep it in your backpack and hold Jump on the way down to float gently to the ground.',
+  maxStack: 1,
+  color: 0x5aa83c,
+  palette: { o: '#1f3a14', g: '#5aa83c', G: '#8fd46a', d: '#3f7f2a', s: '#6b8f2e' },
+  sprite: [
+    '.........oooo...',
+    '.......ooGGGgo..',
+    '.....ooGGGGggdo.',
+    '....oGGGGGggdgo.',
+    '...oGGGGGggdggo.',
+    '..oGGGGGggdgggo.',
+    '..oGGGGggdggggo.',
+    '.oGGGGggdggggo..',
+    '.oGGGggdgggggo..',
+    '.oGGggdgggggo...',
+    '.oGggdggggoo....',
+    '.oggdgggoo......',
+    '..oosooo........',
+    '...os...........',
+    '..os............',
+    '.oo.............',
+  ],
+};
+
 // Things for the farm: put down in build mode (the Build tab)
 ITEMS.planter = {
   name: 'Flower planter',

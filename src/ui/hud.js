@@ -16,7 +16,7 @@ import { isTouch } from './touch.js';
 // The controls: [keys, what they do]
 const CONTROLS = [
   ['WASD', 'Walk (or the arrow keys; or click the ground, or hold the mouse button to steer)'],
-  ['Space', 'Jump (let go early for a lower jump), and again in the air for a double jump (from overall skill level 15)'],
+  ['Space', 'Jump (let go early for a lower jump), and again in the air for a double jump (from overall skill level 15). Hold it on the way down to glide, with a glider leaf'],
   ['E', 'Till, plant and harvest; gather, chop or mine (hold to keep at it)'],
   ['E', 'Use what is in front of you: the stall, the workbench, the chest, a machine, the arcade, the kitchen, a door, a portal'],
   ['E', 'With a rod: cast at the water, then again when it bites. With a dish: eat it. With a mount: get on or off'],
@@ -48,7 +48,7 @@ const TOUCH_CONTROLS = [
   ['Stick', 'Walk (or tap the ground)'],
   ['Tap', 'Till, plant, harvest, gather, chop, mine, or trade at the stall'],
   ['Use', 'Whatever E does: the workbench, the chest, a machine, a door; cast a rod, eat a dish, get on a mount'],
-  ['Jump', 'Jump, and again in the air for a double jump (from overall skill level 15)'],
+  ['Jump', 'Jump, and again in the air for a double jump (from overall skill level 15). Hold it on the way down to glide, with a glider leaf'],
   ['Bag', 'Backpack, and its Skills tab'],
   ['Build', 'Build on your farm'],
   ['Chat', 'Chat (in a lobby, or on a farm with helpers)'],
