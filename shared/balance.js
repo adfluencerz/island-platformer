@@ -258,6 +258,7 @@ export const MOUNTS = {
   lion: { speed: 1.7, jump: 1 },
   bee: { speed: 1.45, jump: 1.1 },
   crow: { speed: 1.5, jump: 1.25 },
+  toad: { speed: 1.35, jump: 1.3 }, // (the bog toad's, once it is in: springy)
 };
 // What every boss fight shares. `hitsOut`: a farmer the boss bops this many
 // times is sent back to the arena's start (and can go again). `dizzy`:
