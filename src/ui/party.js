@@ -1,5 +1,5 @@
 // A lobby's party game on screen (shared/minigame.js): a card at the top.
-// While it gathers, how long until it starts and who is in, with Join (or Not
+// At the signpost with no game on, which game to start; while it gathers, how long until it starts and who is in, with Join (or Not
 // coming); while it is on, the time left and the scores; when it is over, who
 // won and what you got, a few seconds.
 import { el, button } from './dom.js';
@@ -8,8 +8,9 @@ import { weightText } from '../../shared/fishing.js';
 import './party.css';
 
 const RESULT_MS = 7000;
-// A score as shown: coins picked up, or in a fishing contest the weight landed
-const scoreText = (kind, score) => (kind === 'fishing_contest' ? weightText(score) : String(score));
+// A score as shown: coins picked up, seconds on the hill (GAMES' unit), or in
+// a fishing contest the weight landed
+const scoreText = (kind, score) => (kind === 'fishing_contest' ? weightText(score) : `${score}${GAMES[kind]?.unit ?? ''}`);
 
 export class PartyHud {
   // onJoin(), onLeave(): the buttons. nameOf(id): a player's name.
@@ -24,10 +25,33 @@ export class PartyHud {
     this.myId = 0;
     this.endsAt = 0; // performance.now() when the phase is over
     this.resultTimer = 0;
+    this.choosing = false; // the games to pick from are up
+  }
+
+  // At the signpost: a button for each of its games (GAMES, but the board's), onPick(kind)
+  choose(onPick) {
+    if (this.game) return;
+    this.hideResults();
+    this.choosing = true;
+    this.root.hidden = false;
+    this.root.classList.remove('playing');
+    this.title.textContent = 'Party games';
+    this.line.textContent = 'Which game? Whoever is in the lobby can join.';
+    this.buttons.textContent = '';
+    for (const [kind, { name, board }] of Object.entries(GAMES)) if (!board) button('ui-btn ui-btn-small', this.buttons, name, () => onPick(kind));
+  }
+
+  // Walked away from the signpost (or picked)
+  stopChoosing() {
+    if (!this.choosing) return;
+    this.choosing = false;
+    if (!this.game && !this.resultTimer) this.root.hidden = true;
   }
 
   // The game as the lobby has it (null: none), and who we are
   show(game, myId) {
+    if (game) this.choosing = false;
+    else if (this.choosing) return;
     this.game = game;
     this.myId = myId;
     if (!game) {
@@ -62,6 +86,14 @@ export class PartyHud {
     this.update();
   }
 
+  // All the scores at once ([[id, score]])
+  scores(list) {
+    if (!this.game) return;
+    this.game.players = list.map(([id, score]) => [id, score]);
+    this.shownGame = null;
+    this.update();
+  }
+
   // Every frame or so: the time left
   update() {
     const g = this.game;
@@ -89,6 +121,7 @@ export class PartyHud {
   // It is over (GAME_END): who won, and what we got ([[item, count], ...], or null)
   results({ game, winner, scores }, got, itemName) {
     this.game = null;
+    this.choosing = false;
     this.root.hidden = false;
     this.root.classList.add('playing');
     this.buttons.textContent = '';
@@ -110,6 +143,7 @@ export class PartyHud {
 
   clear() {
     this.game = null;
+    this.choosing = false;
     this.hideResults();
     this.root.hidden = true;
   }

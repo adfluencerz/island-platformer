@@ -6,12 +6,17 @@ import { createItemMesh } from './itemmesh.js';
 // What a party game's arena looks like (built by world.js, as the islands in
 // maps.js are), from the arena a seed grows (shared/arenas.js): a round
 // meadow in the sea with hay bales to climb and, for a coin rush, its coins
-// floating about. arenaMap(arena).coins is filled in as the world is built:
+// floating about; for king of the hill, a stepped hill in the middle with a
+// flag on its crown. arenaMap(arena).coins is filled in as the world is built:
 // a view per coin, by its id, for the page to hide as they are picked up.
 
 const baleMat = new THREE.MeshStandardMaterial({ color: 0xe0c060, roughness: 0.95, flatShading: true });
 const baleTopMat = new THREE.MeshStandardMaterial({ color: 0xead47a, roughness: 1, flatShading: true });
 const twineMat = new THREE.MeshStandardMaterial({ color: 0x9a6a32, roughness: 0.9 });
+const earthMat = new THREE.MeshStandardMaterial({ color: 0x8a6240, roughness: 1, flatShading: true });
+const turfMat = new THREE.MeshStandardMaterial({ color: 0x72b84a, roughness: 1, flatShading: true });
+const crownTurfMat = new THREE.MeshStandardMaterial({ color: 0x8fcf5a, roughness: 1, flatShading: true });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, roughness: 0.35, metalness: 0.6, emissive: 0x4a3400 });
 
 export function arenaMap(arena) {
   const coins = [];
@@ -30,7 +35,7 @@ export function arenaMap(arena) {
     flowerColors: [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff9f1c],
     // (the bales are built below, with their twine)
     platforms: [],
-    keepClear: [[0, 0, 2.6], ...arena.coins.map(([x, , z]) => [x, z, 0.5])],
+    keepClear: [[0, 0, 2.6], ...arena.coins.map(([x, , z]) => [x, z, 0.5]), ...arena.hill.map(([x, z, w, d]) => [x, z, Math.hypot(w, d) / 2])],
     coins,
     build: (ctx) => buildArena(arena, ctx, coins),
     decorate({ scatter, addBush, isOpenGround }) {
@@ -58,6 +63,27 @@ function buildArena(arena, { root, addCollider }, coins) {
     addCollider({ x, y, z, w, h, d });
   }
 
+  // The hill: grassy steps of earth, a flag on the crown's corner
+  arena.hill.forEach(([x, z, w, d, top], i) => {
+    const under = i ? arena.hill[i - 1][4] : 0;
+    const h = top - under + 0.2; // (a little into the step under it)
+    const turf = i === arena.hill.length - 1 ? crownTurfMat : turfMat;
+    const step = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [earthMat, earthMat, turf, earthMat, earthMat, earthMat]);
+    step.position.set(x, top - h / 2, z);
+    step.castShadow = true;
+    step.receiveShadow = true;
+    root.add(step);
+    addCollider({ x, y: top / 2, z, w, h: top, d });
+  });
+  if (arena.crown) {
+    const [x, z, w, d, top] = arena.crown;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6), twineMat);
+    pole.position.set(x + w / 2 - 0.2, top + 0.9, z + d / 2 - 0.2);
+    const flag = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.38, 0.03), new THREE.MeshStandardMaterial({ color: 0xff7eb6, roughness: 0.7 }));
+    flag.position.set(pole.position.x - 0.32, top + 1.6, pole.position.z);
+    root.add(pole, flag);
+  }
+
   // The coins, bobbing and turning
   for (const [x, y, z] of arena.coins) {
     const coin = createItemMesh('coin');
@@ -73,6 +99,21 @@ function buildArena(arena, { root, addCollider }, coins) {
       coin.rotation.y = t * 1.8 + i;
     });
   };
+}
+
+// A little gold crown, over the head of whoever holds the hill
+export function buildCrown() {
+  const crown = new THREE.Group();
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.18, 0.12, 10, 1, true), goldMat);
+  band.material.side = THREE.DoubleSide;
+  crown.add(band);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const point = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 4), goldMat);
+    point.position.set(Math.cos(a) * 0.19, 0.12, Math.sin(a) * 0.19);
+    crown.add(point);
+  }
+  return crown;
 }
 
 // ---------- The signpost ----------

@@ -916,6 +916,63 @@ await test('a party game is called off once everyone in it has gone; nobody scor
   assert.deepEqual(a.conn.last(S.GAME_END).prizes, [[a.p.id, a.conn.last(S.GAME_END).prizes[0][1]]]);
   assert.equal(a.conn.last(S.GAME_END).prizes[0][1][0][0], 'coin', 'a few coins for playing');
 });
+// King of the hill's arena's fingerprint: where its hill and bales are
+const hillPrint = (a) => arenaPrint({ coast: a.coast, bales: [a.hill, a.bales], coins: [] });
+// (as for coin rush: these must never change)
+const HILL_SEEDS = { 'meadow': 764127896, 'dewy-glade-31': 890417291 };
+await test('every seed grows a sound king of the hill arena, the same every time', () => {
+  for (let i = 0; i < 200; i++) {
+    const seed = `hill-${i}`;
+    const arena = arenaFor('king_of_hill', seed, { cached: false });
+    assert.ok(arena, seed);
+    assert.deepEqual(checkArena(arena), [], seed);
+    assert.equal(arena.hill.length, 3, seed);
+    assert.ok(arena.onCrown(arena.crown[0], arena.crown[4], arena.crown[1]), seed);
+    for (let k = 0; k < 8; k++) assert.ok(Math.hypot(arena.start(k, 8).x, arena.start(k, 8).z) > 7, `${seed}: starts round the edge`);
+    assert.equal(hillPrint(arenaFor('king_of_hill', seed, { cached: false })), hillPrint(arena));
+  }
+  for (const [seed, print] of Object.entries(HILL_SEEDS)) assert.equal(hillPrint(arenaFor('king_of_hill', seed, { cached: false })), print, seed);
+});
+
+await test('king of the hill: time on the crown counts, a second a point; empty hands shove there (only)', () => {
+  const { room, a, b, c, sign, stand } = partyRoom();
+  stand(a, sign.x, 0.8, sign.z);
+  room.message(a.p, { t: C.GAME_START, game: 'king_of_hill' });
+  room.message(b.p, { t: C.GAME_JOIN });
+  let now = Date.now() + MINIGAMES.gatherMs + 10;
+  room.update(now);
+  const { arena } = room.party.game;
+  const [cx, cz, , , top] = arena.crown;
+  stand(a, cx, top + 0.8, cz);
+  room.update((now += 100));
+  assert.equal(a.conn.last(S.GAME_SCORE), undefined, 'not before it starts');
+  room.update((now += MINIGAMES.readyMs));
+  for (let i = 0; i < 50; i++) room.update((now += 50)); // 2.5 s
+  stand(b, cx + 0.4, top + 0.8, cz); // b climbs up too
+  for (let i = 0; i < 25; i++) room.update((now += 50)); // 1.25 s more
+  const score = c.conn.last(S.GAME_SCORE);
+  assert.deepEqual(score.top, [a.p.id, b.p.id]);
+  assert.deepEqual(new Map(score.scores).get(a.p.id), 3);
+  assert.deepEqual(new Map(score.scores).get(b.p.id), 1);
+  // a stall in the ticks gives nobody a lot
+  room.update((now += 10_000));
+  assert.ok(new Map(c.conn.last(S.GAME_SCORE).scores).get(a.p.id) <= 4);
+  // empty hands shove in this arena; not in the lobby
+  room.message(b.p, { t: C.BOP, weapon: 'shove', yaw: -Math.PI / 2 });
+  assert.equal(a.conn.last(S.BOPPED).knock, MINIGAMES.king_of_hill.shove.knock);
+  stand(c, 0, 0.8, -20);
+  const before = a.conn.all(S.BOPPED).length;
+  room.message(c.p, { t: C.BOP, weapon: 'shove', yaw: 0 });
+  assert.equal(a.conn.all(S.BOPPED).length, before);
+  // down off the hill: nothing more counts
+  stand(a, arena.start(0, 2).x, 0.8, arena.start(0, 2).z);
+  room.update((now += 50));
+  assert.deepEqual(c.conn.last(S.GAME_SCORE).top, [b.p.id]);
+  room.update((now += MINIGAMES.king_of_hill.ms));
+  const end = c.conn.last(S.GAME_END);
+  assert.equal(end.winner, a.p.id);
+  assert.match(c.conn.last(S.CHAT).text, /Ann won the king of the hill with \d+ s on top!/);
+});
 
 await test('bigger rocks give more stone, within the sizes rocks come in', () => {
   const luck = (r) => () => r;
