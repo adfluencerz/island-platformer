@@ -121,8 +121,9 @@ export class Hud {
   // isBlocked(): another screen (the backpack, the menu) has the keyboard.
   // onPrompt(text): the prompt changed ('' : nothing to do here).
   // onStopBuilding(): out of build mode (Done, or Esc while building; main.js has the right click).
-  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding }) {
-    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding });
+  // onTrade(id): ask farmer id in the lobby to trade (src/ui/trade.js).
+  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding, onTrade }) {
+    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding, onTrade });
     this.place = null; // 'home' | 'lobby' | 'farm' (a farm with helpers) | null (the title screen)
     this.visit = null; // on a farm with helpers: { name, mine }
     this.farmName = '';
@@ -304,6 +305,9 @@ export class Hud {
       else if (this.place === 'farm') el('span', 'ui-found', row, p.owner ? 'the farmer' : 'helping');
       else if (p.game) el('span', 'ui-found', row, 'at a party game');
       else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}${p.stone ? ` · ${p.stone} stone` : ''}`);
+      if (this.place === 'lobby' && p.id !== this.myId && !p.away && !p.game) {
+        button('ui-btn ui-btn-small ui-trade-btn', row, 'Trade', () => this.onTrade?.(p.id)).title = `Ask ${p.name} to trade (walk up to them first)`;
+      }
     }
   }
 

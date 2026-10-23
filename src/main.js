@@ -60,6 +60,7 @@ import { createSkills } from './skills.js';
 import { SKILL_LIST } from '../shared/skills.js';
 import { createPuffs } from './puff.js';
 import { createGlider } from './glider.js';
+import { createTrade } from './ui/trade.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
 
@@ -1528,7 +1529,7 @@ function updateMenuCamera(t) {
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
 let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
-const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen();
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen() || trade.isOpen();
 const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping() || partyFrozen();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
@@ -2560,6 +2561,7 @@ const hud = new Hud({
   isBlocked: () => menuOpen() || !splash.hidden,
   onPrompt: (text) => touch.setReady(!!text),
   onStopBuilding: () => stopBuilding(),
+  onTrade: (id) => askTrade(id),
 });
 
 // A new farmer's first steps, ticked off as they're done (src/ui/guide.js)
@@ -2769,6 +2771,49 @@ const chest = createChest({
   },
 });
 worlds.home.root.add(chest.root);
+
+// ---------- Trading, in a lobby ----------
+// (shared/trade.js keeps the trade; src/ui/trade.js shows it.) Ask a farmer
+// standing near (their Trade button in the list), or say yes when one asks.
+const TRADE_ASK_REACH = 4.5; // (the lobby lets it be from 5)
+const trade = createTrade({
+  inventory,
+  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  onOffer: (offer) => net?.send({ t: C.TRADE_OFFER, ...offer }),
+  onReady: (ready, v) => net?.send({ t: C.TRADE_READY, ready, v }),
+  onCancel: () => {
+    net?.send({ t: C.TRADE_CANCEL });
+    trade.close();
+  },
+  onAnswer: (id) => askTrade(id),
+});
+
+function askTrade(id) {
+  if (place !== 'lobby' || !net) return;
+  const at = remotes.positionOf(id);
+  const name = lobbyNames.get(id) ?? 'them';
+  if (!at || Math.hypot(at.x - player.position.x, at.z - player.position.z) > TRADE_ASK_REACH) return inventory.notify(`Walk up to ${name} to trade`);
+  net.send({ t: C.TRADE_ASK, id });
+}
+
+// Done: out of the backpack with what we gave, in with what we got (what
+// won't fit is dropped at our feet)
+function tradeDone({ give, get, with: id }) {
+  for (const [item, n] of Object.entries(give.items)) inventory.remove(item, Math.min(n, inventory.count(item)));
+  if (give.gold) inventory.spend(Math.min(give.gold, inventory.gold()));
+  for (const [item, n] of Object.entries(get.items)) if (!inventory.add(item, n)) dropFromBackpack(item, n);
+  if (get.gold) inventory.earn(get.gold);
+  trade.close();
+  sound.play('cheer');
+  hud.chat({ from: 0, text: `You traded with ${lobbyNames.get(id) ?? 'a farmer'}.` });
+}
+
+const TRADE_ENDS = {
+  cancelled: (who, mine) => (mine ? 'You called the trade off.' : `${who} called the trade off.`),
+  gone: (who) => `${who} went away: the trade is off.`,
+  far: () => 'You walked too far apart: the trade is off.',
+  game: (who, mine) => (mine ? 'Off to a party game: the trade is off.' : `${who} went off to a party game: the trade is off.`),
+};
 
 // Where the chest stands now, and whose it is (after the farm's pieces change)
 function placeChest() {
@@ -3505,6 +3550,7 @@ function sendFarmClock(ff, t) {
 }
 
 function leaveLobbyWorld() {
+  trade.reset();
   session = null;
   myId = 0;
   partyGame = null;
@@ -3828,6 +3874,14 @@ function joinLobby({ name, code }) {
   on(S.GAME_COIN, (m) => partyCoin(m));
   on(S.GAME_SCORE, (m) => (m.scores ? partyScores(m) : partyHud.score(m.by, m.score)));
   on(S.BOARD, (m) => fishBoard.show(m.board));
+  on(S.TRADE_ASKED, (m) => trade.asked(m.from, m.name));
+  on(S.TRADE, (m) => trade.show(m, lobbyNames.get(m.with) ?? 'a farmer'));
+  on(S.TRADE_DONE, (m) => tradeDone(m));
+  on(S.TRADE_END, (m) => {
+    if (!trade.isOpen()) return;
+    trade.close();
+    hud.chat({ from: 0, text: (TRADE_ENDS[m.why] ?? TRADE_ENDS.cancelled)(lobbyNames.get(m.by) ?? 'The other farmer', m.by === myId) });
+  });
   on(S.GAME_END, (m) => partyOver(m));
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {

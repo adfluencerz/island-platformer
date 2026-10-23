@@ -59,6 +59,7 @@ import { DAY_LENGTH_SECONDS, SKILLS, SHOP, BOOSTS, MINIGAMES } from './balance.j
 import { GAMES } from './arenas.js';
 import { LOBBY_DAWN } from './giants.js';
 import { Party } from './minigame.js';
+import { Trades } from './trade.js';
 
 const TOUCH_REACH = 2.2; // the client collects at 1 (a drop at 1.4); the slack covers a position up to ~150 ms old
 const GATHER_REACH = 2.4; // the client gathers within 1.6 (sideways)
@@ -101,6 +102,7 @@ export class Room extends Place {
     this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
     this.party = new Party(this); // (its party games)
+    this.trades = new Trades(this); // (farmers trading: shared/trade.js)
   }
 
   // Every lobby has at least one old key somewhere. If none was rolled, one
@@ -383,6 +385,12 @@ export class Room extends Place {
         this.send(p, { t: S.CAUGHT, n: line.n, item: line.item, count: line.count, ...(line.grams && { grams: line.grams }), ...(line.items && { items: line.items }) });
         break;
       }
+      case C.TRADE_ASK:
+      case C.TRADE_OFFER:
+      case C.TRADE_READY:
+      case C.TRADE_CANCEL:
+        this.trades.act(p, msg); // (shared/trade.js)
+        break;
       case C.THROW: {
         // Something out of their backpack, dropped at their feet for anyone
         // to walk into (only things with a price: never a tool), or
@@ -531,6 +539,7 @@ export class Room extends Place {
       }
     }
     this.party.tick(now);
+    this.trades.tick(now);
 
     // (nothing grows back) maybe a giant, the once: as soon as a page has said how many trees and rocks there are
     for (const [kind, id] of this.giants.roll(0, { tree: this.felled, rock: this.mined })) {
