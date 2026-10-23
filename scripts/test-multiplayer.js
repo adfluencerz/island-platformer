@@ -38,7 +38,7 @@ import { arenaFor, checkArena, signFor, HOP } from '../shared/arenas.js';
 import { MINIGAMES } from '../shared/balance.js';
 
 // spot kinds only later generations grow (2 and up)
-const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS]);
+const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS, 'strawberry']);
 
 let passed = 0;
 async function test(name, fn) {
@@ -135,6 +135,7 @@ await test('old seeds (generation 1) grow exactly the islands they always did', 
 
 // Generations 2 and 3 are as settled as generation 1 now: pinned the same way.
 const LATER_SEEDS = {
+  10: {"mossy-cove-7-v10":3123767506,"dewy-glade-31-v10":4279408072,"sunny-knoll-5-v10":2411265113,"golden-fen-0-v10":3674036579,"quiet-ridge-88-v10":3617889765,"willow-isle-12-v10":2907811276,"pebble-nook-64-v10":4169286385,"honey-grove-3-v10":1318108465},
   9: {"mossy-cove-7-v9":163191364,"dewy-glade-31-v9":2456990911,"sunny-knoll-5-v9":1189004014,"golden-fen-0-v9":1161798591,"quiet-ridge-88-v9":2581909254,"willow-isle-12-v9":746226636,"pebble-nook-64-v9":502613636,"honey-grove-3-v9":3163829055},
   8: {"mossy-cove-7-v8":2495688328,"dewy-glade-31-v8":1583329832,"sunny-knoll-5-v8":186462849,"golden-fen-0-v8":2840815162,"quiet-ridge-88-v8":901564798,"willow-isle-12-v8":3187697367,"pebble-nook-64-v8":1809298910,"honey-grove-3-v8":596487143},
   7: {"mossy-cove-7-v7":861000100,"dewy-glade-31-v7":2645773252,"sunny-knoll-5-v7":3262897498,"golden-fen-0-v7":2913660827,"quiet-ridge-88-v7":1012903713,"willow-isle-12-v7":142691819,"pebble-nook-64-v7":2979833659,"honey-grove-3-v7":702780834},
@@ -144,7 +145,7 @@ const LATER_SEEDS = {
   4: {"mossy-cove-7-v4":1587304027,"dewy-glade-31-v4":2535534902,"sunny-knoll-5-v4":4282641216,"golden-fen-0-v4":2506278968,"quiet-ridge-88-v4":1283944460,"willow-isle-12-v4":2433746912,"pebble-nook-64-v4":2936599587,"honey-grove-3-v4":3566523821},
   3: { 'mossy-cove-7-v3': 2325607642, 'dewy-glade-31-v3': 395772194, 'sunny-knoll-5-v3': 1431089034, 'golden-fen-0-v3': 572641172, 'quiet-ridge-88-v3': 2526362288, 'willow-isle-12-v3': 1353456352, 'pebble-nook-64-v3': 3529699339, 'honey-grove-3-v3': 2551931431 },
 };
-await test('generation 2 to 9 seeds grow exactly the islands they did, with nothing newer', () => {
+await test('generation 2 to 10 seeds grow exactly the islands they did, with nothing newer', () => {
   for (const [gen, seeds] of Object.entries(LATER_SEEDS)) {
     for (const [seed, print] of Object.entries(seeds)) {
       assert.equal(genOf(seed), Number(gen), seed);
@@ -155,7 +156,8 @@ await test('generation 2 to 9 seeds grow exactly the islands they did, with noth
       if (Number(gen) < 7) assert.ok(!islandFor(seed).patch && !islandFor(seed).spots.some(([k]) => k === 'pumpkin'), `"${seed}" grew generation 7 things`);
       if (Number(gen) < 8) assert.ok(!islandFor(seed).glen && !islandFor(seed).spots.some(([k]) => k === 'fern'), `"${seed}" grew generation 8 things`);
       if (Number(gen) < 9) assert.ok(!islandFor(seed).dunes && !islandFor(seed).spots.some(([k]) => k === 'seashell'), `"${seed}" grew generation 9 things`);
-      assert.ok(!islandFor(seed).sky && !islandFor(seed).spots.some(([k]) => SKY_KINDS.includes(k)), `"${seed}" grew generation 10 things`);
+      if (Number(gen) < 10) assert.ok(!islandFor(seed).sky && !islandFor(seed).spots.some(([k]) => SKY_KINDS.includes(k)), `"${seed}" grew generation 10 things`);
+      assert.ok(!islandFor(seed).bank && !islandFor(seed).spots.some(([k]) => k === 'strawberry'), `"${seed}" grew generation 11 things`);
     }
   }
 });
@@ -232,8 +234,9 @@ await test('generation 7 islands are generation 6 islands with a pumpkin patch',
   assert.ok(patches >= 45, `most gen 7 islands have a patch (${patches} of 60)`);
 });
 
-// Generations 8 and 9: a fern glen, then shell dunes, on most islands
-for (const [gen, name, area, kind, ground] of [[8, 'a fern glen', 'glen', 'fern', 'glen'], [9, 'shell dunes', 'dunes', 'seashell', 'dune']]) {
+// Generations 8 and 9: a fern glen, then shell dunes, on most islands (and
+// generation 11: a strawberry bank)
+for (const [gen, name, area, kind, ground] of [[8, 'a fern glen', 'glen', 'fern', 'glen'], [9, 'shell dunes', 'dunes', 'seashell', 'dune'], [11, 'a strawberry bank', 'bank', 'strawberry', 'bank']]) {
   await test(`generation ${gen} islands are generation ${gen - 1} islands with ${name}`, () => {
     assert.equal(genOf(`dewy-glade-31-v${gen}`), gen);
     let found = 0;
@@ -261,8 +264,7 @@ await test('generation 10 islands are generation 9 islands with sky isles overhe
   let isles = 0;
   const styles = new Set();
   for (let i = 0; i < 60; i++) {
-    const seed = randomSeed(mulberry32(i));
-    assert.match(seed, /-v10$/);
+    const seed = randomSeed(mulberry32(i)).replace(/-v\d+$/, '-v10');
     const island = islandFor(seed);
     assert.deepEqual(checkIsland(island), [], seed);
     assert.ok(!islandFor(seed.replace(/-v10$/, '-v9')).sky, `${seed}: generation 9 has none`);

@@ -19,7 +19,8 @@
 //   'home'. kind: 'pine' | 'round'. look: a number the page draws its details
 //   from (which way it turns, its leaves, a rock's shape). sites: [[x, z], ...],
 //   the first where it stands at the start.
-import { mulberry32, hashSeed, distToPaths, STONE_CIRCLE, WILD_HALF } from './worldgen.js';
+import { mulberry32, hashSeed, distToPaths, STONE_CIRCLE, WILD_HALF, genOf } from './worldgen.js';
+import { rimMax } from './skyisles.js';
 import { homeGround, inPlayArea, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR } from './farmland.js';
 
 const SITES = 3; // where it started, and two more
@@ -29,16 +30,19 @@ const CELL = 4;
 const round2 = (v) => Math.round(v * 100) / 100;
 
 // The ground a tree or rock may stand on (bushes too: src/maps.js)
-export const WILD_DECOR = new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch', 'glen', 'dune']);
+export const WILD_DECOR = new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch', 'glen', 'dune', 'bank']);
 export const HOME_DECOR = new Set(['grass']);
 
 // [x, z, r]: where nothing grows on a wild island: the spots, the stone circle
-// and (generation 10) up into a sky isle or its stair
+// and (generation 10) up into a sky isle or its stair (from generation 11, as
+// far out as an isle's rim goes, not just its middle's radius: older islands
+// keep what they had)
 export function wildKeepClear(island) {
+  const under = (isle) => (genOf(island.seed) >= 11 ? rimMax(isle) : isle.r) + 1.5;
   return [
     ...island.spots.map(([, x, , z]) => [x, z, 1]),
     [island.spawn.x, island.spawn.z, STONE_CIRCLE + 0.8],
-    ...(island.sky ?? []).flatMap((isle) => [[isle.x, isle.z, isle.r + 1.5], ...isle.steps.map(([x, z, w, d]) => [x, z, Math.max(w, d) / 2 + 1.2])]),
+    ...(island.sky ?? []).flatMap((isle) => [[isle.x, isle.z, under(isle)], ...isle.steps.map(([x, z, w, d]) => [x, z, Math.max(w, d) / 2 + 1.2])]),
   ];
 }
 
