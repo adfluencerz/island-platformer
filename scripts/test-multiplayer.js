@@ -35,8 +35,8 @@ import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
 import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
 import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
 import { arenaFor, checkArena, signFor, HOP } from '../shared/arenas.js';
-import { WEATHER, spellOn, weatherAt, rainSince } from '../shared/weather.js';
 import { MINIGAMES } from '../shared/balance.js';
+import { WEATHER, spellOn, weatherAt, rainSince } from '../shared/weather.js';
 
 // spot kinds only later generations grow (2 and up)
 const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS]);
