@@ -1,5 +1,8 @@
 # Game Concepts & Ideas
 
+> The early brainstorm, from when this was a platformer. What is planned now is
+> in [BACKLOG.md](BACKLOG.md); the ideas here that are still open are on it.
+
 Brainstorm built on what the prototype already has: a jumping capsule, AABB
 platforms, a fixed diorama-style camera, collectibles (coins / gems / keys), an
 inventory, and a hoe that tills soil — but only on bare ground.
