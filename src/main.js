@@ -41,6 +41,7 @@ import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone
 import { CROPS, createCropView, BEAN_LEDGES, BEAN_CROWN } from './crops.js';
 import { BEANSTALK } from '../shared/balance.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
+import { createSeasons } from './seasons.js';
 import * as sound from './sound.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
@@ -178,6 +179,8 @@ function followSun(focus, ahead = SUN_AHEAD) {
 // fog over time. Start hour can be overridden for testing with ?hour=21.
 const startHour = Number(new URLSearchParams(location.search).get('hour') ?? 6);
 const dayNight = createDayNight({ scene, sun, hemi, startHour: Number.isFinite(startHour) ? startHour : 6 });
+// The farm's seasons (seasons.js): its colors, by its clock
+const seasons = createSeasons(HOME);
 
 // ---------- Worlds ----------
 // Two places to be (maps.js, built by world.js): your farm's island, and the
@@ -4080,6 +4083,7 @@ function update(dt) {
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
   buildings.setNight(dayNight.night(), player.position);
+  dayNight.setNote(place !== 'lobby' ? seasons.update(dayNight.day(), dayNight.hour(), dayNight.night()) : null); // (a lobby's island keeps its own)
   machines.update(farmHours(), t, dt);
   updateMeal(dt);
   houseRoom.setNight(dayNight.night());

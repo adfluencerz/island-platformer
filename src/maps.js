@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
-import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples } from './world.js';
+import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples, leafMats, pineMats } from './world.js';
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
 import { buildSkyIsles } from './skyisles.js';
@@ -38,6 +38,11 @@ export const HOME = {
   foliage: { grass: { tufts: 2.2, lushTufts: 1.5, flowerLush: 0.35, flowerChance: 0.35 } },
   platforms: HOME_PLATFORMS,
   keepClear: HOME_KEEP_CLEAR,
+  // its own leaves, needles, grass and ground, for the seasons to color (src/seasons.js)
+  leafMats: leafMats.map((m) => m.clone()),
+  pineMats: pineMats.map((m) => m.clone()),
+  tuftMat: new THREE.MeshStandardMaterial({ color: 0x6fb043, roughness: 1, vertexColors: true }),
+  groundMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
   build(ctx) {
     buildStall(ctx);
     buildPens(ctx);
