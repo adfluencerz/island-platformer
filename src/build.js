@@ -61,6 +61,12 @@ const MATS = {
   sack: mat(0xd9c08a),
   portal: mat(0x6a2f94, { emissive: 0x7a3fa0, emissiveIntensity: 0.9 }), // (a boss's portal: its swirl)
   portalLight: mat(0xd9a8ff, { emissive: 0xc58cf0, emissiveIntensity: 1 }),
+  lionPortal: mat(0xb8561a, { emissive: 0xc0661f, emissiveIntensity: 0.9 }), // (the super lion's: orange)
+  lionPortalLight: mat(0xffd08a, { emissive: 0xf0a050, emissiveIntensity: 1 }),
+  beePortal: mat(0xc99a10, { emissive: 0xd9a520, emissiveIntensity: 0.9 }), // (the bee queen's: gold)
+  beePortalLight: mat(0xfff0a0, { emissive: 0xffe070, emissiveIntensity: 1 }),
+  crowPortal: mat(0x2f3f8a, { emissive: 0x3a4fa0, emissiveIntensity: 0.9 }), // (the giant crow's: midnight blue)
+  crowPortalLight: mat(0xa8c0ff, { emissive: 0x8fa8f0, emissiveIntensity: 1 }),
   sackDark: mat(0xbfa26c),
   crow: mat(0x26262c),
   beak: mat(0xe0a23a),
@@ -87,6 +93,8 @@ const MATS = {
   lichen: mat(0xb8b46a),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
+// a boss's portal's swirl, by its boss: [deep, light]
+const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight], crow: [MATS.crowPortal, MATS.crowPortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
 const box = new THREE.BoxGeometry(1, 1, 1);
 const flag = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
@@ -140,6 +148,12 @@ const POND_Z = -1; // its middle, from the middle of the tile it was built on
 const POND_IN = 1.25; // half the water's width
 const waterMat = mat(0x3d8fb8, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
 const padMat = mat(0x4f9e3c);
+// ---------- The aquarium ----------
+// Where in it the fish swim, from the middle of its tile: [x, y, z] of the
+// middle, and half its size
+export const TANK_BOX = { at: [0, 0.84, 0], half: [0.36, 0.16, 0.18] };
+const tankWaterMat = mat(0x6fc3e0, { roughness: 0.1, transparent: true, opacity: 0.3, depthWrite: false });
+const sandMat = mat(0xe6cf98);
 
 function pond(g, solids, r) {
   part(g, box, MATS.soil, 0, 0.02, POND_Z, POND_IN * 2, 0.04, POND_IN * 2);
@@ -1396,13 +1410,47 @@ function model(id, gx, gz, joined) {
     swirl.name = 'swirl';
     swirl.position.set(0, 0.98, 0);
     g.add(swirl);
-    part(swirl, ball, MATS.portal, 0, 0, 0, 0.68, 1.6, 0.06);
+    const [deep, light] = PORTAL_MATS[PIECES[id].portal] ?? PORTAL_MATS.parsnip;
+    part(swirl, ball, deep, 0, 0, 0, 0.68, 1.6, 0.06);
     for (let i = 0; i < 3; i++) {
-      const arm = part(swirl, box, MATS.portalLight, 0, 0, 0.04, 0.05, 0.5, 0.02);
+      const arm = part(swirl, box, light, 0, 0, 0.04, 0.05, 0.5, 0.02);
       arm.rotation.z = (i * Math.PI * 2) / 3;
       arm.position.set(Math.sin(-arm.rotation.z) * 0.16, Math.cos(arm.rotation.z) * 0.16, 0.04);
     }
     solids.push({ x: 0, y: 0.06, z: 0, w: 1, h: 0.12, d: 0.5 });
+  } else if (PIECES[id]?.statue === 'lion') {
+    // The super lion's statue: sat up proud on a plinth, its mane all round its head
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    part(g, ball, MATS.stoneLight, 0, 0.75, -0.08, 0.5, 0.62, 0.56); // body
+    for (const x of [-0.13, 0.13]) part(g, box, MATS.stoneLight, x, 0.62, 0.17, 0.12, 0.42, 0.12); // front legs
+    part(g, ball, MATS.stone, 0, 1.22, 0.05, 0.66, 0.66, 0.4); // mane
+    part(g, ball, MATS.stoneLight, 0, 1.2, 0.14, 0.42, 0.42, 0.38); // head
+    part(g, ball, MATS.stoneDark, 0, 1.14, 0.33, 0.1, 0.07, 0.06); // nose
+    part(g, box, MATS.stone, 0.26, 0.5, -0.28, 0.08, 0.08, 0.3).rotation.y = 0.6; // tail
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
+  } else if (PIECES[id]?.statue === 'bee') {
+    // The bee queen's statue: hovering (on a little stalk) over a plinth, her crown on
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    part(g, box, MATS.stoneDark, 0, 0.6, 0, 0.08, 0.4, 0.08);
+    part(g, ball, MATS.stoneLight, 0, 1.0, -0.1, 0.55, 0.5, 0.65); // abdomen
+    for (const z of [-0.02, -0.22]) part(g, box, MATS.stoneDark, 0, 1.0, z, 0.5, 0.42, 0.05);
+    part(g, ball, MATS.stoneLight, 0, 1.18, 0.3, 0.4, 0.4, 0.38); // head
+    part(g, shaft, MATS.lichen, 0, 1.42, 0.3, 0.22, 0.1, 0.22); // crown
+    for (const sx of [-1, 1]) part(g, ball, MATS.stone, sx * 0.32, 1.28, -0.05, 0.42, 0.04, 0.26).rotation.z = sx * 0.4; // wings
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
+  } else if (PIECES[id]?.statue === 'crow') {
+    // The giant crow's statue: perched on a plinth, wings folded, its scarf on
+    part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
+    part(g, box, MATS.stone, 0, 0.32, 0, 0.66, 0.24, 0.66);
+    for (const x of [-0.1, 0.1]) part(g, box, MATS.stoneDark, x, 0.52, 0.05, 0.05, 0.18, 0.05); // legs
+    part(g, ball, MATS.stoneLight, 0, 0.88, -0.05, 0.55, 0.55, 0.7); // body
+    part(g, ball, MATS.stone, 0, 0.82, -0.4, 0.3, 0.08, 0.5).rotation.x = 0.4; // tail
+    part(g, box, MATS.stone, 0, 1.1, 0.12, 0.42, 0.08, 0.3); // scarf
+    part(g, ball, MATS.stoneLight, 0, 1.28, 0.16, 0.38, 0.36, 0.36); // head
+    part(g, tip, MATS.lichen, 0, 1.25, 0.42, 0.1, 0.25, 0.1).rotation.x = Math.PI / 2; // beak
+    solids.push({ x: 0, y: 0.6, z: 0, w: 0.7, h: 1.2, d: 0.7 });
   } else if (PIECES[id]?.statue) {
     // A boss's statue: the evil parsnip in stone, on a plinth
     part(g, box, MATS.stoneDark, 0, 0.1, 0, 0.8, 0.2, 0.8);
@@ -1473,6 +1521,23 @@ function model(id, gx, gz, joined) {
     part(g, box, MATS.post, 0, 0.8, 0.12, 0.86, 0.06, 0.06); // the beater
     for (const s of [-1, 1]) part(g, box, MATS.post, s * 0.4, 0.8, 0.06, 0.04, 0.04, 0.12);
     solids.push({ x: 0, y: 0.75, z: 0, w: 0.96, h: 1.5, d: 0.6 });
+  } else if (id === 'aquarium') {
+    // a glass tank on a little wooden cabinet: sand, a few weeds and a stone
+    // on the bottom, the water in it, and the fish put in swimming about
+    // (src/machines.js draws those, inside TANK_BOX)
+    part(g, box, MATS.plankB, 0, 0.25, 0, 0.94, 0.5, 0.56);
+    part(g, box, MATS.plankA, 0, 0.27, 0.285, 0.8, 0.36, 0.02).castShadow = false;
+    part(g, box, MATS.brass, 0, 0.3, 0.3, 0.12, 0.04, 0.02).castShadow = false;
+    part(g, box, MATS.post, 0, 0.52, 0, 0.98, 0.04, 0.6);
+    part(g, box, sandMat, 0, 0.58, 0, 0.88, 0.08, 0.5).castShadow = false;
+    part(g, ball, MATS.stone, 0.24, 0.63, -0.08, 0.16, 0.12, 0.14);
+    for (let i = 0; i < 4; i++) part(g, box, MATS.leaf, -0.32 + i * 0.05, 0.75, -0.14 + (i % 2) * 0.06, 0.03, 0.3 - (i % 3) * 0.06, 0.03).castShadow = false;
+    part(g, box, tankWaterMat, 0, 0.84, 0, 0.88, 0.44, 0.5).castShadow = false;
+    // the glass, edged in dark wood
+    part(g, box, MATS.glass, 0, 0.86, 0, 0.92, 0.6, 0.54).castShadow = false;
+    for (const x of [-0.46, 0.46]) for (const z of [-0.27, 0.27]) part(g, box, MATS.bark, x, 0.86, z, 0.04, 0.6, 0.04);
+    for (const z of [-0.27, 0.27]) part(g, box, MATS.bark, 0, 1.16, z, 0.96, 0.04, 0.04);
+    solids.push({ x: 0, y: 0.58, z: 0, w: 0.98, h: 1.16, d: 0.6 });
   } else if (id === 'campfire') {
     // a ring of stones round the ashes, logs leant together and a fire in
     // them (it flickers, and lights the ground round it at night), and a

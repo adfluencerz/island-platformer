@@ -4,9 +4,13 @@
 // won and what you got, a few seconds.
 import { el, button } from './dom.js';
 import { GAMES } from '../../shared/arenas.js';
+import { weightText } from '../../shared/fishing.js';
 import './party.css';
 
 const RESULT_MS = 7000;
+// A score as shown: coins picked up, seconds on the hill (GAMES' unit), or in
+// a fishing contest the weight landed
+const scoreText = (kind, score) => (kind === 'fishing_contest' ? weightText(score) : `${score}${GAMES[kind]?.unit ?? ''}`);
 
 export class PartyHud {
   // onJoin(), onLeave(): the buttons. nameOf(id): a player's name.
@@ -24,7 +28,7 @@ export class PartyHud {
     this.choosing = false; // the games to pick from are up
   }
 
-  // At the signpost: a button for each game (GAMES), onPick(kind)
+  // At the signpost: a button for each of its games (GAMES, but the board's), onPick(kind)
   choose(onPick) {
     if (this.game) return;
     this.hideResults();
@@ -34,7 +38,7 @@ export class PartyHud {
     this.title.textContent = 'Party games';
     this.line.textContent = 'Which game? Whoever is in the lobby can join.';
     this.buttons.textContent = '';
-    for (const [kind, { name }] of Object.entries(GAMES)) button('ui-btn ui-btn-small', this.buttons, name, () => onPick(kind));
+    for (const [kind, { name, board }] of Object.entries(GAMES)) if (!board) button('ui-btn ui-btn-small', this.buttons, name, () => onPick(kind));
   }
 
   // Walked away from the signpost (or picked)
@@ -99,7 +103,6 @@ export class PartyHud {
     this.shown = s;
     this.shownGame = g;
     const name = GAMES[g.kind]?.name ?? 'Party game';
-    const unit = GAMES[g.kind]?.unit ?? '';
     if (g.phase === 'gathering') {
       this.title.textContent = `${name} starts in ${s} s`;
       const n = g.players.length;
@@ -110,8 +113,8 @@ export class PartyHud {
     this.title.textContent = `${name} · ${clock}`;
     const ranked = [...g.players].sort((a, b) => b[1] - a[1]);
     const mine = ranked.find(([id]) => id === this.myId);
-    const top = ranked.slice(0, 3).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${score}${unit}`);
-    if (mine && !ranked.slice(0, 3).includes(mine)) top.push(`You ${mine[1]}${unit}`);
+    const top = ranked.slice(0, 3).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(g.kind, score)}`);
+    if (mine && !ranked.slice(0, 3).includes(mine)) top.push(`You ${scoreText(g.kind, mine[1])}`);
     this.line.textContent = top.join(' · ');
   }
 
@@ -123,9 +126,8 @@ export class PartyHud {
     this.root.classList.add('playing');
     this.buttons.textContent = '';
     const name = GAMES[game]?.name ?? 'Party game';
-    const unit = GAMES[game]?.unit ?? '';
     this.title.textContent = winner === this.myId ? `You won the ${name.toLowerCase()}!` : winner ? `${this.nameOf(winner)} won the ${name.toLowerCase()}` : `The ${name.toLowerCase()} is over`;
-    const board = scores.slice(0, 4).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${score}${unit}`).join(' · ');
+    const board = scores.slice(0, 4).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(game, score)}`).join(' · ');
     const prize = got?.length ? ` · You got ${got.map(([item, count]) => `${count} ${itemName(item, count)}`).join(' and ')}` : '';
     this.line.textContent = board + prize;
     button('ui-btn ui-btn-small', this.buttons, 'OK', () => this.hideResults());

@@ -77,7 +77,21 @@ export const SHOP = {
   rainbow_trout: { sell: 110 },
   glowfish: { sell: 220 },
   golden_carp: { sell: 450 },
+  herring: { sell: 22 },
+  lanternfish: { sell: 75 },
+  tuna: { sell: 260 },
+  swordfish: { sell: 600 },
+  bream: { sell: 35 },
+  goldfish: { sell: 60 },
+  pike: { sell: 190 },
+  carp: { sell: 55 },
+  grayling: { sell: 85 },
+  starfin: { sell: 280 },
+  sturgeon: { sell: 650 },
   old_boot: { sell: 2 },
+  // for the line (TACKLE)
+  bait: { price: 4 },
+  lure: { price: 60, sell: 20 },
   // made by the machines (MACHINES)
   cheese: { sell: 150 },
   mayonnaise: { sell: 65 },
@@ -97,12 +111,18 @@ export const SHOP = {
   carrot_cake: { sell: 420 },
   berry_tart: { sell: 300 },
   golden_pie: { sell: 700 },
+  grilled_fish: { sell: 50 },
+  fish_stew: { sell: 260 },
+  sushi_rolls: { sell: 150 },
+  farm_feast: { sell: 850 },
   // the kitchen's recipes the merchant sells (read, one goes in your recipe
   // book), and the old recipe card found in lobbies (its recipe is a surprise;
   // with all of those in the book already, it is only worth selling)
   recipe_pumpkin_soup: { price: 400 },
   recipe_honey_carrots: { price: 500 },
   recipe_mushroom_pie: { price: 600 },
+  recipe_sushi_rolls: { price: 450 },
+  recipe_farm_feast: { price: 1200 },
   recipe_card: { sell: 150 },
 };
 export const COIN_VALUE = 10; // gold for picking up one coin
@@ -193,7 +213,7 @@ export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockSca
 // farmer past the first). The rest are its moves' (shared/bosses.js).
 // Beating one gives everyone who fought: its statue and its mount the first
 // time (`statue`, `mount`: items), and a shiny animal for the farm every time.
-// (Only the parsnip is in so far.)
+// (All four are in: the parsnip, the lion, the bee queen and the crow.)
 export const BOSSES = {
   parsnip: {
     name: 'Evil Parsnip', key: 'parsnip_seal', pieces: 3, hp: 40, perPlayer: 0.7, pause: [1.3, 2.1], quicken: 0.12,
@@ -201,7 +221,34 @@ export const BOSSES = {
     roll: { windup: 0.8, speed: 10, time: 1.8, dizzy: 1.4 }, // a roll at someone, bouncing off the arena's edge, then a moment's dizzy
     seeds: { windup: 0.6, count: 10, perPlayer: 2, speed: 6, volleys: 2, gap: 0.6 }, // seeds shot all round
     walk: 1.6, // its pace, between moves
+    moves: ['hop', 'roll', 'seeds'], // (one after another, never the same twice running)
     statue: 'parsnip_statue', mount: 'parsnip_mount',
+  },
+  lion: {
+    name: 'Super Lion', key: 'mane_tuft', pieces: 3, hp: 50, perPlayer: 0.7, pause: [1.1, 1.8], quicken: 0.12,
+    pounce: { windup: 0.55, air: 0.6, height: 2.2, reach: 9, hops: [1, 3], wave: 9, waveMax: 2.4 }, // a pounce at someone, and a puff of dust where it lands
+    roar: { windup: 0.8, count: 3, gap: 0.55, speed: 6.5, max: 10 }, // rings of shockwave, out to the arena's edge
+    walk: 2.2,
+    moves: ['pounce', 'roar'],
+    statue: 'lion_statue', mount: 'lion_mount',
+  },
+  bee: {
+    name: 'Bee Queen', key: 'honey_drop', pieces: 3, hp: 45, perPlayer: 0.7, pause: [1.3, 2.0], quicken: 0.12,
+    swarm: { windup: 0.8, count: 3, perPlayer: 1, spread: 0.35, speed: 4.5, life: 3.5 }, // little swarms zig-zagging off at farmers
+    roll: { windup: 0.7, speed: 11, time: 1.1, dizzy: 1.8 }, // a buzzing dash across the arena (as the parsnip's roll), then a sit-down, dizzy
+    walk: 2.4,
+    moves: ['swarm', 'roll'],
+    statue: 'bee_statue', mount: 'bee_mount',
+  },
+  crow: {
+    name: 'Giant Crow', key: 'crow_feather', pieces: 3, hp: 55, perPlayer: 0.7, pause: [1.2, 1.9], quicken: 0.12,
+    // up into the sky (`rise` s), a moment's aim (`aim`), then a swoop down through
+    // where someone stood and on along the grass (`dive` s), `swoops` times running
+    swoop: { rise: 0.6, aim: 0.8, dive: 1.2, height: 5, swoops: [1, 3] },
+    gust: { windup: 0.7, count: 2, gap: 0.6, speed: 7, max: 8 }, // its wings beat up rings of wind
+    walk: 1.8,
+    moves: ['swoop', 'gust'],
+    statue: 'crow_statue', mount: 'crow_mount',
   },
 };
 // What every boss fight shares. `hitsOut`: a farmer the boss bops this many
@@ -356,6 +403,7 @@ export const BUILD_COSTS = {
   garden_bench: { wood: 6 },
   planter: { planter: 1 },
   pond: { stone: 30 },
+  aquarium: { wood: 12, stone: 8, seashell: 2 },
   ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, boss]) => [
     [`${id}_portal`, { [boss.key]: boss.pieces }], // (a boss's portal: a full set of its key pieces)
     [boss.statue, { [boss.statue]: 1 }], // (its statue: the one it gave)
@@ -417,19 +465,28 @@ export const MACHINES = {
 // eating one does (BOOSTS; a kitchen dish does it better, and for longer).
 // `learn` (the kitchen's): 'start', known from the start; 'shop', the
 // merchant sells the recipe (recipe_<dish>, SHOP); 'find', on an old recipe
-// card found in the lobbies.
+// card found in the lobbies. `shared`: eaten on a farm with helpers, everyone
+// there gets its boost too. A need of 'any_fish' is any of ANY.any_fish
+// (the first ones first: the cheapest).
 export const CAMPFIRE_HOURS = 1;
+export const CAMPFIRE_MOST = 3; // dishes on the fire at once (all the same)
+export const KITCHEN_MOST = 5; // dishes the kitchen's "×5" cooks at once
+export const ANY = { any_fish: ['minnow', 'sardine', 'perch', 'mackerel', 'trout'] };
 export const DISHES = {
   fried_egg: { cook: 'campfire', needs: { egg: 1 }, boost: ['quick'] },
   roasted_mushrooms: { cook: 'campfire', needs: { mushroom: 2 }, boost: ['strong'] },
   baked_turnip: { cook: 'campfire', needs: { turnip: 1 }, boost: ['bouncy'] },
   berry_skewer: { cook: 'campfire', needs: { berries: 3 }, boost: ['quick'] },
   roast_carrot: { cook: 'campfire', needs: { carrot: 1 }, boost: ['strong'] },
+  grilled_fish: { cook: 'campfire', needs: { any_fish: 1 }, boost: ['lucky'] },
   pancakes: { cook: 'kitchen', needs: { egg: 1, milk: 1, honey: 1 }, boost: ['quick'], learn: 'start' },
   cheese_omelette: { cook: 'kitchen', needs: { egg: 2, cheese: 1 }, boost: ['strong'], learn: 'start' },
   pumpkin_soup: { cook: 'kitchen', needs: { pumpkin: 2, milk: 1 }, boost: ['bouncy'], learn: 'shop' },
   honey_carrots: { cook: 'kitchen', needs: { carrot: 2, honey: 1 }, boost: ['quick'], learn: 'shop' },
   mushroom_pie: { cook: 'kitchen', needs: { mushroom: 3, egg: 1, flax: 1 }, boost: ['strong'], learn: 'shop' },
+  fish_stew: { cook: 'kitchen', needs: { any_fish: 2, carrot: 1, milk: 1 }, boost: ['lucky', 'strong'], learn: 'start' },
+  sushi_rolls: { cook: 'kitchen', needs: { any_fish: 2, seaweed: 2 }, boost: ['lucky', 'quick'], learn: 'shop' },
+  farm_feast: { cook: 'kitchen', needs: { pumpkin: 2, carrot: 2, cheese: 1, honey: 1, any_fish: 2 }, boost: ['quick', 'bouncy', 'lucky'], learn: 'shop', shared: true },
   carrot_cake: { cook: 'kitchen', needs: { carrot: 2, egg: 2, honey: 1 }, boost: ['bouncy', 'quick'], learn: 'find' },
   berry_tart: { cook: 'kitchen', needs: { berries: 4, egg: 1, honey: 1 }, boost: ['quick', 'strong'], learn: 'find' },
   golden_pie: { cook: 'kitchen', needs: { golden_turnip: 1, egg: 1, cheese: 1, honey: 1 }, boost: ['quick', 'strong', 'bouncy'], learn: 'find' },
@@ -437,12 +494,14 @@ export const DISHES = {
 // What eating a dish does, for a while: [a campfire dish's, a kitchen dish's].
 // `speed`: walking goes this much faster. `swings`: this many fewer swings
 // fell a tree or break up a rock (one at the least; not a giant). `jump`:
-// jumping goes this much higher. `seconds`: how long it lasts (seconds of
+// jumping goes this much higher. `bite`: fish bite this much sooner (the
+// wait till one does, times this). `seconds`: how long it lasts (seconds of
 // play). One meal at a time: eating another puts the last one's out.
 export const BOOSTS = {
   quick: { speed: [1.1, 1.2] },
   strong: { swings: [1, 2] },
   bouncy: { jump: [1.06, 1.12] },
+  lucky: { bite: [0.8, 0.65] },
 };
 export const BOOST_SECONDS = { campfire: 240, kitchen: 480 };
 
@@ -494,25 +553,50 @@ export const CAST_EVERY = 1200; // ms: the fewest between two casts
 // little chest of loot (FISHED_CHEST); wood is driftwood.
 export const FISHING = {
   sea: [
-    ['sardine', 30, 0], ['mackerel', 22, 0], ['sea_bass', 12, 1],
-    ['pufferfish', 4, 2, { rod: 1 }], ['moonfish', 5, 2, { hours: [20, 5] }],
+    ['sardine', 30, 0], ['herring', 20, 0], ['mackerel', 22, 0], ['sea_bass', 12, 1],
+    ['lanternfish', 7, 1, { hours: [18, 23] }], ['pufferfish', 4, 2, { rod: 1 }], ['moonfish', 5, 2, { hours: [20, 5] }],
+    ['tuna', 3, 2, { rod: 1, hours: [5, 12] }], ['swordfish', 1, 3, { rod: 2 }],
     ['seaweed', 6, 0], ['old_boot', 5, 0], ['wood', 4, 0, { count: [2, 4] }],
     ['key', 0.8, 2], ['chest', 1.5, 2],
   ],
   pond: [
-    ['minnow', 30, 0], ['perch', 22, 0], ['sunfish', 10, 1, { hours: [9, 17] }],
-    ['catfish', 10, 1, { hours: [18, 6] }], ['koi', 4, 2, { rod: 1 }],
+    ['minnow', 30, 0], ['perch', 22, 0], ['bream', 16, 0], ['goldfish', 9, 1],
+    ['sunfish', 10, 1, { hours: [9, 17] }], ['catfish', 10, 1, { hours: [18, 6] }],
+    ['koi', 4, 2, { rod: 1 }], ['pike', 3, 2, { rod: 1, hours: [5, 11] }],
     ['old_boot', 4, 0], ['key', 0.6, 2], ['chest', 1, 2],
   ],
   lobby: [
-    ['trout', 26, 0], ['salmon', 18, 1], ['rainbow_trout', 9, 1],
-    ['glowfish', 4, 2, { hours: [21, 4] }], ['golden_carp', 1.2, 3, { rod: 1 }],
+    ['trout', 26, 0], ['carp', 18, 0], ['salmon', 18, 1], ['grayling', 9, 1, { hours: [6, 12] }], ['rainbow_trout', 9, 1],
+    ['glowfish', 4, 2, { hours: [21, 4] }], ['starfin', 3, 2, { rod: 1, hours: [5, 8] }],
+    ['golden_carp', 1.2, 3, { rod: 1 }], ['sturgeon', 0.8, 3, { rod: 2 }],
     ['old_boot', 4, 0], ['key', 1.5, 2], ['chest', 3, 2],
   ],
+  // a lobby's fishing contest (MINIGAMES): fish only, any time, the same for every rod
+  contest: [
+    ['trout', 26, 0], ['carp', 20, 0], ['salmon', 16, 1], ['grayling', 8, 1], ['rainbow_trout', 8, 1], ['golden_carp', 1, 3],
+  ],
 };
+// How heavy each fish comes, in grams: [lightest, heaviest] (the big ones
+// rarer: FISH_HEAVY). Kept in the fishing journal, on a lobby's board of
+// the biggest catches, and the score in a fishing contest.
+export const FISH_WEIGHT = {
+  sardine: [40, 160], herring: [100, 450], mackerel: [200, 900], sea_bass: [800, 4500], lanternfish: [30, 140],
+  pufferfish: [300, 1600], moonfish: [600, 3200], tuna: [4000, 32000], swordfish: [18000, 90000],
+  minnow: [5, 30], perch: [100, 900], bream: [300, 2600], goldfish: [20, 160], sunfish: [100, 650],
+  catfish: [1000, 8500], koi: [500, 5200], pike: [1500, 9500],
+  trout: [300, 2600], carp: [1000, 9000], salmon: [1500, 9500], grayling: [200, 1500], rainbow_trout: [400, 3600],
+  glowfish: [100, 900], starfin: [200, 1300], golden_carp: [1500, 12500], sturgeon: [8000, 65000],
+};
+export const FISH_HEAVY = 2.2; // the higher, the rarer a fish near its heaviest
+// Bait and lures, from the merchant: each cast with one in the backpack uses
+// one up once something is landed. Bait: bites come sooner (`bite`, times
+// the wait). A lure: rarer fish (`luck`, times the rod's).
+export const TACKLE = { bait: { bite: 0.6 }, lure: { luck: 1.6 } };
+// An aquarium built on the farm holds this many fish, to show off
+export const AQUARIUM = { holds: 6 };
 // What is in a little chest fished up: `rolls` things, each from `loot`
 // ([item, weight, min, max], as for the sky isle chests)
-export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1]] };
+export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1], ['lure', 0.1, 1, 2]] };
 // ---------- Skills ----------
 // Five skills that level up by doing (shared/skills.js, src/skills.js), from
 // level 1 to SKILLS.max. `next`: XP from each level to the one after (1 -> 2
@@ -606,6 +690,10 @@ export const MINIGAMES = {
   // the arena can shove with empty hands (as WEAPONS, a little weaker than
   // the wooden sword); a sword or mallet in hand bops as ever.
   king_of_hill: { ms: 60_000, shove: { reach: 1.7, knock: 6, every: 900 } },
+  // Fishing contest: the most weight of fish landed (FISHING.contest, a rod
+  // lent to anyone without one), off the shore of a little island. `bite`:
+  // seconds till a bite, for every rod alike
+  fishing_contest: { ms: 180_000, bite: [2.5, 6] },
   // The prize: the winner's coins (more for each other farmer who played) and
   // one roll of loot ([item, weight, min, max]); everyone else who played
   // gets a few coins for joining in

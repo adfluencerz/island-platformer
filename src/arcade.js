@@ -31,6 +31,8 @@ const RESULT_WORDS = {
   bust: 'Bust! Over 21.',
   'dealer blackjack': 'The dealer has blackjack.',
 };
+// the coin's two faces: a sunflower for heads, a turnip for tails
+const COIN_FACES = { heads: ITEMS.sunflower, tails: ITEMS.turnip };
 const times = (p) => (p === 0.5 ? '½' : String(p)) + '×';
 
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
@@ -120,14 +122,21 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
 
   // ---------- Coinflip ----------
   function renderCoin() {
-    const coin = el('div', `arc-coin ${coinSide}${flipping ? ' flipping' : ''}`, bodyEl);
-    el('div', 'arc-coin-face heads', coin, 'H');
-    el('div', 'arc-coin-face tails', coin, 'T');
+    el('div', 'arc-print', bodyEl, 'Double or nothing');
+    const stage = el('div', `arc-coin-stage${flipping ? ' flipping' : ''}`, bodyEl);
+    const coin = el('div', `arc-coin ${coinSide}${flipping ? ' flipping' : ''}`, stage);
+    for (const side of ['heads', 'tails']) {
+      const face = el('div', `arc-coin-face ${side}`, coin);
+      el('img', 'arc-coin-art', face).src = spriteURL(COIN_FACES[side]);
+    }
+    el('div', 'arc-coin-shadow', stage);
     el('div', 'arc-say', bodyEl, coinSay);
     const row = el('div', 'arc-buttons', bodyEl);
     const why = stakeProblem();
     for (const call of ['heads', 'tails']) {
-      const b = button('ui-btn', row, call === 'heads' ? 'Heads' : 'Tails', () => flip(call));
+      const b = button('ui-btn arc-call', row, '', () => flip(call));
+      el('img', 'arc-call-art', b).src = spriteURL(COIN_FACES[call]);
+      b.append(call === 'heads' ? 'Heads' : 'Tails');
       b.disabled = flipping || !!why;
       if (why) b.title = why;
     }
@@ -155,18 +164,23 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
     const c = el('div', `arc-card${RED_SUITS.has(card[1]) ? ' red' : ''}${extra}`, parent);
     el('span', 'arc-card-corner', c, cardLabel(card));
     el('span', 'arc-card-pip', c, cardLabel(card).slice(-1));
+    el('span', 'arc-card-corner low', c, cardLabel(card));
     return c;
   }
 
   function renderBlackjack() {
     const table = el('div', 'arc-table', bodyEl);
     if (!bj) {
-      el('div', 'arc-say', table, 'Get closer to 21 than the dealer without going over. The dealer stands on 17; a blackjack pays 3 to 2.');
+      handRow(table, 'Dealer', [], 2);
+      tableRules(table);
+      handRow(table, 'You', [], 2);
+      el('div', 'arc-hint', table, 'Get closer to 21 than the dealer without going over.');
     } else {
       const hidden = !bj.over;
       const dealer = hidden ? [bj.dealer[0], null] : bj.dealer;
       const dealerTotal = hidden ? handTotal([bj.dealer[0]]).total : handTotal(bj.dealer).total;
       handRow(table, `Dealer · ${dealerTotal}${hidden ? ' + ?' : ''}`, dealer);
+      tableRules(table);
       const me = handTotal(bj.player);
       handRow(table, `You · ${me.soft && me.total < 21 ? 'soft ' : ''}${me.total}${bj.doubled ? ' (doubled)' : ''}`, bj.player);
       if (bj.over) {
@@ -191,11 +205,20 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
     dbl.title = 'Double the stake, take one more card, and stand';
   }
 
-  function handRow(parent, label, cards) {
+  // a hand with its label (spaces: empty places for cards, before a deal)
+  function handRow(parent, label, cards, spaces = 0) {
     const row = el('div', 'arc-hand-row', parent);
     el('div', 'arc-hand-label', row, label);
     const hand = el('div', 'arc-hand', row);
     for (const c of cards) cardEl(hand, c);
+    for (let i = 0; i < spaces; i++) el('div', 'arc-card space', hand);
+  }
+
+  // printed on the felt between the hands, as on a real table
+  function tableRules(parent) {
+    const print = el('div', 'arc-print arc-print-rules', parent);
+    el('span', '', print, 'Blackjack pays 3 to 2');
+    el('small', '', print, 'Dealer stands on 17');
   }
 
   function dealBlackjack() {
@@ -214,8 +237,12 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
   // ---------- Lucky Hand ----------
   function renderLucky() {
     if (!lucky) {
-      el('div', 'arc-say', bodyEl, `Play ${LUCKY.plays} poker hands from ${LUCKY.hand} cards; each scores chips × mult. Pick jokers to boost it, swap cards up to ${LUCKY.discards} times, and the total pays out:`);
-      ladder(bodyEl, -1);
+      el('div', 'arc-title', bodyEl, 'Lucky Hand');
+      const intro = el('div', 'arc-lucky-intro', bodyEl);
+      const fan = el('div', 'arc-fan', intro);
+      for (let i = 0; i < 5; i++) cardEl(fan, null).style.setProperty('--i', i - 2);
+      ladder(intro, -1);
+      el('div', 'arc-hint', bodyEl, `Play ${LUCKY.plays} poker hands from ${LUCKY.hand} cards. Each scores chips × mult; jokers boost it, and you can swap cards ${LUCKY.discards} times.`);
       startButton();
       return;
     }
@@ -310,6 +337,7 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
   // The payouts, the one reached so far lit up (score -1: none yet)
   function ladder(parent, score) {
     const list = el('div', 'arc-ladder', parent);
+    el('div', 'arc-ladder-head', list, 'Prizes');
     const pays = luckyPays(Math.max(score, 0));
     for (const [at, p] of LUCKY.tiers) {
       const row = el('div', 'arc-tier' + (score >= at && p === pays ? ' on' : score >= at ? ' past' : ''), list);
