@@ -251,7 +251,50 @@ function crow() {
   };
 }
 
-const MOUNTS = { parsnip, lion, bee, crow };
+// The bog toad, friends now: squatting under the saddle, springing along in
+// little hops, its lily pad still on, its eyes gold and happy
+const TOAD = { skin: mat(0x5f9a3a), belly: mat(0xd8e8a0), gold: mat(0xf2c23a), pad: mat(0x3f8a3a) };
+function toad() {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  body.position.y = 0.55;
+  root.add(body);
+  part(body, ball, TOAD.skin, [0, 0, 0], [1.3, 0.85, 1.3]);
+  part(body, ball, TOAD.belly, [0, -0.12, 0.25], [0.95, 0.6, 0.85]);
+  part(body, box, MATS.saddle, [0, 0.4, -0.08], [0.55, 0.08, 0.55]);
+  for (const sx of [-1, 1]) part(body, box, MATS.saddleDark, [sx * 0.36, 0.2, -0.08], [0.04, 0.4, 0.1]);
+  for (const sx of [-1, 1]) {
+    part(body, ball, TOAD.skin, [sx * 0.32, 0.42, 0.42], [0.3, 0.28, 0.3]); // eyes on top
+    part(body, ball, TOAD.gold, [sx * 0.32, 0.45, 0.5], [0.22, 0.2, 0.18]);
+    part(body, box, MATS.dark, [sx * 0.32, 0.45, 0.6], [0.11, 0.035, 0.02]);
+    part(body, ball, MATS.blush, [sx * 0.45, 0.05, 0.5], [0.12, 0.06, 0.04]);
+  }
+  part(body, box, MATS.dark, [0, 0.02, 0.62], [0.55, 0.03, 0.03]); // its smile
+  part(body, ring, TOAD.pad, [0, 0.62, 0.3], [0.22, 0.22, 0.02]).rotation.x = -Math.PI / 2; // (the lily pad, between its eyes, lying flat)
+  const legs = [-1, 1].map((sx) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.55, 0.3, -0.25);
+    root.add(pivot);
+    part(pivot, ball, TOAD.skin, [0, 0, 0], [0.35, 0.45, 0.7]);
+    return pivot;
+  });
+  let phase = 0;
+  return {
+    root,
+    seat: 0.55 + 0.45,
+    animate(dt, walk, t) {
+      phase += dt * 8 * walk;
+      const spring = Math.max(0, Math.sin(phase)) * walk; // (a hop each time round)
+      body.position.y = 0.55 + spring * 0.25 + Math.sin(t * 1.8) * 0.01;
+      for (const leg of legs) leg.rotation.x = spring * 0.8;
+    },
+    dispose() {
+      root.traverse((obj) => obj.isMesh && obj.geometry !== ball && obj.geometry !== box && obj.geometry !== cone && obj.geometry !== ring && obj.geometry.dispose());
+    },
+  };
+}
+
+const MOUNTS = { parsnip, lion, bee, crow, toad };
 
 // A new mount of this kind (a boss's id), or null for one this page doesn't know
 export const createMount = (kind) => MOUNTS[kind]?.() ?? null;

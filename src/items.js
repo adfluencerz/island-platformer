@@ -1523,6 +1523,89 @@ ITEMS.crow_mount = {
   ],
 };
 
+// The bog toad's key pieces, statue and mount
+ITEMS.bog_pearl = {
+  name: 'Bog Pearl',
+  category: 'Key Item',
+  description: 'A green pearl that glimmers like a pond at dusk, from deep in the bog toad\'s marsh. Three of them build its portal on your farm (the Build tab).',
+  maxStack: 99,
+  color: 0x5fc49a,
+  palette: { o: '#14382c', g: '#5fc49a', G: '#b8f0d8', d: '#2f8a68', w: '#ffffff' },
+  sprite: [
+    '................',
+    '................',
+    '.....oooooo.....',
+    '....oGGgggdo....',
+    '...oGwGggggdo...',
+    '...oGGgggggdo...',
+    '..ogggggggggdo..',
+    '..ogggggggggdo..',
+    '..ogggggggggdo..',
+    '..oggggggggddo..',
+    '...ogggggggdo...',
+    '...oggggggddo...',
+    '....oddddddo....',
+    '.....oooooo.....',
+    '................',
+    '................',
+  ],
+};
+ITEMS.toad_statue = {
+  name: 'Bog Toad Statue',
+  category: 'Decor',
+  description: 'The bog toad, in stone, squatting with its lily pad on. For beating it. Put it on show from the Build tab.',
+  maxStack: 9,
+  piece: 'toad_statue',
+  color: 0xb9b7ae,
+  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#7aa860' },
+  sprite: [
+    '................',
+    '....gggggggg....',
+    '...gggggggggg...',
+    '....oLo..oLo....',
+    '...oLdLooLdLo...',
+    '..oLLLLLLLLLLo..',
+    '.oLLLLLLLLLLLLo.',
+    '.oLMMMMMMMMMMLo.',
+    '.oLMddddddddMLo.',
+    '.oLLMMMMMMMMLLo.',
+    'oLLo.oooooo.oLLo',
+    '.oo..........oo.',
+    '...oooooooooo...',
+    '...oLLLLLLLLo...',
+    '...oMMMMMMMdo...',
+    '...oooooooooo...',
+  ],
+};
+ITEMS.toad_mount = {
+  name: 'Toad Steed',
+  category: 'Mount',
+  description: 'The bog toad, friends now, springing along with you on its back. With it in hand, E gets on (or off); you hop off to use anything else.',
+  maxStack: 1,
+  trashable: false,
+  mount: 'toad',
+  color: 0x5f9a3a,
+  palette: { o: '#1f3a14', g: '#5f9a3a', G: '#8fc860', b: '#d8e8a0', w: '#ffffff', k: '#111111', s: '#8a5a32' },
+  sprite: [
+    '................',
+    '....oo....oo....',
+    '...owko..owko...',
+    '...oGGooooGGo...',
+    '..oGGGsssGGGGo..',
+    '.oGGGsssssGGGGo.',
+    '.oGGGGGGGGGGGGo.',
+    'oGGggggggggggGGo',
+    'oGgggbbbbbbgggGo',
+    'oggggbbbbbbggggo',
+    '.ogggggggggggo..',
+    '.oggoooooooggo..',
+    'oggo.......oggo.',
+    'ooo.........ooo.',
+    '................',
+    '................',
+  ],
+};
+
 // The sky isles' relics (src/relics.js)
 Object.assign(ITEMS, RELICS);
 // What the machines make, the machines, the dishes and the recipes (src/foods.js)
@@ -3066,3 +3149,5 @@ PIECE_ICONS.lion_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_I
 PIECE_ICONS.bee_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#c99a10', P: '#ffd84a', w: '#fff8d0' } };
 // (the giant crow's: a midnight-blue swirl)
 PIECE_ICONS.crow_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#2f3f8a', P: '#7a90e0', w: '#e0e8ff' } };
+// (the bog toad's: a pond-green swirl)
+PIECE_ICONS.toad_portal = { ...PIECE_ICONS.parsnip_portal, palette: { ...PIECE_ICONS.parsnip_portal.palette, p: '#1f7a6a', P: '#7ae0bc', w: '#e0fff4' } };

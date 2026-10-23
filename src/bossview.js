@@ -30,6 +30,15 @@ function littleBee(parent) {
   for (const sx of [-1, 1]) part(g, ballGeo, BEE.wing, [sx * 0.08, 0.09, 0], [0.14, 0.02, 0.09]).castShadow = false;
   return g;
 }
+// ...or a fly, of the bog toad's swarms
+const FLY = { body: mat(0x2a2f2a), wing: new THREE.MeshStandardMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.6, roughness: 0.3 }) };
+function littleFly(parent) {
+  const g = new THREE.Group();
+  parent.add(g);
+  part(g, ballGeo, FLY.body, [0, 0, 0], [0.12, 0.1, 0.16]);
+  for (const sx of [-1, 1]) part(g, ballGeo, FLY.wing, [sx * 0.07, 0.06, -0.02], [0.12, 0.02, 0.07]).castShadow = false;
+  return g;
+}
 const SWARM_BEES = 6;
 const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
 
@@ -486,7 +495,111 @@ function buildCrow() {
   return { root, skins: [plume, plumeLight], top: 3.2, pose };
 }
 
-const MODELS = { parsnip: buildParsnip, lion: buildLion, bee: buildBee, crow: buildCrow };
+// The bog toad: big, warty and green, with a pale belly, great golden eyes on
+// top of its head and a lily pad (in flower) for a hat. It squats, and
+// springs in great hops; it puffs its throat up into a balloon to croak, and
+// out to puff its flies; asleep its throat goes in and out.
+function buildToad() {
+  const skin = mat(0x5f9a3a);
+  const skinDark = mat(0x4a7f2c);
+  const belly = mat(0xd8e8a0);
+  const throatMat = mat(0xf2d8b0);
+  const gold = mat(0xf2c23a, { roughness: 0.4 });
+  const dark = mat(0x111111, { roughness: 0.4 });
+  const pad = mat(0x3f8a3a);
+  const petal = mat(0xf7a6c8);
+  const blushMat = mat(0xf28cb1);
+
+  const root = new THREE.Group(); // at its feet (or in the air)
+  const rig = new THREE.Group(); // squats and springs
+  root.add(rig);
+  const body = new THREE.Group();
+  body.position.y = 1.15;
+  rig.add(body);
+  part(body, ballGeo, skin, [0, 0, 0], [2.6, 1.7, 2.4]);
+  part(body, ballGeo, belly, [0, -0.25, 0.45], [1.9, 1.2, 1.6]);
+  // warts
+  for (const [x, y, z] of [[0.6, 0.6, -0.3], [-0.5, 0.7, -0.5], [0.9, 0.2, -0.6], [-0.9, 0.3, -0.2], [0.2, 0.8, -0.8], [-0.3, 0.5, 0.3]]) {
+    part(body, ballGeo, skinDark, [x, y, z], [0.22, 0.14, 0.22]);
+  }
+  // the throat, which puffs up
+  const throat = part(body, ballGeo, throatMat, [0, -0.45, 1.05], [0.9, 0.7, 0.8]);
+  // the mouth: a wide line, a little open when it shoots its flies
+  const mouth = part(body, boxGeo, dark, [0, -0.05, 1.18], [1.3, 0.06, 0.06]);
+  // eyes on top, gold with a dark slit
+  const eyes = [-1, 1].map((sx) => {
+    const eye = new THREE.Group();
+    eye.position.set(sx * 0.65, 0.8, 0.55);
+    body.add(eye);
+    part(eye, ballGeo, skin, [0, -0.05, 0], [0.6, 0.55, 0.6]);
+    part(eye, ballGeo, gold, [0, 0.05, 0.12], [0.48, 0.44, 0.42]);
+    const pupil = part(eye, boxGeo, dark, [0, 0.05, 0.33], [0.24, 0.07, 0.03]);
+    return { eye, pupil };
+  });
+  const brows = [-1, 1].map((sx) => part(body, boxGeo, skinDark, [sx * 0.65, 1.15, 0.65], [0.4, 0.08, 0.08]));
+  const blush = [-1, 1].map((sx) => part(body, ballGeo, blushMat, [sx * 0.95, 0.1, 0.95], [0.25, 0.12, 0.08]));
+  // the lily pad hat, a flower on it
+  const hat = new THREE.Group();
+  hat.position.set(0, 1.05, -0.1);
+  body.add(hat);
+  part(hat, new THREE.CylinderGeometry(0.75, 0.75, 0.05, 16, 1, false, 0.3, Math.PI * 2 - 0.6), pad, [0, 0, 0], [1, 1, 1]);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    part(hat, ballGeo, petal, [0.2 + Math.cos(a) * 0.12, 0.1, 0.1 + Math.sin(a) * 0.12], [0.14, 0.1, 0.2]).rotation.y = -a;
+  }
+  part(hat, ballGeo, gold, [0.2, 0.15, 0.1], [0.1, 0.08, 0.1]);
+  // legs: the front ones under its chin, the big back ones folded at its sides
+  const front = [-1, 1].map((sx) => part(rig, ballGeo, skin, [sx * 0.75, 0.25, 0.85], [0.45, 0.5, 0.6]));
+  const back = [-1, 1].map((sx) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 1.1, 0.6, -0.5);
+    rig.add(pivot);
+    part(pivot, ballGeo, skin, [0, 0, 0], [0.7, 0.9, 1.3]);
+    part(pivot, ballGeo, skinDark, [0, -0.55, 0.35], [0.55, 0.15, 0.75]); // its foot
+    return pivot;
+  });
+
+  function pose(dt, t, b, def, { asleep, friendly, dizzy, flash }) {
+    const fighting = b.phase === 'fight' && !dizzy;
+    const hopping = fighting && b.move === 'hop';
+    const croaking = fighting && b.move === 'roar';
+    const puffing = fighting && b.move === 'swarm';
+    const air = b.y > 0.15;
+    // squat before a spring; stretched out in the air
+    const squat = hopping && !air && b.mt < def.hop.windup ? Math.min(1, b.mt / def.hop.windup) : 0;
+    rig.scale.set(1 + squat * 0.15, 1 - squat * 0.25, 1 + squat * 0.15);
+    for (const leg of back) {
+      leg.rotation.x = air ? 0.9 : 0;
+      leg.position.y = air ? 0.3 : 0.6;
+    }
+    // the throat: a balloon to croak, in and out asleep, puffed to spit flies
+    const croak = croaking ? Math.abs(Math.sin(b.mt * 4)) : 0;
+    const puff = asleep ? 0.15 + Math.sin(t * 1.6) * 0.1 : puffing ? Math.min(1, b.mt / def.swarm.windup) * 0.6 : 0;
+    throat.scale.set(0.9 + croak * 1.1 + puff, 0.7 + croak * 0.9 + puff * 0.8, 0.8 + croak * 0.8 + puff * 0.6);
+    mouth.scale.y = 0.06 * (puffing && b.mt >= def.swarm.windup ? 4 : friendly ? 2 : 1); // (open, to puff out its flies; a grin, friends)
+    rig.rotation.z = dizzy ? Math.sin(t * 7) * 0.15 : b.phase === 'wake' ? Math.sin(t * 30) * 0.04 : 0;
+    // the eyes: shut asleep, half shut dizzy, smiling friends
+    for (const { eye, pupil } of eyes) {
+      eye.scale.y = asleep ? 0.25 : dizzy ? 0.6 : 1;
+      pupil.scale.y = 0.07 * (friendly ? 2 : 1);
+    }
+    brows.forEach((brow, i) => {
+      brow.visible = !asleep;
+      brow.rotation.z = (i ? 1 : -1) * (friendly ? -0.25 : 0.35);
+    });
+    for (const b2 of blush) b2.visible = friendly;
+    hat.rotation.z = Math.sin(t * 1.5) * 0.05 + (air ? 0.15 : 0);
+    // ambling between moves: little hops
+    const amble = !air && b.move === 'rest' && !asleep && !friendly;
+    rig.position.y = amble ? Math.abs(Math.sin(t * 5)) * 0.2 : 0;
+    for (const f of front) f.position.y = 0.25 + (amble ? Math.abs(Math.sin(t * 5)) * 0.05 : 0);
+    const sy = 1 - flash * 0.12;
+    root.scale.set(1 + (1 - sy) * 0.5, sy, 1 + (1 - sy) * 0.5);
+  }
+  return { root, skins: [skin, skinDark], top: 2.8, pose, croak: 0x9fe07a, bug: littleFly };
+}
+
+const MODELS = { parsnip: buildParsnip, lion: buildLion, bee: buildBee, crow: buildCrow, toad: buildToad };
 
 export function createBossView(parent, id) {
   const def = BOSSES[id];
@@ -521,7 +634,8 @@ export function createBossView(parent, id) {
     // A shockwave, a volley of seeds or a swarming (its fx: shared/bosses.js step())
     addFx(fx) {
       if (fx.e === 'wave') {
-        const mesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color: fx.roar ? 0xffb35a : fx.gust ? 0xdcecff : 0xf3e6c0, transparent: true, opacity: 0.85, depthWrite: false }));
+        const color = fx.roar ? p.croak ?? 0xffb35a : fx.gust ? 0xdcecff : 0xf3e6c0; // (a roar, or the toad's croak; a gust; a landing)
+        const mesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
         mesh.position.set(fx.x, 0.05, fx.z);
         parent.add(mesh);
         waves.push({ fx, age: 0, mesh });
@@ -536,7 +650,7 @@ export function createBossView(parent, id) {
         const groups = fx.a.map(() => {
           const group = new THREE.Group();
           parent.add(group);
-          for (let k = 0; k < SWARM_BEES; k++) littleBee(group);
+          for (let k = 0; k < SWARM_BEES; k++) (p.bug ?? littleBee)(group); // (bees, or the toad's flies)
           return group;
         });
         swarms.push({ fx, age: 0, groups });

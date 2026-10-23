@@ -23,7 +23,7 @@ import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { homeWildsSource } from './wilds.js';
-import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
+import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { BOSSES } from '../shared/balance.js';
 import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
 import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
@@ -2023,7 +2023,7 @@ await test('the bee queen sends swarms at everyone in her arena, and dashes', ()
 });
 
 await test('the giant crow swoops down from the sky (out of reach up there) and beats up gusts', () => {
-  assert.deepEqual(BOSS_IDS, ['parsnip', 'lion', 'bee', 'crow'], 'all four');
+  assert.deepEqual(BOSS_IDS, ['parsnip', 'lion', 'bee', 'crow', 'toad'], 'all five');
   const fight = new BossFight('crow', mulberry32(9));
   const at = ARENAS.crow;
   assert.equal(arenaAt(at.x, at.z), 'crow');
@@ -2048,6 +2048,37 @@ await test('the giant crow swoops down from the sky (out of reach up there) and 
   assert.ok(outOfReach, 'no bopping it up in the sky');
   assert.ok(fx.some((f) => f.e === 'wave' && f.gust), 'a gust');
   assert.deepEqual(PIECES.crow_portal.cost, { crow_feather: 3 });
+});
+
+await test('the bog toad hops with a splash, puffs out flies and croaks rings, in an arena of its own', () => {
+  const fight = new BossFight('toad', mulberry32(11));
+  const at = ARENAS.toad;
+  assert.equal(arenaAt(at.x, at.z), 'toad');
+  for (const id of BOSS_IDS) if (id !== 'toad') assert.ok(Math.hypot(ARENAS[id].x - at.x, ARENAS[id].z - at.z) > 2 * ARENA_R + 10, `clear of the ${id}'s arena`);
+  const a = { id: 1, x: at.x, y: GROUND_STAND_Y, z: at.z + 6 };
+  const fx = [];
+  const moves = new Set();
+  for (let i = 0; i < 1200; i++) {
+    fx.push(...fight.step(0.05, [a]));
+    moves.add(fight.move);
+  }
+  assert.ok(['hop', 'swarm', 'roar'].every((move) => moves.has(move)), [...moves].join(' '));
+  assert.ok(fx.some((f) => f.e === 'wave' && f.roar), 'a croak');
+  assert.ok(fx.some((f) => f.e === 'wave' && !f.roar), 'a landing');
+  assert.ok(fx.some((f) => f.e === 'swarm'), 'its flies');
+  assert.deepEqual(PIECES.toad_portal.cost, { bog_pearl: 3 });
+  assert.equal(PIECES.toad_statue.statue, 'toad');
+  // beaten (a mallet a bop, and plenty of them), it is friendly
+  const fresh = new BossFight('toad', mulberry32(3));
+  for (let i = 0; i < 60; i++) fresh.step(0.05, [a]);
+  let won = null;
+  for (let i = 0; i < 400 && !won; i++) {
+    fresh.step(0.05, [a]);
+    won = fresh.bop(1, 'mallet', fresh.x + 1, GROUND_STAND_Y, fresh.z)?.won ?? null;
+    a.t = (a.t ?? 0) + 1;
+  }
+  assert.ok(won, 'beaten');
+  assert.equal(fresh.phase, 'friendly');
 });
 
 await test('a boss fight on a farm with helpers: its portal, the bops, and the portal used up when it is beaten', () => {
