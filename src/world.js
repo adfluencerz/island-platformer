@@ -116,7 +116,7 @@ foamMat.onBeforeCompile = (shader) => {
 export const foliageMat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
 const trunkMat = foliageMat(0x6b4423);
 export const leafMats = [0x3f8a3a, 0x4f9e3c, 0x2f7a45, 0x5aa83f].map(foliageMat);
-const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
+export const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
 export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map(foliageMat);
 
 const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6).translate(0, 0.5, 0);
@@ -463,7 +463,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
     }
 
-    const tuftMat = new THREE.MeshStandardMaterial({ color: 0x6fb043, roughness: 1, vertexColors: true });
+    const tuftMat = map.tuftMat ?? new THREE.MeshStandardMaterial({ color: 0x6fb043, roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
     addWind(tuftMat, 0.25);
     const tuftMesh = new THREE.InstancedMesh(makeTuftGeometry(rand), tuftMat, tufts.length);
     tuftMesh.receiveShadow = true;
@@ -751,7 +751,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.setIndex(index);
-    const ground = new THREE.Mesh(geo, groundMat);
+    const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
     ground.receiveShadow = true;
     root.add(ground);
 

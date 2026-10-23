@@ -140,6 +140,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
   const ui = createClockUI();
   let shownLabel = '';
+  let note = ''; // after the day (setNote: the farm's season)
 
   // Warm light around the player at night so the world stays readable. It
   // always exists (intensity 0 by day) so the scene's light count never
@@ -203,7 +204,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     ui.sun.style.display = isDay ? '' : 'none';
     ui.moon.style.display = isDay ? 'none' : '';
 
-    const label = `${DAY_NAMES[(day - 1) % 7]}. ${day}|${formatTime(hour)}`;
+    const label = `${DAY_NAMES[(day - 1) % 7]}. ${day}${note ? ` · ${note}` : ''}|${formatTime(hour)}`;
     if (label !== shownLabel) {
       shownLabel = label;
       const [dayText, timeText] = label.split('|');
@@ -241,6 +242,12 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     hour: () => hour,
     day: () => day,
     isNight: () => nightAmount(hour) > 0.5,
+    /** A word after the day (the farm's season), or none. */
+    setNote(text) {
+      if ((text ?? '') === note) return;
+      note = text ?? '';
+      apply();
+    },
     night: () => nightAmount(hour), // 0 by day, 1 at night
   };
 }

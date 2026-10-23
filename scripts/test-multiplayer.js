@@ -22,6 +22,7 @@ import { fingerprint } from './seed-fingerprint.js';
 import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
+import { seasonAt, SEASON_DAYS } from '../src/seasons.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { BOSSES } from '../shared/balance.js';
@@ -2122,6 +2123,18 @@ await test('poker hands are told apart and ranked, and the best five of seven fo
   assert.deepEqual(new Set(best.cards), new Set(['7h', '8h', '9h', 'Th', 'Jh']));
   const deck = shuffle(newDeck(), mulberry32(5));
   assert.equal(new Set(deck).size, 52);
+});
+
+await test('the farm\'s seasons: a week each, spring to winter and round again, turning on a season\'s last day', () => {
+  const at = (day, hour) => {
+    const { now, next, blend } = seasonAt(day, hour);
+    return [now.name, next.name, +blend.toFixed(2)];
+  };
+  assert.deepEqual(at(1, 6), ['Spring', 'Summer', 0]);
+  assert.deepEqual(at(SEASON_DAYS, 12), ['Spring', 'Summer', 0.5], 'turning on its last day');
+  assert.deepEqual(at(SEASON_DAYS + 1, 0), ['Summer', 'Autumn', 0]);
+  assert.deepEqual(at(SEASON_DAYS * 3 + 1, 12), ['Winter', 'Spring', 0]);
+  assert.deepEqual(at(SEASON_DAYS * 4 + 1, 12), ['Spring', 'Summer', 0], 'and round again');
 });
 
 await test('the arcade: coinflip doubles or loses, blackjack settles by the rules', () => {
