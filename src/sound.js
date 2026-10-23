@@ -119,6 +119,7 @@ const SOUNDS = {
   till: (b) => (noise(b, { len: 0.14, filter: 'bandpass', freq: 500, q: 0.7, gain: 0.45 }), tone(b, { freq: 110, to: 70, len: 0.12, gain: 0.25 })),
   plant: (b) => (noise(b, { len: 0.08, freq: 900, gain: 0.18 }), tone(b, { freq: 660 * r(0.04), len: 0.09, gain: 0.12, at: 0.04 })),
   harvest: (b) => (noise(b, { len: 0.06, filter: 'highpass', freq: 1500, gain: 0.15 }), tone(b, { freq: 440 * r(0.03), to: 660, len: 0.12, type: 'triangle', gain: 0.2 })),
+  water: (b) => noise(b, { len: 0.5, filter: 'bandpass', freq: 2600, to: 1400, q: 0.6, gain: 0.3, attack: 0.04 }),
   // chopping and mining
   chop: (b) => (noise(b, { len: 0.08, filter: 'bandpass', freq: 1400 * r(0.1), q: 1.5, gain: 0.45 }), tone(b, { freq: 180 * r(0.08), to: 120, len: 0.1, type: 'triangle', gain: 0.35 })),
   mine: (b) => (tone(b, { freq: 1400 * r(0.1), to: 1250, len: 0.14, type: 'square', gain: 0.07 }), noise(b, { len: 0.07, filter: 'highpass', freq: 2500, gain: 0.3 })),

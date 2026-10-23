@@ -94,6 +94,8 @@ export const SHOP = {
   // for the line (TACKLE)
   bait: { price: 4 },
   lure: { price: 60, sell: 20 },
+  // for the crops: a watering can (a new farmer has one already)
+  watering_can: { price: 80, sell: 20 },
   // made by the machines (MACHINES)
   cheese: { sell: 150 },
   mayonnaise: { sell: 65 },
@@ -130,11 +132,13 @@ export const SHOP = {
 export const COIN_VALUE = 10; // gold for picking up one coin
 
 // What a new farmer starts with in the backpack: [item, count]
-export const STARTER_KIT = [['hoe', 1], ['axe', 1], ['pickaxe', 1], ['turnip_seeds', 10], ['flax_seeds', 5], ['stone', 200], ['wood', 500]];
+export const STARTER_KIT = [['hoe', 1], ['axe', 1], ['pickaxe', 1], ['watering_can', 1], ['turnip_seeds', 10], ['flax_seeds', 5], ['stone', 200], ['wood', 500]];
 
 // ---------- Crops ----------
 // Seconds from planting to ripe (real seconds: a farm left alone grows on too)
 export const CROP_GROW_TIME = { turnip: 100, carrot: 150, flax: 175, sunflower: 225, golden_turnip: 300 };
+// A crop watered with a watering can grows the rest of the way this many times as fast
+export const WATERED_GROWTH = 2;
 
 // ---------- Animals ----------
 // `regrow`: game hours until a cow or sheep has more to give ('morning': the
@@ -445,6 +449,7 @@ export const RECIPES = [
   { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
   { makes: 'sturdy_pickaxe', needs: { pickaxe: 1, wood: 8, stone: 12 } },
   { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
+  { makes: 'big_watering_can', needs: { watering_can: 1, wood: 10, stone: 15 } },
   { makes: 'wooden_sword', needs: { wood: 8 } },
   { makes: 'mallet', needs: { wood: 4, stone: 6 } },
   { makes: 'glider_leaf', needs: { flax: 8, wood: 4 } },

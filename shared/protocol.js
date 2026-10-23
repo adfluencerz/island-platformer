@@ -27,6 +27,7 @@ export const C = {
   TILL: 'till', // { key }: till tile key ("gx,gz") underfoot
   PLANT: 'plant', // { key, crop }: plant a seed from the backpack on tilled tile key
   HARVEST: 'harvest', // { key }: the ripe crop on tile key, into the farm's chest
+  WATER: 'water', // { key }: water the crop growing on tile key (WATERED_GROWTH in shared/balance.js)
   CHEST_PUT: 'chestPut', // { item, count }: from the backpack into the chest
   CHEST_TAKE: 'chestTake', // { item, count }: out of the chest into the backpack (the owner only)
   CHEST_SPEND: 'chestSpend', // { id, items: { item: count } }: use up some of what is in the chest, for what the workbench makes (the owner only); answered with CHEST_SPENT
@@ -73,13 +74,14 @@ export const S = {
   PONG: 'pong', // { c }
   // on a farm
   FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
-  //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt], ...], plantedAt in the farm's game hours.
+  //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt, wateredAt?], ...], plantedAt (and wateredAt, once watered) in the farm's game hours.
   //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
   //   machines: [[key, item, at, takes], ...] (shared/machines.js). chest: { item: count }. hours: the farm's clock, in game hours since it began)
   TILLED: 'tilled', // { key, by }
   UNTILLED: 'untilled', // { key }: left bare too long (SOIL_BARE_HOURS), back to grass
   PLANTED: 'planted', // { key, crop, at, by } (at: plantedAt)
   HARVESTED: 'harvested', // { key, by, item }
+  WATERED: 'watered', // { key, at, by }: the crop on tile key was watered at `at` (the farm's game hours): it grows faster from then
   BUILT: 'built', // { key, piece, by }
   UNBUILT: 'unbuilt', // { key, piece, by, back? }: taken down; `by` gets the cost back (and back: { item: count }, what was in a machine)
   FARM_DENY: 'farmDeny', // { op, key, crop, piece }: that did not count (crop: a seed to give back; piece: a piece whose cost goes back; op 'load': what went in comes back)

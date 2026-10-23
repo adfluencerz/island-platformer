@@ -55,7 +55,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createBosses } from './bosses.js';
-import { BOSSES, SHOP, MINIGAMES } from '../shared/balance.js';
+import { BOSSES, SHOP, MINIGAMES, WATERED_GROWTH } from '../shared/balance.js';
 import { portalOf } from '../shared/bosses.js';
 import { createSkills } from './skills.js';
 import { SKILL_LIST } from '../shared/skills.js';
@@ -330,6 +330,15 @@ const soilRidgeGeo = new THREE.CylinderGeometry(0.075, 0.075, TILE_SIZE * 0.84, 
   .scale(1, 0.45, 1);
 const soilMat = new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 });
 const soilRidgeMat = new THREE.MeshStandardMaterial({ color: 0x6e4826, roughness: 1, flatShading: true });
+// ...darker when watered, till its crop is picked
+const wetSoilMat = new THREE.MeshStandardMaterial({ color: 0x33200f, roughness: 0.95 });
+const wetRidgeMat = new THREE.MeshStandardMaterial({ color: 0x41291a, roughness: 0.95, flatShading: true });
+function setWet(key, wet) {
+  const mesh = farmTiles.get(key);
+  if (!mesh) return;
+  mesh.material = wet ? wetSoilMat : soilMat;
+  for (const ridge of mesh.children) ridge.material = wet ? wetRidgeMat : soilRidgeMat;
+}
 
 // bare: game seconds it has lain bare already, life: how long it may (soil tilled before we came)
 function tillTileAt(x, z, bare = 0, life = soilLife()) {
@@ -355,7 +364,7 @@ function tillTileAt(x, z, bare = 0, life = soilLife()) {
 }
 
 // Crops grow on tilled tiles in real time; see crops.js for the models.
-const crops = new Map(); // "gridX,gridZ" -> { cropId, age, view, ripe, pop }
+const crops = new Map(); // "gridX,gridZ" -> { cropId, age, view, ripe, pop, watered }
 
 // age: seconds it has been growing already (a crop someone planted before we came)
 function plantAt(x, z, cropId, age = 0) {
@@ -392,6 +401,15 @@ function removeCrop(key) {
   }
   scene.remove(crop.view.group);
   crops.delete(key);
+  setWet(key, false);
+}
+
+// The crop on tile key was watered: it grows faster from now (WATERED_GROWTH)
+function markWatered(key) {
+  const crop = crops.get(key);
+  if (!crop) return;
+  crop.watered = true;
+  setWet(key, true);
 }
 
 // Returns true if there was a ripe crop here (even if the bag was too full to take it).
@@ -480,7 +498,7 @@ function updateCrops(dt, growDt, t) {
   }
   for (const crop of crops.values()) {
     if (!crop.ripe) {
-      crop.age += growDt;
+      crop.age += growDt * (crop.watered ? WATERED_GROWTH : 1);
       const progress = Math.min(crop.age / CROPS[crop.cropId].growTime, 1);
       crop.view.setProgress(progress);
       if (progress >= 1) {
@@ -1521,12 +1539,14 @@ function tendAnimal(animal) {
 const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
 
 // The tiles the hoe in hand tills from x, z: a better hoe more round it,
-// `tills` [across, ahead] of the way the farmer faces (where there is room)
-function hoeTiles(x, z) {
+// `tills` [across, ahead] of the way the farmer faces (where there is room).
+// (And the watering can's, `waters`.)
+const hoeTiles = (x, z) => tilesAhead(x, z, ITEMS[inventory.selectedId()]?.tills);
+const canTiles = (x, z) => tilesAhead(x, z, ITEMS[inventory.selectedId()]?.waters);
+function tilesAhead(x, z, [wide, deep] = [1, 1]) {
   const sideways = Math.abs(Math.sin(anim.facing)) > Math.abs(Math.cos(anim.facing));
   const across = sideways ? [0, 1] : [1, 0];
   const ahead = sideways ? [Math.sign(Math.sin(anim.facing)), 0] : [0, Math.sign(Math.cos(anim.facing))];
-  const [wide, deep] = ITEMS[inventory.selectedId()]?.tills ?? [1, 1];
   const span = (n) => Array.from({ length: n }, (_, i) => i - Math.floor(n / 2));
   const tiles = [];
   for (const j of span(deep)) for (const k of span(wide)) {
@@ -1551,7 +1571,9 @@ function farmHere(x, z) {
     inventory.notify('Farm in the field: the earth on the left');
     return;
   }
-  if (holding() === 'hoe' && buildings.get(tileKeyFor(x, z))) {
+  if (holding() === 'can') {
+    waterHere(x, z);
+  } else if (holding() === 'hoe' && buildings.get(tileKeyFor(x, z))) {
     inventory.notify('Something is built here: take it down to till');
   } else if (holding() === 'hoe') {
     for (const [tx, tz] of hoeTiles(x, z)) {
@@ -1576,6 +1598,33 @@ function farmHere(x, z) {
     } else if (!farmTiles.has(tileKeyFor(x, z))) {
       inventory.notify('Seeds go on tilled soil');
     }
+  }
+}
+
+// ---------- Watering ----------
+// With a watering can in hand, E waters the crops in front (the big can's
+// `waters`: a patch round it): watered, a crop grows the rest of the way
+// WATERED_GROWTH times as fast, on dark wet soil till it's picked. On a farm
+// with helpers the room keeps it (WATER; WATERED, or FARM_DENY: it isn't).
+const needsWater = (key) => {
+  const crop = crops.get(key);
+  return !!crop && !crop.ripe && !crop.watered && !crop.pending;
+};
+
+function waterHere(x, z) {
+  const keys = canTiles(x, z).map(([tx, tz]) => tileKeyFor(tx, tz)).filter(needsWater);
+  if (!keys.length) {
+    const crop = crops.get(tileKeyFor(x, z));
+    inventory.notify(crop?.watered ? 'Watered already: it\'s growing as fast as it can' : 'Water what you planted: seeds on tilled soil');
+    return;
+  }
+  farmer.swing();
+  sound.play('water');
+  for (const key of keys) {
+    markWatered(key);
+    const at = farmTiles.get(key).position;
+    ripples.splash(at.x, at.y + 0.05, at.z, 5);
+    farmNet?.send({ t: C.WATER, key });
   }
 }
 
@@ -1605,6 +1654,7 @@ function useHint() {
   if (crop?.ripe) return crop.pending || CROPS[crop.cropId].climb ? '' : `Harvest ${ITEMS[CROPS[crop.cropId].produce].name.toLowerCase()}`; // (a beanstalk's from the top)
   const held = inventory.selectedId();
   if (inPen(x, z) || offField(x, z)) return '';
+  if (holding() === 'can') return canTiles(x, z).some(([tx, tz]) => needsWater(tileKeyFor(tx, tz))) ? 'Water' : '';
   if (holding() === 'hoe') return !buildings.get(key) && hoeTiles(x, z).some(([tx, tz]) => !farmTiles.has(tileKeyFor(tx, tz))) ? 'Till' : '';
   if (ITEMS[held]?.plants && farmTiles.has(key) && !crops.has(key)) return `Plant ${ITEMS[held].name.toLowerCase()}`;
   return eatHint();
@@ -3189,6 +3239,13 @@ async function joinFarm(id) {
     hud.flash('A feast!');
     inventory.notify(`${remotes.players.get(m.by)?.name || 'A friend'} shared a ${ITEMS[m.dish].name.toLowerCase()}! ${boostText(m.dish)}`);
   });
+  on(S.WATERED, (m) => {
+    const crop = crops.get(m.key);
+    if (!crop) return;
+    crop.wateredAt = m.at;
+    markWatered(m.key);
+    if (crop.plantedAt !== undefined) crop.age = ageAt(crop.plantedAt, m.at);
+  });
   on(S.HARVESTED, (m) => {
     const crop = crops.get(m.key);
     removeCrop(m.key);
@@ -3206,6 +3263,9 @@ async function joinFarm(id) {
     } else if (m.op === 'harvest' && crop) {
       crop.pending = false;
       crop.view.group.visible = true;
+    } else if (m.op === 'water' && crop && crop.wateredAt === undefined) {
+      crop.watered = false; // (it didn't take)
+      setWet(m.key, false);
     } else if (m.op === 'build' && pendingBuilds.has(m.key)) {
       const carried = pendingBuilds.get(m.key);
       pendingBuilds.delete(m.key);
@@ -3319,7 +3379,9 @@ function setFarmRoster(list) {
 }
 
 // game seconds a crop planted at `plantedAt` (the farm's game hours) has been growing
-const ageAt = (plantedAt) => Math.max(0, ((farmHours() - plantedAt) * DAY_LENGTH_SECONDS) / 24);
+// (and faster from when it was watered)
+const ageAt = (plantedAt, wateredAt) =>
+  Math.max(0, ((farmHours() - plantedAt + (wateredAt === undefined ? 0 : Math.max(0, farmHours() - wateredAt) * (WATERED_GROWTH - 1))) * DAY_LENGTH_SECONDS) / 24);
 
 // The farm as its room has it (FARM)
 function showRoomFarm(m) {
@@ -3336,8 +3398,10 @@ function showRoomFarm(m) {
   machines.restore(m.machines, m.hours);
   placeChest();
   showFarmWilds(m);
-  for (const [key, cropId, at] of m.crops) {
-    if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, ageAt(at))) crops.get(key).plantedAt = at;
+  for (const [key, cropId, at, wateredAt] of m.crops) {
+    if (!CROPS[cropId] || !plantAt(...keyXZ(key), cropId, ageAt(at, wateredAt))) continue;
+    Object.assign(crops.get(key), { plantedAt: at, wateredAt });
+    if (wateredAt !== undefined) markWatered(key);
   }
   useLevels(m.animals?.levels);
   animals.restore(Object.keys(m.animals ?? {}).length ? m.animals : null, farmHours());
@@ -3347,7 +3411,7 @@ function showRoomFarm(m) {
 function syncFarmClock(hours) {
   if (keys.has('KeyT') || Math.abs(hours - farmHours()) < 0.05) return;
   dayNight.setTime(hours);
-  for (const crop of crops.values()) if (crop.plantedAt !== undefined) crop.age = ageAt(crop.plantedAt);
+  for (const crop of crops.values()) if (crop.plantedAt !== undefined) crop.age = ageAt(crop.plantedAt, crop.wateredAt);
 }
 
 // Holding T on our own farm, alone on it: the room's clock goes along
@@ -3792,7 +3856,7 @@ function captureFarm() {
     savedAt: Date.now(),
     hours: farmHours(),
     tilled: [...farmTiles].map(([key, mesh]) => [key, crops.has(key) ? 0 : mesh.userData.bare, mesh.userData.life]),
-    crops: [...crops].map(([key, c]) => [key, c.cropId, c.age]),
+    crops: [...crops].map(([key, c]) => [key, c.cropId, c.age, ...(c.watered ? [1] : [])]),
     built: buildings.list(),
     dropped: farmFinds.dropped(), // (what we dropped, lying about)
     machines: machines.capture(),
@@ -3828,8 +3892,8 @@ function showFarm(farm) {
   machines.restore(farm.machines, farmHours()); // (what was in them, done or not by now)
   placeChest();
   showFarmWilds(farm);
-  for (const [key, cropId, age] of farm.crops) {
-    if (CROPS[cropId]) plantAt(...keyXZ(key), cropId, age + away);
+  for (const [key, cropId, age, watered] of farm.crops) {
+    if (CROPS[cropId] && plantAt(...keyXZ(key), cropId, age + away * (watered ? WATERED_GROWTH : 1)) && watered) markWatered(key);
   }
   animals.restore(farm, farmHours()); // (the eggs due while we were away are in the nest)
 }
@@ -4026,6 +4090,8 @@ function update(dt) {
   farmer.mallet.visible = !lent && inventory.selectedId() === 'mallet';
   farmer.rod.visible = lent || holding() === 'rod';
   if (farmer.rod.visible) farmer.setRod(ITEMS[lent ? 'fishing_rod' : inventory.selectedId()].color);
+  farmer.can.visible = !lent && holding() === 'can';
+  if (farmer.can.visible) farmer.setCan(ITEMS[inventory.selectedId()].color);
   animateCharacter(dt, moving);
   updateTileCursor(moving);
   updateHover();
