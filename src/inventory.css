@@ -303,6 +303,9 @@
   transform: translateY(5px);
 }
 .inv-tabs .inv-tab.on { background: var(--inv-paper); transform: none; cursor: default; }
+/* (five of them: smaller on a small screen, to fit beside the close button) */
+:root.compact .inv-tabs { gap: 4px; }
+:root.compact .inv-tabs .inv-tab { font-size: 20px; padding: 5px 9px 9px; }
 .inv-pack[hidden], .inv-build[hidden] { display: none; }
 
 /* (as wide as the backpack's grid, or the screen, less the window's padding) */

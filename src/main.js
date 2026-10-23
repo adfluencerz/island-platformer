@@ -10,6 +10,7 @@ import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './ani
 import { createBuildings, POND_WATER_Y } from './build.js';
 import { createFishing } from './fishing.js';
 import { createFishLog } from './fishlog.js';
+import { createBook } from './book.js';
 import { createFishBoard } from './fishboard.js';
 import { createFishShadows } from './fishshadows.js';
 import { createRipples } from './ripples.js';
@@ -238,7 +239,10 @@ scene.add(water);
 const inventory = createInventory({
   onOpenChange: (open) => open && keys.clear(),
   onBuild: (piece) => startBuilding(piece),
-  onAdd: (id) => readRecipe(id),
+  onAdd: (id) => {
+    readRecipe(id);
+    if (book.saw(id)) inventory.notify(`New in your collection book: ${ITEMS[id].name}`);
+  },
   onEat: (id) => eat(id, false),
   onDrop: ({ id, count }) => dropFromBackpack(id, count),
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
@@ -246,6 +250,7 @@ const inventory = createInventory({
   inChest: (item) => chestStock()[item] ?? 0,
   renderSkills: (el) => skills.render(el),
   renderFish: (el) => fishLog.render(el),
+  renderBook: (el) => book.render(el),
 });
 
 // ---------- Skills ----------
@@ -2387,6 +2392,9 @@ const hud = new Hud({
 // (fishshadows.js), coming up now and then with a ripple (ripples.js). In a
 // lobby's fishing contest everyone fishes, a rod lent to anyone without one.
 const fishLog = createFishLog();
+// What we have ever had, for the collection book (book.js, the bag's Book
+// tab): saved with the backpack
+const book = createBook({ fishLog, beaten: () => Object.keys(bosses.record().won).filter((id) => bosses.record().won[id] > 0) });
 const ripples = createRipples(scene);
 const inContest = () => place === 'lobby' && !!arenaId && partyGame?.kind === 'fishing_contest';
 const fishing = createFishing({
@@ -3750,7 +3758,7 @@ function showFarm(farm) {
 
 function currentSave() {
   if (farmOnScreen) homeFarm = captureFarm();
-  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
+  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
 }
 
 function saveGame() {
@@ -3793,6 +3801,7 @@ function useSave(save) {
   inventory.restore(save.backpack ?? {});
   skills.restore(save.skills); // (none before v8: everything at level 1)
   fishLog.restore(save.fishlog); // (none before the journal: nothing landed yet)
+  book.restore(save.found); // (none before the book: what is in the backpack, below)
   for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
   homeFarm = save.farm ?? null;
   bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
@@ -3803,6 +3812,7 @@ function useSave(save) {
   if (save.v < 2) gift('flax_seeds', 5);
   if (save.v < 3) gift('axe', 1);
   if (save.v < 6) gift('pickaxe', 1);
+  book.seed([...inventory.serialize().slots.map((s) => s?.id), ...Object.keys(homeFarm?.chest ?? {})]);
   if (farmOnScreen) showFarm(homeFarm);
   return true;
 }

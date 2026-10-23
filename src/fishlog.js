@@ -55,6 +55,7 @@ export function createFishLog() {
   return {
     landed,
     best: (item) => log[item]?.[1] ?? 0,
+    count: (item) => log[item]?.[0] ?? 0,
     render,
     serialize: () => structuredClone(log),
     restore(saved) {
