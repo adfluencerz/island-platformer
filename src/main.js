@@ -35,7 +35,8 @@ import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
 import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
-import { CROPS, createCropView } from './crops.js';
+import { CROPS, createCropView, BEAN_LEDGES, BEAN_CROWN } from './crops.js';
+import { BEANSTALK } from '../shared/balance.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import * as sound from './sound.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
@@ -353,7 +354,7 @@ function plantAt(x, z, cropId, age = 0) {
   const view = createCropView(cropId);
   view.group.position.copy(farmTiles.get(key).position).setY(0.06); // on top of the soil
   view.group.rotation.y = Math.random() * Math.PI * 2;
-  if (cropId === 'sunflower') view.group.rotation.y = 0; // keep the bloom facing the camera
+  if (cropId === 'sunflower' || CROPS[cropId].climb) view.group.rotation.y = 0; // keep the bloom facing the camera (and a beanstalk's leaves where its ledges are)
   scene.add(view.group);
   crops.set(key, { cropId, age, view, ripe: false, pop: 0 });
   const soil = farmTiles.get(key).userData;
@@ -374,6 +375,10 @@ function untillTile(key) {
 function removeCrop(key) {
   const crop = crops.get(key);
   if (!crop) return;
+  for (const box of crop.ledges ?? []) {
+    const i = worlds.home.platforms.indexOf(box);
+    if (i >= 0) worlds.home.platforms.splice(i, 1);
+  }
   scene.remove(crop.view.group);
   crops.delete(key);
 }
@@ -386,6 +391,10 @@ function harvestAt(x, z) {
   const crop = crops.get(key);
   if (!crop?.ripe) return false;
   if (crop.pending) return true;
+  if (CROPS[crop.cropId].climb && stalkUnderfoot() !== key) {
+    inventory.notify('The beans grow up at the top: climb the leaves to pick them');
+    return true;
+  }
   if (farmNet) {
     crop.pending = true;
     crop.view.group.visible = false;
@@ -423,6 +432,32 @@ function resetFarm() {
 }
 
 // `growDt` is game-clock seconds (growth); `dt` is real seconds (animation)
+// A ripe beanstalk's leaves (src/crops.js BEAN_LEDGES), as ledges in the
+// farm's platforms: climbed to pick its beans from the crown at the top
+function stalkLedges(crop) {
+  const { x, z } = crop.view.group.position;
+  return BEAN_LEDGES.map(([dx, dz, top, w]) => {
+    const box = {
+      center: new THREE.Vector3(x + dx, top - 0.06, z + dz),
+      min: new THREE.Vector3(x + dx - w / 2, top - 0.12, z + dz - w / 2),
+      max: new THREE.Vector3(x + dx + w / 2, top, z + dz + w / 2),
+    };
+    worlds.home.platforms.push(box);
+    return box;
+  });
+}
+
+// The ripe beanstalk whose crown we stand on (its tile's key), if any
+function stalkUnderfoot() {
+  if (!player.onGround || player.position.y - GROUND_STAND_Y < BEANSTALK.top - 0.3) return null;
+  for (const [key, crop] of crops) {
+    if (!crop.ledges) continue;
+    const { x, z } = crop.view.group.position;
+    if (Math.hypot(player.position.x - x - BEAN_CROWN[0], player.position.z - z - BEAN_CROWN[1]) < 0.9) return key;
+  }
+  return null;
+}
+
 function updateCrops(dt, growDt, t) {
   // Bare soil goes back to grass in a while (on a farm with helpers the room says when: UNTILLED)
   if (!farmNet) {
@@ -440,6 +475,7 @@ function updateCrops(dt, growDt, t) {
       if (progress >= 1) {
         crop.ripe = true;
         crop.pop = 1; // little bounce when it ripens
+        if (CROPS[crop.cropId].climb) crop.ledges = stalkLedges(crop);
       }
     }
     // Ripe crops pop once, then sway gently so they're easy to spot
@@ -1452,6 +1488,8 @@ function useAction() {
   if (holding() === 'axe' && swingAxe()) return;
   if (holding() === 'pickaxe' && swingPick()) return;
   if (ITEMS[inventory.selectedId()]?.dish && !crops.get(frontTile())?.ripe) return eat();
+  const stalk = stalkUnderfoot(); // (up on a beanstalk's crown: its beans)
+  if (stalk) return harvestAt(...keyXZ(stalk)) && sound.play('harvest');
   farmHere();
 }
 
@@ -1548,11 +1586,12 @@ function useHint() {
     const near = gatherSpotInReach();
     return near && !(near.kind === 'sky_vault' && !inventory.count('key')) ? GATHER_VERB[near.kind] : eatHint();
   }
+  if (stalkUnderfoot()) return 'Pick the beans';
   if (!footReach()) return eatHint();
   const [x, z] = keyXZ(frontTile());
   const key = tileKeyFor(x, z);
   const crop = crops.get(key);
-  if (crop?.ripe) return crop.pending ? '' : `Harvest ${ITEMS[CROPS[crop.cropId].produce].name.toLowerCase()}`;
+  if (crop?.ripe) return crop.pending || CROPS[crop.cropId].climb ? '' : `Harvest ${ITEMS[CROPS[crop.cropId].produce].name.toLowerCase()}`; // (a beanstalk's from the top)
   const held = inventory.selectedId();
   if (inPen(x, z) || offField(x, z)) return '';
   if (holding() === 'hoe') return !buildings.get(key) && hoeTiles(x, z).some(([tx, tz]) => !farmTiles.has(tileKeyFor(tx, tz))) ? 'Till' : '';

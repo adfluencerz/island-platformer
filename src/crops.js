@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CROP_GROW_TIME } from '../shared/level.js';
+import { BEANSTALK } from '../shared/balance.js';
 
 // ---------- Crops ----------
 // What each seed grows into. `growTime` is seconds from planting to ripe
@@ -116,6 +117,60 @@ function buildFlax() {
   return g;
 }
 
+// A beanstalk: a tall twisting stalk with big leaves round it, each a step
+// up from the one before (BEAN_LEDGES: [x, z] out from the middle, the
+// height of the leaf's top, how wide it is), the last its crown, where the
+// bean pods hang. Once it is ripe the leaves are ledges to climb (main.js
+// puts them in the world's platforms). Planted facing one way, so the
+// ledges are where the leaves are drawn; each out to a side of its own, so
+// a farmer (a metre wide) never bumps their head on the next one up.
+export const BEAN_LEDGES = [
+  [1, 0, 1.0, 0.9],
+  [0, -1, 2.05, 0.9],
+  [-1, 0, 3.1, 0.9],
+  [0, 1, BEANSTALK.top, 1], // (the crown)
+];
+export const BEAN_CROWN = BEAN_LEDGES.at(-1);
+const beanStalkMat = mat(0x4f8f2e);
+const beanLeafMat = mat(0x7ccf4a);
+const podMat = mat(0x8fd46a);
+const beanLeafGeo = new THREE.SphereGeometry(0.5, 8, 5);
+const podGeo = new THREE.CapsuleGeometry(0.06, 0.22, 3, 6);
+
+function buildBeanstalk() {
+  const g = new THREE.Group();
+  // the stalk, in a few twisting pieces
+  const pieces = 5;
+  for (let i = 0; i < pieces; i++) {
+    const h = BEANSTALK.top / pieces;
+    const piece = mesh(new THREE.CylinderGeometry(0.15 - i * 0.015, 0.18 - i * 0.015, h * 1.08, 7), beanStalkMat, [Math.sin(i * 1.7) * 0.05, h * (i + 0.5), Math.cos(i * 1.7) * 0.05]);
+    piece.rotation.z = Math.sin(i * 2.3) * 0.08;
+    g.add(piece);
+  }
+  // a leaf to each ledge, flat enough to stand on, its stem back to the stalk
+  for (const [x, z, top, w] of BEAN_LEDGES) {
+    const leaf = mesh(beanLeafGeo, beanLeafMat, [x, top - 0.08, z], [w * 1.2, 0.2, w * 1.2]);
+    leaf.rotation.y = Math.atan2(x, z);
+    g.add(leaf);
+    if (x || z) {
+      const stem = mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 5), beanStalkMat, [x / 2, top - 0.12, z / 2]);
+      stem.rotation.z = Math.PI / 2;
+      stem.rotation.y = Math.atan2(-z, x);
+      g.add(stem);
+    }
+  }
+  // the pods, hanging under the crown
+  const [cx, cz] = BEAN_CROWN;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const pod = mesh(podGeo, podMat, [cx + Math.cos(a) * 0.4, BEANSTALK.top - 0.3, cz + Math.sin(a) * 0.4]);
+    pod.rotation.z = Math.cos(a) * 0.3;
+    pod.rotation.x = -Math.sin(a) * 0.3;
+    g.add(pod);
+  }
+  return g;
+}
+
 export const CROPS = {
   turnip: { growTime: CROP_GROW_TIME.turnip, produce: 'turnip', build: buildTurnip },
   carrot: { growTime: CROP_GROW_TIME.carrot, produce: 'carrot', build: buildCarrot },
@@ -126,6 +181,8 @@ export const CROPS = {
     produce: 'golden_turnip',
     build: () => buildTurnip(goldBulbMat, goldTopMat),
   },
+  // (`climb`: its beans are picked from the top, see BEAN_LEDGES)
+  vine_bean: { growTime: CROP_GROW_TIME.vine_bean, produce: 'beans', build: buildBeanstalk, climb: true },
 };
 
 // Growth stages by progress (0..1): seeds in the soil, a sprout, then the crop
