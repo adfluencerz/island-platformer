@@ -399,6 +399,7 @@ const HEN_SCALE = 1.5;
 function buildHen(color) {
   const feathers = matOf(HEN_COLORS[color] ?? HEN_COLORS[0]);
   const root = new THREE.Group();
+  root.userData.noSnow = true; // (snow keeps off the animals: src/seasons.js)
   const rig = new THREE.Group();
   rig.scale.setScalar(HEN_SCALE);
   root.add(rig);
@@ -459,6 +460,7 @@ function buildCow(color) {
   const hideMat = matOf(hide);
   const patchMat = matOf(patch);
   const root = new THREE.Group();
+  root.userData.noSnow = true;
   const rig = new THREE.Group();
   root.add(rig);
   const legs = [[-1, 1, 0], [1, 1, Math.PI], [-1, -1, Math.PI], [1, -1, 0]].map(([sx, sz, phase]) =>
@@ -518,6 +520,7 @@ const FLEECE = [[0, 0, 0, 0.36, 0.32, 0.46], [0.2, 0.17, 0.22, 0.2], [-0.2, 0.17
 function buildSheep(color) {
   const woolMat = matOf(WOOL_COLORS[color] ?? WOOL_COLORS[0]);
   const root = new THREE.Group();
+  root.userData.noSnow = true;
   const rig = new THREE.Group();
   root.add(rig);
   const legs = [[-1, 1, 0], [1, 1, Math.PI], [-1, -1, Math.PI], [1, -1, 0]].map(([sx, sz, phase]) =>

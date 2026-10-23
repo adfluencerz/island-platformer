@@ -34,6 +34,9 @@ npm run browser --silent -- --shot night.png -e 'g.dayNight.setTime(21); g.step(
   now). For the time of day use `g.dayNight.setTime(21)` (9 pm on day 1):
   `?hour=` is overwritten once the account's farm comes from the server.
 - `--live` leaves the game running in real time instead of frozen.
+- `--full` draws with full graphics (shadows, no `?lowgfx`) and `--size 960x600`
+  sets the window: for judging how something looks. A frame takes a few
+  seconds to draw without a GPU, so step first and draw once.
 - It starts `npm run dev` itself, and stops it after, unless one is already
   running on port 5173. Put test files in the scratchpad, not the repo.
 
