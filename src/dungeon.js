@@ -28,7 +28,10 @@ import { createFoe } from './dungeonfoes.js';
 // The side walls are tall; the ones across, between the rooms, are drawn low
 // so the camera sees over them (they stop a farmer all the same), with an
 // arch over the gate in the middle, which sinks into the floor once its
-// room's foes are all down. The way home stands by where farmers come in.
+// room's foes are all down. Till then, for a farmer in the dungeon, it is
+// dark past that gate: nothing of the rooms beyond (nor the arena) shows
+// till it opens, and the dark over the next room lifts. The way home stands
+// by where farmers come in.
 // Lamps light pools of the floor round them and flicker, and motes (dust,
 // embers, pollen, spores) drift in the air. The foes are src/dungeonfoes.js's.
 //
@@ -46,6 +49,9 @@ const SINK_TIME = 0.7; // seconds a gate takes to sink into the floor
 const CAVE_SIDE = 26; // how far the cavern reaches out beside the dungeon...
 const CAVE_NEAR = 14; // ...and in front of it (toward the camera; behind it is the arena)
 const MOTES = 140; // drifting in the air of a dungeon
+const LIFT_TIME = 1.2; // seconds the dark over a room takes to lift, once the gate into it opens
+const FADE = [0.45, 0.35, 0.25, 0.15]; // the sheets of dark the cavern fades through into it, nearest it first
+const DARK = 0x040306; // (as black as it is all round, underground: daynight.js)
 
 // What a piece is made of: white, each piece its own color (instance colors)
 const KINDS = {
@@ -245,7 +251,7 @@ export function createDungeons(world) {
     const swirl = wayHome(group, th, dungeonExit(id));
     const pools = b.done();
     const motes = makeMotes(d);
-    dungeons.set(id, { group, gates, swirl, flames: d.flames, flies: d.flies, motes, pools, foes: null });
+    dungeons.set(id, { group, gates, swirl, flames: d.flames, flies: d.flies, motes, pools, foes: null, dark: makeDark(d) });
   }
 
   // ---------- The cavern ----------
@@ -905,6 +911,69 @@ export function createDungeons(world) {
     return swirl;
   }
 
+  // ---------- The dark past a shut gate ----------
+  // A wall of black from just past the gate, as high and wide and deep as can
+  // be seen (drawn last, over everything behind it: the rooms beyond, their
+  // lamps, the cavern, the arena), the cavern's rock either side darkening
+  // into it over the last few metres before it (thin sheets of dark, one
+  // behind another); and a second wall over the room a gate has just let
+  // into, which fades away
+  function makeDark(d) {
+    const veil = (opacity = 1) => {
+      const mesh = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ color: DARK, transparent: true, opacity, depthWrite: false, fog: false }));
+      mesh.renderOrder = 10;
+      mesh.frustumCulled = false;
+      mesh.visible = false;
+      d.group.add(mesh);
+      return mesh;
+    };
+    const fade = FADE.flatMap((opacity) => [veil(opacity), veil(opacity)]);
+    return { ahead: veil(), fade, lifting: veil(), shown: -1, liftAt: -Infinity };
+  }
+
+  // a veil over z from `near` back to `far` (-Infinity: on past the arena), the dungeon's whole width and more
+  function cover(veil, id, near, far) {
+    const { x } = ARENAS[id];
+    const back = Number.isFinite(far) ? far : near - 160;
+    veil.position.set(x, 5, (near + back) / 2);
+    veil.scale.set(140, 80, near - back);
+    veil.visible = true;
+  }
+
+  // the sheets of dark in front of it, out beside the dungeon (not over it): one every metre
+  function fadeIn(fade, id, near, show) {
+    const { x } = ARENAS[id];
+    const out = ROOM_W / 2 + T + 0.6;
+    fade.forEach((sheet, i) => {
+      sheet.visible = show;
+      if (!show) return;
+      const side = i % 2 ? 1 : -1;
+      sheet.position.set(x + side * (out + 35), 5, near + 1 + Math.floor(i / 2));
+      sheet.scale.set(70, 80, 0.02);
+    });
+  }
+
+  // Dark past the first shut gate (gate k is room k's: the next room's, and
+  // on), the room the gate just opened lifting into sight. inside: we are
+  // in the dungeon (from anywhere else, no veils)
+  function darken(id, d, cleared, inside, t) {
+    const { ahead, lifting } = d.dark;
+    const edge = (k) => gateAt(id, k).z - T / 2 - 0.02; // (just past gate k)
+    if (cleared > d.dark.shown && d.dark.shown >= 0 && inside) {
+      // a gate opened: what it lets into lifts out of the dark
+      cover(lifting, id, edge(d.dark.shown), cleared < ROOMS ? edge(cleared) : -Infinity);
+      d.dark.liftAt = t;
+    }
+    d.dark.shown = inside ? cleared : -1;
+    const dark = inside && cleared < ROOMS;
+    if (dark) cover(ahead, id, edge(cleared), -Infinity);
+    else ahead.visible = false;
+    fadeIn(d.dark.fade, id, dark ? edge(cleared) : 0, dark);
+    const k = (t - d.dark.liftAt) / LIFT_TIME;
+    lifting.material.opacity = 1 - k;
+    if (k >= 1 || !inside) lifting.visible = false;
+  }
+
   // ---------- Motes in the air ----------
   // A few hundred specks drifting about the dungeon (rising or sinking, as its theme has them)
   function makeMotes(d) {
@@ -937,14 +1006,16 @@ export function createDungeons(world) {
 
   return {
     // Every frame, for each dungeon: `near` (we are in it or its arena: it
-    // is drawn), `run` (as dungeonFromWire has it, the foes drawn where
-    // `shown` has them: { x, y, z } each; null: fresh, every foe resting)
-    update(dt, t, id, near, run, shown) {
+    // is drawn), `inside` (in it: it is dark past its first shut gate), `run`
+    // (as dungeonFromWire has it, the foes drawn where `shown` has them: { x,
+    // y, z } each; null: fresh, every foe resting)
+    update(dt, t, id, near, inside, run, shown) {
       const d = dungeons.get(id);
       d.group.visible = near;
       // the gates: open for the rooms cleared (whether or not it is drawn: they stop farmers)
       const cleared = run?.cleared ?? 0;
       for (const gate of d.gates) setGate(gate, gate.k < cleared);
+      darken(id, d, cleared, inside && near, t);
       if (!near) return;
       for (const gate of d.gates) {
         gate.sink += ((gate.open ? 1 : 0) - gate.sink) * Math.min(1, (dt / SINK_TIME) * 3);

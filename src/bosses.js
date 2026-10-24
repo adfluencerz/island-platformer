@@ -557,7 +557,7 @@ export function createBosses(ctx) {
         const near = way === id || inArena === id;
         if (near) showFoes(id, dt);
         const fresh = d.s ? null : freshOf(id);
-        dungeonView.update(dt, t, id, near, d.s ?? fresh, d.s ? d.shown : fresh.foes);
+        dungeonView.update(dt, t, id, near, way === id, d.s ?? fresh, d.s ? d.shown : fresh.foes);
         if (way === id) checkFoes(id);
       }
       // a farm played alone: its fights are ours to run
