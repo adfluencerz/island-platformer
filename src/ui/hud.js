@@ -12,6 +12,7 @@
 import { inviteLink } from '../net/lobby.js';
 import { el, button, hexColor, copyText } from './dom.js';
 import { isTouch } from './touch.js';
+import { padInUse } from '../gamepad.js';
 
 // The controls: [keys, what they do]
 const CONTROLS = [
@@ -56,6 +57,27 @@ const TOUCH_CONTROLS = [
   ['Hold clock', 'Speed up time at home'],
   ['Tap farmer', 'With a sword or mallet in a lobby: bop them'],
   ['Menu', 'In the panel at the top left'],
+];
+// With a controller (gamepad.js), playing and in a menu
+const PAD_CONTROLS = [
+  ['Left stick', 'Walk'],
+  ['A', 'Jump (hold: higher; on the way down, glide)'],
+  ['X  B  RT', 'Use: whatever E does (hold to keep chopping or mining)'],
+  ['Y', 'Backpack'],
+  ['LB  RB', 'The toolbar: the item before or after (or the D-pad, left and right)'],
+  ['Right stick', 'Zoom'],
+  ['View', 'Build on your farm'],
+  ['Menu', 'Menu, or stop building'],
+  ['Hold LT', 'Speed up time at home'],
+  ['D-pad up', 'The buttons on the screen: an invitation, a trade'],
+];
+const PAD_MENU_CONTROLS = [
+  ['D-pad', 'Move between buttons and slots (or the left stick)'],
+  ['A', 'Pick it: a click'],
+  ['X', 'A right click: one of a stack'],
+  ['B', 'Back, or close'],
+  ['LB  RB', 'The tabs'],
+  ['Right stick', 'Scroll'],
 ];
 const TOUCH_BAG_CONTROLS = [
   ['Tap', 'Pick up, put down, swap or stack'],
@@ -110,6 +132,10 @@ export function addHelp(parent) {
   keyList(parent, 'touch-only', TOUCH_CONTROLS);
   el('div', 'ui-help-head touch-only', parent, 'In the backpack');
   keyList(parent, 'touch-only', TOUCH_BAG_CONTROLS);
+  el('div', 'ui-help-head', parent, 'With a controller');
+  keyList(parent, '', PAD_CONTROLS);
+  el('div', 'ui-help-head', parent, 'In a menu or window');
+  keyList(parent, '', PAD_MENU_CONTROLS);
 }
 
 const CHAT_FADE_MS = 10_000;
@@ -322,7 +348,8 @@ export class Hud {
 
   // text: 'E  Pick berries' (on a touch screen, the Use button is the E)
   setPrompt(text) {
-    if (isTouch()) text = text.replace(/^E {2}/, '');
+    if (padInUse()) text = text.replace(/^E {2}/, 'X  '); // (a controller's Use)
+    else if (isTouch()) text = text.replace(/^E {2}/, '');
     if (this.prompt.textContent === text) return;
     this.prompt.textContent = text;
     this.prompt.hidden = !text;
