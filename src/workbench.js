@@ -18,6 +18,9 @@ import { RECIPES, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js'; // (wh
 // the hen yard and the pasture (bigger, with room for more animals that give
 // more: src/animals.js). They are the farm's, so only its farmer buys them.
 //
+// A tool you have, or have made better already (a sturdy axe, with a silver
+// one in the backpack), isn't listed: only the next one up its line is.
+//
 //   Make / Upgrade   make one / buy the next level
 //   E / Esc / ×      close
 
@@ -96,6 +99,9 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
     return true;
   }
 
+  // A tool there is no making now: you have it, or a better one (made from it)
+  const outgrown = (makes) => isTool(makes) && [makes, ...betterThan(makes)].some((id) => inventory.count(id));
+
   // Why this can't be made right now ('': it can)
   function problem({ makes, needs, level = 1 }) {
     if (upgrades.level('workbench') < level) return `Needs a level ${level} workbench`;
@@ -162,6 +168,7 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
     }
     el('div', 'bench-head', listEl, 'Make');
     for (const recipe of RECIPES) {
+      if (outgrown(recipe.makes)) continue;
       const def = ITEMS[recipe.makes];
       const why = problem(recipe);
       const locked = upgrades.level('workbench') < (recipe.level ?? 1);
