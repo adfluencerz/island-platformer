@@ -12,20 +12,13 @@ Last updated: 2026-10-24
 ## In progress
 Open pull requests, each from the backlog below:
 
-- [ ] **World generation 11**: a strawberry bank on the newest lobby islands (#69)
-- [ ] **Weather**: rain that waters the crops, storms with wind, snow in winter (#70)
-- [ ] **More crops**: tomatoes and berry bushes that keep giving, pumpkins to grow; the hoe digs a plant up (#71)
-- [ ] **More Beanstalk plants**: a bounce shroom, a lily leaf, cloud cotton (#72, on #71)
-- [ ] **Trading** between farmers in a lobby (#73, on #72)
-- [ ] **Visiting** a friend's farm to look round (#74)
+- none right now
 
 ---
 
 ## Next up
 1. [ ] **Weeds and crows**: first answer the open question below (do they fit
    a cozy game?), then build them as light as that answer says.
-2. [ ] **More party games**: a fifth one, now that the hop race has shown how
-   (`shared/arenas.js`, `shared/minigame.js`).
 
 ---
 
@@ -56,9 +49,6 @@ Open pull requests, each from the backlog below:
 - [ ] Things at five hearts: a letter, a recipe, a visit to your farm
 - [ ] A festival in the valley once a season, every neighbour there
 
-### Things to do
-- [ ] More party games (see **Next up**)
-
 ### Tech
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or
       `rapier3d`) once shapes get more complex
@@ -80,7 +70,15 @@ The big pieces so far, newest first:
 - The farm grows into a valley five times its size, with biomes and forage,
   and four neighbours (Rosa, Basil, Finn, Mabel) with homes, a day of their
   own, shops and requests; the merchant keeps the basics
-
+- The friends menu says how long ago an offline friend was online (#84)
+- Pick a party game when starting a lobby, and a loot run on the lobby's own island (#77)
+- Seasons that look like seasons (#76)
+- Visit a friend's farm to look round (#74)
+- Trading between farmers in a lobby (#73)
+- More Beanstalk plants: a bounce shroom, a lily leaf, cloud cotton (#72)
+- More crops: tomatoes, pumpkins and berry bushes; the hoe digs a plant up (#71)
+- Weather on the farm: rain that waters the crops, storms, snow in winter (#70)
+- Generation 11 islands: a strawberry bank (#69)
 - A fifth boss, the bog toad, with its arena and mount (#68)
 - The hop race, a fourth party game: hop across the water to the flag (#67)
 - Seasons on the farm (#66)
