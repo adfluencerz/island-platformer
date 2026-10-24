@@ -2902,8 +2902,9 @@ function openNpcShop(id) {
   });
 }
 // E at a neighbour (or their door, outside or in): true if it did something
+// (not with a line out: E is for the fish then)
 function useNpc() {
-  if (place !== 'home') return false;
+  if (place !== 'home' || fishing.state()) return false;
   const door = npcs.doorInReach(player.position);
   if (door) return goIntoHome(door), true;
   const out = npcs.exitInReach(player.position);
@@ -2914,7 +2915,7 @@ function useNpc() {
 }
 // ...and what it does, for the prompt ('': nothing of theirs)
 function npcPrompt() {
-  if (place !== 'home') return '';
+  if (place !== 'home' || fishing.state()) return '';
   const door = npcs.doorInReach(player.position);
   if (door) return `E  Go into ${NPCS[door].title}`;
   if (npcs.exitInReach(player.position)) return 'E  Go outside';
@@ -4550,9 +4551,9 @@ function update(dt) {
     merchant.update(dt, t, player.position);
     npcs.update(dt, t, player.position, dayNight.hour());
     npcHomes.animate(t);
-    watchRequests(dt);
     chest.update(dt);
     if (place === 'home') {
+      watchRequests(dt);
       updateChopping();
       updateMining();
       hud.setPrompt(building ? updateBuilding() : homePrompt());
