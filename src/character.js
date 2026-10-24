@@ -58,7 +58,12 @@ function part(geo, material, x = 0, y = 0, z = 0) {
 
 // The merchant at the farm stall wears the same model in their own colors:
 // `overalls`, `hat` and `band` swap those materials, `mustache` adds one.
-export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: hatColor, band, mustache = false } = {}) {
+// The neighbours (src/npcs.js) dress up more: `hatStyle` 'straw' (the
+// usual), 'cap' (a flat cap), 'souwester' (a sailor's rain hat, brim down at
+// the back), 'scarf' (a headscarf knotted at the back) or 'none'; `hair` a
+// color (and `bun` or `ponytail` to tie it up); `beard` a color; `apron` a
+// color, over the front.
+export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: hatColor, band, mustache = false, hatStyle = 'straw', hair = null, bun = false, ponytail = false, beard = null, apron = null } = {}) {
   const shirtMat = mat(shirt);
   const own = []; // materials made for this farmer alone, to dispose
   const ownMat = (color, shared, opts) => {
@@ -84,6 +89,12 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
   torso.add(part(new THREE.CapsuleGeometry(0.27, 0.22, 4, 12), shirtMat, 0, 0.32, 0));
   torso.add(part(new THREE.CylinderGeometry(0.285, 0.29, 0.3, 12), denimMat, 0, 0.12, 0));
   torso.add(part(new THREE.BoxGeometry(0.3, 0.2, 0.06), denimMat, 0, 0.33, 0.24));
+  if (apron != null) {
+    // an apron over the front, from the chest to the knees, tied round the waist
+    const apronMat = ownMat(apron, sharedDenimMat, { roughness: 0.9 });
+    torso.add(part(new THREE.BoxGeometry(0.34, 0.5, 0.03), apronMat, 0, 0.1, 0.29));
+    torso.add(part(new THREE.CylinderGeometry(0.295, 0.295, 0.04, 12), apronMat, 0, 0.2, 0));
+  }
   for (const sx of [-1, 1]) {
     torso.add(part(new THREE.BoxGeometry(0.05, 0.26, 0.04), denimMat, sx * 0.12, 0.5, 0.235));
     torso.add(part(new THREE.SphereGeometry(0.025, 6, 6), strawMat, sx * 0.12, 0.42, 0.27));
@@ -108,9 +119,64 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
   hat.position.set(0, 0.17, -0.05);
   hat.rotation.x = -0.4; // tipped well back so the face shows from the overhead camera
   head.add(hat);
-  hat.add(part(new THREE.CylinderGeometry(0.38, 0.4, 0.035, 20), strawMat));
-  hat.add(part(new THREE.CylinderGeometry(0.19, 0.23, 0.18, 16), strawMat, 0, 0.1, 0));
-  hat.add(part(new THREE.CylinderGeometry(0.232, 0.232, 0.05, 16), bandMat, 0, 0.04, 0));
+  if (hatStyle === 'straw') {
+    hat.add(part(new THREE.CylinderGeometry(0.38, 0.4, 0.035, 20), strawMat));
+    hat.add(part(new THREE.CylinderGeometry(0.19, 0.23, 0.18, 16), strawMat, 0, 0.1, 0));
+    hat.add(part(new THREE.CylinderGeometry(0.232, 0.232, 0.05, 16), bandMat, 0, 0.04, 0));
+  } else if (hatStyle === 'cap') {
+    // a flat cap: a soft crown, its peak out over the eyes
+    hat.rotation.x = -0.15;
+    const crown = part(new THREE.SphereGeometry(0.255, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), strawMat, 0, -0.06, 0.03);
+    crown.scale.set(1, 0.55, 1);
+    hat.add(crown);
+    const peak = part(new THREE.CylinderGeometry(0.16, 0.16, 0.025, 16, 1, false, -Math.PI / 2, Math.PI), strawMat, 0, -0.05, 0.2);
+    peak.rotation.x = 0.15;
+    hat.add(peak);
+  } else if (hatStyle === 'souwester') {
+    // a sailor's rain hat: a round crown, the brim long at the back
+    hat.rotation.x = -0.25;
+    hat.add(part(new THREE.SphereGeometry(0.24, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), strawMat, 0, -0.04, 0));
+    const brim = part(new THREE.CylinderGeometry(0.34, 0.36, 0.03, 20), strawMat, 0, -0.04, -0.06);
+    brim.scale.set(1, 1, 1.15);
+    brim.rotation.x = 0.25;
+    hat.add(brim);
+  } else if (hatStyle === 'scarf') {
+    // a headscarf over the hair, knotted at the back
+    hat.rotation.x = 0;
+    hat.position.set(0, 0.04, -0.02);
+    hat.add(part(new THREE.SphereGeometry(0.262, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), bandMat));
+    hat.add(part(new THREE.SphereGeometry(0.06, 8, 6), bandMat, 0, 0.02, -0.27));
+    for (const sx of [-1, 1]) {
+      const tail = part(new THREE.BoxGeometry(0.06, 0.16, 0.03), bandMat, sx * 0.05, -0.08, -0.28);
+      tail.rotation.z = sx * 0.3;
+      hat.add(tail);
+    }
+  }
+  if (hair != null) {
+    // hair round the back and sides of the head (under any hat), tied up in a bun or a ponytail
+    const hairMat = ownMat(hair, sharedStrawMat, { roughness: 0.9 });
+    const back = part(new THREE.SphereGeometry(0.265, 16, 10, Math.PI * 0.15, Math.PI * 1.7, 0, Math.PI * 0.62), hairMat, 0, 0.01, -0.01);
+    back.rotation.y = Math.PI;
+    head.add(back);
+    if (bun) head.add(part(new THREE.SphereGeometry(0.11, 10, 8), hairMat, 0, 0.2, -0.17));
+    if (ponytail) {
+      const tail = part(new THREE.CapsuleGeometry(0.06, 0.22, 4, 8), hairMat, 0, -0.08, -0.28);
+      tail.rotation.x = 0.35;
+      head.add(tail);
+    }
+  }
+  if (beard != null) {
+    // a full beard round the jaw, with a mustache in it
+    const beardMat = ownMat(beard, mustacheMat, { roughness: 0.95 });
+    const chin = part(new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5), beardMat, 0, -0.06, 0.07);
+    chin.scale.set(1, 0.9, 0.85);
+    head.add(chin);
+    for (const sx of [-1, 1]) {
+      const whisker = part(new THREE.CapsuleGeometry(0.03, 0.08, 3, 6), beardMat, sx * 0.055, -0.075, 0.235);
+      whisker.rotation.z = sx * 1.25;
+      head.add(whisker);
+    }
+  }
 
   // Limbs pivot at the shoulder/hip so they can swing; the mesh hangs below.
   function makeLimb(parent, x, y, length, radius, material, endGeo, endMat, endZ = 0) {

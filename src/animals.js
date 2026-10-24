@@ -558,6 +558,9 @@ function buildSheep(color) {
 }
 
 const BUILD = { hen: buildHen, cow: buildCow, sheep: buildSheep };
+// One drawn on its own, for show (Rosa's at her ranch: src/npchomes.js):
+// { root, rig, legs, pose(a, t) }, a: how she stands (as an animal's own state is)
+export const animalModel = (kind, color = 0) => BUILD[kind](color);
 const COLORS = { hen: HEN_COLORS.length, cow: COW_COLORS.length, sheep: WOOL_COLORS.length };
 
 // ---------- Shiny ones ----------

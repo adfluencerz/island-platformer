@@ -285,6 +285,18 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const s = new THREE.Vector3();
   const c = new THREE.Color();
 
+  // What stands in the way of decorations while the world is built (not the
+  // ground, nor the trees and rocks, which move as they grow back), by
+  // BOX_CELL-sized squares, so a big island doesn't test every spot against
+  // every box: "cx,cz" -> [box]
+  const BOX_CELL = 4;
+  const boxCells = new Map();
+  function cellsOf(box, margin, each) {
+    for (let cx = Math.floor((box.min.x - margin) / BOX_CELL); cx <= Math.floor((box.max.x + margin) / BOX_CELL); cx++) {
+      for (let cz = Math.floor((box.min.z - margin) / BOX_CELL); cz <= Math.floor((box.max.z + margin) / BOX_CELL); cz++) each(`${cx},${cz}`);
+    }
+  }
+
   function addCollider({ x, y, z, w, h, d }, extra = {}) {
     const box = {
       center: new THREE.Vector3(x, y, z),
@@ -293,6 +305,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       ...extra,
     };
     platforms.push(box);
+    if (!box.ground && !box.grows) {
+      cellsOf(box, 0, (key) => {
+        if (!boxCells.has(key)) boxCells.set(key, []);
+        boxCells.get(key).push(box);
+      });
+    }
     return box;
   }
 
@@ -300,6 +318,11 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   function removeCollider(box) {
     const i = platforms.indexOf(box);
     if (i >= 0) platforms.splice(i, 1);
+    cellsOf(box, 0, (key) => {
+      const list = boxCells.get(key);
+      const j = list?.indexOf(box) ?? -1;
+      if (j >= 0) list.splice(j, 1);
+    });
   }
 
   function addBox({ x, y, z, w, h, d, color = 0x6b8e23, cap = null }) {
@@ -403,9 +426,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // every place a tree or rock may stand in.
   function isOpenGround(x, z, margin = 0) {
     if (!map.decorTypes.has(tileAt(x, z))) return false;
-    for (const box of platforms) {
-      if (box.ground || box.grows) continue;
-      if (x > box.min.x - margin && x < box.max.x + margin && z > box.min.z - margin && z < box.max.z + margin) return false;
+    for (let cx = Math.floor((x - margin) / BOX_CELL); cx <= Math.floor((x + margin) / BOX_CELL); cx++) {
+      for (let cz = Math.floor((z - margin) / BOX_CELL); cz <= Math.floor((z + margin) / BOX_CELL); cz++) {
+        for (const box of boxCells.get(`${cx},${cz}`) ?? []) {
+          if (x > box.min.x - margin && x < box.max.x + margin && z > box.min.z - margin && z < box.max.z + margin) return false;
+        }
+      }
     }
     for (const [kx, kz, r] of map.keepClear) {
       if (Math.hypot(x - kx, z - kz) < r + margin) return false;
@@ -689,11 +715,21 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       return kinds.get(key);
     };
 
-    const standing = platforms.filter((box) => !box.ground);
+    // (what stands on the ground, by BOX_CELL-sized squares, each in every
+    // square its shade reaches into: at most SHADE_REACH out)
+    const SHADE_REACH = 0.35 + 0.25 * 1.6;
+    const standing = new Map();
+    for (const box of platforms) {
+      if (box.ground) continue;
+      cellsOf(box, SHADE_REACH, (key) => {
+        if (!standing.has(key)) standing.set(key, []);
+        standing.get(key).push(box);
+      });
+    }
     // how much the things standing at (x, z) shade the ground there, 0..1
     const contactShade = (x, y, z) => {
       let shade = 0;
-      for (const box of standing) {
+      for (const box of standing.get(`${Math.floor(x / BOX_CELL)},${Math.floor(z / BOX_CELL)}`) ?? []) {
         if (box.min.y > y + 0.2 || box.max.y < y) continue;
         const r = 0.35 + 0.25 * Math.min(box.max.x - box.min.x, box.max.z - box.min.z, 1.6);
         const dx = Math.max(box.min.x - x, 0, x - box.max.x);

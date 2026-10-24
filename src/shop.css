@@ -111,3 +111,15 @@
 :root.compact .shop-ask-text { font-size: 18px; }
 :root.compact .shop-ask > .inv-icon { width: 30px; height: 30px; }
 :root.compact .shop-ask-btn { font-size: 18px; padding: 5px 8px; }
+
+/* a neighbour's shelf not open to you yet, a recipe you know, a friend's price */
+.shop-lock { margin-left: 8px; font-size: 16px; font-weight: 600; opacity: 0.8; }
+.shop-item.locked, .shop-item.known { opacity: 0.5; cursor: default; }
+.shop-item.locked .shop-price, .shop-item.known .shop-price { color: inherit; }
+.shop-cheaper { color: #3f8a2a; }
+
+/* a neighbour's shelf not open to you yet, a recipe you know, a friend's price */
+.shop-lock { margin-left: 8px; font-size: 16px; font-weight: 600; opacity: 0.8; }
+.shop-item.locked, .shop-item.known { opacity: 0.5; cursor: default; }
+.shop-item.locked .shop-price, .shop-item.known .shop-price { color: inherit; }
+.shop-cheaper { color: #3f8a2a; }

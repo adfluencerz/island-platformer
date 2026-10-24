@@ -235,9 +235,18 @@ export function pieceTiles(piece, key) {
 // its tiles have keys of their own (the farm's are within 28 of the middle).
 // Its field is farmed like the farm's, on a farm with helpers too; the rest
 // of the floor is boards. One house to a farm, so one room.
-export const HOUSE_ROOM = { x0: 110, z0: -5, w: 20, d: 10 }; // tiles x0..x0+w-1 across, z0..z0+d-1 deep: 200
-export const HOUSE_FIELD = { x0: 111, z0: -4, w: 8, d: 6 }; // the indoor field, in the room's left half
-export const HOUSE_DOOR_IN = { x: 119.5, z: 4.5 }; // the room's door, in the middle of its front wall
+export const HOUSE_ROOM = { x0: 250, z0: -5, w: 20, d: 10 }; // tiles x0..x0+w-1 across, z0..z0+d-1 deep: 200
+export const HOUSE_FIELD = { x0: 251, z0: -4, w: 8, d: 6 }; // the indoor field, in the room's left half
+export const HOUSE_DOOR_IN = { x: 259.5, z: 4.5 }; // the room's door, in the middle of its front wall
+// (the room was 140 tiles nearer, before the farm grew out toward it: a
+// tile key of its old field, in a save from then, is moved to where it is now)
+const OLD_HOUSE_X = { from: 110, w: 20, by: 140 };
+export function movedKey(key) {
+  if (typeof key !== 'string') return key;
+  const [gx, gz] = key.split(',').map(Number);
+  const old = gx >= OLD_HOUSE_X.from && gx < OLD_HOUSE_X.from + OLD_HOUSE_X.w && gz >= HOUSE_ROOM.z0 && gz < HOUSE_ROOM.z0 + HOUSE_ROOM.d;
+  return old ? `${gx + OLD_HOUSE_X.by},${gz}` : key;
+}
 
 const inArea = (a, x, z) => x > a.x0 - 0.5 && x < a.x0 + a.w - 0.5 && z > a.z0 - 0.5 && z < a.z0 + a.d - 0.5;
 // Is x, z (world units, a tile's middle or anywhere) in the house's room, or its field?

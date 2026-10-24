@@ -85,7 +85,7 @@ const HIGH = 9; // ...from this high over them, down to their feet
 const DRIFTS = 18; // autumn's fallen leaves under a tree (with leaves: not a pine)
 const DRIFTS_OUT = [0.35, 2.2]; // how far out from its trunk they lie
 const GRASS = new THREE.Color(0x5d9b3a); // the farm's grass as it is made (src/maps.js)
-const SNOW_SKIP = new Set(['house-room', 'boss-arenas']); // (indoors, and the arenas: their own looks)
+const SNOW_SKIP = new Set(['house-room', 'boss-arenas', 'npc-room']); // (indoors, and the arenas: their own looks)
 const RESCAN = 3; // seconds between looks for new things for the snow to lie on (things built)
 
 // The season on game day `day` (1, 2, ...) at `hour`: { now, next, blend, into }

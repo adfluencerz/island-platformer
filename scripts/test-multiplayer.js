@@ -1979,9 +1979,9 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], built: [] } });
   assert.equal(room.built.size, 1, 'the animals can\'t take it down');
   // the house stands on 20 tiles, its door on the one it was built on; its room's field is farmed while it stands
-  room.message(ann.p, { t: C.STATE, x: 112, y: 0.8, z: -2, yaw: 0, f: 1 });
-  room.message(ann.p, { t: C.TILL, key: '112,-2' });
-  assert.equal(ann.conn.last(S.FARM_DENY).key, '112,-2', 'no house yet: no field');
+  room.message(ann.p, { t: C.STATE, x: 252, y: 0.8, z: -2, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.TILL, key: '252,-2' });
+  assert.equal(ann.conn.last(S.FARM_DENY).key, '252,-2', 'no house yet: no field');
   room.message(ann.p, { t: C.STATE, x: 8, y: 0.8, z: 11.2, yaw: 0, f: 1 });
   room.message(ann.p, { t: C.BUILD, key: '8,10', piece: 'house' });
   assert.deepEqual(bo.conn.last(S.BUILT), { t: S.BUILT, key: '8,10', piece: 'house', by: ann.p.id });
@@ -1994,20 +1994,20 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   }
   room.message(ann.p, { t: C.BUILD, key: '7,12', piece: 'house' });
   assert.equal(ann.conn.last(S.FARM_DENY).key, '7,12', 'one house to a farm');
-  room.message(ann.p, { t: C.STATE, x: 112, y: 0.8, z: -2, yaw: 0, f: 1 });
-  room.message(ann.p, { t: C.TILL, key: '112,-2' });
-  assert.deepEqual(bo.conn.last(S.TILLED), { t: S.TILLED, key: '112,-2', by: ann.p.id }, 'the field');
-  room.message(ann.p, { t: C.PLANT, key: '112,-2', crop: 'turnip' });
-  assert.equal(bo.conn.last(S.PLANTED).key, '112,-2');
-  room.message(ann.p, { t: C.STATE, x: 114, y: 0.8, z: 3, yaw: 0, f: 1 });
-  room.message(ann.p, { t: C.TILL, key: '114,3' });
-  assert.equal(ann.conn.last(S.FARM_DENY).key, '114,3', 'the boards aren\'t field');
+  room.message(ann.p, { t: C.STATE, x: 252, y: 0.8, z: -2, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.TILL, key: '252,-2' });
+  assert.deepEqual(bo.conn.last(S.TILLED), { t: S.TILLED, key: '252,-2', by: ann.p.id }, 'the field');
+  room.message(ann.p, { t: C.PLANT, key: '252,-2', crop: 'turnip' });
+  assert.equal(bo.conn.last(S.PLANTED).key, '252,-2');
+  room.message(ann.p, { t: C.STATE, x: 254, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.TILL, key: '254,3' });
+  assert.equal(ann.conn.last(S.FARM_DENY).key, '254,3', 'the boards aren\'t field');
   room.message(ann.p, { t: C.STATE, x: 11.2, y: 0.8, z: 7, yaw: 0, f: 1 });
   room.message(ann.p, { t: C.UNBUILD, key: '10,7' });
   assert.deepEqual(bo.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '8,10', piece: 'house', by: ann.p.id }, 'taken down from beside any of its tiles, its back corner too');
   assert.equal(room.covered.size, 1);
-  room.tilled.delete('112,-2');
-  room.crops.delete('112,-2');
+  room.tilled.delete('252,-2');
+  room.crops.delete('252,-2');
   room.message(ann.p, { t: C.STATE, x: 0, y: 0.8, z: 5, yaw: 0, f: 1 });
   // what the builder's backpack is short of comes out of the chest: the owner's only, only what it costs, only what is there
   room.message(bo.p, { t: C.CHEST_PUT, item: 'wood', count: 3 });

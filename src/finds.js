@@ -1,5 +1,5 @@
 import { RARE } from '../shared/level.js';
-import { FARM_FINDS } from '../shared/balance.js';
+import { FARM_FINDS, FARM_FORAGE } from '../shared/balance.js';
 import { createItemMesh } from './itemmesh.js';
 
 // ---------- Finds on the farm ----------
@@ -11,17 +11,23 @@ import { createItemMesh } from './itemmesh.js';
 // gone when you set off.
 // (how often, how likely, and what: FARM_FINDS in shared/balance.js)
 //
+// Out in the valley round the old farm, what grows wild turns up the same
+// way, each biome its own (forage): mushrooms on the forest's moss,
+// bluebells in the glade, heather on the heath, seashells on the dunes...
+// (FARM_FORAGE), more often, and more of it lying about at once.
+//
 // What the farmer drops out of their backpack (drop()) lies about the same
 // way, but is kept with the farm (dropped(), restoreDropped()), and isn't
 // picked straight back up: not till they have stepped away from it.
 const { every: CHECK_EVERY, chance: CHANCE, two: TWO, most: MOST, loot: FINDS } = FARM_FINDS;
+const { every: FORAGE_EVERY, most: MOST_FORAGE, loot: FORAGE } = FARM_FORAGE;
 const FLOAT_Y = 0.6; // over the ground
 const REACH = 1.1; // from the farmer's middle, to pick one up
 const GROW = 0.4; // seconds to pop up
 
-function roll() {
-  let r = Math.random() * FINDS.reduce((sum, [, w]) => sum + w, 0);
-  for (const [item, w, min, max] of FINDS) {
+function roll(table = FINDS) {
+  let r = Math.random() * table.reduce((sum, [, w]) => sum + w, 0);
+  for (const [item, w, min, max] of table) {
     r -= w;
     if (r < 0) return [item, min + Math.floor(Math.random() * (max - min + 1))];
   }
@@ -29,19 +35,29 @@ function roll() {
 }
 
 // freeSpot(): somewhere on the farm for a find, { x, y, z } (y: the ground), or null.
+// forageSpot(): somewhere out in the valley for forage, { x, y, z, ground }, or null.
 // onPickUp(item, count): into the backpack; false if there was no room.
 // isItem(id): an item there is (a save is not to be trusted).
-export function createFarmFinds({ scene, freeSpot, onPickUp, isItem = () => true }) {
-  const finds = []; // { item, count, mesh, x, y, z, age, retryAt, own, away } (own: dropped by the farmer; away: they have stepped off it since)
+export function createFarmFinds({ scene, freeSpot, forageSpot = () => null, onPickUp, isItem = () => true }) {
+  const finds = []; // { item, count, mesh, x, y, z, age, retryAt, own, away, wild } (own: dropped by the farmer; away: they have stepped off it since; wild: forage)
   let wait = CHECK_EVERY;
+  let forageWait = FORAGE_EVERY;
 
-  function add(item, count, x, y, z, own = false, away = false) {
+  function add(item, count, x, y, z, own = false, away = false, wild = false) {
     const mesh = createItemMesh(item);
     mesh.position.set(x, y + FLOAT_Y, z);
     mesh.rotation.y = Math.random() * Math.PI * 2;
     mesh.scale.setScalar(0);
     scene.add(mesh);
-    finds.push({ item, count, mesh, x, y: y + FLOAT_Y, z, age: 0, retryAt: 0, own, away });
+    finds.push({ item, count, mesh, x, y: y + FLOAT_Y, z, age: 0, retryAt: 0, own, away, wild });
+  }
+
+  // something wild, in the biome of a spot out in the valley
+  function forage() {
+    const spot = forageSpot();
+    if (!spot || !FORAGE[spot.ground]) return;
+    const [item, count] = roll(FORAGE[spot.ground]);
+    add(item, count, spot.x, spot.y, spot.z, false, false, true);
   }
 
   function spawn() {
@@ -65,6 +81,7 @@ export function createFarmFinds({ scene, freeSpot, onPickUp, isItem = () => true
   function clear(all = false) {
     for (const find of [...finds]) if (all || !find.own) remove(find);
     wait = CHECK_EVERY;
+    forageWait = FORAGE_EVERY;
   }
 
   // What the farmer dropped, for the farm's save: [[item, count, x, y, z], ...]
@@ -91,11 +108,15 @@ export function createFarmFinds({ scene, freeSpot, onPickUp, isItem = () => true
     }
     if (counting && (wait -= dt) <= 0) {
       wait = CHECK_EVERY;
-      const lying = () => finds.filter((f) => !f.own).length; // (what the farmer dropped doesn't count)
+      const lying = () => finds.filter((f) => !f.own && !f.wild).length; // (what the farmer dropped doesn't count, nor forage)
       if (lying() < MOST && Math.random() < CHANCE) {
         spawn();
         if (lying() < MOST && Math.random() < TWO) spawn();
       }
+    }
+    if (counting && (forageWait -= dt) <= 0) {
+      forageWait = FORAGE_EVERY;
+      if (finds.filter((f) => f.wild).length < MOST_FORAGE) forage();
     }
     for (const find of [...finds]) {
       const { mesh } = find;
@@ -120,5 +141,12 @@ export function createFarmFinds({ scene, freeSpot, onPickUp, isItem = () => true
     return finds.length > before;
   }
 
-  return { update, clear, drop, dropped, restoreDropped, spawnNow, list: () => finds };
+  // (and forage)
+  function forageNow() {
+    const before = finds.length;
+    forage();
+    return finds.length > before;
+  }
+
+  return { update, clear, drop, dropped, restoreDropped, spawnNow, forageNow, list: () => finds };
 }

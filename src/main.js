@@ -4,6 +4,11 @@ import { createItemMesh, itemGeometry } from './itemmesh.js';
 import { createFarmFinds } from './finds.js';
 import { createInventory } from './inventory.js';
 import { createShop } from './shop.js';
+import { createNpcs } from './npcs.js';
+import { createDialog } from './dialog.js';
+import { renderQuests, renderMap } from './quests.js';
+import { npcHomes } from './npchomes.js';
+import { NPCS, NPC_IDS } from '../shared/npcs.js';
 import { createRequests } from './requests.js';
 import { createChest } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
@@ -38,7 +43,7 @@ import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../sh
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, GLIDE, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
 import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap, movedKey } from '../shared/level.js';
 import { CROPS, createCropView, BEAN_LEDGES } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { createSeasons } from './seasons.js';
@@ -53,12 +58,12 @@ import { arenaMap, buildCrown } from './arenas.js';
 import { spawnPoint } from '../shared/level.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { CAST_REACH, waterOn } from '../shared/fishing.js';
-import { HOME_HALF } from '../shared/farmland.js';
+import { HOME_HALF, OLD_HALF, farmBlocked, inLake } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
 import { createBosses } from './bosses.js';
-import { BOSSES, SHOP, MINIGAMES, WATERED_GROWTH } from '../shared/balance.js';
+import { BOSSES, SHOP, MINIGAMES, WATERED_GROWTH, FARM_FORAGE } from '../shared/balance.js';
 import { portalOf } from '../shared/bosses.js';
 import { createSkills } from './skills.js';
 import { SKILL_LIST } from '../shared/skills.js';
@@ -239,7 +244,7 @@ let wildIsland = null; // the wild island we are on, in a lobby (shared/worldgen
 // The sea around every island; it fades into the fog toward the horizon
 const WATER_Y = SEA_LEVEL;
 const water = new THREE.Mesh(
-  new THREE.PlaneGeometry(400, 400),
+  new THREE.PlaneGeometry(1000, 1000), // (out to the bosses' arenas and the neighbours' rooms, and beyond)
   addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8fbf, roughness: 0.2, metalness: 0.1 }))
 );
 water.rotation.x = -Math.PI / 2;
@@ -260,12 +265,14 @@ const inventory = createInventory({
   },
   onEat: (id) => eat(id, false),
   onDrop: ({ id, count }) => dropFromBackpack(id, count),
-  buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : farmVisit?.visitor ? 'You\'re looking round: only the farm\'s helpers build here.' : houseRoom.inside(player.position) ? 'You build outside: head out of the house first.' : ''),
+  buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : farmVisit?.visitor ? 'You\'re looking round: only the farm\'s helpers build here.' : indoors() ? 'You build outside: head out of the house first.' : ''),
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
   renderSkills: (el) => skills.render(el),
   renderFish: (el) => fishLog.render(el),
   renderBook: (el) => book.render(el),
+  renderQuests: (el) => renderQuests(el, npcs, missionCtx()),
+  renderMap: (el) => renderMap(el, whereOnFarm()),
 });
 
 // ---------- Skills ----------
@@ -1575,7 +1582,7 @@ function updateMenuCamera(t) {
 const keys = new Set();
 let jumpPressed = false; // (a press shorter than a frame still jumps)
 let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
-const menuOpen = () => inventory.isOpen() || shop.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen() || trade.isOpen();
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || dialog.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen() || trade.isOpen();
 const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping() || partyFrozen();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked()) return;
@@ -1614,6 +1621,7 @@ function useAction() {
     return;
   }
   if (building) return buildHere();
+  if (useNpc()) return;
   if (fishing.use()) return;
   if (houseDoorInReach()) return goInside();
   if (houseRoom.exitInReach(player.position)) return goOutside();
@@ -1648,12 +1656,23 @@ function tendAnimal(animal) {
   if (!asked && pettedOn.get(animal) !== day) {
     pettedOn.set(animal, day);
     skills.gain('animals', SKILLS.xp.pet);
+    npcs.did('pet'); // (Rosa likes to hear of it: shared/npcs.js)
   }
   anim.squash = 0.15;
 }
 
 // (in the house, just its field)
 const offField = (tx, tz) => houseRoom.inside(player.position) && !inHouseField(...keyXZ(tileKeyFor(tx, tz)));
+// Why the tile at x, z out on the farm isn't farmed ('': it is): in the lake,
+// on a neighbour's place, in a neighbour's room, or out on the shore
+function notFarmland(x, z) {
+  if (place !== 'home' || houseRoom.inside(player.position)) return '';
+  if (npcs.inside(player.position)) return 'Farm on your own land, not in a neighbour\'s house';
+  const [gx, gz] = tileKeyFor(x, z).split(',').map(Number);
+  if (Math.max(Math.abs(gx), Math.abs(gz)) > FARM_EDGE + 1) return 'Too close to the water';
+  const blocked = farmBlocked(gx, gz);
+  return blocked === 'lake' ? 'That\'s the lake' : blocked ? 'That\'s a neighbour\'s place: farm on your own land' : '';
+}
 
 // The tiles the hoe in hand tills from x, z: a better hoe more round it,
 // `tills` [across, ahead] of the way the farmer faces (where there is room).
@@ -1669,7 +1688,7 @@ function tilesAhead(x, z, [wide, deep] = [1, 1]) {
   for (const j of span(deep)) for (const k of span(wide)) {
     const tx = x + (across[0] * k + ahead[0] * j) * TILE_SIZE;
     const tz = z + (across[1] * k + ahead[1] * j) * TILE_SIZE;
-    if (!(k || j) || (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz))) tiles.push([tx, tz]);
+    if (!(k || j) || (!buildings.get(tileKeyFor(tx, tz)) && !inPen(tx, tz) && !offField(tx, tz) && !notFarmland(tx, tz))) tiles.push([tx, tz]);
   }
   return tiles;
 }
@@ -1686,6 +1705,10 @@ function farmHere(x, z) {
   }
   if (offField(x, z) && (holding() === 'hoe' || ITEMS[held]?.plants)) {
     inventory.notify('Farm in the field: the earth on the left');
+    return;
+  }
+  if (notFarmland(x, z) && (holding() === 'hoe' || ITEMS[held]?.plants)) {
+    inventory.notify(notFarmland(x, z));
     return;
   }
   if (holding() === 'can') {
@@ -1773,7 +1796,7 @@ function useHint() {
   const crop = crops.get(key);
   if (crop?.ripe && CROPS[crop.cropId].produce) return crop.pending || CROPS[crop.cropId].climb ? '' : `Harvest ${ITEMS[CROPS[crop.cropId].produce].name.toLowerCase()}`; // (a beanstalk's from the top)
   const held = inventory.selectedId();
-  if (inPen(x, z) || offField(x, z)) return '';
+  if (inPen(x, z) || offField(x, z) || notFarmland(x, z)) return '';
   if (holding() === 'can') return canTiles(x, z).some(([tx, tz]) => needsWater(tileKeyFor(tx, tz))) ? 'Water' : '';
   if (holding() === 'hoe' && crop && CROPS[crop.cropId].again) return crop.pending ? '' : `Dig up the ${CROPS[crop.cropId].name}`;
   if (holding() === 'hoe') return !buildings.get(key) && hoeTiles(x, z).some(([tx, tz]) => !farmTiles.has(tileKeyFor(tx, tz))) ? 'Till' : '';
@@ -2112,6 +2135,13 @@ function tappedThing() {
     things.set(houseRoom.kitchen, { kind: 'kitchen', ...houseRoom.kitchenSpot() });
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
+    // the neighbours (to talk to), their homes (to go in) and their rooms' doors (to come out)
+    for (const [id, root] of npcs.roots()) if (!npcs.asleep(id)) things.set(root, { kind: 'npc', id, x: root.position.x, z: root.position.z });
+    for (const [id, home] of Object.entries(npcHomes.outside)) {
+      const at = npcs.outside(id);
+      things.set(home, { kind: 'npcdoor', id, x: at.x, z: at.z - 0.3 });
+    }
+    for (const [id, room] of Object.entries(npcHomes.rooms)) things.set(room.door, { kind: 'npcexit', id, x: room.exit.x, z: room.exit.z - 0.3 });
     for (const animal of animals.list()) if (animal.root.visible) things.set(animal.root, { kind: 'animal', animal, x: animal.pos.x, z: animal.pos.z });
     // (the farm's trees with the axe in hand, its rocks with the pickaxe: otherwise a tap there is for the tile)
     if (holding() === 'axe') for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, { kind: 'tree', tree, x: tree.x, z: tree.z });
@@ -2155,6 +2185,9 @@ function stopWalking() {
 function arrived(d) {
   switch (walk.kind) {
     case 'stall': return atStall(player.position);
+    case 'npc': return npcs.talkable(player.position) === walk.id;
+    case 'npcdoor': return npcs.doorInReach(player.position) === walk.id;
+    case 'npcexit': return npcs.exitInReach(player.position) === walk.id;
     case 'chest': return chest.inReach(player.position);
     case 'door': return houseDoorInReach();
     case 'exit': return houseRoom.exitInReach(player.position);
@@ -2174,7 +2207,7 @@ function arrived(d) {
 
 // Then do what the tap was for
 function arrive() {
-  const { kind, farm, spot, tree, rock, animal, key, x, z } = walk;
+  const { kind, farm, spot, tree, rock, animal, key, x, z, id: walk_id } = walk;
   stopWalking();
   if (['build', 'workbench', 'machine', 'chest', 'animal', 'tree', 'rock'].includes(kind) || (kind === 'tile' && farm)) {
     if (justLooking()) return; // (a visitor)
@@ -2186,6 +2219,9 @@ function arrive() {
   else if (kind === 'machine') useMachine(key);
   else if (kind === 'kitchen') cooking.openKitchen();
   else if (kind === 'stall') shop.open();
+  else if (kind === 'npc') dialog.open(walk_id);
+  else if (kind === 'npcdoor') goIntoHome(walk_id);
+  else if (kind === 'npcexit') goOutOfHome(walk_id);
   else if (kind === 'chest') chest.open();
   else if (kind === 'door') goInside();
   else if (kind === 'exit') goOutside();
@@ -2219,6 +2255,7 @@ function justLooking() {
 
 // E, looking round
 function lookRound() {
+  if (useNpc()) return;
   if (fishing.use()) return;
   if (houseDoorInReach()) return goInside();
   if (houseRoom.exitInReach(player.position)) return goOutside();
@@ -2231,6 +2268,8 @@ function lookRound() {
 
 // What E does for a visitor, for the prompt
 function lookRoundPrompt() {
+  const npc = npcPrompt();
+  if (npc) return npc;
   const fish = fishing.prompt();
   if (fish) return fish;
   if (houseDoorInReach()) return 'E  Go inside';
@@ -2269,6 +2308,7 @@ function steer(dt) {
   const none = { x: 0, z: 0 };
   if (!walk) return none;
   if (walk.kind === 'animal') ({ x: walk.x, z: walk.z } = walk.animal.pos); // (she wanders off)
+  if (walk.kind === 'npc') ({ x: walk.x, z: walk.z } = npcs.roots().find(([id]) => id === walk.id)[1].position); // (so might they)
   if (walk.kind === 'farmer') {
     const pos = remotes.positionOf(walk.id); // (they run off)
     if (!pos) {
@@ -2355,7 +2395,7 @@ function goOutside() {
   anim.facing = 0; // (toward the camera)
 }
 const BUILD_REACH = 2.4; // a tile this close is built on from where you stand (the farm's room allows 2.6)
-const FARM_EDGE = 27; // tiles out to here (the farm's room allows 28)
+const FARM_EDGE = HOME_HALF - 3; // tiles out to here (the farm's room allows one more)
 let building = null; // build mode: a PIECES id, or 'remove'
 let builtKey = null; // the tile E last built on (holding E builds on each new one)
 let mouseAt = null; // where the mouse is over the screen, while build mode aims with it
@@ -2422,7 +2462,7 @@ const farmHelpers = () => (farmVisit ? farmVisit.helpers : farmSync.farm?.helper
 // Why the piece in hand can't go on (or come off) tile key ('': it can)
 function buildProblemAt(key) {
   if (!player.onGround || Math.abs(player.position.y - GROUND_STAND_Y) > 0.05) return 'Stand on the ground to build';
-  if (houseRoom.inside(player.position)) return 'Build outside the house';
+  if (indoors()) return 'Build outside the house';
   if (!inBuildReach(key)) return onOwnTile(key) ? 'Step off it first' : 'Too far: click it to walk over';
   if (building === 'remove') {
     const piece = buildings.get(key);
@@ -2455,6 +2495,7 @@ function tileProblem(key, piece) {
   if (buildings.get(key)) return 'Something is built there';
   if (farmTiles.has(key)) return 'That soil is tilled';
   if (Math.max(Math.abs(gx), Math.abs(gz)) > FARM_EDGE) return 'Too close to the water';
+  if (farmBlocked(gx, gz)) return farmBlocked(gx, gz) === 'lake' ? 'That\'s the lake' : 'That\'s a neighbour\'s place: build on your own land';
   if (keptClear(gx, gz)) return 'Keep that spot clear for farmers arriving';
   if (inPen(x, z)) return 'That\'s the animals\' pen';
   if (piece.solid && Math.hypot(x - TRADE_SPOT.x, z - TRADE_SPOT.z) < 1.2) return 'Keep the way to the stall clear';
@@ -2622,6 +2663,7 @@ function waterAt(x, z) {
     return what && { water: 'lobby', y: what === 'sea' ? WATER_Y : LOBBY_POND_Y };
   }
   if (Math.max(Math.abs(x), Math.abs(z)) > HOME_HALF + 0.5) return { water: 'sea', y: WATER_Y };
+  if (inLake(x, z)) return { water: 'pond', y: LOBBY_POND_Y }; // (the valley's lake: a pond's fish, shared/fishing.js)
   const pond = buildings.get(tileKeyFor(x, z)) === 'pond' && buildings.anchor(tileKeyFor(x, z));
   if (!pond) return null;
   const [px, pz] = keyXZ(pond);
@@ -2684,13 +2726,14 @@ const ripples = createRipples(scene);
 const inContest = () => place === 'lobby' && !!arenaId && partyGame?.kind === 'fishing_contest';
 const fishing = createFishing({
   scene, farmer, player, inventory, hud, touch, ripples,
-  waterAhead: () => (player.onGround && !menuOpen() && !houseRoom.inside(player.position) ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
+  waterAhead: () => (player.onGround && !menuOpen() && !indoors() ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
   hour: () => dayNight.hour(),
   lobby: () => (place === 'lobby' ? net : null),
   rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : inContest() && !weaponInHand() ? 'fishing_rod' : null),
   skill: () => skills.level('fishing'),
   landed(item, grams) {
     skills.gain('fishing', SKILLS.xp.fish);
+    if (isFish(item)) npcs.did('fish'); // (and Finn: shared/npcs.js)
     return fishLog.landed(item, grams);
   },
   sooner: () => boostOf(meal, 'bite'),
@@ -2700,7 +2743,7 @@ const fishShadows = createFishShadows({ scene, ripples, player, regions: fishReg
 // Where the fish under the water swim now (fishshadows.js): along the shore
 // of the island we are on (near us), and in its ponds
 function fishRegions() {
-  if (place === 'title' || houseRoom.inside(player.position) || bosses.inArena()) return [];
+  if (place === 'title' || indoors() || bosses.inArena()) return [];
   const near = (inside, y) => ({
     inside,
     y,
@@ -2742,7 +2785,8 @@ function fishRegions() {
     const m = Math.max(Math.abs(x), Math.abs(z));
     return m > HOME_HALF + 0.8 && m < HOME_HALF + 4;
   };
-  const list = [{ key: 'farm-sea', n: 6, ...near(edge, WATER_Y) }];
+  const lake = (x, z) => [[0, 0], [0.7, 0], [-0.7, 0], [0, 0.7], [0, -0.7]].every(([dx, dz]) => inLake(x + dx, z + dz));
+  const list = [{ key: 'farm-sea', n: 6, ...near(edge, WATER_Y) }, { key: 'farm-lake', n: 4, ...near(lake, LOBBY_POND_Y) }];
   for (const [key, piece] of buildings.list()) {
     if (piece !== 'pond') continue;
     const [px, pz] = keyXZ(key);
@@ -2792,7 +2836,115 @@ const shop = createShop({
   inventory,
   requests: createRequests({ day: () => dayNight.day(), inventory }),
   onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
+  known: (id) => !!ITEMS[id]?.recipe && learned.has(ITEMS[id].recipe), // (a recipe in the book already)
 });
+
+// ---------- The neighbours ----------
+// Rosa, Basil, Finn and Mabel (shared/npcs.js), in and about their homes out
+// in the valley (src/npcs.js, src/npchomes.js), on the farm's world. E (or a
+// tap) at one talks to them (src/dialog.js): a chat, their shop (once you
+// have done what opens it) and what they would like you to do. E at their
+// door goes in (their room is out past the sea, as the house's is), and E at
+// the door inside comes back out. Where you stand with them is yours, saved
+// with your backpack.
+const npcs = createNpcs({ parent: worlds.home.root, inventory });
+const missionCtx = () => ({
+  have: (item) => inventory.count(item),
+  built: (piece) => (place === 'home' ? buildings.findAll(piece).length : 0),
+});
+const dialog = createDialog({
+  npcs,
+  day: () => dayNight.day(),
+  hour: () => dayNight.hour(),
+  ctx: missionCtx,
+  onShop: (id) => openNpcShop(id),
+  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  notify: (text) => inventory.notify(text),
+  onDone: ({ mission, gold, items }) => {
+    sound.play('cheer');
+    hud.flash(`${NPCS[mission.npc].name}: ${mission.title}!`);
+    const got = [gold && `${gold}g`, ...items.map(([item, n]) => `${n > 1 ? `${n} × ` : ''}${ITEMS[item].name}`)].filter(Boolean);
+    if (got.length) inventory.notify(`From ${NPCS[mission.npc].name}: ${got.join(', ')}`);
+    if (mission.gives.opens === 'shop') inventory.notify(`${NPCS[mission.npc].title} is open to you now`);
+    readyNoted.delete(mission.id);
+    saveGame();
+  },
+});
+// A neighbour's shop (src/shop.js): their shelves, those not open to you
+// yet locked, at their prices less a friend's discount
+function openNpcShop(id) {
+  const npc = NPCS[id];
+  shop.open({
+    title: npc.title,
+    shelves: npc.shop.shelves.map(({ title, items }) => ({ title, items, locked: !npcs.shopOpen(id, title), lockText: `do more for ${npc.name}` })),
+    lines: { hello: npc.lines.shop, bought: npc.lines.bought },
+    request: false,
+    discount: npcs.discount(id),
+  });
+}
+// E at a neighbour (or their door, outside or in): true if it did something
+function useNpc() {
+  if (place !== 'home') return false;
+  const door = npcs.doorInReach(player.position);
+  if (door) return goIntoHome(door), true;
+  const out = npcs.exitInReach(player.position);
+  if (out) return goOutOfHome(out), true;
+  const who = npcs.talkable(player.position);
+  if (who) return dialog.open(who), true;
+  return false;
+}
+// ...and what it does, for the prompt ('': nothing of theirs)
+function npcPrompt() {
+  if (place !== 'home') return '';
+  const door = npcs.doorInReach(player.position);
+  if (door) return `E  Go into ${NPCS[door].title}`;
+  if (npcs.exitInReach(player.position)) return 'E  Go outside';
+  const who = npcs.talkable(player.position);
+  if (who) return npcs.asleep(who) ? `${NPCS[who].name} is asleep` : `E  Talk to ${NPCS[who].name}`;
+  return '';
+}
+function goIntoHome(id) {
+  const { x, z } = npcs.entry(id);
+  putDown({ x, y: GROUND_STAND_Y, z });
+  anim.facing = Math.PI; // (into the room)
+  if (npcs.asleep(id)) inventory.notify(NPCS[id].lines.asleep);
+}
+function goOutOfHome(id) {
+  const { x, z } = npcs.outside(id);
+  putDown({ x, y: GROUND_STAND_Y, z });
+  anim.facing = 0; // (toward the camera)
+}
+// in the house's room or a neighbour's
+const indoors = () => houseRoom.inside(player.position) || !!npcs.inside(player.position);
+// Where we are out on the farm, for the map: in a neighbour's room, at
+// their door; in the house, at its door; null away from the farm
+function whereOnFarm() {
+  if (place !== 'home') return null;
+  const room = npcs.inside(player.position);
+  if (room) return npcs.outside(room);
+  if (houseRoom.inside(player.position)) {
+    const house = buildings.find('house');
+    return house ? houseDoorAt(house) : null;
+  }
+  const { x, z } = player.position;
+  return Math.max(Math.abs(x), Math.abs(z)) <= HOME_HALF + 2 ? { x, z } : null;
+}
+
+// A word when a request you have heard is ready to hand over (once, till it is)
+const readyNoted = new Set();
+let readyCheck = 0;
+function watchRequests(dt) {
+  if ((readyCheck -= dt) > 0) return;
+  readyCheck = 1;
+  for (const id of NPC_IDS) {
+    const st = npcs.status(id, missionCtx());
+    if (!st.mission || !st.heard) continue;
+    if (st.ready && !readyNoted.has(st.mission.id)) {
+      readyNoted.add(st.mission.id);
+      inventory.notify(`Ready for ${NPCS[id].name}: ${st.mission.title}`);
+    } else if (!st.ready) readyNoted.delete(st.mission.id);
+  }
+}
 // Now and then something turns up on the farm, to walk into (finds.js):
 // out on the grass, with nothing tilled, fenced in or standing there (the
 // stall, a platform, a tree, something built), and not right underfoot
@@ -2810,7 +2962,24 @@ function freeFarmSpot() {
   }
   return null;
 }
-const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, onPickUp: (item, count) => inventory.add(item, count), isItem: (id) => !!ITEMS[id] });
+// ...and out in the valley, forage: on a biome's ground (FARM_FORAGE), out
+// past the old farm, clear of what stands there, not right underfoot
+function forageSpot() {
+  const h = 0.45;
+  for (let tries = 0; tries < 40; tries++) {
+    const x = (Math.random() * 2 - 1) * (HOME_HALF - 1);
+    const z = (Math.random() * 2 - 1) * (HOME_HALF - 1);
+    if (Math.max(Math.abs(x), Math.abs(z)) < OLD_HALF) continue;
+    const ground = HOME.tileType(Math.round(x), Math.round(z));
+    if (!FARM_FORAGE.loot[ground] || farmTiles.has(tileKeyFor(x, z)) || buildings.get(tileKeyFor(x, z))) continue;
+    if (world.platforms.some((box) => !box.ground && box.min.y < 2.2 && box.min.x < x + h && box.max.x > x - h && box.min.z < z + h && box.max.z > z - h)) continue;
+    if (world.rocks.some((rock) => rock.state === 'up' && Math.hypot(rock.x - x, rock.z - z) < rock.radius + 0.6)) continue;
+    if (Math.hypot(x - player.position.x, z - player.position.z) < 4) continue;
+    return { x, y: 0, z, ground };
+  }
+  return null;
+}
+const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, forageSpot, onPickUp: (item, count) => inventory.add(item, count), isItem: (id) => !!ITEMS[id] });
 
 // Put down what the backpack's window carries (inventory.js onDrop), at our
 // feet: in a lobby, or on a farm with helpers, its room has it, for anyone to
@@ -4106,9 +4275,10 @@ function showFarm(farm) {
   dayNight.setTime(farm.hours + (away / DAY_LENGTH_SECONDS) * 24);
   // (soil left bare while we were away may have gone back to grass; a save
   // from before it did that has just the keys)
-  const growing = new Set(farm.crops.filter(([, cropId]) => CROPS[cropId]).map(([key]) => key));
+  const growing = new Set(farm.crops.filter(([, cropId]) => CROPS[cropId]).map(([key]) => movedKey(key)));
   for (const t of farm.tilled) {
-    const [key, bare, life = soilLife()] = Array.isArray(t) ? t : [t, 0];
+    const [was, bare, life = soilLife()] = Array.isArray(t) ? t : [t, 0];
+    const key = movedKey(was); // (the house's field, where it was before the farm grew)
     const bareNow = growing.has(key) ? 0 : (bare || 0) + away;
     if (bareNow < life) tillTileAt(...keyXZ(key), bareNow, life);
   }
@@ -4119,7 +4289,8 @@ function showFarm(farm) {
   // (rain while we were away watered what was growing then: shared/weather.js)
   const rained = rainSince(farm.hours, farmHours());
   const hour = DAY_LENGTH_SECONDS / 24;
-  for (const [key, cropId, age, watered] of farm.crops) {
+  for (const [was, cropId, age, watered] of farm.crops) {
+    const key = movedKey(was);
     if (!CROPS[cropId]) continue;
     const wet = watered || (rained !== null && age + (rained - farm.hours) * hour < CROPS[cropId].growTime);
     const rainy = wet && !watered ? (farmHours() - rained) * hour * (WATERED_GROWTH - 1) : 0; // (growing faster from when it came)
@@ -4130,7 +4301,7 @@ function showFarm(farm) {
 
 function currentSave() {
   if (farmOnScreen) homeFarm = captureFarm();
-  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)] };
+  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize() };
 }
 
 function saveGame() {
@@ -4174,6 +4345,7 @@ function useSave(save) {
   skills.restore(save.skills); // (none before v8: everything at level 1)
   fishLog.restore(save.fishlog); // (none before the journal: nothing landed yet)
   book.restore(save.found); // (none before the book: what is in the backpack, below)
+  npcs.restore(save.npcs); // (none before the neighbours: nobody met yet)
   for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
   homeFarm = save.farm ?? null;
   bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
@@ -4357,6 +4529,9 @@ function update(dt) {
     remotes.update(dt, t);
   } else {
     merchant.update(dt, t, player.position);
+    npcs.update(dt, t, player.position, dayNight.hour());
+    npcHomes.animate(t);
+    watchRequests(dt);
     chest.update(dt);
     if (place === 'home') {
       updateChopping();
@@ -4405,13 +4580,14 @@ function update(dt) {
   if (place === 'home') rainOnCrops(hoursBefore - 24, farmHours()); // (hoursBefore counts from day 1's end)
   buildings.setNight(dayNight.night(), player.position);
   const season = place !== 'lobby' ? seasons.update(dayNight.day(), dayNight.hour(), dayNight.night()) : null; // (a lobby's island keeps its own)
-  const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: houseRoom.inside(player.position) });
+  const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: indoors() });
   dayNight.setNote(season && (sky ? `${season} · ${sky}` : season));
   machines.update(farmHours(), t, dt);
   updateMeal(dt);
   houseRoom.setNight(dayNight.night());
+  npcHomes.setNight(dayNight.night());
   houseRoom.update(t, player.position);
-  seasons.frame(dt, { home: place !== 'lobby', focus: houseRoom.inside(player.position) ? null : player.position });
+  seasons.frame(dt, { home: place !== 'lobby', focus: indoors() ? null : player.position });
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
@@ -4430,6 +4606,8 @@ function homePrompt() {
   if (farmVisit?.visitor) return lookRoundPrompt();
   const boss = bosses.prompt();
   if (boss || bosses.inArena()) return boss;
+  const npc = npcPrompt();
+  if (npc) return npc;
   const fish = fishing.prompt();
   if (fish) return fish;
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
@@ -4488,7 +4666,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, weather };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, weather };
 }
 
 loadGame();

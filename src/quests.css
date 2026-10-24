@@ -1,0 +1,30 @@
+/* The bag's Quests and Map tabs (src/quests.js): .inv-skills gives the width */
+.inv-quests, .inv-map { max-height: min(66vh, 600px); overflow-y: auto; }
+.quests-intro { font-size: 20px; opacity: 0.85; margin: 2px 0 8px; }
+.quest-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--inv-slot-bg);
+  border-radius: 4px;
+  box-shadow: inset 3px 3px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
+}
+.quest-face { width: 56px; height: 56px; flex: none; image-rendering: pixelated; border: 3px solid var(--inv-outline); border-radius: 6px; background: #fde6b4; }
+.quest-body { flex: 1; min-width: 0; }
+.quest-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.quest-name { font-size: 24px; font-weight: 700; }
+.quest-hearts { font-family: system-ui, sans-serif; font-size: 16px; letter-spacing: 1px; color: #d8344f; white-space: nowrap; }
+.quest-meta { font-size: 18px; opacity: 0.8; }
+.quest-text { font-size: 20px; margin-top: 2px; }
+.quest-text.done { color: #2f7f24; }
+.quest-title { font-size: 21px; font-weight: 700; margin-top: 2px; }
+.quest-title.ready { color: #2f7f24; }
+.quest-needs { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 19px; }
+.quest-need { display: inline-flex; align-items: center; gap: 4px; }
+.quest-need .inv-icon { width: 22px; height: 22px; }
+.quest-need.ok { color: #2f7f24; }
+.valley-map { display: block; width: 100%; max-width: 423px; margin: 0 auto; image-rendering: pixelated; border: 3px solid var(--inv-outline); border-radius: 6px; }
+:root.compact .quest-name { font-size: 19px; }
+:root.compact .quest-text, :root.compact .quest-title { font-size: 17px; }

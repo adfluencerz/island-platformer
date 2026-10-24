@@ -1,30 +1,33 @@
 import './shop.css';
 import { ITEMS, spriteURL } from './items.js';
 import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
+import { MERCHANT_STOCK } from '../shared/balance.js';
 import { el, button } from './ui/dom.js';
 
-// ---------- The merchant's shop ----------
-// Opened with E at the stall on the home farm (merchant.js). Today's request
-// first (src/requests.js: some of one thing, for good gold); what is for sale,
-// on its shelves (seeds, animals, tools...); below, your backpack (toolbar row
-// first), to sell from. Prices are the items' own `price` and `sell` (items.js).
+// ---------- A shop ----------
+// Opened with E at the merchant's stall on the home farm (merchant.js), or
+// from a neighbour's Shop button (src/dialog.js): one window, filled each
+// time with whose shop it is (open(config)). The merchant has today's request
+// first (src/requests.js: some of one thing, for good gold); then what is for
+// sale, on its shelves (a neighbour's shelves may be locked till you have
+// done more for them); below, your backpack (toolbar row first), to sell
+// from: every shop buys what the merchant does. Prices are the items' own
+// `price` and `sell` (items.js), less what a neighbour takes off for a
+// friend (config.discount).
 //
 //   click something to buy  buy one (shift: five)
 //   click a backpack slot   sell the whole stack
 //   right click a slot      sell one
 //   E / Esc / ×             close
 
-// What the merchant has for sale: every item with a price, on a shelf for
-// its kind (its category in items.js), the shelves in this order (any other
-// kind after them) and each cheapest first: [[title, ids], ...]
-const SHELVES = { Seed: 'Seeds', Animal: 'Animals', Tool: 'Tools', Fishing: 'Fishing tackle', Recipe: 'Recipes' };
-const FOR_SALE = Object.keys(ITEMS).filter((id) => ITEMS[id].price);
-const STOCK = [...new Set([...Object.keys(SHELVES), ...FOR_SALE.map((id) => ITEMS[id].category)])]
-  .map((kind) => [
-    SHELVES[kind] ?? kind,
-    FOR_SALE.filter((id) => ITEMS[id].category === kind).sort((a, b) => ITEMS[a].price - ITEMS[b].price || ITEMS[a].name.localeCompare(ITEMS[b].name)),
-  ])
-  .filter(([, ids]) => ids.length);
+// The merchant sells the basics now (MERCHANT_STOCK), on a shelf for each
+// kind (its category in items.js), cheapest first; the neighbours have the
+// rest (shared/npcs.js)
+const SHELF_NAMES = { Seed: 'Seeds', Animal: 'Animals', Tool: 'Tools', Fishing: 'Fishing tackle', Recipe: 'Recipes' };
+const MERCHANT_SHELVES = [...new Set(MERCHANT_STOCK.map((id) => ITEMS[id].category))].map((kind) => ({
+  title: SHELF_NAMES[kind] ?? kind,
+  items: MERCHANT_STOCK.filter((id) => ITEMS[id].category === kind).sort((a, b) => ITEMS[a].price - ITEMS[b].price),
+}));
 
 const BULK = 5;
 
@@ -34,6 +37,9 @@ const LINES = {
     'Ah, my favourite farmer! What can I do for you?',
     'Lovely day for planting, isn\'t it?',
     'Got anything good from the fields today?',
+    'Just the basics here, friend. The neighbours have the rest: Rosa, Basil, Finn and Mabel.',
+    'Rosa\'s the one for animals, out west. Basil sells every seed there is, east past the fields.',
+    'Finn has the fishing tackle, down on the dunes. And Mabel, up at the woods, sells her recipes.',
   ],
   bought: ['Plant them somewhere sunny!', 'Good choice. They grow like anything.', 'Happy growing!'],
   boughtAnimal: ['Look after her, now!', 'She\'ll be happy on your farm.', 'Off to her new home!'],
@@ -43,8 +49,12 @@ const LINES = {
   full: ['Your bag\'s full to bursting, friend!'],
   noSale: ['Oh no, you hang on to that.', 'That\'s not something I can buy, I\'m afraid.'],
   thanks: ['Just what I needed! Thank you kindly.', 'Wonderful, you\'ve saved my day!', 'Perfect! Here, this is for you.'],
+  known: ['You know that one already!'],
+  locked: ['That\'s not for sale to you just yet.'],
 };
 const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
+// The merchant's shop (open() with nothing)
+export const MERCHANT = { title: 'Merchant', shelves: MERCHANT_SHELVES, lines: LINES, request: true, discount: 0 };
 
 const coinImg = (parent) => {
   const img = el('img', 'inv-icon shop-coin', parent);
@@ -54,14 +64,18 @@ const coinImg = (parent) => {
 };
 
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
-// requests: today's request (src/requests.js), or none.
-export function createShop({ inventory, onOpenChange, requests = null }) {
+// requests: the merchant's request of the day (src/requests.js), or none.
+// known(id): a recipe already in the book (not to be bought again).
+export function createShop({ inventory, onOpenChange, requests = null, known = () => false }) {
   let open = false;
+  let shop = MERCHANT; // whose shop it is: { title, shelves: [{ title, items, locked, lockText }], lines, request, discount }
+  const lines = (kind) => shop.lines[kind] ?? LINES[kind];
+  const priceOf = (id) => Math.max(1, Math.round(ITEMS[id].price * (1 - (shop.discount ?? 0))));
 
   const menuEl = el('div', 'inv-menu shop-menu', document.body);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame shop-window', menuEl);
-  el('div', 'inv-tab inv-frame', windowEl, 'Merchant');
+  const tabEl = el('div', 'inv-tab inv-frame', windowEl, 'Merchant');
   const closeBtn = button('inv-close', windowEl, '×', () => setOpen(false));
   closeBtn.title = 'Close (E / Esc)';
 
@@ -82,22 +96,30 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
 
   el('div', 'shop-heading', windowEl, 'For sale');
   const stockEl = el('div', 'shop-stock', windowEl);
-  const stockViews = STOCK.flatMap(([title, ids]) => {
-    el('div', 'shop-shelf', stockEl, title);
-    return ids.map(stockRow);
-  });
-  function stockRow(id) {
+  let stockViews = [];
+  // (the shelves of whose shop it is, afresh each time it opens)
+  function fillStock() {
+    stockEl.replaceChildren();
+    stockViews = shop.shelves.flatMap(({ title, items, locked, lockText }) => {
+      const shelf = el('div', 'shop-shelf', stockEl, title);
+      if (locked) el('span', 'shop-lock', shelf, lockText ?? 'not yet');
+      return items.map((id) => stockRow(id, locked));
+    });
+  }
+  function stockRow(id, locked) {
     const def = ITEMS[id];
     const row = button('shop-item', stockEl);
     row.dataset.buy = id;
+    row.classList.toggle('locked', !!locked);
     const icon = el('img', 'inv-icon', row);
     icon.src = spriteURL(def);
     icon.alt = '';
     el('span', 'shop-item-name', row, def.name);
     const price = el('span', 'shop-price', row);
     coinImg(price);
-    el('span', '', price, `${def.price}g`);
-    return { id, row };
+    const cost = el('span', '', price, `${priceOf(id)}g`);
+    if (priceOf(id) < def.price) cost.classList.add('shop-cheaper'); // (a friend's price)
+    return { id, row, locked };
   }
 
   el('div', 'shop-heading', windowEl, 'Sell from your backpack');
@@ -129,7 +151,10 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
     renderAsk();
     const gold = inventory.gold();
     fundsText.textContent = `${gold.toLocaleString()}g`;
-    for (const { id, row } of stockViews) row.classList.toggle('poor', gold < ITEMS[id].price);
+    for (const { id, row } of stockViews) {
+      row.classList.toggle('poor', gold < priceOf(id));
+      row.classList.toggle('known', known(id));
+    }
     slotViews.forEach((view, i) => {
       const stack = inventory.slot(i);
       view.img.hidden = !stack;
@@ -140,7 +165,8 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
   }
 
   function renderAsk() {
-    if (!requests) return;
+    askEl.hidden = !(requests && shop.request);
+    if (askEl.hidden) return;
     const r = requests.today();
     const def = ITEMS[r.item];
     const have = inventory.count(r.item);
@@ -154,8 +180,8 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
     askBtn.textContent = `Hand over (${Math.min(have, r.count)}/${r.count})`;
   }
 
-  function say(lines) {
-    sayEl.textContent = pick(lines);
+  function say(said) {
+    sayEl.textContent = pick(said);
     sayEl.classList.remove('bump');
     void sayEl.offsetWidth; // restart the animation
     sayEl.classList.add('bump');
@@ -170,8 +196,10 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
   function showTooltip(target, x, y) {
     let html = null;
     if (target?.dataset.buy) {
-      const def = ITEMS[target.dataset.buy];
-      html = tooltipHTML(def, `${def.price}g each · Shift+click: ${BULK} for ${def.price * BULK}g`);
+      const id = target.dataset.buy;
+      const def = ITEMS[id];
+      const view = stockViews.find((v) => v.id === id);
+      html = tooltipHTML(def, view?.locked ? 'Not for sale to you yet' : known(id) ? 'In your recipe book already' : `${priceOf(id)}g each · Shift+click: ${BULK} for ${priceOf(id) * BULK}g`);
     } else if (target?.dataset.sell) {
       const stack = inventory.slot(Number(target.dataset.sell));
       if (stack) {
@@ -201,12 +229,15 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
 
   // ---------- Trading ----------
   function buy(id, count) {
-    const cost = ITEMS[id].price * count;
-    if (inventory.gold() < cost) return say(LINES.poor);
-    if (!inventory.canAdd(id, count)) return say(LINES.full);
+    if (stockViews.find((v) => v.id === id)?.locked) return say(lines('locked'));
+    if (known(id)) return say(lines('known'));
+    if (ITEMS[id].maxStack === 1 || ITEMS[id].category === 'Recipe') count = 1; // (a rod, a recipe: one at a time)
+    const cost = priceOf(id) * count;
+    if (inventory.gold() < cost) return say(lines('poor'));
+    if (!inventory.canAdd(id, count)) return say(lines('full'));
     inventory.spend(cost);
     inventory.add(id, count);
-    say(ITEMS[id].category === 'Animal' ? LINES.boughtAnimal : LINES.bought);
+    say(shop === MERCHANT && ITEMS[id].category === 'Animal' ? LINES.boughtAnimal : lines('bought'));
     bumpFunds();
   }
 
@@ -214,10 +245,10 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
     const stack = inventory.slot(i);
     if (!stack) return;
     const def = ITEMS[stack.id];
-    if (!def.sell) return say(LINES.noSale);
+    if (!def.sell) return say(lines('noSale'));
     const sold = inventory.take(i, count);
     inventory.earn(def.sell * sold);
-    say(def.sell >= 150 ? LINES.soldRare : LINES.sold);
+    say(def.sell >= 150 ? lines('soldRare') : lines('sold'));
     bumpFunds();
   }
 
@@ -259,15 +290,22 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
     menuEl.hidden = !open;
     tooltipEl.hidden = true;
     if (open) {
-      say(LINES.hello);
+      tabEl.textContent = shop.title;
+      fillStock();
+      say(lines('hello'));
       render();
     }
     onOpenChange?.(open);
   }
 
   return {
-    open: () => setOpen(true),
+    // config: whose shop (MERCHANT, the default, or a neighbour's: main.js)
+    open: (config = MERCHANT) => {
+      shop = config;
+      setOpen(true);
+    },
     close: () => setOpen(false),
     isOpen: () => open,
+    whose: () => (open ? shop.title : null),
   };
 }

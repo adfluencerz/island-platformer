@@ -21,7 +21,7 @@
 //   the first where it stands at the start.
 import { mulberry32, hashSeed, distToPaths, STONE_CIRCLE, WILD_HALF, genOf } from './worldgen.js';
 import { rimMax } from './skyisles.js';
-import { homeGround, inPlayArea, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR } from './farmland.js';
+import { homeGround, oldHomeGround, inPlayArea, HOME_HALF, OLD_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR, OLD_KEEP_CLEAR, VALLEY_PATHS, DOCK } from './farmland.js';
 
 const SITES = 3; // where it started, and two more
 const AWAY = 4; // a new place is at least this far from the others
@@ -31,7 +31,8 @@ const round2 = (v) => Math.round(v * 100) / 100;
 
 // The ground a tree or rock may stand on (bushes too: src/maps.js)
 export const WILD_DECOR = new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch', 'glen', 'dune', 'bank']);
-export const HOME_DECOR = new Set(['grass']);
+export const HOME_DECOR = new Set(['grass', 'moss', 'meadow', 'heath', 'marsh', 'glade', 'field', 'patch', 'glen', 'dune', 'bank']);
+const OLD_HOME_DECOR = new Set(['grass']); // (the farm as it first was)
 
 // [x, z, r]: where nothing grows on a wild island: the spots, the stone circle
 // and (generation 10) up into a sky isle or its stair (from generation 11, as
@@ -67,16 +68,43 @@ export function growWilds(place, { cached = true } = {}) {
 // things grow), boxes ([x, z, w, d]: footprints nothing grows under),
 // keepClear, growBackAnywhere, plant(api): its trees and rocks
 function homeLayout() {
+  const valley = (x, z) => Math.max(Math.abs(x), Math.abs(z)) > OLD_HALF + 1.5; // (out past where the old farm's shore was)
+  const offTrail = (x, z, d) => distToPaths(x, z, VALLEY_PATHS) > d;
   return {
     seed: 1337,
     half: HOME_HALF,
     ground: homeGround,
     decor: HOME_DECOR,
-    boxes: HOME_PLATFORMS.map(({ x, z, w, d }) => [x, z, w, d]),
+    boxes: [...HOME_PLATFORMS.map(({ x, z, w, d }) => [x, z, w, d]), [DOCK.x, (DOCK.z0 + DOCK.z1) / 2, DOCK.w + 1, DOCK.z1 - DOCK.z0 + 2]],
     keepClear: HOME_KEEP_CLEAR,
+    // The farm as it first was, a square island OLD_HALF out: its trees and
+    // rocks were placed on it, from this draw, and stand where they always did
+    // (the same ids, so a farm's save still knows them)
+    first: {
+      half: OLD_HALF,
+      ground: oldHomeGround,
+      decor: OLD_HOME_DECOR,
+      boxes: HOME_PLATFORMS.map(({ x, z, w, d }) => [x, z, w, d]),
+      keepClear: OLD_KEEP_CLEAR,
+      plant({ scatter, tree, rock, open, tileAt, rand }) {
+        scatter(70, 2.6, (x, z) => !inPlayArea(x, z) && open(x, z, 1), (x, z) => tree(x, z, rand(0.8, 1.35)));
+        scatter(30, 1.5, (x, z) => tileAt(x, z) === 'sand' || open(x, z, 0.5), (x, z) => rock(x, z, [0.15, 0.45]));
+      },
+    },
+    // ...then the valley's round it, from a draw of their own
+    seed2: hashSeed('home/valley'),
     plant({ scatter, tree, rock, open, tileAt, rand }) {
-      scatter(70, 2.6, (x, z) => !inPlayArea(x, z) && open(x, z, 1), (x, z) => tree(x, z, rand(0.8, 1.35)));
-      scatter(30, 1.5, (x, z) => tileAt(x, z) === 'sand' || open(x, z, 0.5), (x, z) => rock(x, z, [0.15, 0.45]));
+      const on = (ground) => (x, z) => tileAt(x, z) === ground && valley(x, z);
+      // The forest: thick on the moss, with big old trees among the pines, and a few in the glen and the glade
+      scatter(190, 2.1, (x, z) => on('moss')(x, z) && open(x, z, 1.2) && offTrail(x, z, 1.8), (x, z) => tree(x, z, rand(1, 1.6)), 190 * 120);
+      scatter(8, 3.5, (x, z) => (on('glen')(x, z) || on('glade')(x, z)) && open(x, z, 1.6) && offTrail(x, z, 2), (x, z) => tree(x, z, rand(1.1, 1.5)), 8 * 400);
+      // Lone trees out on the grass, the meadow and the heath
+      scatter(50, 5, (x, z) => ['grass', 'meadow', 'heath'].includes(tileAt(x, z)) && valley(x, z) && open(x, z, 1.6) && offTrail(x, z, 2.2), (x, z) => tree(x, z, rand(0.8, 1.35)), 50 * 120);
+      // Rocks: on the beach and about the grass, and bigger ones out on the heath, in the glen, by the marsh and on the dunes
+      scatter(70, 1.5, (x, z) => valley(x, z) && (tileAt(x, z) === 'sand' || open(x, z, 0.5)) && offTrail(x, z, 1), (x, z) => rock(x, z, [0.15, 0.45]), 70 * 60);
+      for (const [ground, n, size] of [['heath', 14, [0.5, 0.9]], ['glen', 6, [0.4, 0.8]], ['marsh', 5, [0.4, 0.7]], ['dune', 6, [0.4, 0.7]], ['moss', 8, [0.6, 1]]]) {
+        scatter(n, 2.4, (x, z) => on(ground)(x, z) && open(x, z, 0.6) && offTrail(x, z, 1.2), (x, z) => rock(x, z, size), n * 400);
+      }
     },
   };
 }
@@ -126,17 +154,21 @@ function wildLayout(island) {
 
 // ---------- Placing them ----------
 function grow(layout) {
-  const rng = mulberry32(layout.seed);
+  let rng = mulberry32(layout.seed);
   const rand = (min, max) => min + rng() * (max - min);
   const look = () => Math.floor(rng() * 0x7fffffff);
-  const H = layout.half;
-  const tiles = new Map(); // "gx,gz" -> its kind (asked again and again)
+  // what is being planted on: the layout's `first` (an island as it first
+  // was) and then the layout itself, or just the layout; and it again, to
+  // find the places to grow back in
+  let stage = layout.first ?? layout;
+  let H = stage.half;
+  let tiles = new Map(); // "gx,gz" -> its kind (asked again and again)
   const tileAt = (x, z) => {
     const gx = Math.round(x);
     const gz = Math.round(z);
     if (Math.max(Math.abs(gx), Math.abs(gz)) >= H) return null; // (nothing on the last row of tiles, at the very edge, or past it)
     const key = gx * 4096 + gz;
-    if (!tiles.has(key)) tiles.set(key, layout.ground(gx, gz) ?? null);
+    if (!tiles.has(key)) tiles.set(key, stage.ground(gx, gz) ?? null);
     return tiles.get(key);
   };
   const trees = [];
@@ -167,7 +199,7 @@ function grow(layout) {
   // and boulders so far, unless finding places to grow back in)
   let findingSites = false;
   // (each box and circle kept in every CELL-sized square it reaches into, with the widest margin asked)
-  const solid = new Map();
+  let solid = new Map();
   const MOST_MARGIN = 2;
   const keep = (item, x, z, hw, hd) => {
     for (let i = Math.floor((x - hw - MOST_MARGIN) / CELL); i <= Math.floor((x + hw + MOST_MARGIN) / CELL); i++) {
@@ -178,12 +210,19 @@ function grow(layout) {
       }
     }
   };
-  for (const [x, z, w, d] of layout.boxes) keep((px, pz, m) => Math.abs(px - x) < w / 2 + m && Math.abs(pz - z) < d / 2 + m, x, z, w / 2, d / 2);
-  for (const [x, z, r] of layout.keepClear) keep((px, pz, m) => Math.hypot(px - x, pz - z) < r + m, x, z, r, r);
+  function useStage(next) {
+    stage = next;
+    H = next.half;
+    tiles = new Map();
+    solid = new Map();
+    for (const [x, z, w, d] of next.boxes) keep((px, pz, m) => Math.abs(px - x) < w / 2 + m && Math.abs(pz - z) < d / 2 + m, x, z, w / 2, d / 2);
+    for (const [x, z, r] of next.keepClear) keep((px, pz, m) => Math.hypot(px - x, pz - z) < r + m, x, z, r, r);
+  }
+  useStage(stage);
   const blocked = (x, z, margin) =>
     (solid.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []).some((hit) => hit(x, z, margin)) ||
     (!findingSites && near(taken, x, z, ([tx, tz, r]) => Math.abs(x - tx) < r + margin && Math.abs(z - tz) < r + margin));
-  const open = (x, z, margin = 0) => layout.decor.has(tileAt(x, z)) && !blocked(x, z, margin);
+  const open = (x, z, margin = 0) => stage.decor.has(tileAt(x, z)) && !blocked(x, z, margin);
 
   let rule = null; // the rule the one being placed passed (to find the places it may grow back in)
   function scatter(count, minDist, accept, place, tries = count * 40) {
@@ -215,6 +254,11 @@ function grow(layout) {
     rocks.push({ x, z, size, look: look(), sites: [[x, z]], rule, reach });
     if (size > 0.6) take(x, z, 0.7 * size);
     return true;
+  }
+  if (layout.first) {
+    layout.first.plant({ scatter, tree, rock, open, tileAt, rand });
+    useStage(layout);
+    rng = mulberry32(layout.seed2);
   }
   layout.plant({ scatter, tree, rock, open, tileAt, rand });
 
