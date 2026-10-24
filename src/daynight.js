@@ -72,6 +72,8 @@ function createClockUI() {
     <div class="dn-ff" title="Fast-forwarding (hold T)">&#9654;&#9654;</div>
   `;
   document.body.appendChild(root);
+  // How wide it is, for the HUD beside it (touch.css keeps the place panel clear of it)
+  new ResizeObserver(() => document.documentElement.style.setProperty('--clock-w', `${root.offsetWidth}px`)).observe(root);
   return {
     root,
     sky: root.querySelector('.dn-sky'),
