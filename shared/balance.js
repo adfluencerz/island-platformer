@@ -404,7 +404,6 @@ export const FARM_FINDS = {
 
 // ---------- Building ----------
 // What each piece costs to build (it all goes back when it is taken down).
-// The flower planter costs the one made at the workbench (see RECIPES).
 export const BUILD_COSTS = {
   wood_fence: { wood: 2 },
   stone_wall: { stone: 3 },
@@ -471,7 +470,7 @@ export const BUILD_COSTS = {
   lamp_post: { wood: 3, stone: 2 },
   ...Object.fromEntries(RELICS.map((relic) => [relic, { [relic]: 1 }])), // (a relic on its pedestal: the relic itself)
   garden_bench: { wood: 6 },
-  planter: { planter: 1 },
+  planter: { stone: 4, wood: 1 },
   pond: { stone: 30 },
   aquarium: { wood: 12, stone: 8, seashell: 2 },
   ...Object.fromEntries(Object.entries(BOSSES).flatMap(([id, boss]) => [
@@ -493,7 +492,6 @@ export const BUILD_COSTS = {
 // tool among them is swapped for the one made, in its slot), and `gold` paid.
 // `level`: the workbench level it takes (BENCH_LEVELS; none: the first).
 export const RECIPES = [
-  { makes: 'planter', needs: { stone: 4, wood: 1 } },
   { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
   { makes: 'sturdy_pickaxe', needs: { pickaxe: 1, wood: 8, stone: 12 } },
   { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
@@ -580,7 +578,7 @@ export const BOOST_SECONDS = { campfire: 240, kitchen: 480 };
 
 // Made at the workbench once, built straight from wood and stone now: what
 // one is worth, for a backpack or a chest that still has some
-export const UNMADE = { lamp_post: { wood: 3, stone: 2 }, garden_bench: { wood: 6 } };
+export const UNMADE = { lamp_post: { wood: 3, stone: 2 }, garden_bench: { wood: 6 }, planter: { stone: 4, wood: 1 } };
 
 // items ({ item: count }), with any of those turned back into what they cost
 export function unmake(items) {

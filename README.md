@@ -17,7 +17,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - Five bosses (the evil parsnip, the super lion, the bee queen, the giant crow and the bog toad), each in an arena through a portal on the farm, with a mount to win: riding one is faster and jumps higher
 - Party games in lobbies: a coin rush, a fishing contest, king of the hill, last one standing and a hop race across the water
 - Animals: hens in a fenced yard by their coop (an egg a day), and cows (milk once a day) and sheep (wool every two days) in a pasture; they wander, graze, can be petted and sleep at night
-- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, rope fences, log benches, compost bins, milk churns, dovecotes, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, boulders, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes flower planters, sturdier tools, a sword and a mallet for bopping other farmers in lobbies, and machines
+- Building on the farm with wood and stone: fences, rail fences, picket fences, wattle fences, log fences, box hedges, gates, stone arches, wood arbors, walls, low walls, palisades, paths, stepping stones, a stone well, stone lanterns, scarecrows, hay carts, beehives, birdbaths, signposts, water troughs, stone benches, sundials, wheelbarrows, torches, mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, lamp posts, garden benches, rope fences, log benches, compost bins, milk churns, dovecotes, and steps, tree stumps, crates, crate stacks, grain sacks, log piles, barrels, barrel stacks, straw steps and bales, boulders, scaffolds, straw stacks, log towers, stone blocks (mossy too) and pillars to climb on, and a workbench, which makes sturdier tools, a sword and a mallet for bopping other farmers in lobbies, and machines
 - Fishing with a rod from the workbench: in the sea round any island, in a fish pond built on the farm, and in a lobby's water, where the rarer fish are
 - Machines that turn what your animals give into something worth more (a cheese press, a mayonnaise machine, a loom, and beehives that fill with honey), cooking on a campfire and in the house's kitchen, a recipe book to fill, and dishes that give a little boost when eaten
 - A saved home farm, and online lobbies (up to 8 farmers) you start with friends, where rare finds turn up (see below)
@@ -109,6 +109,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **compost bin** (4 wood), a slatted bin of earth with peelings and greens heaped on top.
 - **Milk churns** (1 wood, 3 stone), two tall tin churns and a short one on a plank; the short one's lid is off on some.
 - A **dovecote** (5 wood, 1 stone), a little house for doves on a post, with doves on its perch and roof.
+- A **flower planter** (4 stone, 1 wood), a stone box of flowers that never need watering.
 - A **torch** (1 wood, 1 flax), a flame on a stick: it burns day and night and lights up what is around it after dark, flickering.
 - A **mailbox** (2 wood), a wooden box with a rounded lid on a post; its red flag is up on some, and a letter pokes out of a few.
 - A **birdhouse** (2 wood), a little house with a round door on a tall pole; a bird sits on the perch of some.
@@ -116,7 +117,6 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **stone cairn** (3 stone), flat stones piled one on another, each a little off the one below; moss at the foot of some.
 - A **clothesline** (2 wood, 2 flax), a line between two T-posts with a shirt, a sheet and trousers pegged out on it.
 - A **workbench** (10 wood, 5 stone). `E` next to it (or a tap) opens it, to make:
-  - a **flower planter** (4 stone, 1 wood), put down from the Build tab like the rest;
   - better tools, each made from the one before: a **sturdy axe** and a **sturdy pickaxe** take three and two swings instead of four and three, and a **wide hoe** tills three tiles side by side; at level 2, **silver** ones (two swings, one swing, five tiles in a row), at level 3 **golden** ones (one swing and an extra log or stone, a patch three by three), for gold, wood, stone and gems;
   - a **wooden sword** (8 wood) and a **mallet** (4 wood, 6 stone), for bopping (see the lobbies, below);
   - a **fishing rod** (5 wood, 2 flax), and from it a **sturdy rod** (15 wood, 10 stone, 4 flax), and at level 2 a **golden rod** (500 gold, 20 wood, 2 sky gems): see Fishing, below;
