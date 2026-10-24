@@ -214,7 +214,7 @@ export class GamepadInput {
     if (pressed(BTN.MENU)) (layer ? this.tap('Escape') : this.leaveOverlay());
     if (pressed(BTN.Y) && layer?.querySelector('.bag-window')) this.tap('KeyI'); // (the backpack: Y closes it, as it opened it)
     if (layer && (pressed(BTN.LB) || pressed(BTN.RB))) this.tab(layer, pressed(BTN.RB) ? 1 : -1);
-    if (right.y) this.scroll(this.focus ?? layer, right.y * SCROLL_RATE * dt);
+    if (right.y) this.scroll(this.focus ?? layer, right.y * SCROLL_RATE * dt, layer);
   }
 
   leaveOverlay() {
@@ -299,14 +299,22 @@ export class GamepadInput {
     this.blur();
   }
 
-  scroll(node, by) {
-    for (let n = node; n && n !== document.body; n = n.parentElement) {
+  // The right stick: what the highlight is in scrolls, or with nothing round
+  // it to scroll (a tab, say, over the Skills or Quests tab's list), the
+  // window's own list
+  scroll(node, by, layer) {
+    const scrolls = (n) => {
       const { overflowY } = getComputedStyle(n);
-      if ((overflowY === 'auto' || overflowY === 'scroll') && n.scrollHeight > n.clientHeight) {
+      return (overflowY === 'auto' || overflowY === 'scroll') && n.scrollHeight > n.clientHeight;
+    };
+    for (let n = node; n && n !== document.body; n = n.parentElement) {
+      if (scrolls(n)) {
         n.scrollTop += by;
         return;
       }
     }
+    const list = layer && [...layer.querySelectorAll('*')].find((n) => shown(n) && scrolls(n));
+    if (list) list.scrollTop += by;
   }
 
   tap(code) {
