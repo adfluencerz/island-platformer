@@ -1180,35 +1180,6 @@ ITEMS.glider_leaf = {
   ],
 };
 
-// Things for the farm: put down in build mode (the Build tab)
-ITEMS.planter = {
-  name: 'Flower planter',
-  category: 'Decor',
-  description: 'A stone box of flowers that never need watering. Put it down from the Build tab.',
-  maxStack: 20,
-  piece: 'planter',
-  color: 0x9c9a92,
-  palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#4f9e3c', G: '#2f6b25', r: '#e0475b', y: '#ffd84a', Y: '#fff6b0' },
-  sprite: [
-    '................',
-    '................',
-    '...r....y...r...',
-    '..rYr..yYy.rYr..',
-    '...rg...g..gr...',
-    '....g.g.g.g.g...',
-    '...gGgGgGgGgGg..',
-    '.oooooooooooooo.',
-    '.oLLLLLLLLLLLLo.',
-    '.oMMMMMMMMMMMMo.',
-    '.oMMMMMMMMMMMMo.',
-    '.oMMMMMMMMMMMMo.',
-    '.oddddddddddddo.',
-    '.oooooooooooooo.',
-    '................',
-    '................',
-  ],
-};
-
 // ---------- Fishing (shared/fishing.js, src/fishing.js) ----------
 // The rods, made at the workbench, each from the one before: the better the
 // rod, the sooner a bite and the rarer what bites (RODS in shared/balance.js).
@@ -3201,6 +3172,27 @@ export const PIECE_ICONS = {
       '..oPPPPDDPPPPo..',
       '..oPPPPDDPPPPo..',
       '..oppppDDppppo..',
+      '.oooooooooooooo.',
+      '................',
+      '................',
+    ],
+  },
+  planter: {
+    palette: { o: '#3a3632', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', g: '#4f9e3c', G: '#2f6b25', r: '#e0475b', y: '#ffd84a', Y: '#fff6b0' },
+    sprite: [
+      '................',
+      '................',
+      '...r....y...r...',
+      '..rYr..yYy.rYr..',
+      '...rg...g..gr...',
+      '....g.g.g.g.g...',
+      '...gGgGgGgGgGg..',
+      '.oooooooooooooo.',
+      '.oLLLLLLLLLLLLo.',
+      '.oMMMMMMMMMMMMo.',
+      '.oMMMMMMMMMMMMo.',
+      '.oMMMMMMMMMMMMo.',
+      '.oddddddddddddo.',
       '.oooooooooooooo.',
       '................',
       '................',
