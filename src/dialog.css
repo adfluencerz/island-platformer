@@ -4,6 +4,13 @@
   margin-top: 30px; /* room for the tab */
 }
 
+/* (all but Chat, Shop and Bye: it scrolls on a screen too short for it) */
+.talk-body {
+  max-height: calc(100vh - 150px);
+  max-height: calc(100dvh - 150px);
+  overflow-y: auto;
+}
+
 .talk-head {
   display: flex;
   align-items: flex-start;
@@ -82,3 +89,20 @@
 :root.compact .talk-ask-title { font-size: 19px; }
 :root.compact .talk-need { font-size: 17px; }
 :root.compact .talk-btn { font-size: 18px; padding: 5px 8px; }
+
+/* A short screen (a phone on its side): all of it smaller, to fit */
+@media (max-height: 460px) {
+  .talk-window { margin-top: 26px; padding: 14px 14px 10px; }
+  .talk-body { max-height: calc(100vh - 112px); max-height: calc(100dvh - 112px); }
+  .talk-face, :root.compact .talk-face { width: 44px; height: 44px; }
+  .talk-say, :root.compact .talk-say { min-height: 44px; padding: 5px 10px; font-size: 17px; }
+  .talk-hearts { margin: 2px 0 4px 2px; font-size: 15px; }
+  .talk-ask { padding: 5px 8px; }
+  .talk-ask-title, :root.compact .talk-ask-title { font-size: 17px; }
+  .talk-need, :root.compact .talk-need { font-size: 16px; }
+  .talk-need .inv-icon { width: 22px; height: 22px; }
+  .talk-needs { margin: 3px 0; }
+  .talk-reward { font-size: 15px; margin-bottom: 4px; }
+  .talk-btn, :root.compact .talk-btn { font-size: 16px; padding: 4px 8px; }
+  .talk-actions { margin-top: 6px; }
+}

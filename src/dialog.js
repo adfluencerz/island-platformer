@@ -119,13 +119,16 @@ export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notif
   const closeBtn = button('inv-close', windowEl, '×', () => setOpen(false));
   closeBtn.title = 'Close (E / Esc)';
 
-  const headEl = el('div', 'talk-head', windowEl);
+  // (what they say and ask scrolls, on a screen too short for it all; Chat,
+  // Shop and Bye stay in sight under it)
+  const bodyEl = el('div', 'talk-body', windowEl);
+  const headEl = el('div', 'talk-head', bodyEl);
   const faceEl = el('img', 'talk-face', headEl);
   faceEl.alt = '';
   const sayEl = el('div', 'talk-say', headEl);
-  const heartsEl = el('div', 'talk-hearts', windowEl);
+  const heartsEl = el('div', 'talk-hearts', bodyEl);
 
-  const askEl = el('div', 'talk-ask', windowEl);
+  const askEl = el('div', 'talk-ask', bodyEl);
   const actionsEl = el('div', 'talk-actions', windowEl);
   const chatBtn = button('shop-item talk-btn', actionsEl, 'Chat', () => chat());
   const shopBtn = button('shop-item talk-btn', actionsEl, 'Shop', () => shop());
