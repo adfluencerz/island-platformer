@@ -32,6 +32,12 @@
     --stick: 120px;
   }
 }
+/* The root's touch-action stops at each scroll container (a menu, a list,
+   anything with overflow), so inside one a double tap still zoomed the page,
+   with no way back out, since two fingers can't. So every element says it
+   too; :where() keeps it weaker than any touch-action of their own (none on
+   the controls and on the game, where the game's own pinch zooms the camera). */
+:where(:root.touch *) { touch-action: pan-x pan-y; }
 :root.touch body { user-select: none; -webkit-user-select: none; }
 :root.touch input { user-select: text; -webkit-user-select: text; }
 
