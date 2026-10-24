@@ -3889,6 +3889,8 @@ function partyOver(m) {
     if ((m.winners ?? [m.winner]).includes(myId)) {
       sound.play('cheer');
       hud.flash('You won!');
+    } else if (m.records?.some(([id]) => id === myId)) {
+      hud.flash('New best!'); // (onto its leaderboard: server/leaderboards.js)
     }
   } else {
     backToFarm();
