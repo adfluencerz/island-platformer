@@ -323,7 +323,7 @@ function buildPensNow() {
   piece(pens, box, postMat, [TROUGH.x, 0.15, TROUGH.z], [0.9, 0.3, 0.35]);
   piece(pens, box, grainMat, [TROUGH.x, 0.29, TROUGH.z], [0.8, 0.04, 0.26]);
   piece(pens, new THREE.CylinderGeometry(0.22, 0.18, 0.12, 12), trimMat, [TROUGH.x - 0.95, 0.06, TROUGH.z + 0.1], [1, 1, 1]);
-  piece(pens, new THREE.CylinderGeometry(0.18, 0.18, 0.02, 12), waterMat, [TROUGH.x - 0.95, 0.11, TROUGH.z + 0.1], [1, 1, 1]);
+  piece(pens, new THREE.CylinderGeometry(0.18, 0.18, 0.04, 12), waterMat, [TROUGH.x - 0.95, 0.12, TROUGH.z + 0.1], [1, 1, 1]); // (its top 2 cm over the rim: level with it, the two flickered)
   addCollider({ x: TROUGH.x - 0.3, y: 0.15, z: TROUGH.z, w: 1.6, h: 0.3, d: 0.5 });
 
   // In the pasture: round hay bales lying along the north fence, and a long water trough
@@ -334,7 +334,7 @@ function buildPensNow() {
   }
   for (let i = 0; i < 5; i++) piece(pens, box, strawMat, [HAY[0][0] + 0.4 + i * 0.25, 0.015, HAY[0][1] + 0.6 + (i % 2) * 0.12], [0.2, 0.02, 0.03], [0, i * 1.3, 0]);
   piece(pens, box, postMat, [WATER.x, 0.22, WATER.z], [1.8, 0.44, 0.5]);
-  piece(pens, box, waterMat, [WATER.x, 0.42, WATER.z], [1.65, 0.04, 0.36]);
+  piece(pens, box, waterMat, [WATER.x, 0.43, WATER.z], [1.65, 0.06, 0.36]); // (as the dish's)
   addCollider({ x: WATER.x, y: 0.22, z: WATER.z, w: 1.8, h: 0.44, d: 0.5 });
   if (RACK) buildRack(pens, addCollider);
   if (BARN) buildBarn(pens, addCollider);

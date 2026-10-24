@@ -125,7 +125,7 @@ export function createArenas(world) {
       if (!gap) {
         // (low at the front, so the camera sees in)
         const front = Math.cos(a - gapAt) > 0.5;
-        const h = front ? 0.6 : HEDGE_H;
+        const h = (front ? 0.6 : HEDGE_H) + (i % 2) * 0.04; // (each a little taller than the last: the ends overlap, and level tops flickered)
         part(seg, box, i % 2 ? MATS.hedge : MATS.hedgeLight, 0, h / 2, 0, len, h, 0.9);
         for (let k = 0; k < 3; k++) part(seg, ball, MATS.petals[(i + k) % 4], (k - 1) * len * 0.3, h + 0.02, ((k * 7 + i) % 3) * 0.15 - 0.15, 0.16, 0.12, 0.16);
       }
