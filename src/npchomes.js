@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NPC_HOMES, NPC_ROOMS, DOCK } from '../shared/farmland.js';
+import { NPC_HOMES, NPC_ROOMS, DOCK, SIGNPOSTS } from '../shared/farmland.js';
 import { NPCS } from '../shared/npcs.js';
 import { animalModel } from './animals.js';
 
@@ -368,6 +368,53 @@ function mabelHome(g, home, addCollider, anims) {
   roadSign(g, NPCS.mabel.title, 3.4, 5.2, { paper: '#fff0e0', ink: '#9c3a2e' });
 }
 
+// A signpost where a road leaves the old farm: a board on a post with the
+// way to a neighbour's, and an arrow
+function arrowTexture(text, dir) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 72;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#e8c890';
+  ctx.fillRect(0, 0, 256, 72);
+  ctx.strokeStyle = '#6e4a2b';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(3, 3, 250, 66);
+  ctx.fillStyle = '#5b2b0a';
+  // the arrow, at the end it points to (or the start, pointing down or up)
+  const [tip, ...rest] = {
+    left: [[12, 36], [42, 14], [42, 58]],
+    right: [[244, 36], [214, 14], [214, 58]],
+    down: [[30, 60], [12, 26], [48, 26]],
+    up: [[30, 12], [12, 46], [48, 46]],
+  }[dir];
+  ctx.beginPath();
+  ctx.moveTo(...tip);
+  for (const p of rest) ctx.lineTo(...p);
+  ctx.closePath();
+  ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const mid = dir === 'right' ? 116 : 140;
+  let size = 34;
+  do ctx.font = `bold ${size--}px "Trebuchet MS", system-ui, sans-serif`;
+  while (ctx.measureText(text).width > 180);
+  ctx.fillText(text, mid, 38);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function buildSignposts(root) {
+  for (const { x, z, text, dir } of SIGNPOSTS) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    root.add(g);
+    part(g, box, darkWoodMat, [0, 0.95, -0.05], [0.12, 1.9, 0.12]);
+    const face = new THREE.MeshStandardMaterial({ map: arrowTexture(text, dir), roughness: 0.9 });
+    part(g, box, [darkWoodMat, darkWoodMat, darkWoodMat, darkWoodMat, face, darkWoodMat], [0, 1.45, 0.03], [1.8, 0.5, 0.06], [-0.2, 0, 0]).castShadow = false;
+  }
+}
+
 // ---------- Inside ----------
 // A room at NPC_ROOMS[id]: boards, walls (the front one low, with a door in
 // its middle), a dark round it; a counter across its back half, shelves on
@@ -566,6 +613,7 @@ export function buildNpcHomes(ctx) {
     npcHomes.rooms[id] = spots;
   }
   npcHomes.dock = buildDock(root, ctx);
+  buildSignposts(root);
   npcHomes.setNight = (night) => {
     windowMat.emissiveIntensity = night ? 0.9 : 0;
     lanternMat.emissiveIntensity = night ? 1.2 : 0.15;

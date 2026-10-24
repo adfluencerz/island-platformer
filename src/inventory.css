@@ -303,16 +303,17 @@
   transform: translateY(5px);
 }
 .inv-tabs .inv-tab.on { background: var(--inv-paper); transform: none; cursor: default; }
-/* (five of them: smaller on a small screen, to fit beside the close button) */
+/* (seven of them: smaller on a small screen, to fit beside the close button) */
 :root.compact .inv-tabs { gap: 4px; }
 :root.compact .inv-close { right: -8px; } /* (on the screen, with the window as wide as it) */
 :root.compact .inv-tabs .inv-tab { font-size: 20px; padding: 5px 9px 9px; }
 /* A phone held upright: the window as wide as the screen whichever tab is open,
    and the tabs across it, clear of the close button, as big as fits */
 @media (max-width: 520px) {
-  :root.compact .bag-window { width: 100%; }
-  :root.compact .bag-window .inv-tabs { left: 8px; right: 30px; gap: 3px; }
-  :root.compact .bag-window .inv-tab { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font-size: clamp(14px, 4.6vw, 20px); padding: 5px 6px 9px; }
+  :root.compact .bag-window { width: 100%; margin-top: 40px; }
+  /* (seven tabs: in two rows if they don't fit in one, the first row against the window) */
+  :root.compact .bag-window .inv-tabs { left: 8px; right: 30px; gap: 3px; top: auto; bottom: calc(100% - 5px); flex-wrap: wrap-reverse; }
+  :root.compact .bag-window .inv-tab { flex: 0 0 auto; white-space: nowrap; font-size: clamp(14px, 4.6vw, 20px); padding: 5px 7px 9px; }
 }
 .inv-pack[hidden], .inv-build[hidden] { display: none; }
 

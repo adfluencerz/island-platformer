@@ -17,8 +17,11 @@ import { devToolsOn } from '../shared/constants.js';
 // oldKey(), bossKeys(); speed(n) (1: normal; and speed() what it is),
 // plaza(), skills(xp) (to each skill; Infinity: the top); clock(hour) (on to
 // the next time it is that hour), later(hours); info(): [[label, value]].
+// The valley: places(): [[id, name]] to go to, goTo(id); neighbours():
+// [[id, name]], finish(id) (their request now, done), forget() (nobody met);
+// forage() (something wild, now).
 const STORE = 'tp.dev';
-const TABS = ['World', 'Items', 'Player', 'Farm', 'Info'];
+const TABS = ['World', 'Items', 'Player', 'Farm', 'Valley', 'Info'];
 const HOLD_MS = 1500; // holding the coin counter this long opens it on a touch screen
 
 export function createDevTools(api) {
@@ -146,6 +149,18 @@ export function createDevTools(api) {
     btn(skip, '+1 hour', () => api.later(1));
     btn(skip, '+6 hours', () => api.later(6));
     btn(skip, '+1 day', () => api.later(24));
+  }
+
+  // The valley round the farm, and the neighbours
+  {
+    const p = page('Valley');
+    const go = section(p, 'Go to', 'On your farm');
+    for (const [id, name] of api.places()) btn(go, name, () => api.goTo(id));
+    const who = section(p, 'Requests', 'The neighbour\'s request now, done (what it gives, given; nothing taken)');
+    for (const [id, name] of api.neighbours()) btn(who, name, () => api.finish(id));
+    btn(who, 'Forget them all', () => api.forget(), 'Nobody met, nothing asked, no shops open');
+    const wild = section(p, 'Forage', 'On your farm played alone');
+    btn(wild, 'Something wild, now', () => api.forage(), 'In a biome out in the valley, as now and then it turns up');
   }
 
   // Info

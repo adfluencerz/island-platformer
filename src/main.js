@@ -58,7 +58,7 @@ import { arenaMap, buildCrown } from './arenas.js';
 import { spawnPoint } from '../shared/level.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { CAST_REACH, waterOn } from '../shared/fishing.js';
-import { HOME_HALF, OLD_HALF, farmBlocked, inLake } from '../shared/farmland.js';
+import { HOME_HALF, OLD_HALF, farmBlocked, inLake, LAKE, DOCK } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
@@ -1289,6 +1289,25 @@ createDevTools({
   },
   clock: (hour) => devLater((((hour - dayNight.hour()) % 24) + 24) % 24 || 24),
   later: devLater,
+  places: () => [...NPC_IDS.map((id) => [id, NPCS[id].name]), ['lake', 'The lake'], ['dock', 'The dock']],
+  goTo(id) {
+    if (place !== 'home') return 'Head home first';
+    const at = id === 'lake' ? { x: LAKE.x - LAKE.r - 2.5, z: LAKE.z } : id === 'dock' ? { x: DOCK.x, z: DOCK.z0 - 1 } : npcs.outside(id);
+    putDown({ ...at, y: GROUND_STAND_Y });
+    return `At ${id === 'lake' ? 'the lake' : id === 'dock' ? 'Finn\'s dock' : `${NPCS[id].name}'s door`}`;
+  },
+  neighbours: () => NPC_IDS.map((id) => [id, NPCS[id].name]),
+  finish(id) {
+    const done = npcs.finish(id);
+    saveGame();
+    return done ? `${NPCS[id].name}: "${done.title}" done` : `${NPCS[id].name} has nothing left to ask`;
+  },
+  forget() {
+    npcs.reset();
+    saveGame();
+    return 'Nobody met yet';
+  },
+  forage: () => (!soloFarm() ? NOT_SOLO : farmFinds.forageNow() ? 'Something wild turned up out in the valley' : 'Nowhere free for it just now'),
   info: () => [
     ['Where', place === 'lobby' ? `Lobby ${session?.code ?? ''}${arenaId ? ' (a party game)' : ''}` : farmVisit ? `${farmVisit.name}${farmVisit.mine ? ' (yours, with helpers)' : ''}` : place === 'home' ? 'Your farm' : 'The title screen'],
     ['Position', ['x', 'y', 'z'].map((k) => player.position[k].toFixed(1)).join(', ')],
@@ -2949,7 +2968,7 @@ function watchRequests(dt) {
 // out on the grass, with nothing tilled, fenced in or standing there (the
 // stall, a platform, a tree, something built), and not right underfoot
 function freeFarmSpot() {
-  const edge = HOME.half - 4;
+  const edge = OLD_HALF - 2; // (on the old farm: out in the valley there is forage, below)
   const h = 0.45;
   for (let tries = 0; tries < 40; tries++) {
     const x = (Math.random() * 2 - 1) * edge;

@@ -129,7 +129,7 @@ export function renderMap(root, you) {
   label('Merchant', sx + 2, sy + 20);
   const [lx, ly] = at(LAKE.x, LAKE.z);
   label('Lake', lx, ly + 4, '#d8f4ff');
-  for (const [text, x, z] of [['Forest', 0, -52], ['Fern glen', -46, -54], ['Bluebells', 44, -53], ['Meadow', -52, 14], ['Heath', -47, 40], ['Sunflowers', 57, 36], ['Dunes', 30, 62], ['Your farm', 0, -2]]) {
+  for (const [text, x, z] of [['Forest', 0, -52], ['Fern glen', -46, -54], ['Bluebells', 44, -53], ['Meadow', -52, 14], ['Heath', -47, 40], ['Sunflowers', 57, 36], ['Pumpkins', 34, 49], ['Dunes', 30, 62], ['Your farm', 0, -2]]) {
     const [x2, y2] = at(x, z);
     label(text, x2, y2, '#ffe9a8');
   }

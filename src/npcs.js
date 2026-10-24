@@ -326,7 +326,23 @@ export function createNpcs({ parent, inventory }) {
       showMends();
     },
     showMends,
-    // (for the missions' state, from the dev tools)
+    // (the developer tools: their mission now, done, as if handed over, and
+    // what it gives given; nothing taken. The mission, or null: none left)
+    finish(id) {
+      const s = states[id];
+      const mission = currentMission(id, s);
+      if (!mission) return null;
+      s.met = true;
+      if (!s.heard.includes(mission.id)) s.heard.push(mission.id);
+      s.done.push(mission.id);
+      delete s.since[mission.id];
+      like(id, FRIENDSHIP.mission);
+      if (mission.gives.gold) inventory.earn(mission.gives.gold);
+      for (const [item, n] of mission.gives.items ?? []) inventory.add(item, n);
+      if (mission.gives.mends) showMends();
+      return mission;
+    },
+    // (and everyone forgotten)
     reset() {
       states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
       deeds = {};

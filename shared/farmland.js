@@ -96,6 +96,15 @@ const LEGS = [...HOME_PATHS, ...VALLEY_PATHS].flatMap((path) => path.slice(1).ma
 }));
 const onPath = (x, z) => LEGS.some((l) => x > l.minX && x < l.maxX && z > l.minZ && z < l.maxZ && distToPaths(x, z, l.leg) < PATH_W);
 
+// Signposts where the roads leave the old farm, pointing the way (dir: the
+// way the arrow points on the screen, 'left', 'right', 'down' or 'up')
+export const SIGNPOSTS = [
+  { x: -31, z: 11.8, text: 'Meadow Ranch', dir: 'left' },
+  { x: 31, z: 13.6, text: 'Basil\'s Seeds', dir: 'right' },
+  { x: 3.2, z: 31, text: 'Finn\'s Tackle', dir: 'down' },
+  { x: 30.6, z: -7.8, text: 'Mabel\'s Bakery', dir: 'up' },
+];
+
 // ---------- The biomes ----------
 // A smooth wobble, -1 to 1, for edges that aren't circles
 const wob = (x, z, s) => Math.sin(x * 0.21 + s * 1.7) * Math.cos(z * 0.17 + s * 2.9) * 0.6 + Math.sin((x + z) * 0.09 + s * 4.1) * 0.4;
@@ -176,6 +185,7 @@ export const HOME_KEEP_CLEAR = [
   ...OLD_KEEP_CLEAR,
   ...Object.values(NPC_HOMES).map((h) => [h.x, h.z + 0.5, h.lot]),
   [DOCK.x, DOCK.z0, 2.5],
+  ...SIGNPOSTS.map(({ x, z }) => [x, z, 1.2]),
 ];
 
 // Why tile (gx, gz) is not to be farmed or built on ('': it may be): the
