@@ -172,6 +172,14 @@ body.in-menu .tc { display: none; }
 }
 :root.compact .inv-funds .inv-icon { width: 20px; height: 20px; margin-right: 4px; }
 :root.compact .inv-digit { width: 12px; height: 20px; font-size: 21px; }
+/* A narrow phone: a slimmer clock, so the place panel has room beside it (the day can be long: "Wed. 353 · Autumn") */
+@media (max-width: 440px) {
+  :root.compact .dn-clock { gap: 4px; padding: 6px 8px 6px 6px; }
+  :root.compact .dn-dial { width: 36px; height: 21px; }
+  :root.compact .dn-text { min-width: 0; }
+  :root.compact .dn-day { font-size: 15px; }
+  :root.compact .dn-time { font-size: 22px; }
+}
 
 /* The place panel, top left, with a Menu button for Esc. No blurb, seed, ping
    or Esc hint, and in a lobby folded up to its first line: tap the name for the rest. */
@@ -179,8 +187,10 @@ body.in-menu .tc { display: none; }
   top: calc(var(--safe-t) + 10px);
   left: calc(var(--safe-l) + 10px);
   width: auto;
-  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 190px);
-  min-width: 170px;
+  /* (clear of the clock, which daynight.js measures, and of the gold under it, about 145px) */
+  --beside: calc(100vw - var(--safe-l) - var(--safe-r) - max(var(--clock-w, 180px), 150px) - 28px);
+  max-width: var(--beside);
+  min-width: min(170px, var(--beside));
   box-sizing: border-box;
   padding: 10px 12px;
   gap: 5px;
@@ -223,6 +233,32 @@ body.in-menu .tc { display: none; }
 
 :root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
 :root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
+
+/* A lobby's party game (party.css): under the clock and the gold, across the
+   screen but for the Bag and Chat buttons (a column on the right); lying down,
+   under the place panel, clear of the gold and the buttons' row */
+:root.compact .ui-party {
+  top: calc(var(--safe-t) + 120px);
+  left: calc(var(--safe-l) + 10px);
+  right: calc(var(--safe-r) + 70px);
+  width: auto;
+  max-width: 440px;
+  transform: none;
+  padding: 8px 12px;
+  animation-name: ui-party-drop;
+  z-index: 15; /* (under the windows, which open over it here, and over the place panel unless it is open) */
+}
+:root.compact .ui-players:not(.folded) { z-index: 16; }
+:root.compact .ui-party-title { font-size: 21px; }
+:root.compact .ui-party.playing .ui-party-title { font-size: 22px; }
+:root.compact .ui-party-line { font-size: 16px; }
+@keyframes ui-party-drop {
+  from { transform: translateY(-16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (orientation: landscape) {
+  :root.compact .ui-party { top: calc(var(--safe-t) + 74px); right: calc(var(--safe-r) + 190px); }
+}
 
 /* ---------- Menus: kept inside the safe area, scrolled when they don't fit ---------- */
 :root.compact .ui-splash {

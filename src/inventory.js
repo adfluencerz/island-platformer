@@ -140,7 +140,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   // Backpack menu
   const menuEl = el('div', 'inv-menu', document.body);
   menuEl.hidden = true;
-  const windowEl = el('div', 'inv-window inv-frame', menuEl);
+  const windowEl = el('div', 'inv-window inv-frame bag-window', menuEl);
   const tabsEl = el('div', 'inv-tabs', windowEl);
   const packTab = el('button', 'inv-tab inv-frame', tabsEl);
   packTab.textContent = 'Backpack';

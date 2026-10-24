@@ -8,7 +8,7 @@
   padding-right: 4px;
 }
 .bk-part { display: flex; flex-direction: column; gap: 6px; }
-.bk-count { font-size: 20px; color: var(--ui-soft, #86522a); }
+.bk-count { flex: none; white-space: nowrap; font-size: 20px; color: var(--ui-soft, #86522a); }
 .bk-count.done { color: #2f7f24; }
 .bk-grid { display: flex; flex-wrap: wrap; gap: 4px; }
 .bk-icon { width: 36px; height: 36px; image-rendering: pixelated; }
