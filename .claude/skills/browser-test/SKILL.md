@@ -34,6 +34,12 @@ npm run browser --silent -- --shot night.png -e 'g.dayNight.setTime(21); g.step(
   now). For the time of day use `g.dayNight.setTime(21)` (9 pm on day 1):
   `?hour=` is overwritten once the account's farm comes from the server.
 - `--live` leaves the game running in real time instead of frozen.
+- `--touch` is a phone: a touch screen, so the game's touch controls show,
+  and `await window.__tap(x, y)` in the test taps the screen there with a
+  finger, as a real tap does (the pointer and touch events, and the mouse
+  events a phone makes of a tap). Find a button's middle with
+  `getBoundingClientRect()`. Use it for anything the touch controls do: a key
+  sent from a test with `dispatchEvent` is not what a tap sends.
 - `--full` draws with full graphics (shadows, no `?lowgfx`) and `--size 960x600`
   sets the window: for judging how something looks. A frame takes a few
   seconds to draw without a GPU, so step first and draw once.

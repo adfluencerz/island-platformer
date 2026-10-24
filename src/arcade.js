@@ -346,7 +346,7 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
     }
   }
 
-  menuEl.addEventListener('mousedown', (e) => e.target === menuEl && setOpen(false)); // click outside the window
+  menuEl.addEventListener('pointerdown', (e) => e.target === menuEl && setOpen(false)); // a press outside the window (a fresh one: not the mouse events a phone makes afterwards of the tap that opened it)
   menuEl.addEventListener('contextmenu', (e) => e.preventDefault());
   menuEl.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
