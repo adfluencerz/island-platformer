@@ -41,7 +41,9 @@
 // A fight isn't kept: the room goes, and the boss is asleep again. The way to
 // each arena is its dungeon (shared/dungeons.js): the room keeps a DungeonRun
 // for each too, moving the foes in the rooms farmers are in and counting the
-// bops at them (FOE_BOP), and says how it is doing (DUNGEON, DUNGEON_FX).
+// bops at them (FOE_BOP), and says how it is doing (DUNGEON, DUNGEON_FX). It
+// rolls what is in a side room's chest for each farmer who opens it
+// (DUNGEON_CHEST, DUNGEON_LOOT), once a game day each.
 //
 // The farm is kept in the farm's own file, in the page's save format (the
 // save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age, watered?]], built:
@@ -512,6 +514,15 @@ export class FarmRoom extends Place {
         this.broadcast({ t: S.DUNGEON_FX, boss, fx: { e: 'bop', foe, by: p.id, hp: hit.hp, ...(WEAPONS[weapon].shoots && { shot: 1 }) } });
         if (hit.opened !== undefined) this.broadcast({ t: S.DUNGEON_FX, boss, fx: { e: 'open', room: hit.opened, by: p.id } });
         this.broadcast({ t: S.DUNGEON, boss, s: run.toWire() });
+        break;
+      }
+      case C.DUNGEON_CHEST: {
+        // (by it, in its side room, its foes down, theirs once a game day: shared/dungeons.js)
+        const { boss, chest } = msg;
+        const run = Object.hasOwn(BOSSES, boss) && this.dungeons.get(boss);
+        if (!run || dungeonAt(p.x, p.z) !== boss) return;
+        const got = run.openChest(p.name, p.x, p.z, chest, Math.floor(this.hours() / 24) + 1);
+        this.send(p, { t: S.DUNGEON_LOOT, boss, chest, ...(got.items ? { items: got.items } : { why: got.why }) });
         break;
       }
       case C.CHEST_PUT: {

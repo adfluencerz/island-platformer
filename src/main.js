@@ -2875,6 +2875,7 @@ const bosses = createBosses({
   net: () => farmNet,
   atHome: () => place === 'home',
   weapon: () => weaponInHand(),
+  day: () => dayNight.day(),
   // (a bow's arrow at the boss: ours, or another farmer's)
   shoot: (to) => arrows.shoot(arrowFrom.set(player.position.x + Math.sin(anim.facing) * 0.5, player.position.y + 0.25, player.position.z + Math.cos(anim.facing) * 0.5), to),
   shotFrom(by, to) {
@@ -3781,6 +3782,7 @@ async function joinFarm(id) {
   on(S.BOSS_WON, bosses.onWon);
   on(S.DUNGEON, bosses.onDungeon);
   on(S.DUNGEON_FX, bosses.onDungeonFx);
+  on(S.DUNGEON_LOOT, bosses.onLoot);
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));

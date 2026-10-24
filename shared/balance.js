@@ -341,8 +341,10 @@ export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage
 // The way to each boss's arena (shared/dungeons.js): rooms of its foes,
 // little ones of its own kind, to be bopped down (BOSS_FIGHT.damage: a better
 // weapon takes more off) before the gate on to the next room opens. `name`:
-// the dungeon's; `foe`: one of them, and more. `foes`: how many in each
-// room, first to last. `hp`: what each can take. `walk`: their pace (m/s),
+// the dungeon's; `foe`: one of them, and more. `foes`: how many in each main
+// room, first to last; `guards`: in each side room, guarding its chest
+// (`loot`: what it can have in it, as well as DUNGEON.chest's). `hp`: what
+// each can take. `walk`: their pace (m/s),
 // closing in to `keep` from a farmer between goes at them; `pause`: seconds
 // [min, max] between goes. `move`: how they go at a farmer, after `windup`
 // seconds of warning: a hop (a leap at them, `air` s long, `height` high,
@@ -351,23 +353,28 @@ export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage
 // (up to `height`, then down through where they stood and on, `dive` s).
 export const DUNGEONS = {
   parsnip: {
-    name: 'Root Cellar', foe: ['sproutling', 'sproutlings'], foes: [3, 4, 5], hp: 2, walk: 1.3, pause: [0.9, 1.7], keep: 2.2,
+    name: 'Root Cellar', foe: ['sproutling', 'sproutlings'], foes: [3, 4, 4, 5], guards: [2, 3], hp: 2, walk: 1.3, pause: [0.9, 1.7], keep: 2.2,
+    loot: [['carrot_seeds', 0.1, 2, 4], ['turnip_seeds', 0.1, 3, 5]],
     move: 'hop', windup: 0.45, air: 0.55, height: 1.1, reach: 3.5,
   },
   lion: {
-    name: 'Sunbaked Ruins', foe: ['lion cub', 'lion cubs'], foes: [3, 4, 4], hp: 3, walk: 2, pause: [0.8, 1.5], keep: 3.5,
+    name: 'Sunbaked Ruins', foe: ['lion cub', 'lion cubs'], foes: [3, 3, 4, 4], guards: [2, 3], hp: 3, walk: 2, pause: [0.8, 1.5], keep: 3.5,
+    loot: [['gem', 0.08, 1, 1], ['coin', 0.12, 4, 8]],
     move: 'dash', windup: 0.5, speed: 8, time: 0.55,
   },
   bee: {
-    name: 'Honeycomb Halls', foe: ['worker bee', 'worker bees'], foes: [4, 5, 6], hp: 2, walk: 2.2, pause: [0.9, 1.6], keep: 3,
+    name: 'Honeycomb Halls', foe: ['worker bee', 'worker bees'], foes: [4, 5, 5, 6], guards: [3, 3], hp: 2, walk: 2.2, pause: [0.9, 1.6], keep: 3,
+    loot: [['honey', 0.14, 1, 2], ['sunflower_seeds', 0.1, 2, 3]],
     move: 'dart', windup: 0.4, speed: 7, time: 0.5, fly: 0.9,
   },
   crow: {
-    name: 'Rookery', foe: ['rook', 'rooks'], foes: [3, 4, 5], hp: 3, walk: 1.4, pause: [1, 1.8], keep: 3,
+    name: 'Rookery', foe: ['rook', 'rooks'], foes: [3, 4, 4, 5], guards: [2, 3], hp: 3, walk: 1.4, pause: [1, 1.8], keep: 3,
+    loot: [['pumpkin_seeds', 0.1, 1, 3], ['key', 0.04, 1, 1], ['coin', 0.1, 3, 6]],
     move: 'swoop', windup: 0.6, height: 2.6, dive: 0.75,
   },
   toad: {
-    name: 'Sunken Bog', foe: ['bog frog', 'bog frogs'], foes: [3, 4, 5], hp: 3, walk: 1, pause: [1, 1.8], keep: 2.6,
+    name: 'Sunken Bog', foe: ['bog frog', 'bog frogs'], foes: [3, 4, 4, 5], guards: [2, 3], hp: 3, walk: 1, pause: [1, 1.8], keep: 2.6,
+    loot: [['lily_seeds', 0.1, 2, 3], ['mushroom', 0.1, 2, 4]],
     move: 'hop', windup: 0.6, air: 0.7, height: 1.6, reach: 4.5,
   },
 };
@@ -375,8 +382,17 @@ export const DUNGEONS = {
 // or its arena) before its foes are all back and its gates shut again.
 // `flinch`: seconds a bopped foe reels; `knock`: how far it is knocked back
 // (m). `bump`: how hard a foe that catches a farmer knocks them back (as
-// BOSS_FIGHT.knock: the rest of getting caught is a boss's).
-export const DUNGEON = { reset: 45, flinch: 0.5, knock: 1.6, bump: 6 };
+// BOSS_FIGHT.knock: the rest of getting caught is a boss's). `chest`: what is
+// in a side room's chest, for each farmer once a game day: `rolls` things
+// from `loot` (and the dungeon's own, DUNGEONS `loot`), and now and then
+// (`key`, as a weight) one of its boss's key pieces.
+export const DUNGEON = {
+  reset: 45, flinch: 0.5, knock: 1.6, bump: 6,
+  chest: {
+    rolls: [3, 5], key: 0.05,
+    loot: [['coin', 0.38, 3, 8], ['steel', 0.14, 1, 3], ['arrow', 0.12, 4, 8], ['gem', 0.06, 1, 1], ['golden_seeds', 0.05, 1, 1], ['recipe_card', 0.03, 1, 1], ['wood', 0.06, 4, 8], ['stone', 0.06, 4, 8]],
+  },
+};
 
 // [[key item, weight, 1, 1], ...]: one of each boss's key pieces, for a loot list
 function bossPieces(weight) {

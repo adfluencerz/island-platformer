@@ -42,6 +42,7 @@ export const C = {
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
   BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
   FOE_BOP: 'foeBop', // { boss, foe, weapon }: a bop at foe number `foe` of the boss's dungeon (shared/dungeons.js), in whose room we are, with the weapon in hand
+  DUNGEON_CHEST: 'dungeonChest', // { boss, chest }: open the chest in that side room of the boss's dungeon (we are by it)
   LOAD: 'load', // { key, dish?, n? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js, n of it, up to CAMPFIRE_MOST; or the fish going into an aquarium)
   COLLECT: 'collect', // { key, item? }: what the machine on tile key has ready, for the backpack (item: the fish to take out of an aquarium)
   FEAST: 'feast', // { dish }: we just ate a dish that is `shared` (DISHES): everyone on the farm gets its boost
@@ -103,6 +104,7 @@ export const S = {
   BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp, shot } a bop that landed (shot: an arrow's)
   BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
   DUNGEON: 'dungeon', // { boss, s }: how the boss's dungeon is doing (s: DungeonRun toWire(), shared/dungeons.js), a few times a second while anyone is in it
+  DUNGEON_LOOT: 'dungeonLoot', // { boss, chest, items } what was in the chest for us ([[item, count], ...], coins as 'coin'), or { boss, chest, why }: none ('guarded': its foes are still up; 'empty': ours already today; 'far', 'none')
   DUNGEON_FX: 'dungeonFx', // { boss, fx }: { e: 'bop', foe, by, hp, shot } a bop that landed (hp 0: the foe is down; shot: an arrow's), { e: 'open', room, by } the gate out of that room opened, { e: 'reset' } all as it was again
   MACHINE: 'machine', // { key, state, by, got?, n? }: what is in the machine on tile key now ([item, at, takes, n], or null: empty), after player `by` loaded or collected it (got: the item collected, n of it, for `by`'s backpack)
   FEAST: 'feast', // { dish, by }: player `by` ate a shared dish on this farm: its boost is ours too

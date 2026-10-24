@@ -22,7 +22,7 @@ import { GROUND_STAND_Y } from './level.js';
 
 export const BOSS_IDS = Object.keys(BOSSES);
 export const ARENA_R = 12; // the arena's meadow, from its middle (a hedge runs round it)
-const ARENA_SPOTS = [[-200, 0], [-200, 80], [-200, -80], [0, -200], [0, 200]]; // (out past the sea, one to a boss, away from the house's room, far enough out not to be seen from the farm)
+const ARENA_SPOTS = [[-200, 0], [-200, 100], [-200, -100], [0, -200], [0, 200]]; // (out past the sea, one to a boss, away from the house's room, far enough out not to be seen from the farm, and room for each one's dungeon in front of it)
 export const ARENAS = Object.fromEntries(BOSS_IDS.map((id, i) => [id, { x: ARENA_SPOTS[i][0], z: ARENA_SPOTS[i][1] }]));
 export const BODY_R = 1; // how wide a boss is, from its middle
 const REACH_SLACK = 0.8; // (the room has a slightly older idea of where everyone is)
