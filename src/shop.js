@@ -5,19 +5,26 @@ import { el, button } from './ui/dom.js';
 
 // ---------- The merchant's shop ----------
 // Opened with E at the stall on the home farm (merchant.js). Today's request
-// first (src/requests.js: some of one thing, for good gold); seeds and animals
-// to buy; below, your backpack (toolbar row first), to sell from. Prices are
-// the items' own `price` and `sell` (items.js).
+// first (src/requests.js: some of one thing, for good gold); what is for sale,
+// on its shelves (seeds, animals, tools...); below, your backpack (toolbar row
+// first), to sell from. Prices are the items' own `price` and `sell` (items.js).
 //
 //   click something to buy  buy one (shift: five)
 //   click a backpack slot   sell the whole stack
 //   right click a slot      sell one
 //   E / Esc / ×             close
 
-// What the merchant has for sale: every item with a price, cheapest first
-const STOCK = Object.keys(ITEMS)
-  .filter((id) => ITEMS[id].price)
-  .sort((a, b) => ITEMS[a].price - ITEMS[b].price);
+// What the merchant has for sale: every item with a price, on a shelf for
+// its kind (its category in items.js), the shelves in this order (any other
+// kind after them) and each cheapest first: [[title, ids], ...]
+const SHELVES = { Seed: 'Seeds', Animal: 'Animals', Tool: 'Tools', Fishing: 'Fishing tackle', Recipe: 'Recipes' };
+const FOR_SALE = Object.keys(ITEMS).filter((id) => ITEMS[id].price);
+const STOCK = [...new Set([...Object.keys(SHELVES), ...FOR_SALE.map((id) => ITEMS[id].category)])]
+  .map((kind) => [
+    SHELVES[kind] ?? kind,
+    FOR_SALE.filter((id) => ITEMS[id].category === kind).sort((a, b) => ITEMS[a].price - ITEMS[b].price || ITEMS[a].name.localeCompare(ITEMS[b].name)),
+  ])
+  .filter(([, ids]) => ids.length);
 
 const BULK = 5;
 
@@ -75,7 +82,11 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
 
   el('div', 'shop-heading', windowEl, 'For sale');
   const stockEl = el('div', 'shop-stock', windowEl);
-  const stockViews = STOCK.map((id) => {
+  const stockViews = STOCK.flatMap(([title, ids]) => {
+    el('div', 'shop-shelf', stockEl, title);
+    return ids.map(stockRow);
+  });
+  function stockRow(id) {
     const def = ITEMS[id];
     const row = button('shop-item', stockEl);
     row.dataset.buy = id;
@@ -87,7 +98,7 @@ export function createShop({ inventory, onOpenChange, requests = null }) {
     coinImg(price);
     el('span', '', price, `${def.price}g`);
     return { id, row };
-  });
+  }
 
   el('div', 'shop-heading', windowEl, 'Sell from your backpack');
   const gridEl = el('div', 'inv-grid', windowEl);
