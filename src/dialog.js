@@ -244,7 +244,7 @@ export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notif
     e.stopPropagation();
     if ((e.code === 'Escape' || e.code === 'KeyE') && !e.repeat) setOpen(false);
   }, true);
-  menuEl.addEventListener('mousedown', (e) => e.target === menuEl && setOpen(false)); // (a click outside the window)
+  menuEl.addEventListener('pointerdown', (e) => e.target === menuEl && setOpen(false)); // (a press outside the window: a fresh one, not the mouse events a phone makes afterwards of the tap that opened it)
   menuEl.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
   function setOpen(next) {

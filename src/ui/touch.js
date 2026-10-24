@@ -60,8 +60,12 @@ export const buzz = (ms) => isTouch() && navigator.vibrate?.(ms);
 const STICK_RADIUS = 46; // px the knob travels from the middle
 const DEAD_ZONE = 0.18;
 
+// (on the page, as a key on a keyboard is, and the controller's are:
+// src/gamepad.js. A window a key opens listens for its closing key in the
+// capture phase, which only comes first for a key sent to the page; sent to
+// the window itself, the one press that opened it closed it again)
 function key(type, code) {
-  window.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
+  document.body.dispatchEvent(new KeyboardEvent(type, { code, bubbles: true, cancelable: true }));
 }
 
 // A button that holds `code` down while a finger is on it

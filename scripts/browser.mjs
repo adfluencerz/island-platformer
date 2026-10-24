@@ -12,6 +12,10 @@
 //   --full         full graphics (shadows, the whole pixel ratio): no ?lowgfx,
 //                  for judging how it looks (slower to draw)
 //   --size WxH     the window's size (480x320)
+//   --touch        a phone: a touch screen (the game's touch controls show),
+//                  and `await window.__tap(x, y)` in the test taps the screen
+//                  there with a finger, as a real tap does (pointer, touch
+//                  and the mouse events a phone makes of a tap)
 //
 // The game server and Vite are started (and stopped after) unless `npm run
 // dev` is already up. A test account is made once and its login kept in
@@ -27,7 +31,7 @@ const CHROMIUM = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
 
 // ---- the command line ----
 const args = process.argv.slice(2);
-const opts = { query: '', shot: null, live: false, code: null, full: false, size: [480, 320] };
+const opts = { query: '', shot: null, live: false, code: null, full: false, size: [480, 320], touch: false };
 while (args.length) {
   const a = args.shift();
   if (a === '-e') opts.code = args.shift();
@@ -36,6 +40,7 @@ while (args.length) {
   else if (a === '--live') opts.live = true;
   else if (a === '--full') opts.full = true;
   else if (a === '--size') opts.size = args.shift().split('x').map(Number);
+  else if (a === '--touch') opts.touch = true;
   else opts.code = readFileSync(a, 'utf8');
 }
 
@@ -60,8 +65,9 @@ const browser = await chromium.launch({
 let exitCode = 0;
 try {
   const [width, height] = opts.size;
-  const context = await browser.newContext({ viewport: { width, height }, ...(existsSync(STATE) && { storageState: STATE }) });
+  const context = await browser.newContext({ viewport: { width, height }, ...(opts.touch && { hasTouch: true, isMobile: true }), ...(existsSync(STATE) && { storageState: STATE }) });
   const page = await context.newPage();
+  if (opts.touch) await page.exposeFunction('__tap', (x, y) => page.touchscreen.tap(x, y));
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
