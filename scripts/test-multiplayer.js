@@ -18,7 +18,12 @@ import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS, DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
-import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS } from '../shared/farmland.js';
+import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS, OLD_HALF, homeGround, oldHomeGround, farmBlocked, inLake, LAKE, NPC_HOMES, NPC_ROOMS, DOCK, SIGNPOSTS, ROADS, TRAILS, npcDoor } from '../shared/farmland.js';
+import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor } from '../shared/npcs.js';
+import { ITEMS } from '../src/items.js';
+import { MERCHANT_STOCK, FRIENDSHIP, FARM_FORAGE } from '../shared/balance.js';
+import { HOUSE_ROOM, movedKey } from '../shared/level.js';
+import { hashSeed } from '../shared/worldgen.js';
 import { FISHING, RODS, SHOP, FISH_WEIGHT, TACKLE, AQUARIUM } from '../shared/balance.js';
 import { BEANSTALK, DAY_LENGTH_SECONDS as DAY_SECONDS } from '../shared/balance.js';
 import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, BOARD_SIZE } from '../shared/fishing.js';
@@ -591,6 +596,142 @@ await test('trees and rocks: the room places them, on dry land at ground level, 
       assert.ok(HOME_PLATFORMS.every((p) => Math.abs(x - p.x) >= p.w / 2 || Math.abs(z - p.z) >= p.d / 2), `the farm's ${x}, ${z} is under a platform`);
     }
   }
+});
+
+await test('the farm is a valley five times the old farm: the old farm in the middle as it was, its trees and rocks where they stood', () => {
+  let land = 0;
+  for (let gz = -HOME_HALF; gz <= HOME_HALF; gz++) for (let gx = -HOME_HALF; gx <= HOME_HALF; gx++) if (homeGround(gx, gz) && homeGround(gx, gz) !== 'pond') land++;
+  assert.ok(land >= 5 * (2 * OLD_HALF + 1) ** 2, `${land} tiles of land: five times the old farm's at least`);
+  // inside the old shore the ground is as it was, but for the roads out to the neighbours
+  for (let gz = -(OLD_HALF - 2); gz <= OLD_HALF - 2; gz++) {
+    for (let gx = -(OLD_HALF - 2); gx <= OLD_HALF - 2; gx++) {
+      const was = oldHomeGround(gx, gz);
+      const now = homeGround(gx, gz);
+      assert.ok(now === was || (was === 'grass' && now === 'path'), `${gx},${gz} was ${was}, is ${now}`);
+    }
+  }
+  // the old farm's 70 trees and 30 rocks start where they always did, with the same numbers (a farm's save knows them by those)
+  const old = [HOME_WILDS.trees.slice(0, 70).map((t) => t.slice(0, 5)), HOME_WILDS.rocks.slice(0, 30).map((r) => r.slice(0, 4))];
+  assert.equal(hashSeed(JSON.stringify(old)), 1684711499, 'the old farm\'s trees and rocks moved');
+  assert.ok(HOME_WILDS.trees.length > 200 && HOME_WILDS.rocks.length > 100, 'and the valley has its own');
+  // no road or trail runs over one of the old farm's trees or rocks where it stands
+  for (const thing of [...FARM_WILDS.trees.slice(0, 70), ...FARM_WILDS.rocks.slice(0, 30)]) {
+    assert.ok(distToPaths(thing.x, thing.z, [...ROADS, ...TRAILS]) > 1, `a road runs over ${thing.x}, ${thing.z}`);
+  }
+  // every biome is there
+  const kinds = new Set();
+  for (let gz = -HOME_HALF; gz <= HOME_HALF; gz++) for (let gx = -HOME_HALF; gx <= HOME_HALF; gx++) kinds.add(homeGround(gx, gz));
+  for (const kind of ['moss', 'glen', 'glade', 'meadow', 'heath', 'marsh', 'pond', 'field', 'patch', 'bank', 'dune', 'sand']) assert.ok(kinds.has(kind), `no ${kind}`);
+  // and has something wild to find in it
+  for (const kind of kinds) if (!['grass', 'path', 'stone', 'pond'].includes(kind)) assert.ok(FARM_FORAGE.loot[kind]?.every(([item]) => ITEMS[item]?.sell), `nothing to forage on ${kind}`);
+  // the neighbours' homes stand out in the valley, on dry land, a road to every door; their rooms out past the sea
+  for (const [id, home] of Object.entries(NPC_HOMES)) {
+    assert.ok(Math.max(Math.abs(home.x), Math.abs(home.z)) - Math.max(home.w, home.d) > OLD_HALF, `${id}'s home is on the old farm`);
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const ground = homeGround(Math.round(home.x + (dx * home.w) / 2), Math.round(home.z + (dz * home.d) / 2));
+      assert.ok(ground && ground !== 'pond', `${id}'s home stands in the water`);
+    }
+    const door = npcDoor(home);
+    assert.ok(distToPaths(door.x, door.z + 1.6, ROADS) < 0.5, `no road to ${id}'s door`);
+    assert.equal(farmBlocked(Math.round(door.x), Math.round(door.z + 1)), 'home', `${id}'s yard isn't theirs`);
+    const room = NPC_ROOMS[id];
+    assert.ok(room.x0 > HOUSE_ROOM.x0 + HOUSE_ROOM.w + 50, `${id}'s room is near the house's`);
+    for (const arena of Object.values(ARENAS)) assert.ok(Math.hypot(arena.x - room.x0, arena.z - room.z0) > 2 * ARENA_R + 40, `${id}'s room is by an arena`);
+  }
+  for (const [a, b] of [[NPC_ROOMS.rosa, NPC_ROOMS.basil], [NPC_ROOMS.basil, NPC_ROOMS.finn], [NPC_ROOMS.finn, NPC_ROOMS.mabel]]) assert.ok(Math.abs(a.z0 - b.z0) >= 70, 'the rooms\' dark round them would meet');
+  // the house's room and the bosses' arenas are far enough out not to be seen from the farm's shore
+  assert.ok(HOUSE_ROOM.x0 - 45 > HOME_HALF + 60, 'the house\'s room can be seen from the shore');
+  for (const arena of Object.values(ARENAS)) assert.ok(Math.max(Math.abs(arena.x), Math.abs(arena.z)) - ARENA_R > HOME_HALF + 60, 'an arena can be seen from the shore');
+  // the lake is in the valley, its middle water; Finn's dock runs out from his door over the sea; the signposts by the roads
+  assert.ok(inLake(LAKE.x, LAKE.z) && !inLake(LAKE.x + LAKE.r + 2, LAKE.z));
+  assert.equal(farmBlocked(LAKE.x, LAKE.z), 'lake');
+  assert.ok(DOCK.z0 > npcDoor(NPC_HOMES.finn).z && DOCK.z1 > HOME_HALF + 5);
+  for (const { x, z } of SIGNPOSTS) {
+    assert.ok(Math.max(Math.abs(x), Math.abs(z)) > OLD_HALF, 'a signpost on the old farm');
+    assert.ok(distToPaths(x, z, ROADS) > 1 && distToPaths(x, z, ROADS) < 3, 'a signpost not by a road');
+  }
+  assert.equal(farmBlocked(40, 40), '', 'the valley is the farmer\'s to farm');
+});
+
+await test('the neighbours: what they ask and give is all there is, their shops sell everything the merchant used to, the first request opens the shop', () => {
+  assert.deepEqual(Object.keys(NPCS), NPC_IDS);
+  const sold = new Set(MERCHANT_STOCK);
+  for (const id of MERCHANT_STOCK) assert.ok(ITEMS[id]?.price, `the merchant can't sell ${id}`);
+  for (const id of NPC_IDS) {
+    const npc = NPCS[id];
+    const [first] = npc.missions;
+    assert.equal(npc.shop.opensWith, first.id, `${id}'s shop opens with their first request`);
+    assert.equal(first.gives.opens, 'shop');
+    assert.ok(npc.hours.every((h, i) => i === 0 || h > npc.hours[i - 1]), `${id}'s day goes round in order`);
+    for (const shelf of npc.shop.shelves) {
+      for (const item of shelf.items) {
+        assert.ok(ITEMS[item]?.price, `${id} can't sell ${item}`);
+        sold.add(item);
+      }
+      if (shelf.after) assert.equal(MISSIONS[shelf.after]?.npc, id, `${id}'s ${shelf.title} opens with someone else's request`);
+      if (shelf.after) assert.equal(MISSIONS[shelf.after].gives.opens, shelf.title, `${shelf.after} doesn't say it opens ${shelf.title}`);
+    }
+    const ids = new Set();
+    for (const m of npc.missions) {
+      assert.ok(!ids.has(m.id) && MISSIONS[m.id] === m && m.npc === id);
+      ids.add(m.id);
+      for (const text of ['title', 'ask', 'intro', 'waiting', 'thanks']) assert.ok(m[text], `${m.id} has no ${text}`);
+      for (const need of m.needs) {
+        assert.ok(need.count > 0);
+        if (need.item) assert.ok(ITEMS[need.item], `${m.id} needs ${need.item}`);
+        else if (need.items) assert.ok(need.items.every((item) => ITEMS[item]));
+        else if (need.deed) assert.ok(['pet', 'fish'].includes(need.deed));
+        else assert.ok(PIECES[need.built], `${m.id} needs ${need.built} built`);
+      }
+      for (const [item, n] of m.gives.items ?? []) assert.ok(ITEMS[item] && n > 0, `${m.id} gives ${item}`);
+    }
+    for (const text of ['intro', 'morning', 'day', 'evening', 'chat', 'asleep', 'locked', 'done', 'shop', 'bought']) assert.ok(npc.lines[text]?.length, `${id} has nothing to say for ${text}`);
+  }
+  // everything the merchant used to sell is still for sale somewhere
+  for (const [id, def] of Object.entries(ITEMS)) if (def.price) assert.ok(sold.has(id), `nobody sells ${id}`);
+});
+
+await test('a neighbour\'s requests: one at a time, counted from when they asked, the shop and its shelves opening as they are done', () => {
+  const state = freshNpcState();
+  const have = {};
+  const deeds = {};
+  const built = {};
+  const ctx = { have: (item) => have[item] ?? 0, deeds, built: (piece) => built[piece] ?? 0 };
+  assert.equal(currentMission('rosa', state).id, 'rosa_pet');
+  assert.ok(!isOpen('rosa', state));
+  deeds.pet = 5; // (petted before she asked: doesn't count)
+  state.heard.push('rosa_pet');
+  state.since.rosa_pet = { ...deeds };
+  deeds.pet += 2;
+  assert.deepEqual(progress(MISSIONS.rosa_pet, state, ctx).map((n) => [n.have, n.ok]), [[2, false]]);
+  deeds.pet += 1;
+  assert.ok(progress(MISSIONS.rosa_pet, state, ctx).every((n) => n.ok));
+  state.done.push('rosa_pet');
+  assert.ok(isOpen('rosa', state), 'her shop is open');
+  assert.equal(currentMission('rosa', state).id, 'rosa_breakfast');
+  // eggs, large or not, count together
+  have.egg = 2;
+  have.large_egg = 2;
+  have.milk = 1;
+  assert.ok(progress(MISSIONS.rosa_breakfast, state, ctx).every((n) => n.ok));
+  // a shelf opens with its own request
+  const basil = freshNpcState();
+  basil.done.push('basil_turnips');
+  assert.ok(isOpen('basil', basil) && isOpen('basil', basil, 'Seeds') && !isOpen('basil', basil, 'Rare seeds'));
+  basil.done.push('basil_soup');
+  assert.ok(isOpen('basil', basil, 'Rare seeds') && !isOpen('basil', basil, 'Treasures'));
+  // something built on the farm
+  built.scarecrow = 1;
+  have.pumpkin = 1;
+  assert.deepEqual(progress(MISSIONS.basil_crows, basil, ctx).map((n) => n.ok), [true, false]);
+  // hearts, up to the most
+  assert.equal(heartsFor(0, FRIENDSHIP), 0);
+  assert.equal(heartsFor(FRIENDSHIP.perHeart * 2 + 1, FRIENDSHIP), 2);
+  assert.equal(heartsFor(1e9, FRIENDSHIP), FRIENDSHIP.hearts);
+  // all done: nothing left to ask
+  const finn = freshNpcState();
+  finn.done.push(...NPCS.finn.missions.map((m) => m.id));
+  assert.equal(currentMission('finn', finn), null);
 });
 
 await test('a shuffle is the same everywhere: every number kept, the same order for the same draws', () => {
@@ -1979,9 +2120,9 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   room.message(ann.p, { t: C.ANIMALS, state: { hens: [[1, 1, 1, 1]], built: [] } });
   assert.equal(room.built.size, 1, 'the animals can\'t take it down');
   // the house stands on 20 tiles, its door on the one it was built on; its room's field is farmed while it stands
-  room.message(ann.p, { t: C.STATE, x: 112, y: 0.8, z: -2, yaw: 0, f: 1 });
-  room.message(ann.p, { t: C.TILL, key: '112,-2' });
-  assert.equal(ann.conn.last(S.FARM_DENY).key, '112,-2', 'no house yet: no field');
+  room.message(ann.p, { t: C.STATE, x: 252, y: 0.8, z: -2, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.TILL, key: '252,-2' });
+  assert.equal(ann.conn.last(S.FARM_DENY).key, '252,-2', 'no house yet: no field');
   room.message(ann.p, { t: C.STATE, x: 8, y: 0.8, z: 11.2, yaw: 0, f: 1 });
   room.message(ann.p, { t: C.BUILD, key: '8,10', piece: 'house' });
   assert.deepEqual(bo.conn.last(S.BUILT), { t: S.BUILT, key: '8,10', piece: 'house', by: ann.p.id });
@@ -1994,20 +2135,20 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   }
   room.message(ann.p, { t: C.BUILD, key: '7,12', piece: 'house' });
   assert.equal(ann.conn.last(S.FARM_DENY).key, '7,12', 'one house to a farm');
-  room.message(ann.p, { t: C.STATE, x: 112, y: 0.8, z: -2, yaw: 0, f: 1 });
-  room.message(ann.p, { t: C.TILL, key: '112,-2' });
-  assert.deepEqual(bo.conn.last(S.TILLED), { t: S.TILLED, key: '112,-2', by: ann.p.id }, 'the field');
-  room.message(ann.p, { t: C.PLANT, key: '112,-2', crop: 'turnip' });
-  assert.equal(bo.conn.last(S.PLANTED).key, '112,-2');
-  room.message(ann.p, { t: C.STATE, x: 114, y: 0.8, z: 3, yaw: 0, f: 1 });
-  room.message(ann.p, { t: C.TILL, key: '114,3' });
-  assert.equal(ann.conn.last(S.FARM_DENY).key, '114,3', 'the boards aren\'t field');
+  room.message(ann.p, { t: C.STATE, x: 252, y: 0.8, z: -2, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.TILL, key: '252,-2' });
+  assert.deepEqual(bo.conn.last(S.TILLED), { t: S.TILLED, key: '252,-2', by: ann.p.id }, 'the field');
+  room.message(ann.p, { t: C.PLANT, key: '252,-2', crop: 'turnip' });
+  assert.equal(bo.conn.last(S.PLANTED).key, '252,-2');
+  room.message(ann.p, { t: C.STATE, x: 254, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(ann.p, { t: C.TILL, key: '254,3' });
+  assert.equal(ann.conn.last(S.FARM_DENY).key, '254,3', 'the boards aren\'t field');
   room.message(ann.p, { t: C.STATE, x: 11.2, y: 0.8, z: 7, yaw: 0, f: 1 });
   room.message(ann.p, { t: C.UNBUILD, key: '10,7' });
   assert.deepEqual(bo.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '8,10', piece: 'house', by: ann.p.id }, 'taken down from beside any of its tiles, its back corner too');
   assert.equal(room.covered.size, 1);
-  room.tilled.delete('112,-2');
-  room.crops.delete('112,-2');
+  room.tilled.delete('252,-2');
+  room.crops.delete('252,-2');
   room.message(ann.p, { t: C.STATE, x: 0, y: 0.8, z: 5, yaw: 0, f: 1 });
   // what the builder's backpack is short of comes out of the chest: the owner's only, only what it costs, only what is there
   room.message(bo.p, { t: C.CHEST_PUT, item: 'wood', count: 3 });
@@ -2093,6 +2234,41 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   rooms.turnOut(a.id, madeB.id);
   assert.equal(bo.conn.closed, CLOSE.NOT_HELPER);
   assert.equal(room.players.size, 1);
+  room.close();
+});
+
+await test('a farm room: the valley is farmed and built on, but not the lake, a neighbour\'s place or the shore; the old house field comes along', () => {
+  const farms = new Farms({ log: () => {} });
+  // (a save from before the farm grew: soil and a crop in the house's field where it was, 140 tiles nearer)
+  const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: [['112,-2', 0, 9999], ['3,3', 0, 9999]], crops: [['112,-2', 'turnip', 10]] }, backpack: {} }, 'pw');
+  const a = farms.auth(bearer(made));
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  assert.ok(room.tilled.has('252,-2') && room.crops.has('252,-2') && room.tilled.has('3,3'), 'the house field\'s soil and turnip, where the room is now');
+  assert.equal(movedKey('112,-2'), '252,-2');
+  assert.equal(movedKey('3,3'), '3,3');
+  assert.equal(movedKey('252,-2'), '252,-2', 'moved once');
+  const conn = fakeConn();
+  const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'Ann', auth: `${made.id}.${made.token}` });
+  const at = (x, z) => room.message(p, { t: C.STATE, x, y: 0.8, z, yaw: 0, f: 1 });
+  at(45, 40);
+  room.message(p, { t: C.TILL, key: '45,40' });
+  assert.equal(conn.last(S.TILLED)?.key, '45,40', 'out in the valley');
+  const lake = `${LAKE.x},${LAKE.z}`;
+  at(LAKE.x, LAKE.z);
+  room.message(p, { t: C.TILL, key: lake });
+  assert.equal(conn.last(S.FARM_DENY).key, lake, 'not in the lake');
+  const home = NPC_HOMES.basil;
+  const yard = `${home.x},${home.z + home.d / 2 + 2}`;
+  at(home.x, home.z + home.d / 2 + 2);
+  room.message(p, { t: C.BUILD, key: yard, piece: 'wood_fence' });
+  assert.equal(conn.last(S.FARM_DENY).key, yard, 'not in Basil\'s yard');
+  at(HOME_HALF - 0.5, 0);
+  room.message(p, { t: C.TILL, key: `${HOME_HALF},0` });
+  assert.equal(conn.last(S.FARM_DENY).key, `${HOME_HALF},0`, 'not on the very shore');
+  // standing in a neighbour's room is somewhere a farmer can be
+  room.message(p, { t: C.STATE, x: NPC_ROOMS.mabel.x0 + 3, y: 0.8, z: NPC_ROOMS.mabel.z0 + 3, yaw: 0, f: 1 });
+  assert.ok(Math.abs(p.x - (NPC_ROOMS.mabel.x0 + 3)) < 0.01, 'in Mabel\'s room');
   room.close();
 });
 

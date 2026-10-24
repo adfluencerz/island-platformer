@@ -5,7 +5,8 @@ import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples, leafM
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
 import { buildSkyIsles } from './skyisles.js';
-import { homeGround, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR, PEN_RECTS } from '../shared/farmland.js';
+import { homeGround, HOME_HALF, HOME_PLATFORMS, HOME_KEEP_CLEAR, HOME_FLOORS, PEN_RECTS, LAKE, inLake, VALLEY_PATHS } from '../shared/farmland.js';
+import { buildNpcHomes } from './npchomes.js';
 import { WILD_DECOR, HOME_DECOR, wildKeepClear } from '../shared/wilds.js';
 
 // ---------- Maps ----------
@@ -18,24 +19,54 @@ import { WILD_DECOR, HOME_DECOR, wildKeepClear } from '../shared/wilds.js';
 // animates them.
 
 // ---------- Home: your farm's island ----------
-// A square island: a sand rim, a stone plaza at spawn, dirt paths toward a
-// staggered set of platforms, the merchant's stall and the gates of the hen
-// yard and the pasture, and grass everywhere else (its plan: shared/farmland.js;
-// its trees and rocks: shared/homewilds.js).
+// A square island: the old farm in the middle (a stone plaza at spawn, dirt
+// paths toward a staggered set of platforms, the merchant's stall and the
+// gates of the hen yard and the pasture, grass everywhere else), and round it
+// the valley, with its biomes, the lake, the neighbours' homes and the roads
+// out to them, and a sand rim (its plan: shared/farmland.js; its trees and
+// rocks: shared/homewilds.js).
+// (the biomes look as a lobby's island in spring does)
+const BIOME_STYLES = {
+  moss: { color: 0x3d6b2f, jitter: 0.05, top: [0.004, 0.02], lush: true },
+  meadow: { color: 0x79b54c, jitter: 0.035, top: [0.006, 0.022], lush: true },
+  pond: { color: 0x6b6446, jitter: 0.05, top: [0.004, 0.02] },
+  heath: { color: 0x7d6f8a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+  marsh: { color: 0x5f6b3a, jitter: 0.05, top: [0.004, 0.016], lush: true },
+  glade: { color: 0x5f8a6a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+  field: { color: 0x9a9a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+  patch: { color: 0x8a7a3a, jitter: 0.04, top: [0.006, 0.024], lush: true },
+  glen: { color: 0x3d6b3a, jitter: 0.04, top: [0.006, 0.02], lush: true },
+  dune: { color: 0xd9c188, jitter: 0.03, top: [0.006, 0.02] },
+  bank: { color: 0x5f9a3e, jitter: 0.04, top: [0.006, 0.024], lush: true },
+};
+const BIOME_FOLIAGE = {
+  moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34] },
+  meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8 },
+  heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
+  marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
+  glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44] },
+  field: { tufts: 2.8, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.3, light: [0.34, 0.44], hue: [0.14, 0.2] },
+  patch: { tufts: 2.2, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.2, light: [0.3, 0.4], hue: [0.1, 0.16] },
+  glen: { tufts: 3.2, lushTufts: 1.8, flowerLush: -2, flowerChance: 0, light: [0.22, 0.32], hue: [0.3, 0.36] },
+  dune: { tufts: 1.2, lushTufts: 0.6, flowerLush: -2, flowerChance: 0, light: [0.5, 0.6], hue: [0.12, 0.16] },
+  bank: { tufts: 1.8, lushTufts: 1, flowerLush: -2, flowerChance: 0.35, light: [0.32, 0.42], hue: [0.26, 0.32] },
+};
 export const HOME = {
   name: 'home',
   seed: 1337,
   half: HOME_HALF,
   spawn: SPAWN,
   tileType: homeGround, // (world.js asks between tiles too)
+  floors: HOME_FLOORS, // (the lake's, under its water)
   tileStyles: {
     grass: { color: 0x5d9b3a, jitter: 0.035, top: [0.006, 0.026], lush: true },
     path: { color: 0xb08a5a, jitter: 0.05, top: [0.004, 0.01] },
     stone: { color: 0x9c9a92, jitter: 0.07, top: [0.012, 0.03] },
     sand: { color: 0xe3cc94, jitter: 0.03, top: [0.004, 0.012] },
+    ...BIOME_STYLES,
   },
   decorTypes: HOME_DECOR,
-  foliage: { grass: { tufts: 2.2, lushTufts: 1.5, flowerLush: 0.35, flowerChance: 0.35 } },
+  foliage: { grass: { tufts: 2.2, lushTufts: 1.5, flowerLush: 0.35, flowerChance: 0.35 }, ...BIOME_FOLIAGE },
   platforms: HOME_PLATFORMS,
   keepClear: HOME_KEEP_CLEAR,
   // its own leaves, needles, grass and ground, for the seasons to color (src/seasons.js)
@@ -49,11 +80,33 @@ export const HOME = {
   build(ctx) {
     buildStall(ctx);
     buildPens(ctx);
+    buildNpcHomes(ctx);
+    return buildValley(ctx);
   },
   decorate({ scatter, addBush, isOpenGround }) {
-    scatter(40, 2, (x, z) => isOpenGround(x, z, 0.8) && !inBiggestPen(x, z, 0.8), addBush);
+    scatter(170, 2, (x, z) => isOpenGround(x, z, 0.8) && !inBiggestPen(x, z, 0.8), addBush);
   },
 };
+
+// The valley's set pieces: the lake, and what grows thick in each biome (the
+// bluebells in the glade, the reeds on the marsh...), as on a lobby's island
+// (below). Each biome is a small part of the farm, so its scatter tries many
+// spots.
+function buildValley(ctx) {
+  const offTrail = (x, z, d) => distToPaths(x, z, VALLEY_PATHS) > d;
+  const many = (n) => n * 400;
+  const pads = buildPond(ctx, { ...LAKE, r: LAKE.r + 0.6 }, inLake, HOME_FLOORS.pond, LOBBY_POND_Y);
+  fallenLogs(ctx, offTrail, 10, many(10));
+  heathCairns(ctx, offTrail, 6, many(6));
+  marshReeds(ctx, offTrail, 50, many(50));
+  gladeBluebells(ctx, offTrail, 60, many(60));
+  fieldSunflowers(ctx, offTrail, 45, many(45));
+  patchPumpkins(ctx, offTrail, 14, many(14));
+  glenFerns(ctx, offTrail, 55, many(55));
+  duneGrass(ctx, offTrail, 70, 6, many(70));
+  bankStrawberries(ctx, offTrail, 30, many(30));
+  return (t) => driftPads(pads, t);
+}
 
 // (where the pens' fences go out to at their last level: no bushes there)
 function inBiggestPen(x, z, margin) {
@@ -211,7 +264,186 @@ const reedMat = foliageMat(0x6b8a3a);
 const logMat = foliageMat(0x7a5432);
 const logEndMat = foliageMat(0xc49a6c);
 
-function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, tileAt, scatter }) {
+// ---------- The biomes' set pieces ----------
+// For a lobby's island and the farm's valley alike. ctx: world.js's set
+// piece kit; offTrail(x, z, d): (x, z) is more than d from every trail.
+// Each scatters n of its plants over its own ground (tries: how many spots
+// to try, for a biome that is a small part of a big island).
+
+// The pond: still water over a muddy bottom, lily pads, a few pink flowers,
+// reeds round the edge (the lily pads, for drifting)
+function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
+  const water = new THREE.Mesh(new THREE.CircleGeometry(pond.r + 0.9, 40), pondWaterMat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(pond.x, waterY, pond.z);
+  root.add(water);
+  const pads = [];
+  for (let i = 0; i < 9; i++) {
+    const a = rand(0, Math.PI * 2);
+    const d = rand(1.2, pond.r - 0.6);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 12, 1, false, 0.4, Math.PI * 1.8), padMat);
+    pad.position.set(pond.x + Math.cos(a) * d, waterY + 0.02, pond.z + Math.sin(a) * d);
+    pad.rotation.y = rand(0, Math.PI * 2);
+    pad.userData.y = waterY + 0.02;
+    if (rng() < 0.4) {
+      const lotus = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0), lotusMat);
+      lotus.position.y = 0.08;
+      pad.add(lotus);
+    }
+    root.add(pad);
+    pads.push(pad);
+  }
+  for (let i = 0; i < 26; i++) {
+    const a = rand(0, Math.PI * 2);
+    const x = pond.x + Math.cos(a) * rand(pond.r - 0.5, pond.r + 0.4);
+    const z = pond.z + Math.sin(a) * rand(pond.r - 0.5, pond.r + 0.4);
+    if (!inPond(x, z)) continue;
+    for (let n = 0; n < 4; n++) {
+      const h = rand(0.6, 1.1);
+      const reed = addDecor(new THREE.ConeGeometry(0.035, h, 4), reedMat, x + rand(-0.15, 0.15), floor + h / 2, z + rand(-0.15, 0.15), 1, 1, 1, root);
+      reed.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
+    }
+  }
+  return pads;
+}
+// ...and they drift a little
+function driftPads(pads, t) {
+  pads.forEach((pad, i) => {
+    pad.position.y = pad.userData.y + Math.sin(t * 1.3 + i) * 0.012;
+    pad.rotation.y += Math.sin(t * 0.4 + i) * 0.0008;
+  });
+}
+
+// Fallen logs in the forest, to hop over (or along)
+function fallenLogs({ scatter, tileAt, isOpenGround, rand, rng, root, addCollider }, offTrail, n, tries) {
+  scatter(n, 7, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.6) && offTrail(x, z, 2), (x, z) => {
+    const len = rand(2.2, 3.4);
+    const along = rng() < 0.5; // lying east-west, else north-south
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, len, 9), [logMat, logEndMat, logEndMat]);
+    log.rotation.set(along ? 0 : Math.PI / 2, 0, along ? Math.PI / 2 : 0);
+    log.position.set(x, 0.3, z);
+    log.castShadow = true;
+    log.receiveShadow = true;
+    root.add(log);
+    addCollider({ x, y: 0.28, z, w: along ? len : 0.6, h: 0.56, d: along ? 0.6 : len });
+  }, tries);
+}
+
+// Cairns, stacks of flat stones, on the heath
+function heathCairns({ scatter, tileAt, isOpenGround, rand, rng, root, addCollider }, offTrail, n, tries) {
+  scatter(n, 5, (x, z) => tileAt(x, z) === 'heath' && isOpenGround(x, z, 1) && offTrail(x, z, 1.5), (x, z) => {
+    let y = 0;
+    for (let i = 0, k = 3 + Math.floor(rng() * 2); i < k; i++) {
+      const r = 0.42 - i * 0.08;
+      const h = 0.2;
+      const stone = addDecor(rockGeo, rockMats[i % rockMats.length], x + rand(-0.04, 0.04), y + h / 2, z + rand(-0.04, 0.04), r, h / 2, r * 0.9, root);
+      stone.rotation.y = rand(0, Math.PI * 2);
+      y += h * 0.9;
+    }
+    addCollider({ x, y: y / 2, z, w: 0.7, h: y, d: 0.7 });
+  }, tries);
+}
+
+// Reeds, thin stalks with brown heads, thick on the marsh; you walk through them
+function marshReeds({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail, n, tries) {
+  scatter(n, 1.1, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.3) && offTrail(x, z, 1), (x, z) => {
+    for (let i = 0, k = 2 + Math.floor(rng() * 3); i < k; i++) {
+      const h = rand(0.8, 1.5);
+      const px = x + rand(-0.25, 0.25);
+      const pz = z + rand(-0.25, 0.25);
+      const tilt = [rand(-0.1, 0.1), rand(-0.1, 0.1)];
+      const stalk = addDecor(marshReedGeo, marshReedMat, px, h / 2, pz, 1, h / 2, 1, root);
+      stalk.rotation.set(tilt[0], 0, tilt[1]);
+      if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
+    }
+  }, tries);
+}
+
+// Bluebells, nodding blue bells on thin stems, thick in the glade; you walk through them
+function gladeBluebells({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail, n, tries) {
+  scatter(n, 0.9, (x, z) => tileAt(x, z) === 'glade' && isOpenGround(x, z, 0.3) && offTrail(x, z, 1), (x, z) => {
+    for (let i = 0, k = 2 + Math.floor(rng() * 3); i < k; i++) {
+      const h = rand(0.7, 1.1);
+      const px = x + rand(-0.25, 0.25);
+      const pz = z + rand(-0.25, 0.25);
+      const stem = addDecor(gladeStemGeo, gladeStemMat, px, 0.2 * h, pz, 1, h, 1, root);
+      stem.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
+      for (let b = 0; b < 3; b++) addDecor(gladeBellGeo, gladeBellMat, px + (b - 1) * 0.03, (0.3 + b * 0.04) * h + 0.1, pz, 1, 1.3, 1, root);
+    }
+  }, tries);
+}
+
+// Sunflowers, tall stems nodding a yellow head, thick in the field; you walk through them
+function fieldSunflowers({ scatter, tileAt, isOpenGround, rand, root }, offTrail, n, tries) {
+  scatter(n, 1.1, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.3) && offTrail(x, z, 1), (x, z) => {
+    const h = rand(1.1, 1.6);
+    const px = x + rand(-0.3, 0.3);
+    const pz = z + rand(-0.3, 0.3);
+    addDecor(fieldStemGeo, fieldStemMat, px, h / 2, pz, 1, h, 1, root);
+    const head = addDecor(fieldHeadGeo, fieldHeadMat, px, h, pz + 0.02, 1, 1, 1, root);
+    head.rotation.set(rand(-0.2, 0.1), rand(-0.6, 0.6), 0);
+    addDecor(fieldHeartGeo, fieldHeartMat, px, h, pz + 0.05, 1, 1, 1, root).rotation.copy(head.rotation);
+  }, tries);
+}
+
+// Pumpkins on their vines, over the patch; they sit low, so you walk around them
+function patchPumpkins({ scatter, tileAt, isOpenGround, rand, root }, offTrail, n, tries) {
+  scatter(n, 1.6, (x, z) => tileAt(x, z) === 'patch' && isOpenGround(x, z, 0.4) && offTrail(x, z, 1), (x, z) => {
+    const s = rand(0.7, 1.2);
+    const px = x + rand(-0.3, 0.3);
+    const pz = z + rand(-0.3, 0.3);
+    addDecor(patchPumpkinGeo, patchPumpkinMat, px, 0.16 * s, pz, s, 0.75 * s, s, root);
+    addDecor(patchVineGeo, patchVineMat, px, 0.04, pz, 1.4, 1, 1, root).rotation.y = rand(0, Math.PI);
+  }, tries);
+}
+
+// Fern fronds, thick in the glen; you walk through them
+function glenFerns({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail, n, tries) {
+  scatter(n, 1.1, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.3) && offTrail(x, z, 1), (x, z) => {
+    for (let i = 0, k = 3 + Math.floor(rng() * 3); i < k; i++) {
+      const h = rand(0.5, 1.1);
+      const a = rand(0, Math.PI * 2);
+      const frond = addDecor(glenFrondGeo, glenFrondMat, x + Math.cos(a) * 0.15, 0, z + Math.sin(a) * 0.15, 1, h, 1, root);
+      frond.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
+    }
+  }, tries);
+}
+
+// Tufts of pale dune grass, leaning in the wind, and driftwood on the dunes; you walk through the grass
+function duneGrass({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail, n, logs, tries) {
+  scatter(n, 1.2, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.3) && offTrail(x, z, 1), (x, z) => {
+    for (let i = 0, k = 3 + Math.floor(rng() * 3); i < k; i++) {
+      const h = rand(0.5, 1.1);
+      const blade = addDecor(plumeGeo, plumeMat, x + rand(-0.25, 0.25), 0, z + rand(-0.25, 0.25), 1, h, 1, root);
+      blade.rotation.set(rand(-0.15, 0.15), 0, rand(0.1, 0.3));
+    }
+  }, tries);
+  scatter(logs, 6, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 1) && offTrail(x, z, 1.5), (x, z) => {
+    const len = rand(1.2, 2);
+    const log = new THREE.Mesh(driftGeo, [driftMat, driftEndMat, driftEndMat]);
+    log.rotation.y = rand(0, Math.PI);
+    log.scale.x = len;
+    log.position.set(x, 0.14, z);
+    log.castShadow = true;
+    log.receiveShadow = true;
+    root.add(log);
+  }, tries && Math.round((tries * logs) / n));
+}
+
+// Low strawberry plants all over the bank; you walk through them
+function bankStrawberries({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail, n, tries) {
+  scatter(n, 1, (x, z) => tileAt(x, z) === 'bank' && isOpenGround(x, z, 0.3) && offTrail(x, z, 1), (x, z) => {
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + rand(0, 1);
+      addDecor(bankLeafGeo, bankLeafMat, x + Math.cos(a) * 0.12, 0.05, z + Math.sin(a) * 0.12, 1, 0.35, 1, root);
+    }
+    for (let i = 0, k = 1 + Math.floor(rng() * 2); i < k; i++) addDecor(bankBerryGeo, bankBerryMat, x + rand(-0.15, 0.15), 0.08, z + rand(-0.15, 0.15), 1, 1, 1, root);
+  }, tries);
+}
+
+function buildWildPieces(island, ctx) {
+  const { root, rand, rng, addCollider } = ctx;
+  const offTrail = (x, z, d) => distToPaths(x, z, island.trails) > d;
   // Giant toadstools: a flat cap you can stand on (red with white dots, or
   // its ring's own colors), a pale stalk
   for (const [x, z, size, top, , look = 0] of island.toadstools) {
@@ -251,180 +483,42 @@ function buildWildPieces(island, { root, rand, rng, addCollider, isOpenGround, t
   }
 
   // The pond: still water over a muddy bottom, lily pads, a few pink flowers, reeds
-  const { pond } = island;
-  const water = new THREE.Mesh(new THREE.CircleGeometry(pond.r + 0.9, 40), pondWaterMat);
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(pond.x, LOBBY_POND_Y, pond.z);
-  root.add(water);
-  const pads = [];
-  for (let i = 0; i < 9; i++) {
-    const a = rand(0, Math.PI * 2);
-    const d = rand(1.2, pond.r - 0.6);
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 12, 1, false, 0.4, Math.PI * 1.8), padMat);
-    pad.position.set(pond.x + Math.cos(a) * d, -0.1, pond.z + Math.sin(a) * d);
-    pad.rotation.y = rand(0, Math.PI * 2);
-    if (rng() < 0.4) {
-      const lotus = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 0), lotusMat);
-      lotus.position.y = 0.08;
-      pad.add(lotus);
-    }
-    root.add(pad);
-    pads.push(pad);
-  }
-  for (let i = 0; i < 26; i++) {
-    const a = rand(0, Math.PI * 2);
-    const x = pond.x + Math.cos(a) * rand(pond.r - 0.5, pond.r + 0.4);
-    const z = pond.z + Math.sin(a) * rand(pond.r - 0.5, pond.r + 0.4);
-    if (!island.inPond(x, z)) continue;
-    for (let n = 0; n < 4; n++) {
-      const h = rand(0.6, 1.1);
-      const reed = addDecor(new THREE.ConeGeometry(0.035, h, 4), reedMat, x + rand(-0.15, 0.15), island.pondFloor + h / 2, z + rand(-0.15, 0.15), 1, 1, 1, root);
-      reed.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
-    }
-  }
+  const pads = buildPond(ctx, island.pond, island.inPond, island.pondFloor, LOBBY_POND_Y);
 
   // Fallen logs in the forest, to hop over (or along)
-  scatter(forSize(island, 5), 7, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.6) && distToPaths(x, z, island.trails) > 2, (x, z) => {
-    const len = rand(2.2, 3.4);
-    const along = rng() < 0.5; // lying east-west, else north-south
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, len, 9), [logMat, logEndMat, logEndMat]);
-    log.rotation.set(along ? 0 : Math.PI / 2, 0, along ? Math.PI / 2 : 0);
-    log.position.set(x, 0.3, z);
-    log.castShadow = true;
-    log.receiveShadow = true;
-    root.add(log);
-    addCollider({ x, y: 0.28, z, w: along ? len : 0.6, h: 0.56, d: along ? 0.6 : len });
-  });
+  fallenLogs(ctx, offTrail, forSize(island, 5));
 
   // Generation 2: cairns, stacks of flat stones, on the heath (after everything
   // else drew from rng, so the older set pieces stay where they were)
-  if (island.heath) {
-    scatter(4, 5, (x, z) => tileAt(x, z) === 'heath' && isOpenGround(x, z, 1) && distToPaths(x, z, island.trails) > 1.5, (x, z) => {
-      let y = 0;
-      for (let i = 0, n = 3 + Math.floor(rng() * 2); i < n; i++) {
-        const r = 0.42 - i * 0.08;
-        const h = 0.2;
-        const stone = addDecor(rockGeo, rockMats[i % rockMats.length], x + rand(-0.04, 0.04), y + h / 2, z + rand(-0.04, 0.04), r, h / 2, r * 0.9, root);
-        stone.rotation.y = rand(0, Math.PI * 2);
-        y += h * 0.9;
-      }
-      addCollider({ x, y: y / 2, z, w: 0.7, h: y, d: 0.7 });
-    });
-  }
+  if (island.heath) heathCairns(ctx, offTrail, 4);
 
-  // Generation 4: reeds, thin stalks with brown heads, thick on the marsh (after
-  // everything else drew from rng); you walk through them
-  if (island.marsh) {
-    scatter(40, 1.1, (x, z) => tileAt(x, z) === 'marsh' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      for (let i = 0, n = 2 + Math.floor(rng() * 3); i < n; i++) {
-        const h = rand(0.8, 1.5);
-        const px = x + rand(-0.25, 0.25);
-        const pz = z + rand(-0.25, 0.25);
-        const tilt = [rand(-0.1, 0.1), rand(-0.1, 0.1)];
-        const stalk = addDecor(marshReedGeo, marshReedMat, px, h / 2, pz, 1, h / 2, 1, root);
-        stalk.rotation.set(tilt[0], 0, tilt[1]);
-        if (rng() < 0.6) addDecor(marshSpikeGeo, marshSpikeMat, px + tilt[1] * -h * 0.9, h * 0.9, pz + tilt[0] * h * 0.9, 1, 1, 1, root);
-      }
-    });
-  }
+  // Generation 4: reeds, thick on the marsh (after everything else drew from rng)
+  if (island.marsh) marshReeds(ctx, offTrail, 40);
 
-  // Generation 5: bluebells, nodding blue bells on thin stems, thick in the glade
-  // (after everything else drew from rng); you walk through them
-  if (island.glade) {
-    scatter(46, 0.9, (x, z) => tileAt(x, z) === 'glade' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      for (let i = 0, n = 2 + Math.floor(rng() * 3); i < n; i++) {
-        const h = rand(0.7, 1.1);
-        const px = x + rand(-0.25, 0.25);
-        const pz = z + rand(-0.25, 0.25);
-        const stem = addDecor(gladeStemGeo, gladeStemMat, px, 0.2 * h, pz, 1, h, 1, root);
-        stem.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
-        for (let b = 0; b < 3; b++) addDecor(gladeBellGeo, gladeBellMat, px + (b - 1) * 0.03, (0.3 + b * 0.04) * h + 0.1, pz, 1, 1.3, 1, root);
-      }
-    });
-  }
+  // Generation 5: bluebells, thick in the glade
+  if (island.glade) gladeBluebells(ctx, offTrail, 46);
 
-  // Generation 6: sunflowers, tall stems nodding a yellow head, thick in the field
-  // (after everything else drew from rng); you walk through them
-  if (island.field) {
-    scatter(30, 1.1, (x, z) => tileAt(x, z) === 'field' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      const h = rand(1.1, 1.6);
-      const px = x + rand(-0.3, 0.3);
-      const pz = z + rand(-0.3, 0.3);
-      addDecor(fieldStemGeo, fieldStemMat, px, h / 2, pz, 1, h, 1, root);
-      const head = addDecor(fieldHeadGeo, fieldHeadMat, px, h, pz + 0.02, 1, 1, 1, root);
-      head.rotation.set(rand(-0.2, 0.1), rand(-0.6, 0.6), 0);
-      addDecor(fieldHeartGeo, fieldHeartMat, px, h, pz + 0.05, 1, 1, 1, root).rotation.copy(head.rotation);
-    });
-  }
+  // Generation 6: sunflowers, thick in the field
+  if (island.field) fieldSunflowers(ctx, offTrail, 30);
 
-  // Generation 7: pumpkins on their vines, scattered over the patch (after
-  // everything else drew from rng); they sit low, so you walk around them
-  if (island.patch) {
-    scatter(12, 1.6, (x, z) => tileAt(x, z) === 'patch' && isOpenGround(x, z, 0.4) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      const s = rand(0.7, 1.2);
-      const px = x + rand(-0.3, 0.3);
-      const pz = z + rand(-0.3, 0.3);
-      addDecor(patchPumpkinGeo, patchPumpkinMat, px, 0.16 * s, pz, s, 0.75 * s, s, root);
-      addDecor(patchVineGeo, patchVineMat, px, 0.04, pz, 1.4, 1, 1, root).rotation.y = rand(0, Math.PI);
-    });
-  }
+  // Generation 7: pumpkins on their vines, over the patch
+  if (island.patch) patchPumpkins(ctx, offTrail, 12);
 
-  // Generation 8: fern fronds, thick in the glen (after everything else drew
-  // from rng); you walk through them
-  if (island.glen) {
-    scatter(40, 1.1, (x, z) => tileAt(x, z) === 'glen' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      for (let i = 0, n = 3 + Math.floor(rng() * 3); i < n; i++) {
-        const h = rand(0.5, 1.1);
-        const a = rand(0, Math.PI * 2);
-        const frond = addDecor(glenFrondGeo, glenFrondMat, x + Math.cos(a) * 0.15, 0, z + Math.sin(a) * 0.15, 1, h, 1, root);
-        frond.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
-      }
-    });
-  }
+  // Generation 8: fern fronds, thick in the glen
+  if (island.glen) glenFerns(ctx, offTrail, 40);
 
-  // Generation 9: tufts of pale dune grass, leaning in the wind, and driftwood
-  // on the dunes (after everything else drew from rng); you walk through the grass
-  if (island.dunes) {
-    scatter(30, 1.2, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      for (let i = 0, n = 3 + Math.floor(rng() * 3); i < n; i++) {
-        const h = rand(0.5, 1.1);
-        const blade = addDecor(plumeGeo, plumeMat, x + rand(-0.25, 0.25), 0, z + rand(-0.25, 0.25), 1, h, 1, root);
-        blade.rotation.set(rand(-0.15, 0.15), 0, rand(0.1, 0.3));
-      }
-    });
-    scatter(3, 6, (x, z) => tileAt(x, z) === 'dune' && isOpenGround(x, z, 1) && distToPaths(x, z, island.trails) > 1.5, (x, z) => {
-      const len = rand(1.2, 2);
-      const log = new THREE.Mesh(driftGeo, [driftMat, driftEndMat, driftEndMat]);
-      log.rotation.y = rand(0, Math.PI);
-      log.scale.x = len;
-      log.position.set(x, 0.14, z);
-      log.castShadow = true;
-      log.receiveShadow = true;
-      root.add(log);
-    });
-  }
+  // Generation 9: dune grass and driftwood on the dunes
+  if (island.dunes) duneGrass(ctx, offTrail, 30, 3);
 
-  // Generation 11: low strawberry plants all over the bank (after everything
-  // else drew from rng); you walk through them
-  if (island.bank) {
-    scatter(40, 1, (x, z) => tileAt(x, z) === 'bank' && isOpenGround(x, z, 0.3) && distToPaths(x, z, island.trails) > 1, (x, z) => {
-      for (let i = 0; i < 3; i++) {
-        const a = (i / 3) * Math.PI * 2 + rand(0, 1);
-        addDecor(bankLeafGeo, bankLeafMat, x + Math.cos(a) * 0.12, 0.05, z + Math.sin(a) * 0.12, 1, 0.35, 1, root);
-      }
-      for (let i = 0, n = 1 + Math.floor(rng() * 2); i < n; i++) addDecor(bankBerryGeo, bankBerryMat, x + rand(-0.15, 0.15), 0.08, z + rand(-0.15, 0.15), 1, 1, 1, root);
-    });
-  }
+  // Generation 11: strawberry plants all over the bank
+  if (island.bank) bankStrawberries(ctx, offTrail, 40);
 
   // Generation 10: the sky isles overhead (src/skyisles.js)
   const sky = buildSkyIsles(island, { root, addCollider });
 
   // the lily pads drift a little (and on the sky isles, what turns turns)
   return (t) => {
-    pads.forEach((pad, i) => {
-      pad.position.y = -0.1 + Math.sin(t * 1.3 + i) * 0.012;
-      pad.rotation.y += Math.sin(t * 0.4 + i) * 0.0008;
-    });
+    driftPads(pads, t);
     sky?.(t);
   };
 }

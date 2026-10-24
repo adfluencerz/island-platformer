@@ -55,13 +55,14 @@ import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
 import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } from '../shared/bosses.js';
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap, movedKey } from '../shared/level.js';
 import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH, cropAgain, cropGives, PLATFORM_PLANTS } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 import { BEANSTALK } from '../shared/balance.js';
 import { rainSince } from '../shared/weather.js';
+import { HOME_HALF, farmBlocked, NPC_ROOMS } from '../shared/farmland.js';
 
-const FARM_HALF = 28; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
+const FARM_HALF = HOME_HALF - 2; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
 const SECONDS_PER_HOUR = DAY_LENGTH_SECONDS / 24;
 const RIPE_SLACK = 1; // seconds: pages count growth on their own clocks
@@ -97,8 +98,9 @@ export class FarmRoom extends Place {
   // { id, owner }, or null for someone who isn't the owner or a helper.
   // helpers(): how many helpers the farm has now (each lets it have one more house)
   constructor({ farm, admit, helpers = () => 0, log = () => {} }) {
-    const far = Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w, ...Object.values(ARENAS).map(({ x, z }) => Math.max(Math.abs(x), Math.abs(z)) + ARENA_R));
-    super({ code: farm.id, name: farmTitle(farm), worldLimit: far + 40, log }); // (the house's room and the bosses' arenas are out past the sea)
+    const far = Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w, ...Object.values(ARENAS).map(({ x, z }) => Math.max(Math.abs(x), Math.abs(z)) + ARENA_R),
+      ...Object.values(NPC_ROOMS).map((r) => Math.max(Math.abs(r.x0) + r.w, Math.abs(r.z0) + r.d)));
+    super({ code: farm.id, name: farmTitle(farm), worldLimit: far + 40, log }); // (the house's room, the bosses' arenas and the neighbours' rooms are out past the sea)
     this.farmId = farm.id;
     this.admit = admit;
     this.helpers = helpers;
@@ -114,7 +116,8 @@ export class FarmRoom extends Place {
     // (a save from before soil went back to grass has just the keys)
     this.tilled = new Map();
     for (const t of saved?.tilled ?? []) {
-      const [key, bare, life] = Array.isArray(t) ? t : [t];
+      const [was, bare, life] = Array.isArray(t) ? t : [t];
+      const key = movedKey(was); // (the house's field, where it was before the farm grew)
       if (!KEY_RE.test(key)) continue;
       this.tilled.set(key, {
         since: savedHours - (Number.isFinite(bare) ? bare : 0) / SECONDS_PER_HOUR,
@@ -122,7 +125,8 @@ export class FarmRoom extends Place {
       });
     }
     this.crops = new Map(); // key -> { crop, plantedAt, wateredAt (game hours; once watered) }
-    for (const [key, crop, age, watered] of saved?.crops ?? []) {
+    for (const [was, crop, age, watered] of saved?.crops ?? []) {
+      const key = movedKey(was);
       if (this.tilled.has(key) && CROP_GROW_TIME[crop] && Number.isFinite(age)) {
         this.crops.set(key, { crop, plantedAt: savedHours - age / SECONDS_PER_HOUR, ...(watered && { wateredAt: savedHours }) });
       }
@@ -745,10 +749,11 @@ export function farmTitle(farm) {
 }
 
 // A tile key on the farm's island: "gx,gz", whole tiles, inside the shore
+// (and not in the lake or on a neighbour's lot: shared/farmland.js)
 function onFarm(key) {
   if (typeof key !== 'string' || !KEY_RE.test(key)) return false;
   const [gx, gz] = key.split(',').map(Number);
-  return Math.abs(gx) <= FARM_HALF && Math.abs(gz) <= FARM_HALF;
+  return Math.abs(gx) <= FARM_HALF && Math.abs(gz) <= FARM_HALF && !farmBlocked(gx, gz);
 }
 
 const round3 = (v) => Math.round(v * 1000) / 1000;

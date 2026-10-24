@@ -39,7 +39,7 @@ export const SHOP = {
   shroom_spores: { price: 60, sell: 30 },
   lily_seeds: { price: 50, sell: 25 },
   cotton_seeds: { price: 90, sell: 45 },
-  golden_seeds: { sell: 100 },
+  golden_seeds: { price: 450, sell: 100 }, // (Basil sells a few, once you have helped him enough)
   // crops
   turnip: { sell: 35 },
   carrot: { sell: 60 },
@@ -138,6 +138,9 @@ export const SHOP = {
   recipe_sushi_rolls: { price: 450 },
   recipe_farm_feast: { price: 1200 },
   recipe_card: { sell: 150 },
+  // what only a neighbour sells (shared/npcs.js): Finn his rods, Basil his golden seeds
+  fishing_rod: { price: 250 },
+  sturdy_rod: { price: 900 },
 };
 export const COIN_VALUE = 10; // gold for picking up one coin
 
@@ -382,6 +385,39 @@ export const SKY_ISLES = { count: [1, 3], radius: [5, 7.5], top: [9, 15], firstS
 export const SKY_CHESTS = {
   sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.06, 1, 1], ...bossPieces(0.06)] },
   sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5], ...bossPieces(0.2)] },
+};
+
+// ---------- The neighbours ----------
+// Who sells what (and what each asks of you) is in shared/npcs.js; the
+// prices are the items' own (SHOP). The merchant at the stall keeps only the
+// basics:
+export const MERCHANT_STOCK = ['turnip_seeds', 'carrot_seeds', 'flax_seeds', 'watering_can', 'bait'];
+// How much a neighbour likes you: points for a chat (once a game day) and
+// for each thing you do for them; a heart for every `perHeart` points, up
+// to `hearts`; each heart takes `discount` off what their shop asks
+export const FRIENDSHIP = { chat: 10, mission: 40, perHeart: 40, hearts: 5, discount: 0.02 };
+
+// ---------- Forage in the valley ----------
+// What turns up in the farm's biomes, out in the valley round the old farm,
+// while you play it alone, to walk into: one every `every` seconds of play
+// (in the biome of a spot picked at random), up to `most` lying about at
+// once. `loot`, by the ground it turns up on: [item, weight, min, max].
+export const FARM_FORAGE = {
+  every: 25,
+  most: 8,
+  loot: {
+    moss: [['mushroom', 0.7, 1, 2], ['berries', 0.3, 2, 3]],
+    glen: [['fern', 0.7, 1, 2], ['mushroom', 0.3, 1, 1]],
+    glade: [['bluebell', 1, 1, 2]],
+    meadow: [['berries', 1, 2, 4]],
+    heath: [['heather', 1, 1, 2]],
+    marsh: [['cattail', 1, 1, 2]],
+    field: [['sunflower', 1, 1, 1]],
+    patch: [['pumpkin', 1, 1, 1]],
+    dune: [['seashell', 0.8, 1, 2], ['seaweed', 0.2, 1, 1]],
+    bank: [['strawberry', 1, 2, 3]],
+    sand: [['seashell', 1, 1, 1]],
+  },
 };
 
 // ---------- Finds on the farm ----------

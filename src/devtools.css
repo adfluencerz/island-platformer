@@ -34,7 +34,7 @@
   font: 700 20px/1 var(--inv-font);
   cursor: pointer;
 }
-.dev-tabs { display: flex; gap: 4px; }
+.dev-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .dev-tab {
   flex: 1;
   padding: 3px 0 4px;
