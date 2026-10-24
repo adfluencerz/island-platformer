@@ -87,10 +87,13 @@ const FOG_NEAR = 30;
 const FOG_FAR = 90;
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
 
+// (near: half a unit, not a tenth. The camera is never that close to anything
+// it shows, and the depth buffer is five times finer for it: some phones' is
+// coarse, and surfaces a little apart flickered there)
 const camera = new THREE.PerspectiveCamera(
   60,
   window.innerWidth / window.innerHeight,
-  0.1,
+  0.5,
   200
 );
 

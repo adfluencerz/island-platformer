@@ -283,7 +283,7 @@ function stoneWall(g, solids, h, joined) {
 // A wood crate `h` tall and `w` across, its bottom at y0: a frame around
 // each side with a board corner to corner across it, and a lid
 function crate(g, y0, h, w) {
-  part(g, box, MATS.crate, 0, y0 + h / 2, 0, w, h, w);
+  part(g, box, MATS.crate, 0, y0 + (h - 0.02) / 2, 0, w, h - 0.02, w); // (just under the frame's top: level with it, they flickered)
   const slope = Math.atan2(h - 0.2, w - 0.2);
   const len = Math.hypot(h - 0.2, w - 0.2) + 0.1;
   for (const [fx, fz] of DIRS) {
@@ -737,7 +737,7 @@ function model(id, gx, gz, joined) {
       // a rough boulder, worn flat on top where it is stood on, with chunks
       // of it bulging out at the sides and lichen on some
       const r = hash(gx, gz);
-      part(g, box, MATS.stoneDark, 0, h / 2, 0, w - 0.3, h, w - 0.3);
+      part(g, box, MATS.stoneDark, 0, (h - 0.06) / 2, 0, w - 0.3, h - 0.06, w - 0.3); // (up into the flat top, not level with it)
       for (let i = 0; i < 8; i++) {
         // four big chunks low at its corners, four smaller ones higher up its sides
         const low = i < 4;
@@ -1482,7 +1482,7 @@ function model(id, gx, gz, joined) {
   } else if (id === 'planter') {
     part(g, box, MATS.stone, 0, 0.22, 0, 0.8, 0.44, 0.8);
     part(g, box, MATS.stoneLight, 0, 0.46, 0, 0.88, 0.06, 0.88);
-    part(g, box, MATS.soil, 0, 0.47, 0, 0.7, 0.04, 0.7);
+    part(g, box, MATS.soil, 0, 0.48, 0, 0.7, 0.06, 0.7); // (2 cm over the rim: level with it, the two flickered)
     const r = hash(gx, gz);
     for (let i = 0; i < 7; i++) {
       const a = i * 2.4 + r * 6;
