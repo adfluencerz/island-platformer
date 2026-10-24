@@ -79,8 +79,10 @@ const KEY_KINDS = new Set(['meadow', 'ledge', 'sky']); // where a lobby's one su
 export class Room extends Place {
   // seed: the island's (shared/worldgen.js). game: the party game it is
   // opened for (LOBBY_GAMES in shared/arenas.js; none: a lobby to roam).
-  // rand: () => [0, 1), for the loot rolls and regrow times (tests pass their own)
-  constructor({ code, name = 'Lobby', seed = CLASSIC_SEED, game = null, inviteOnly = false, maxPlayers = MAX_PLAYERS, rand = Math.random, log = () => {} }) {
+  // rand: () => [0, 1), for the loot rolls and regrow times (tests pass their own).
+  // onGameEnd(kind, results): its game is over, onto the leaderboards
+  // (server/leaderboards.js record: [[id, rank]] for new bests)
+  constructor({ code, name = 'Lobby', seed = CLASSIC_SEED, game = null, inviteOnly = false, maxPlayers = MAX_PLAYERS, rand = Math.random, log = () => {}, onGameEnd = () => [] }) {
     const island = islandFor(seed);
     super({ code, name, maxPlayers, worldLimit: island.half + 40, rand, log });
     this.island = island;
@@ -105,6 +107,7 @@ export class Room extends Place {
     this.board = []; // the biggest catches: [[name, item, grams], ...], heaviest first (shared/fishing.js onBoard)
     this.giants.setCounts(this.wilds.trees.length, this.wilds.rocks.length);
     this.createdAt = Date.now(); // the time of day everyone sees counts from here
+    this.onGameEnd = onGameEnd;
     this.party = new Party(this); // (its party games)
     this.trades = new Trades(this); // (farmers trading: shared/trade.js)
   }
@@ -148,7 +151,9 @@ export class Room extends Place {
     return spawnPoint(this.island.spawn, id % 8, 8); // somewhere in the stone circle
   }
 
-  // A new player in a seat (or, from a save, an away one whose seat is held)
+  // A new player in a seat (or, from a save, an away one whose seat is held).
+  // (rest has farm and account: the id and name of their account, which the
+  // server says as they join, for the leaderboards)
   seat({ finds = 0, rares = 0, wood = 0, stone = 0, ...rest }) {
     return super.seat({
       ...rest,

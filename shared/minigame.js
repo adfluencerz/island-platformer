@@ -327,6 +327,11 @@ export class Party {
     const winner = winners[0] ?? 0;
     const ids = scores.map(([id]) => id);
     const prizes = prizesFor(ids, winners, this.room.rand);
+    // onto the leaderboards (server/leaderboards.js): who beat their best, and their place now
+    const records = this.room.onGameEnd(g.kind, scores.map(([id, { score }]) => {
+      const p = this.room.players.get(id);
+      return { id, farm: p.farm, name: p.account ?? p.name, score, won: winners.includes(id) };
+    }));
     const pos = [];
     for (const id of ids) {
       const p = this.room.players.get(id);
@@ -339,7 +344,7 @@ export class Party {
     }
     this.room.rosterDirty = true;
     this.room.broadcast({
-      t: S.GAME_END, game: g.kind, seed: g.seed, winner, winners, prizes, pos,
+      t: S.GAME_END, game: g.kind, seed: g.seed, winner, winners, prizes, pos, records,
       scores: scores.map(([id, { score }]) => [id, score]),
     });
     const { name, scored, nobody } = GAMES[g.kind];

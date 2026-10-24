@@ -41,9 +41,12 @@ const CREATE_BURST = 3;
 const CREATE_EVERY = 60;
 
 export class Lobby {
-  constructor({ log = console.log, store = null } = {}) {
+  // leaderboards: server/leaderboards.js (where the rooms' games' results go)
+  constructor({ log = console.log, store = null, leaderboards = null } = {}) {
     this.log = log;
     this.store = store;
+    this.leaderboards = leaderboards;
+    this.onGameEnd = (kind, results) => this.leaderboards?.record(kind, results) ?? [];
     this.rooms = new Map(); // code -> Room
     this.changed = false; // (a room came or went; the rooms say for themselves what happened in them)
     this.creates = new Map(); // address -> { tokens, at }
@@ -83,6 +86,7 @@ export class Lobby {
       inviteOnly: !!inviteOnly,
       maxPlayers,
       log: this.log,
+      onGameEnd: this.onGameEnd,
     });
     this.add(room);
     this.log(`lobby ${code} made (${room.game}, ${room.inviteOnly ? 'invite-only' : 'public'}, ${room.maxPlayers} seats, island ${room.seed})`);
@@ -108,6 +112,7 @@ export class Lobby {
       inviteOnly: !!inviteOnly,
       maxPlayers,
       log: this.log,
+      onGameEnd: this.onGameEnd,
     });
     this.add(room);
     this.log(`lobby ${code} made (dev mode, ${room.inviteOnly ? 'invite-only' : 'public'}, ${room.maxPlayers} seats)`);
@@ -188,7 +193,7 @@ export class Lobby {
     for (const save of data.rooms ?? []) {
       if (!CODE_RE.test(save?.code) || !save.seats?.length || save.over) continue;
       try {
-        this.add(Room.fromSave(save, { log: this.log, holdUntil: now + RESTART_HOLD_MS }));
+        this.add(Room.fromSave(save, { log: this.log, onGameEnd: this.onGameEnd, holdUntil: now + RESTART_HOLD_MS }));
         running++;
       } catch (e) {
         this.log(`lobby ${save.code} could not be put back: ${e.message}`);

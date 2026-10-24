@@ -111,8 +111,9 @@ export class PartyHud {
   }
 
   // It is over (GAME_END): who won, and what we got ([[item, count], ...], or
-  // null); a few seconds, then home (onLeave)
-  results({ game, winner, winners = [winner], scores }, got, itemName) {
+  // null), and our new best's place on the leaderboard (records); a few
+  // seconds, then home (onLeave)
+  results({ game, winner, winners = [winner], scores, records = [] }, got, itemName) {
     this.game = null;
     this.root.hidden = false;
     this.root.classList.add('playing');
@@ -124,7 +125,9 @@ export class PartyHud {
       : others.length ? `${others.join(' and ')} won the ${name.toLowerCase()}` : `The ${name.toLowerCase()} is over`;
     const board = scores.slice(0, 4).map(([id, score]) => `${id === this.myId ? 'You' : this.nameOf(id)} ${scoreText(game, score)}`).join(' · ');
     const prize = got?.length ? ` · You got ${got.map(([item, count]) => `${count} ${itemName(item, count)}`).join(' and ')}` : '';
-    this.line.textContent = board + prize;
+    const rank = records.find(([id]) => id === this.myId)?.[1];
+    const best = rank ? ` · New best: #${rank} on the leaderboard!` : '';
+    this.line.textContent = board + prize + best;
     const home = () => {
       this.hideResults();
       this.onLeave();

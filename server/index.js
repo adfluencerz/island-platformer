@@ -37,7 +37,8 @@
 //
 // The lobbies are kept in data/lobbies.json (GAME_DATA=<file> for another
 // file, GAME_DATA=off for none), so they outlive a restart (server/store.js),
-// and the farms beside it, in farms/ (in memory only with GAME_DATA=off).
+// and the farms beside it, in farms/, and the party games' leaderboards, in
+// leaderboards.json (in memory only with GAME_DATA=off).
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
@@ -48,6 +49,7 @@ import { Store } from './store.js';
 import { Farms, MAX_SAVE } from './farms.js';
 import { FarmRooms } from './farmroom.js';
 import { Presence } from './presence.js';
+import { Leaderboards } from './leaderboards.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
 import { PS, usernameKey } from '../shared/protocol.js';
 
@@ -63,7 +65,8 @@ const DEV = process.env.GAME_DEV === '1'; // set by `npm run dev`: joining an un
 
 const DATA = process.env.GAME_DATA || fileURLToPath(new URL('../data/lobbies.json', import.meta.url));
 
-const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)) });
+const leaderboards = new Leaderboards({ store: DATA === 'off' ? null : new Store(join(dirname(resolve(DATA)), 'leaderboards.json')) });
+const lobby = new Lobby({ store: DATA === 'off' ? null : new Store(resolve(DATA)), leaderboards });
 const farms = new Farms({ dir: DATA === 'off' ? null : join(dirname(resolve(DATA)), 'farms') });
 const farmRooms = new FarmRooms({ farms, atHome: (id) => presence.whereIs(id) === 'home' });
 const presence = new Presence({ farms, lobby, onHome: (id) => farmRooms.ownerHome(id) });
@@ -146,6 +149,8 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const path = url.pathname;
   if (path === '/api/lobbies' && req.method === 'GET') return json(res, 200, { list: lobby.list() });
+  // every lobby game's top ten, and where farmer ?name= is on each
+  if (path === '/api/leaderboards' && req.method === 'GET') return json(res, 200, leaderboards.list(undefined, String(url.searchParams.get('name') ?? '').slice(0, 40)));
   if (path === '/api/lobbies' && req.method === 'POST') {
     // JSON only, so a form on another site cannot open lobbies in a visitor's name
     if (!String(req.headers['content-type']).startsWith('application/json')) return json(res, 415, { error: 'JSON only' });
@@ -299,7 +304,8 @@ function attach(ws, room) {
       const farm = farms.auth(`Bearer ${typeof msg?.auth === 'string' ? msg.auth : ''}`);
       if (farm?.account) msg = { ...msg, name: farm.account.name, color: farm.color };
       else if (!room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
-      player = room.join(conn, msg);
+      // (in a lobby: their account, for the leaderboards)
+      player = room.join(conn, msg, room.farmId ? undefined : { farm: farm.id, account: farm.account.name });
       if (player) clearTimeout(joinTimer);
     } else if (player.conn === conn) {
       room.message(player, msg);
@@ -353,6 +359,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     lobby.flush();
     farmRooms.flush();
+    leaderboards.flush();
     process.exit(0);
   });
 }

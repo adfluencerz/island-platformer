@@ -175,6 +175,15 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 /* Start a lobby: its game, one button lit */
 .ui-game-pick { display: flex; flex-wrap: wrap; gap: 6px; }
 .ui-game-pick .ui-btn { flex: 1 1 auto; }
+/* Leaderboards: a game's top ten (splash.js showBoards), gold, silver and bronze on top, our own row ringed */
+.ui-board { max-height: 380px; }
+.ui-board-rank { flex: none; width: 30px; text-align: center; font-size: 24px; }
+.ui-board-rank.top1 { color: #c9930f; }
+.ui-board-rank.top2 { color: #8a96a3; }
+.ui-board-rank.top3 { color: #b0703a; }
+.ui-board-best { flex: none; font-weight: 700; white-space: nowrap; }
+.ui-board-row.mine { box-shadow: inset 0 0 0 3px var(--inv-wood); }
+.ui-board-gap { text-align: center; line-height: 0.6; }
 .ui-status { min-height: 1.2em; font-size: 21px; font-weight: 600; }
 .ui-status.error { color: var(--inv-red); }
 /* the controls: a key, then what it does */

@@ -24,7 +24,7 @@
 // invitation first. (It began as the title screen, hence its name.)
 import { MAX_NAME, PLAYER_COLORS, PARTY_MS } from '../../shared/constants.js';
 import { PASSWORD_LENGTH, usernameProblem, passwordProblem } from '../../shared/protocol.js';
-import { listLobbies, lobbyInfo, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode, inviteLink, helpLink } from '../net/lobby.js';
+import { listLobbies, leaderboards, lobbyInfo, linkedCode, normalizeCode, showCodeInAddress, devMode, linkedHelpCode, forgetHelpCode, inviteLink, helpLink } from '../net/lobby.js';
 import { el, button, copyText, hexColor } from './dom.js';
 import { addHelp } from './hud.js';
 import { LOBBY_GAMES } from '../../shared/arenas.js';
@@ -143,6 +143,7 @@ export class Splash {
     const row = el('div', 'ui-row', online);
     button('ui-btn', row, 'Quick join', () => this.play(''));
     button('ui-btn', row, 'Browse lobbies', () => this.showBrowse());
+    button('ui-btn ui-btn-ghost', online, 'Leaderboards', () => this.showBoards());
     this.codeForm(online, 'Code from a friend');
     el('div', 'ui-muted', online, 'A lobby is one party game: everyone in it plays, and then heads home. Nothing on its island grows back.');
 
@@ -150,6 +151,12 @@ export class Splash {
     const browse = this.page('browse', 'Lobbies', 'online');
     this.list = el('div', 'ui-list', browse);
     button('ui-btn ui-btn-ghost', browse, 'Refresh', () => this.showBrowse());
+
+    // ---- Leaderboards: every lobby game's top ten (server/leaderboards.js) ----
+    const boards = this.page('boards', 'Leaderboards', 'online');
+    this.boardButtons = el('div', 'ui-game-pick', boards);
+    this.boardList = el('div', 'ui-list ui-board', boards);
+    el('div', 'ui-muted', boards, 'Every farmer’s best in each game, and how many times they won it.');
 
     // ---- Start a lobby: its game, and the friends to invite ----
     const startPage = this.page('start', 'Start a lobby', 'online');
@@ -557,6 +564,47 @@ export class Splash {
       box.addEventListener('change', () => (box.checked ? this.picked.add(f.id) : this.picked.delete(f.id)));
       this.friendBits(row, f);
     }
+  }
+
+  // ---------- Leaderboards ----------
+  // A game's board (LOBBY_GAMES): its top ten, and where we are on it if lower down
+  async showBoards(kind = this.boardKind ?? 'loot_run') {
+    if (this.current !== 'boards') this.showPage('boards');
+    this.boardKind = kind;
+    this.boardButtons.textContent = '';
+    for (const [k, { name }] of Object.entries(LOBBY_GAMES)) {
+      const b = button(`ui-btn ui-btn-small${k === kind ? '' : ' ui-btn-ghost'}`, this.boardButtons, name, () => this.showBoards(k));
+      b.setAttribute('aria-pressed', String(k === kind));
+    }
+    const list = this.boardList;
+    list.textContent = 'Asking the server…';
+    const me = this.account()?.username ?? '';
+    let boards;
+    try {
+      boards = await leaderboards(me);
+    } catch {
+      list.textContent = NO_SERVER;
+      return;
+    }
+    if (this.boardKind !== kind) return; // (another game picked meanwhile)
+    list.textContent = '';
+    const rows = boards.games?.[kind] ?? [];
+    if (!rows.length) el('div', 'ui-muted', list, 'Nobody on this board yet: play a lobby of it and be the first!');
+    for (const entry of rows) this.boardRow(entry, kind, entry.name.toLowerCase() === me.toLowerCase());
+    const mine = boards.you?.[kind];
+    if (mine && mine.rank > rows.length) {
+      el('div', 'ui-muted ui-board-gap', list, '⋯');
+      this.boardRow(mine, kind, true);
+    }
+  }
+
+  boardRow({ rank, name, best, wins, played }, kind, mine) {
+    const row = el('div', `ui-game ui-board-row${mine ? ' mine' : ''}`, this.boardList);
+    el('b', `ui-board-rank${rank <= 3 ? ` top${rank}` : ''}`, row, String(rank));
+    const info = el('div', 'ui-game-info', row);
+    el('b', '', info, name);
+    el('span', 'ui-muted', info, `${wins} win${wins === 1 ? '' : 's'} in ${played} game${played === 1 ? '' : 's'}`);
+    el('span', 'ui-board-best', row, best ? LOBBY_GAMES[kind].scored(best) : '–');
   }
 
   // The game the lobby will be for (LOBBY_GAMES): its button lit, and what it is

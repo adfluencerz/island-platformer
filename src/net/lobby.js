@@ -23,6 +23,11 @@ export function devMode() {
 // [{ code, name, seed, players, max, full, inviteOnly, rare }]
 export const listLobbies = () => call('/api/lobbies').then((b) => b.list);
 
+// The lobby games' leaderboards (server/leaderboards.js): { games: { kind:
+// [{ rank, name, best, wins, played }] }, you: { kind: entry } } (you: where
+// farmer `name` is on each, if given)
+export const leaderboards = (name = '') => call(`/api/leaderboards${name ? `?name=${encodeURIComponent(name)}` : ''}`);
+
 // one lobby by its code, invite-only ones too; rejects with err.status 404 when there is none
 // in dev mode, returns mock data for non-existent lobbies
 export const lobbyInfo = (code) => {

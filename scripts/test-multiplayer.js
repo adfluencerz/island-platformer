@@ -9,6 +9,7 @@ import WebSocket from 'ws';
 import { Room } from '../shared/room.js';
 import { Lobby } from '../server/lobby.js';
 import { Presence } from '../server/presence.js';
+import { Leaderboards } from '../server/leaderboards.js';
 import { PC, PS } from '../shared/protocol.js';
 import { Store } from '../server/store.js';
 import { Farms, normalizePairCode } from '../server/farms.js';
@@ -38,7 +39,7 @@ import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
 import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
 import { coinflip, handTotal, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble, luckyStart, luckyPick, luckyPlay, luckyDiscard, luckyScore, luckyPays, jokerText } from '../shared/arcade.js';
 import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
-import { arenaFor, checkArena, HOP } from '../shared/arenas.js';
+import { arenaFor, checkArena, HOP, LOBBY_GAMES } from '../shared/arenas.js';
 import { MINIGAMES } from '../shared/balance.js';
 import { WEATHER, spellOn, weatherAt, rainSince } from '../shared/weather.js';
 
@@ -1635,6 +1636,56 @@ await test('a lobby started with friends is for the game picked: the invitations
   for (const r of presence.lobby.rooms.values()) r.close();
 });
 
+await test('the leaderboards: each farmer\'s best in every game, their wins and games; the best first, then the most wins, then who got there first', () => {
+  const saved = [];
+  const store = { load: () => null, save: (d) => (saved.push(JSON.parse(JSON.stringify(d))), true) };
+  const boards = new Leaderboards({ store, log: () => {} });
+  assert.deepEqual(boards.record('coin_rush', [
+    { id: 1, farm: 'fa', name: 'Ann', score: 5, won: true },
+    { id: 2, farm: 'fb', name: 'Bo', score: 3, won: false },
+    { id: 3, name: 'Nobody', score: 9, won: false }, // (no account: not on the board)
+  ], 1000), [[1, 1], [2, 2]], 'new bests, and where they are');
+  // a better score moves Bo up; a worse one leaves Ann's best as it was
+  assert.deepEqual(boards.record('coin_rush', [
+    { id: 7, farm: 'fb', name: 'Bo', score: 8, won: true },
+    { id: 8, farm: 'fa', name: 'Ann', score: 2, won: false },
+  ], 2000), [[7, 1]]);
+  boards.record('coin_rush', [{ id: 1, farm: 'fc', name: 'Cy', score: 5, won: false }], 3000); // (level with Ann, fewer wins)
+  boards.record('coin_rush', [{ id: 1, farm: 'fd', name: 'Di', score: 0, won: false }], 4000); // (played, nothing yet)
+  const { games, you } = boards.list(10, 'CY');
+  assert.deepEqual(games.coin_rush.map(({ rank, name, best, wins, played }) => [rank, name, best, wins, played]), [[1, 'Bo', 8, 1, 2], [2, 'Ann', 5, 1, 2], [3, 'Cy', 5, 0, 1]]);
+  assert.deepEqual(you, { coin_rush: { rank: 3, name: 'Cy', best: 5, wins: 0, played: 1 } });
+  assert.deepEqual(Object.keys(games).sort(), Object.keys(LOBBY_GAMES).sort(), 'a board for every lobby game');
+  assert.deepEqual(games.hop_race, []);
+  assert.equal(boards.list(2).games.coin_rush.length, 2, 'the top n');
+  assert.equal(boards.record('tag', [{ id: 1, farm: 'fa', name: 'Ann', score: 1, won: true }]).length, 0, 'not a game there is');
+  // kept: written out, and read back as it was
+  boards.flush();
+  const again = new Leaderboards({ store: { load: () => ({ v: 1, ...saved.at(-1), boards: { ...saved.at(-1).boards, tag: [['fa', 'Ann', 1, 0, 1, 1]] } }), save: () => true }, log: () => {} });
+  assert.deepEqual(again.list(10, 'cy'), boards.list(10, 'cy'));
+});
+
+await test('a lobby game\'s results go onto its leaderboard, and whoever beat their best hears their place', () => {
+  const boards = new Leaderboards({ log: () => {} });
+  const room = new Room({ code: 'BOARDS', game: 'coin_rush', rand: mulberry32(7), onGameEnd: (kind, results) => boards.record(kind, results) });
+  const joinAs = (name, farm) => {
+    const conn = fakeConn();
+    return { conn, p: room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name, key: name }, { farm, account: name }) };
+  };
+  const a = joinAs('Ann', 'fa');
+  const b = joinAs('Bo', 'fb');
+  const now = Date.now();
+  room.update(now + MINIGAMES.gatherMs + 10);
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + 20);
+  const [x, y, z] = room.party.game.arena.coins[0];
+  room.message(a.p, { t: C.STATE, x, y: y + 0.1, z, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.GAME_COIN, id: 0 });
+  room.update(now + MINIGAMES.gatherMs + MINIGAMES.readyMs + MINIGAMES.coin_rush.ms + 50);
+  assert.deepEqual(b.conn.last(S.GAME_END).records, [[a.p.id, 1]], 'Ann beat her best (Bo picked nothing up)');
+  assert.deepEqual(boards.list().games.coin_rush.map(({ name, best, wins, played }) => [name, best, wins, played]), [['Ann', 1, 1, 1]]);
+  assert.equal(boards.boards.get('coin_rush').get('fb').played, 1, 'Bo played, all the same');
+});
+
 await test('the store writes atomically and sets aside a file it cannot read', () => {
   const dir = mkdtempSync(joinPath(tmpdir(), 'lobbies-'));
   try {
@@ -2896,6 +2947,11 @@ try {
     again.ws.close(1000);
     b.ws.close(1000);
     assert.ok(wb.id !== wa.id);
+  });
+
+  await test('the leaderboards over HTTP: every lobby game\'s board', async () => {
+    const { games } = await fetch(`${base}/api/leaderboards?name=nobody`).then((r) => r.json());
+    assert.deepEqual(Object.keys(games).sort(), Object.keys(LOBBY_GAMES).sort());
   });
 
   await test('quick join finds a lobby; an unknown code is turned away', async () => {

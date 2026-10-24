@@ -66,7 +66,7 @@ export const S = {
   GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire(): ms -1, gathering till someone is there), whenever that changes
   GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
   GAME_SCORE: 'gameScore', // { by, score }: player `by` has score now (a fishing contest: grams landed; a loot run: points); or { scores: [[id, score]], top: [id, ...] }: the scores now, and who is up on king of the hill's crown (last one standing: who is still up)
-  GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, winners, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]] }: it is over; everyone who played is back in the lobby at pos (a loot run: there already), and heads home (winner: the first of winners, 0: nobody; last one standing can have a few)
+  GAME_END: 'gameEnd', // { game, seed, scores: [[id, score]], winner, winners, prizes: [[id, [[item, count], ...]]], pos: [[id, x, y, z]], records: [[id, rank]] }: it is over (records: who beat their best, and their place on the game's leaderboard now); everyone who played is back in the lobby at pos (a loot run: there already), and heads home (winner: the first of winners, 0: nobody; last one standing can have a few)
   PICKED: 'picked', // { id, by, item, count }: drop id was picked up by player `by` (0: it faded away)
   BITE: 'bite', // { n, window }: something bit our line (cast n): REEL within window ms
   CAUGHT: 'caught', // { n, item, count, grams?, items? }: what we landed on cast n (item null: nothing, it got away; grams: a fish's weight; 'chest': a little chest, its items [[item, count], ...])
