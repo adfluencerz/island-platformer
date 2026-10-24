@@ -3621,7 +3621,7 @@ async function joinFarm(id) {
     myId = m.id;
     farmer.setShirt(m.color);
     showRoomFarm(m);
-    bosses.welcome(m.bosses);
+    bosses.welcome(m.bosses, m.dungeons);
     farmOnScreen = m.mine;
     if (m.mine) farmSync.handedToRoom();
     chest.setOwner(m.mine, m.farm.owner);
@@ -3776,6 +3776,8 @@ async function joinFarm(id) {
   on(S.BOSS, bosses.onBoss);
   on(S.BOSS_FX, bosses.onFx);
   on(S.BOSS_WON, bosses.onWon);
+  on(S.DUNGEON, bosses.onDungeon);
+  on(S.DUNGEON_FX, bosses.onDungeonFx);
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));

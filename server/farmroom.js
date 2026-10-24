@@ -38,7 +38,10 @@
 // arena and counting the bops (BOSS_BOP). Beaten, its portal goes (UNBUILT,
 // by nobody: the key pieces it was built from are used up), and everyone who
 // fought hears they won (BOSS_WON): their own pages hand out what it gives.
-// A fight isn't kept: the room goes, and the boss is asleep again.
+// A fight isn't kept: the room goes, and the boss is asleep again. The way to
+// each arena is its dungeon (shared/dungeons.js): the room keeps a DungeonRun
+// for each too, moving the foes in the rooms farmers are in and counting the
+// bops at them (FOE_BOP), and says how it is doing (DUNGEON, DUNGEON_FX).
 //
 // The farm is kept in the farm's own file, in the page's save format (the
 // save's `farm`: { savedAt, hours, tilled: [[key, bare, life]], crops: [[key, crop, age, watered?]], built:
@@ -53,6 +56,7 @@ import { S, C, finite } from '../shared/protocol.js';
 import { CLOSE, CLOSE_TEXT, DAY_LENGTH_SECONDS, MAX_NAME, SOIL_BARE_HOURS, devToolsOn } from '../shared/constants.js';
 import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
 import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } from '../shared/bosses.js';
+import { DungeonRun, dungeonAt, dungeonFar } from '../shared/dungeons.js';
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, steelFor, nextSite, siteMap, movedKey } from '../shared/level.js';
@@ -99,8 +103,8 @@ export class FarmRoom extends Place {
   // helpers(): how many helpers the farm has now (each lets it have one more house)
   constructor({ farm, admit, helpers = () => 0, log = () => {} }) {
     const far = Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w, ...Object.values(ARENAS).map(({ x, z }) => Math.max(Math.abs(x), Math.abs(z)) + ARENA_R),
-      ...Object.values(NPC_ROOMS).map((r) => Math.max(Math.abs(r.x0) + r.w, Math.abs(r.z0) + r.d)));
-    super({ code: farm.id, name: farmTitle(farm), worldLimit: far + 40, log }); // (the house's room, the bosses' arenas and the neighbours' rooms are out past the sea)
+      ...BOSS_IDS.map(dungeonFar), ...Object.values(NPC_ROOMS).map((r) => Math.max(Math.abs(r.x0) + r.w, Math.abs(r.z0) + r.d)));
+    super({ code: farm.id, name: farmTitle(farm), worldLimit: far + 40, log }); // (the house's room, the bosses' arenas and dungeons and the neighbours' rooms are out past the sea)
     this.farmId = farm.id;
     this.admit = admit;
     this.helpers = helpers;
@@ -168,6 +172,8 @@ export class FarmRoom extends Place {
     this.clockSentAt = now;
     this.soilAt = now;
     this.fights = new Map(BOSS_IDS.map((id) => [id, new BossFight(id, this.rand)])); // boss -> its fight (shared/bosses.js)
+    this.dungeons = new Map(BOSS_IDS.map((id) => [id, new DungeonRun(id, this.rand)])); // boss -> the way to it (shared/dungeons.js)
+    this.inDungeons = new Set(); // (the bosses whose dungeons had anyone in them, as of the last tick)
     this.bossAt = now;
     this.workedOn = false; // (the farmer or a helper has been on it: only then is it written back)
   }
@@ -223,6 +229,7 @@ export class FarmRoom extends Place {
       giants: this.giants.toSave(),
       drops: [...this.drops.values()].map((d) => [d.id, d.item, d.count, d.x, d.y, d.z, d.from, Math.max(0, d.ownAt - Date.now())]),
       bosses: Object.fromEntries([...this.fights].filter(([, f]) => f.phase !== 'sleep').map(([id, f]) => [id, f.toWire()])),
+      dungeons: Object.fromEntries([...this.dungeons].filter(([, d]) => d.stirred).map(([id, d]) => [id, d.toWire()])),
       chest: this.chest,
       hours: round3(this.hours()),
       animals: this.animals,
@@ -493,6 +500,20 @@ export class FarmRoom extends Place {
         }
         break;
       }
+      case C.FOE_BOP: {
+        // (in its dungeon, in the foe's room, close enough, not too fast: shared/dungeons.js)
+        const { boss, foe, weapon } = msg;
+        const run = Object.hasOwn(BOSSES, boss) && this.dungeons.get(boss);
+        const now = Date.now();
+        if (!run || !Object.hasOwn(WEAPONS, weapon) || dungeonAt(p.x, p.z) !== boss || now - (p.bossBopAt ?? 0) < WEAPONS[weapon].every * BOSS_EVERY) return;
+        const hit = run.bop(p.id, weapon, p.x, p.y, p.z, foe);
+        if (!hit) return;
+        p.bossBopAt = now;
+        this.broadcast({ t: S.DUNGEON_FX, boss, fx: { e: 'bop', foe, by: p.id, hp: hit.hp, ...(WEAPONS[weapon].shoots && { shot: 1 }) } });
+        if (hit.opened !== undefined) this.broadcast({ t: S.DUNGEON_FX, boss, fx: { e: 'open', room: hit.opened, by: p.id } });
+        this.broadcast({ t: S.DUNGEON, boss, s: run.toWire() });
+        break;
+      }
       case C.CHEST_PUT: {
         const { item, count } = msg;
         if (!ITEM_RE.test(item) || !Number.isInteger(count) || count < 1 || !this.canStore(item, count)) {
@@ -705,6 +726,17 @@ export class FarmRoom extends Place {
       if (fight.phase === 'sleep' && !here.length) continue;
       for (const fx of fight.step(dt, here)) this.broadcast({ t: S.BOSS_FX, boss, fx });
       if (this.tick % BOSS_SEND === 0 || fight.phase === 'sleep') this.broadcast({ t: S.BOSS, boss, s: fight.toWire() });
+    }
+    // ...and the dungeons on the way, while anyone is in one (or in its arena, or till it is as it was again)
+    for (const [boss, run] of this.dungeons) {
+      const here = [...this.players.values()].filter((p) => p.conn && dungeonAt(p.x, p.z) === boss);
+      const near = here.length > 0 || [...this.players.values()].some((p) => p.conn && arenaAt(p.x, p.z) === boss);
+      if (!run.stirred && !here.length) continue;
+      const fx = run.step(dt, here, near);
+      for (const f of fx) this.broadcast({ t: S.DUNGEON_FX, boss, fx: f });
+      const left = !here.length && this.inDungeons.delete(boss); // (the last one out: how its foes are left, resting)
+      if (here.length) this.inDungeons.add(boss);
+      if ((here.length && this.tick % BOSS_SEND === 0) || left || fx.length) this.broadcast({ t: S.DUNGEON, boss, s: run.toWire() });
     }
   }
 
