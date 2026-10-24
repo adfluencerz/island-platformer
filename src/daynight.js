@@ -135,6 +135,11 @@ function createFireflies(count) {
   return { points, update };
 }
 
+// Underground (a boss's dungeon): black all round, the hemisphere and the sun
+// down low in the cave's color, and the warm light round the farmer up
+const CAVE_DARK = new THREE.Color(0x040306);
+const CAVE = { hemiI: 0.62, lightI: 0.32, glow: 16 };
+
 export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let hour = THREE.MathUtils.euclideanModulo(startHour, 24);
   let day = 1;
@@ -145,6 +150,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let note = ''; // after the day (setNote: the farm's season)
   let cloud = 0; // how overcast it is, 0 to 1, and lightning's flash (setWeather: src/weather.js)
   let flash = 0;
+  let under = 0; // how far underground we are, 0 to 1, and the light down there (setUnderground: a boss's dungeon)
+  const caveLight = new THREE.Color(0xffffff);
 
   // Warm light around the player at night so the world stays readable. It
   // always exists (intensity 0 by day) so the scene's light count never
@@ -185,13 +192,20 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     const s = sample(hour);
     if (cloud > 0) for (const p of COLOR_PROPS) overcast(s[p]);
     if (flash > 0) s.sky.lerp(FLASH, flash * 0.7);
+    // underground: no sky (black all round), a dim light of the cave's own color
+    if (under > 0) {
+      s.sky.lerp(CAVE_DARK, under);
+      s.hemiSky.lerp(caveLight, under);
+      s.hemiGround.lerp(CAVE_DARK, under);
+      s.light.lerp(caveLight, under);
+    }
     scene.background.copy(s.sky);
     scene.fog.color.copy(s.sky);
     hemi.color.copy(s.hemiSky);
     hemi.groundColor.copy(s.hemiGround);
-    hemi.intensity = s.hemiI * (1 - cloud * 0.25) + flash * 2.5;
+    hemi.intensity = THREE.MathUtils.lerp(s.hemiI * (1 - cloud * 0.25) + flash * 2.5, CAVE.hemiI, under);
     sun.color.copy(s.light);
-    sun.intensity = s.lightI * (1 - cloud * 0.65);
+    sun.intensity = THREE.MathUtils.lerp(s.lightI * (1 - cloud * 0.65), CAVE.lightI, under);
 
     // The sun arcs east (+X) to west (-X) between sunrise and sunset; at
     // night the same light becomes the moon on the opposite side. It never
@@ -204,7 +218,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
-    glow.intensity = night * 10;
+    glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
 
     // Clock panel: dial sky color and the sun/moon riding the arc
     const skyHex = `#${s.sky.getHexString()}`;
@@ -246,7 +260,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       }
       ui.root.classList.toggle('fast', fastForward && !paused);
       const night = apply();
-      fireflies.update(elapsed, focus, night * (1 - cloud)); // (not out in the rain)
+      fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {
@@ -264,6 +278,11 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       apply();
     },
     night: () => nightAmount(hour), // 0 by day, 1 at night
+    /** How far underground we are (0 to 1), and the cave's light (a color): from the next update. */
+    setUnderground(amount, color = 0xffffff) {
+      under = amount;
+      caveLight.setHex(color);
+    },
     /** How overcast it is (0 to 1) and lightning's flash (0 to 1): from the next update. */
     setWeather(overcastBy, flashBy) {
       cloud = overcastBy;

@@ -37,8 +37,9 @@ import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.j
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import { homeWildsSource } from './wilds.js';
-import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
-import { BOSSES, BOSS_FIGHT, RECIPES } from '../shared/balance.js';
+import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
+import { DungeonRun, ROOMS, ROOM_W, roomRect, roomEntry, roomAt, dungeonAt, dungeonStart, dungeonExit, gateAt, dungeonFromWire, foeHits } from '../shared/dungeons.js';
+import { BOSSES, BOSS_FIGHT, RECIPES, DUNGEONS, DUNGEON } from '../shared/balance.js';
 import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
 import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
 import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
@@ -2989,6 +2990,186 @@ await test('a boss fight on a farm with helpers: its portal, the bops, and the p
   assert.deepEqual(won.won.sort(), [a.p.id, b.p.id].sort(), 'both took part');
   assert.equal(room.built.get('5,5'), undefined, 'its portal is used up');
   assert.deepEqual(a.conn.last(S.UNBUILT), { t: S.UNBUILT, key: '5,5', piece: portalOf('parsnip'), by: 0 }, 'and nobody gets the seals back');
+  room.close();
+});
+
+await test('every boss has a dungeon in front of its arena: rooms in a row, clear of everything else, a bridge into the arena', () => {
+  for (const id of BOSS_IDS) {
+    assert.ok(DUNGEONS[id], `${id} has a dungeon`);
+    assert.equal(DUNGEONS[id].foes.length, ROOMS);
+    const { x: ax, z: az } = ARENAS[id];
+    // the rooms one after another, the last by the arena; in each, its own number
+    for (let k = 0; k < ROOMS; k++) {
+      const r = roomRect(id, k);
+      assert.equal(r.x1 - r.x0, ROOM_W);
+      if (k) assert.equal(r.z1, roomRect(id, k - 1).z0, 'next to the one before');
+      assert.equal(roomAt(id, (r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2), k);
+      assert.equal(dungeonAt(r.x0 + 1, r.z1 - 1), id);
+      assert.equal(arenaAt(r.x0 + 1, r.z0 + 0.1), null, 'not in the arena');
+      assert.equal(gateAt(id, k).z, r.z0, 'its gate in its far wall');
+    }
+    assert.equal(roomAt(id, dungeonStart(id).x, dungeonStart(id).z), 0, 'farmers come into the first room');
+    assert.equal(roomAt(id, dungeonExit(id).x, dungeonExit(id).z), 0, 'the way home by it');
+    // the bridge: from the last room's gate straight on into the arena
+    const bridge = (gateAt(id, ROOMS - 1).z + az + ARENA_R) / 2;
+    assert.equal(dungeonAt(ax, bridge), id);
+    assert.equal(roomAt(id, ax, bridge), -1);
+    assert.equal(arenaAt(ax, az + ARENA_R), id);
+    // the arena's start just in from it, its way home off to one side
+    assert.equal(arenaAt(arenaStart(id).x, arenaStart(id).z), id);
+    assert.ok(Math.abs(arenaExit(id).x - ax) > 3 && arenaAt(arenaExit(id).x, arenaExit(id).z) === id);
+    // clear of the other arenas and dungeons, the farm, the house's room and the neighbours'
+    const r0 = roomRect(id, 0);
+    for (const [x, z] of [[r0.x0, r0.z1], [r0.x1, r0.z1], [r0.x0, r0.z0], [r0.x1, roomRect(id, ROOMS - 1).z0]]) {
+      for (const other of BOSS_IDS) {
+        if (other === id) continue;
+        assert.ok(Math.hypot(x - ARENAS[other].x, z - ARENAS[other].z) > ARENA_R + 3, `${id} by ${other}'s arena`);
+        assert.notEqual(dungeonAt(x, z), other);
+      }
+      assert.ok(Math.max(Math.abs(x), Math.abs(z)) > HOME_HALF + 20, 'out past the sea');
+      assert.ok(x < HOUSE_ROOM.x0 - 20 && Object.values(NPC_ROOMS).every((n) => x < n.x0 - 20));
+    }
+  }
+});
+
+await test('a dungeon: its foes wake when a farmer comes into their room, go for them, and are bopped down room by room', () => {
+  const run = new DungeonRun('parsnip', mulberry32(3));
+  const def = DUNGEONS.parsnip;
+  const start = dungeonStart('parsnip');
+  const a = { id: 1, x: start.x, y: GROUND_STAND_Y, z: start.z };
+  assert.equal(run.foes.length, def.foes.reduce((s, n) => s + n, 0));
+  assert.ok(run.foes.every((f) => f.state === 'idle' && f.hp === def.hp));
+  // the same layout everywhere (a page draws it before the room says where they are)
+  assert.deepEqual(new DungeonRun('parsnip', mulberry32(9)).toWire(), run.toWire());
+  // nobody in: nothing stirs
+  for (let i = 0; i < 20; i++) run.step(0.05, []);
+  assert.ok(run.foes.every((f) => f.state === 'idle') && !run.stirred);
+  // into the first room: its foes wake (only its), close in and go for them; one catches them
+  let caught = 0;
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) {
+    run.step(0.05, [a]);
+    const w = dungeonFromWire('parsnip', run.toWire());
+    for (const f of w.foes) {
+      seen.add(`${f.room}:${f.state}`);
+      if (f.room === 0 && foeHits(f, a.x, a.y, a.z)) caught++;
+    }
+  }
+  assert.ok(seen.has('0:attack') && seen.has('0:windup'), 'they go for them');
+  assert.ok(!seen.has('1:roam') && !seen.has('2:roam'), 'the next rooms sleep on');
+  assert.ok(caught > 0, 'and catch them, standing still');
+  assert.ok(!foeHits({ state: 'attack', x: a.x, y: 0, z: a.z }, a.x, a.y + 1.2, a.z), 'jumped over');
+  // every foe stays in its room
+  for (const f of run.foes) assert.equal(roomAt('parsnip', f.x, f.z), f.room);
+  // bops: in reach, in its room, a better weapon takes more off; down at none left
+  const [f0] = run.foes;
+  assert.equal(run.bop(1, 'wooden_sword', f0.x + 6, GROUND_STAND_Y + f0.y, f0.z, 0), null, 'too far');
+  assert.equal(run.bop(1, 'spoon', f0.x + 1, GROUND_STAND_Y + f0.y, f0.z, 0), null, 'not a weapon');
+  const f3 = run.foes.find((f) => f.room === 1);
+  assert.equal(run.bop(1, 'silver_sword', f3.x, GROUND_STAND_Y, roomRect('parsnip', 0).z0 + 0.2, run.foes.indexOf(f3)), null, 'not through the gate: only the foes of the room they are in');
+  f0.y = 0;
+  assert.deepEqual(run.bop(1, 'wooden_sword', f0.x + 1, GROUND_STAND_Y, f0.z, 0), { hp: def.hp - 1 });
+  assert.equal(f0.state, 'hurt');
+  assert.deepEqual(run.bop(1, 'mallet', f0.x + 1, GROUND_STAND_Y, f0.z, 0), { hp: 0 });
+  assert.equal(f0.state, 'down');
+  assert.equal(run.bop(1, 'mallet', f0.x + 1, GROUND_STAND_Y, f0.z, 0), null, 'down already');
+  // the last of the room down: its gate opens (and not before)
+  const room0 = run.foes.map((f, i) => [f, i]).filter(([f]) => f.room === 0 && f.state !== 'down');
+  for (const [n, [f, i]] of room0.entries()) {
+    f.y = 0;
+    const hit = run.bop(1, 'silver_sword', f.x + 1, GROUND_STAND_Y, f.z, i);
+    assert.equal(hit.opened, n === room0.length - 1 ? 0 : undefined);
+  }
+  assert.equal(run.cleared, 1);
+  // the next rooms the same, in order, the last onto the bridge
+  for (let k = 1; k < ROOMS; k++) {
+    for (const [i, f] of run.foes.entries()) {
+      if (f.room !== k) continue;
+      f.y = 0;
+      while (f.state !== 'down') run.bop(1, 'silver_sword', f.x + 1, GROUND_STAND_Y, f.z, i);
+    }
+    assert.equal(run.cleared, k + 1);
+  }
+  assert.equal(dungeonFromWire('parsnip', run.toWire()).cleared, ROOMS);
+  // nobody about for a while: all as it was again (not while someone is in its arena)
+  for (let i = 0; i < DUNGEON.reset * 2; i++) run.step(1, [], true);
+  assert.equal(run.cleared, ROOMS, 'someone in the arena');
+  let reset = [];
+  for (let i = 0; i <= DUNGEON.reset; i++) reset.push(...run.step(1, []));
+  assert.deepEqual(reset, [{ e: 'reset' }]);
+  assert.equal(run.cleared, 0);
+  assert.ok(run.foes.every((f) => f.state === 'idle' && f.hp === def.hp));
+});
+
+await test('each dungeon\'s foes go at a farmer their own way: a hop, a dash, a dart in the air, a swoop from up high', () => {
+  for (const id of BOSS_IDS) {
+    const run = new DungeonRun(id, mulberry32(5));
+    const e = roomEntry(id, 0);
+    const a = { id: 1, x: e.x, y: GROUND_STAND_Y, z: e.z - 4 };
+    let high = 0;
+    let fastest = 0;
+    const f = run.foes[0];
+    let was = { x: f.x, z: f.z };
+    for (let i = 0; i < 300; i++) {
+      run.step(0.05, [a]);
+      if (f.state === 'attack') {
+        high = Math.max(high, f.y);
+        fastest = Math.max(fastest, Math.hypot(f.x - was.x, f.z - was.z) / 0.05);
+      }
+      was = { x: f.x, z: f.z };
+    }
+    const d = DUNGEONS[id];
+    if (d.move === 'hop') assert.ok(high > d.height * 0.8, `${id} hops`);
+    if (d.move === 'swoop') assert.ok(high > d.height * 0.8, `${id} swoops down from up high`);
+    if (d.move === 'dart') assert.ok(high > d.fly * 0.5, `${id} flies`);
+    if (d.move === 'dash') assert.ok(fastest > d.walk * 2 && high === 0, `${id} dashes`);
+  }
+});
+
+await test('a dungeon on a farm with helpers: the room moves the foes, counts the bops, opens the gates, and says so', () => {
+  const room = new FarmRoom({ farm: { id: 'dungeonfarm', save: null }, admit: () => ({ id: 'dungeonfarm', owner: true }) });
+  const a = join(room, 'Ann');
+  const b = join(room, 'Bo');
+  const start = dungeonStart('lion');
+  for (const who of [a, b]) room.message(who.p, { t: C.STATE, x: start.x, y: GROUND_STAND_Y, z: start.z, yaw: 0, f: 1 });
+  let now = Date.now();
+  for (let i = 0; i < 20; i++) room.tickBosses((now += 50));
+  const run = room.dungeons.get('lion');
+  assert.ok(run.stirred && run.foes.filter((f) => f.room === 0).every((f) => f.state !== 'idle'), 'awake');
+  assert.ok(b.conn.all(S.DUNGEON).length > 3);
+  assert.equal(dungeonFromWire('lion', b.conn.last(S.DUNGEON).s).cleared, 0);
+  // a newcomer hears how it is doing
+  assert.ok(join(room, 'Cy').conn.last(S.FARM).dungeons.lion);
+  // bopped from beside each, never faster than a weapon swings
+  const beside = (f) => {
+    f.state = 'hurt';
+    f.y = 0;
+    room.message(a.p, { t: C.STATE, x: f.x + 1, y: GROUND_STAND_Y, z: f.z, yaw: 0, f: 1 });
+  };
+  const [f0] = run.foes;
+  beside(f0);
+  room.message(a.p, { t: C.FOE_BOP, boss: 'lion', foe: 0, weapon: 'steel_sword' });
+  room.message(a.p, { t: C.FOE_BOP, boss: 'lion', foe: 0, weapon: 'steel_sword' });
+  assert.equal(b.conn.all(S.DUNGEON_FX).filter((m) => m.fx.e === 'bop').length, 1, 'too fast');
+  room.message(a.p, { t: C.FOE_BOP, boss: 'parsnip', foe: 0, weapon: 'mallet' });
+  room.message(a.p, { t: C.FOE_BOP, boss: 'lion', foe: 99, weapon: 'mallet' });
+  assert.equal(b.conn.all(S.DUNGEON_FX).length, 1, 'not that dungeon here, nor that foe');
+  for (const [i, f] of run.foes.entries()) {
+    if (f.room !== 0) continue;
+    for (let n = 0; n < 10 && f.state !== 'down'; n++) {
+      beside(f);
+      a.p.bossBopAt = 0;
+      room.message(a.p, { t: C.FOE_BOP, boss: 'lion', foe: i, weapon: 'steel_sword' });
+    }
+  }
+  const open = b.conn.all(S.DUNGEON_FX).find((m) => m.fx.e === 'open');
+  assert.deepEqual(open.fx, { e: 'open', room: 0, by: a.p.id });
+  assert.equal(dungeonFromWire('lion', b.conn.last(S.DUNGEON).s).cleared, 1);
+  // everyone gone a while: as it was again, and the pages hear it
+  for (const who of [a, b]) room.message(who.p, { t: C.STATE, x: 0, y: GROUND_STAND_Y, z: 0, yaw: 0, f: 1 });
+  for (let i = 0; i < (DUNGEON.reset + 1) * 4; i++) room.tickBosses((now += 250));
+  assert.deepEqual(b.conn.last(S.DUNGEON_FX).fx, { e: 'reset' });
+  assert.equal(run.cleared, 0);
   room.close();
 });
 

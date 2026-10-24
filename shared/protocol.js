@@ -41,6 +41,7 @@ export const C = {
   BUILD: 'build', // { key, piece, chest? }: build a piece (PIECES in shared/level.js) on tile key, paid from the backpack (the owner: what it is short of from the farm's chest, chest: { item: count })
   UNBUILD: 'unbuild', // { key }: take down the piece on tile key
   BOSS_BOP: 'bossBop', // { boss, weapon }: a bop at the boss (shared/bosses.js) in whose arena we are, with the weapon in hand
+  FOE_BOP: 'foeBop', // { boss, foe, weapon }: a bop at foe number `foe` of the boss's dungeon (shared/dungeons.js), in whose room we are, with the weapon in hand
   LOAD: 'load', // { key, dish?, n? }: put what the machine on tile key takes in, from the backpack (dish: what the campfire is to cook, DISHES in shared/balance.js, n of it, up to CAMPFIRE_MOST; or the fish going into an aquarium)
   COLLECT: 'collect', // { key, item? }: what the machine on tile key has ready, for the backpack (item: the fish to take out of an aquarium)
   FEAST: 'feast', // { dish }: we just ate a dish that is `shared` (DISHES): everyone on the farm gets its boost
@@ -81,7 +82,7 @@ export const S = {
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
+  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, bosses, dungeons, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt, wateredAt?], ...], plantedAt (and wateredAt, once watered) in the farm's game hours.
   //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
   //   machines: [[key, item, at, takes], ...] (shared/machines.js). chest: { item: count }. hours: the farm's clock, in game hours since it began)
@@ -101,6 +102,8 @@ export const S = {
   BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
   BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp, shot } a bop that landed (shot: an arrow's)
   BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
+  DUNGEON: 'dungeon', // { boss, s }: how the boss's dungeon is doing (s: DungeonRun toWire(), shared/dungeons.js), a few times a second while anyone is in it
+  DUNGEON_FX: 'dungeonFx', // { boss, fx }: { e: 'bop', foe, by, hp, shot } a bop that landed (hp 0: the foe is down; shot: an arrow's), { e: 'open', room, by } the gate out of that room opened, { e: 'reset' } all as it was again
   MACHINE: 'machine', // { key, state, by, got?, n? }: what is in the machine on tile key now ([item, at, takes, n], or null: empty), after player `by` loaded or collected it (got: the item collected, n of it, for `by`'s backpack)
   FEAST: 'feast', // { dish, by }: player `by` ate a shared dish on this farm: its boost is ours too
 };

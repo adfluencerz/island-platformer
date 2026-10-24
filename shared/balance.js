@@ -337,6 +337,47 @@ export const MOUNTS = {
 // kinds a shiny animal can be.
 export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage: { wooden_sword: 1, steel_sword: 2, silver_sword: 3, mallet: 2, bow: 1 }, sleep: 4, shiny: ['hen', 'cow', 'sheep'] };
 
+// ---------- Boss dungeons ----------
+// The way to each boss's arena (shared/dungeons.js): rooms of its foes,
+// little ones of its own kind, to be bopped down (BOSS_FIGHT.damage: a better
+// weapon takes more off) before the gate on to the next room opens. `name`:
+// the dungeon's; `foe`: one of them, and more. `foes`: how many in each
+// room, first to last. `hp`: what each can take. `walk`: their pace (m/s),
+// closing in to `keep` from a farmer between goes at them; `pause`: seconds
+// [min, max] between goes. `move`: how they go at a farmer, after `windup`
+// seconds of warning: a hop (a leap at them, `air` s long, `height` high,
+// `reach` far at most), a dash or a dart (straight at them, at `speed` for
+// `time` s; a dart up in the air, `fly` high, as a bee flies), or a swoop
+// (up to `height`, then down through where they stood and on, `dive` s).
+export const DUNGEONS = {
+  parsnip: {
+    name: 'Root Cellar', foe: ['sproutling', 'sproutlings'], foes: [3, 4, 5], hp: 2, walk: 1.3, pause: [0.9, 1.7], keep: 2.2,
+    move: 'hop', windup: 0.45, air: 0.55, height: 1.1, reach: 3.5,
+  },
+  lion: {
+    name: 'Sunbaked Ruins', foe: ['lion cub', 'lion cubs'], foes: [3, 4, 4], hp: 3, walk: 2, pause: [0.8, 1.5], keep: 3.5,
+    move: 'dash', windup: 0.5, speed: 8, time: 0.55,
+  },
+  bee: {
+    name: 'Honeycomb Halls', foe: ['worker bee', 'worker bees'], foes: [4, 5, 6], hp: 2, walk: 2.2, pause: [0.9, 1.6], keep: 3,
+    move: 'dart', windup: 0.4, speed: 7, time: 0.5, fly: 0.9,
+  },
+  crow: {
+    name: 'Rookery', foe: ['rook', 'rooks'], foes: [3, 4, 5], hp: 3, walk: 1.4, pause: [1, 1.8], keep: 3,
+    move: 'swoop', windup: 0.6, height: 2.6, dive: 0.75,
+  },
+  toad: {
+    name: 'Sunken Bog', foe: ['bog frog', 'bog frogs'], foes: [3, 4, 5], hp: 3, walk: 1, pause: [1, 1.8], keep: 2.6,
+    move: 'hop', windup: 0.6, air: 0.7, height: 1.6, reach: 4.5,
+  },
+};
+// What every dungeon shares. `reset`: seconds one stands empty (nobody in it
+// or its arena) before its foes are all back and its gates shut again.
+// `flinch`: seconds a bopped foe reels; `knock`: how far it is knocked back
+// (m). `bump`: how hard a foe that catches a farmer knocks them back (as
+// BOSS_FIGHT.knock: the rest of getting caught is a boss's).
+export const DUNGEON = { reset: 45, flinch: 0.5, knock: 1.6, bump: 6 };
+
 // [[key item, weight, 1, 1], ...]: one of each boss's key pieces, for a loot list
 function bossPieces(weight) {
   return Object.values(BOSSES).map((boss) => [boss.key, weight, 1, 1]);
