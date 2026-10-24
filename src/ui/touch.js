@@ -89,6 +89,11 @@ function holdButton(node, code) {
   node.addEventListener('pointerup', up);
   node.addEventListener('pointercancel', up);
   node.addEventListener('lostpointercapture', up);
+  // (and no click when the finger comes up from a quick tap: a phone sends one
+  // to whatever is under the finger by then, and that can be a window the
+  // press just opened, a neighbour's, with its Bye button right there. A long
+  // press sends none: why holding Use kept it open)
+  node.addEventListener('touchend', (e) => e.cancelable && e.preventDefault(), { passive: false });
   return node;
 }
 
