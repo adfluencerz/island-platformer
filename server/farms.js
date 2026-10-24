@@ -488,12 +488,12 @@ Object.assign(Farms.prototype, {
     return !!(a?.friends?.includes(b?.id) && b?.friends?.includes(a?.id));
   },
 
-  // A farmer's friends: [{ id, name, color }]
+  // A farmer's friends: [{ id, name, color, lastOnline }] (lastOnline: when they were last online, ms; 0 if unknown)
   friendsOf(farm) {
     const list = [];
     for (const id of farm.friends ?? []) {
       const other = this.get(id);
-      if (other?.account && this.areFriends(farm, other)) list.push({ id, name: other.account.name, color: other.color });
+      if (other?.account && this.areFriends(farm, other)) list.push({ id, name: other.account.name, color: other.color, lastOnline: other.lastOnline ?? other.updatedAt ?? 0 });
     }
     return list;
   },

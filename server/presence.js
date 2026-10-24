@@ -114,7 +114,14 @@ export class Presence {
     if (!set) return;
     const was = this.whereIs(conn.farmId);
     set.delete(conn);
-    if (!set.size) this.online.delete(conn.farmId);
+    if (!set.size) {
+      this.online.delete(conn.farmId);
+      const farm = this.farms.get(conn.farmId);
+      if (farm) {
+        farm.lastOnline = Date.now(); // (friends' lists say how long ago)
+        this.farms.write(farm);
+      }
+    }
     if (this.whereIs(conn.farmId) !== was) this.tellFriends(conn.farmId);
     for (const party of this.parties.values()) if (party.conn === conn && !party.code) this.callOff(party, 'They went offline.');
   }

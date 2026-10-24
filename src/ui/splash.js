@@ -58,7 +58,7 @@ export class Splash {
   // account(): { username, color }, or null. onRegister({ username, password, color }),
   // onLogin({ username, password }): resolve once done (or throw, with why).
   // onLogout(). onColor(color): a new shirt color.
-  // onFriends(): { friends: [{ id, name, color, online, where }], asks: [{ id, name }] }.
+  // onFriends(): { friends: [{ id, name, color, online, where, lastOnline }], asks: [{ id, name }] }.
   // onAddFriend(username): { name, friends }. onAnswerFriend(id, yes). onRemoveFriend(id).
   // onStartParty(ids, game): start a lobby for that game (LOBBY_GAMES), inviting those friends (partyStatus() and
   // partyOver() say how it goes). onCancelParty(). onInviteToLobby(ids): to the one we are in.
@@ -650,7 +650,7 @@ export class Splash {
     dot.style.background = f.online ? '#7ed957' : '#b8a48a';
     el('span', 'ui-player-name', row, f.name);
     const WHERE = { home: 'at home', lobby: 'in a lobby', farm: 'on a farm' };
-    el('span', 'ui-muted', row, f.online ? WHERE[f.where] ?? 'online' : 'offline');
+    el('span', 'ui-muted', row, f.online ? WHERE[f.where] ?? 'online' : offlineFor(f.lastOnline));
   }
 
   friendRow(parent, f) {
@@ -826,4 +826,16 @@ export class Splash {
       }
     });
   }
+}
+
+// How long ago a friend was last online: 'offline 5 min', ... 'offline > 7 days'
+function offlineFor(lastOnline, now = Date.now()) {
+  if (!lastOnline) return 'offline';
+  const min = Math.floor((now - lastOnline) / 60_000);
+  if (min < 1) return 'offline just now';
+  if (min < 60) return `offline ${min} min`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `offline ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return days > 7 ? 'offline > 7 days' : `offline ${days} day${days === 1 ? '' : 's'}`;
 }
