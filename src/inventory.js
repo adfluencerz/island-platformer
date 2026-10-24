@@ -594,11 +594,13 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
     else if (!open && HOTBAR_KEYS.includes(e.code)) select(HOTBAR_KEYS.indexOf(e.code));
   });
 
+  // The toolbar's next item (dir 1) or the one before (-1), round and round
+  function cycle(dir) {
+    if (!open) select((selected + dir + COLS) % COLS);
+  }
+
   // Over the hotbar the wheel picks an item (elsewhere it zooms the camera, see main.js)
-  hotbarEl.addEventListener('wheel', (e) => {
-    if (open || !e.deltaY) return;
-    select((selected + Math.sign(e.deltaY) + COLS) % COLS);
-  }, { passive: true });
+  hotbarEl.addEventListener('wheel', (e) => e.deltaY && cycle(Math.sign(e.deltaY)), { passive: true });
 
   // (pointerdown: a second finger, while the thumb holds the stick, gets no mousedown)
   hotbarEl.addEventListener('pointerdown', (e) => {
@@ -745,5 +747,6 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
     notify,
     isOpen: () => open,
     selectedId: () => slots[selected]?.id ?? null,
+    cycle,
   };
 }

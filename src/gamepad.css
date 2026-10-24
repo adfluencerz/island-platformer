@@ -1,0 +1,7 @@
+/* The controller's highlight (gamepad.js): a gold ring round the button or
+   slot it is on */
+.pad-focus {
+  outline: 3px solid #ffd84a !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(255, 216, 74, 0.35) !important;
+}

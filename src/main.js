@@ -32,6 +32,7 @@ import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { Guide } from './ui/guide.js';
 import { TouchControls, isTouch } from './ui/touch.js';
+import { GamepadInput } from './gamepad.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
@@ -2600,6 +2601,13 @@ let farmOnScreen = false; // the home farm's soil and crops are in the scene
 
 const remotes = new Remotes(scene, { waterFrom });
 const touch = new TouchControls(); // (only shown on a touch screen)
+// A controller plays as the keyboard does; in a menu it moves a highlight about (gamepad.js)
+const pad = new GamepadInput({
+  inMenu: () => !splash.hidden || menuOpen() || hud.isTyping(),
+  onCycle: (dir) => inventory.cycle(dir),
+  onZoom: (factor) => zoomBy(factor),
+  onConnect: () => inventory.notify('Controller ready: A jump, X use, Y backpack, Menu for the menu'),
+});
 
 // The water at x, z, to fish in: { water, y } (which FISHING table, and its
 // surface), or null: land. In a lobby, its sea and its pond; on a farm, the
@@ -4228,6 +4236,7 @@ const _chest = new THREE.Vector3(); // trees between the camera and here fade ou
 playerMesh.add(dayNight.glow); // night-time glow follows the player
 
 function update(dt) {
+  pad.poll(dt); // (its buttons press their keys, before the keys are read)
   if (inputBlocked()) keys.clear();
 
   // Horizontal input -> world-space movement (camera-relative, simplified to world axes)
@@ -4238,9 +4247,11 @@ function update(dt) {
   if (keys.has('KeyA') || keys.has('ArrowLeft')) moveX -= 1;
   if (keys.has('KeyD') || keys.has('ArrowRight')) moveX += 1;
   if (!inputBlocked()) {
-    const stick = touch.direction(); // (part way over: a slower walk)
-    moveX += stick.x;
-    moveZ += stick.z;
+    for (const stick of [touch.direction(), pad.direction()]) {
+      // (part way over: a slower walk)
+      moveX += stick.x;
+      moveZ += stick.z;
+    }
   }
   if (moveX || moveZ || inputBlocked()) stopWalking(); // the stick or the keys take over from a tap
   else if (held && !building) ({ x: moveX, z: moveZ } = followMouse(dt));
