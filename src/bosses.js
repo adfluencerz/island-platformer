@@ -9,7 +9,7 @@ import {
 import { DungeonRun, ROOMS, FOE_R, dungeonAt, roomAt, roomEntry, dungeonStart, dungeonExit, dungeonFromWire, foeHits } from '../shared/dungeons.js';
 import { ITEMS } from './items.js';
 import { createArenas } from './arena.js';
-import { createDungeons } from './dungeon.js';
+import { createDungeons, THEMES as DUNGEON_LOOKS } from './dungeon.js';
 import { createBossView, dizzyStars } from './bossview.js';
 import { createMount } from './mounts.js';
 import { damp } from './character.js';
@@ -73,6 +73,7 @@ export function createBosses(ctx) {
   let sendBack = null; // (...by this)
   let lastArena = null; // (the arena we were in last frame, and the dungeon's room)
   let lastRoom = null;
+  const cave = { k: 0, light: 0xffffff }; // how far underground we are (in a dungeon), and its light (underground())
   let bopReady = 0;
   let payAt = 0;
   const _to = new THREE.Vector3(); // (where an arrow of ours flies)
@@ -501,6 +502,10 @@ export function createBosses(ctx) {
       return s?.phase === 'wake' || s?.phase === 'fight';
     },
 
+    // How far underground we are (0 to 1: in a dungeon, the sky and the sea
+    // go dark), and the light down there
+    underground: () => cave,
+
     // Are we in an arena, or a dungeon on the way to one? (nothing else is done there)
     inArena: () => !!here() || !!inDungeon(),
 
@@ -528,6 +533,9 @@ export function createBosses(ctx) {
       }
       if (inArena && inArena !== lastArena) intoArena(inArena);
       lastArena = inArena;
+      // down in a dungeon: the dark comes in (and goes, out in the arena or home)
+      cave.k += ((way ? 1 : 0) - cave.k) * Math.min(1, dt * 3);
+      if (way) cave.light = DUNGEON_LOOKS[way].cave;
       // into a room with foes up: what to do
       const room = way ? roomAt(way, x, z) : -1;
       const roomKey = way && room >= 0 ? `${way}:${room}` : null;

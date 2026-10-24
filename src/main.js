@@ -92,6 +92,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 const FOG_NEAR = 30;
 const FOG_FAR = 90;
+const CAVE_FOG = [15, 36]; // (near and far, down in a boss's dungeon)
+let underground = 0; // how far down in one we are (bosses.underground(), as of this frame)
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
 
 // (near: half a unit, not a tenth. The camera is never that close to anything
@@ -1608,8 +1610,9 @@ function updateCamera(dt) {
   if (!Number.isFinite(camZoom)) camZoom = zoomGoal(); // never leave the camera nowhere
   camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
   // Pushed back with the camera, so zooming out shows more island, not more fog
-  scene.fog.near = FOG_NEAR * Math.max(1, camZoom);
-  scene.fog.far = FOG_FAR * Math.max(1, camZoom);
+  // (underground, in a boss's dungeon, closer: the dark all round)
+  scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, CAVE_FOG[0], underground) * Math.max(1, camZoom);
+  scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, CAVE_FOG[1], underground) * Math.max(1, camZoom);
   reachSun(camZoom);
 
   camera.position.copy(camTarget).add(camOffset);
@@ -4643,6 +4646,11 @@ function update(dt) {
   const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour() - devJump; // (and the developer tools' jump, as if it passed now)
   devJump = 0;
+  // down in a boss's dungeon: no sky, no sea, a dim light of its own
+  const cave = bosses.underground();
+  underground = cave.k;
+  dayNight.setUnderground(cave.k, cave.light);
+  water.visible = cave.k < 0.5;
   dayNight.update(dt, {
     paused: atHome && (menuOpen() || !splash.hidden),
     fastForward,
@@ -4656,14 +4664,14 @@ function update(dt) {
   if (place === 'home') rainOnCrops(hoursBefore - 24, farmHours()); // (hoursBefore counts from day 1's end)
   buildings.setNight(dayNight.night(), player.position);
   const season = place !== 'lobby' ? seasons.update(dayNight.day(), dayNight.hour(), dayNight.night()) : null; // (a lobby's island keeps its own)
-  const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: indoors() });
+  const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: indoors() || cave.k > 0.5 });
   dayNight.setNote(season && (sky ? `${season} · ${sky}` : season));
   machines.update(farmHours(), t, dt);
   updateMeal(dt);
   houseRoom.setNight(dayNight.night());
   npcHomes.setNight(dayNight.night());
   houseRoom.update(t, player.position);
-  seasons.frame(dt, { home: place !== 'lobby', focus: indoors() ? null : player.position });
+  seasons.frame(dt, { home: place !== 'lobby', focus: indoors() || cave.k > 0.5 ? null : player.position });
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
