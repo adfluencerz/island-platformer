@@ -23,7 +23,7 @@
 //                              an account on this device's farm (sent with its token), or on a new farm from save
 //   POST /api/account/login    { username, password } -> { id, token, username, color }: this device's own token
 //   PUT  /api/account/color    { color } -> { username, color }: a new shirt color
-//   POST /api/friends          -> { friends: [{ id, name, color, online, where }], asks: [{ id, name }] }
+//   POST /api/friends          -> { friends: [{ id, name, color, online, where, lastOnline }], asks: [{ id, name }] }
 //   POST /api/friends/add      { username } -> { name, friends }: ask them (friends: they had asked us, so now we are)
 //   POST /api/friends/answer   { id, yes } -> { name, friends }
 //   POST /api/friends/remove   { id } -> {}
