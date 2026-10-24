@@ -2,8 +2,9 @@
 // in an arena of its own, a round meadow out past the sea on the farm's world
 // (like the house's room: shared/level.js HOUSE_ROOM), so the friends on a
 // farm walk in together and see each other there. Its portal, built on the
-// farm from a full set of its key pieces, leads in; a way home at the arena's
-// front leads back out.
+// farm from a full set of its key pieces, leads to its dungeon
+// (shared/dungeons.js), and through that to the arena; a way home in the
+// arena leads back out.
 //
 // A BossFight is one boss and its arena: asleep till a farmer comes in, then
 // awake, moving (hops, rolls, seeds...) and bopped by everyone there until
@@ -28,9 +29,11 @@ const REACH_SLACK = 0.8; // (the room has a slightly older idea of where everyon
 const WAKE = 2.2; // seconds it takes to wake up
 const ROUND = (v) => Math.round(v * 100) / 100;
 
-// Where farmers start in an arena (and are sent back to), and its way home
+// Where farmers start in an arena (and are sent back to), just in from the
+// way in at its front (the bridge from its dungeon: shared/dungeons.js), and
+// its way home, off to one side
 export const arenaStart = (id) => ({ x: ARENAS[id].x, z: ARENAS[id].z + ARENA_R - 3 });
-export const arenaExit = (id) => ({ x: ARENAS[id].x, z: ARENAS[id].z + ARENA_R - 1 });
+export const arenaExit = (id) => ({ x: ARENAS[id].x + 6.5, z: ARENAS[id].z + ARENA_R - 4 });
 
 // The boss whose arena x, z is in, or null
 export function arenaAt(x, z) {

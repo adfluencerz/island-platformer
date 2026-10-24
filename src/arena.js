@@ -4,9 +4,10 @@ import { ARENAS, ARENA_R, BOSS_IDS, arenaExit } from '../shared/bosses.js';
 // ---------- The bosses' arenas ----------
 // A boss's arena (shared/bosses.js ARENAS): a round island of meadow out past
 // the sea on the farm's world, a hedge in flower all round it (too tall to
-// hop: the way home is the portal at its front, toward the camera). Its
-// ground and hedge go in the world's platforms, like the house's room
-// (src/house.js). The boss on it is src/bossview.js's.
+// hop), but for a gap at its front, toward the camera, where the bridge from
+// its dungeon comes in (src/dungeon.js); the way home is the portal off to
+// one side. Its ground and hedge go in the world's platforms, like the
+// house's room (src/house.js). The boss on it is src/bossview.js's.
 
 const HEDGE_H = 1.4;
 const WALL_H = 3.5; // (what stops a farmer: a little over a jump)
@@ -109,9 +110,9 @@ export function createArenas(world) {
     ring.position.y = 0.01;
     arena.add(ring);
 
-    // the hedge all round, in flower, with a gap at the front for the way home
+    // the hedge all round, in flower, with a gap at the front for the way in
     const exit = arenaExit(id);
-    const gapAt = Math.atan2(exit.x - ax, exit.z - az);
+    const gapAt = 0;
     for (let i = 0; i < SEGMENTS; i++) {
       const a = (i / SEGMENTS) * Math.PI * 2;
       const gap = Math.abs(Math.atan2(Math.sin(a - gapAt), Math.cos(a - gapAt))) < 0.12;
@@ -129,7 +130,8 @@ export function createArenas(world) {
         part(seg, box, i % 2 ? MATS.hedge : MATS.hedgeLight, 0, h / 2, 0, len, h, 0.9);
         for (let k = 0; k < 3; k++) part(seg, ball, MATS.petals[(i + k) % 4], (k - 1) * len * 0.3, h + 0.02, ((k * 7 + i) % 3) * 0.15 - 0.15, 0.16, 0.12, 0.16);
       }
-      // what stops a farmer: all round (the way home is a portal, not a walk)
+      // what stops a farmer: all round, but for the way in
+      if (gap) continue;
       const c = Math.cos(a);
       const s = Math.sin(a);
       const w = Math.abs(len * c) + Math.abs(0.9 * s);
@@ -143,12 +145,12 @@ export function createArenas(world) {
       const d = ARENA_R * (0.65 + ((i * 37) % 30) / 100);
       const fx = Math.sin(a) * d;
       const fz = Math.cos(a) * d;
-      if (Math.hypot(fx - (exit.x - ax), fz - (exit.z - az)) < 2.5) continue;
+      if (Math.hypot(fx - (exit.x - ax), fz - (exit.z - az)) < 2.5 || (Math.abs(fx) < 1.8 && fz > ARENA_R * 0.5)) continue; // (clear of the way home, and the way in)
       part(arena, box, look.grassDark, fx, 0.12, fz, 0.06, 0.24, 0.06);
       if (i % 3 === 0) part(arena, ball, MATS.petals[i % 4], fx, 0.26, fz, 0.14, 0.1, 0.14);
     }
 
-    // the way home: a portal like the one on the farm, in the hedge's gap
+    // the way home: a portal like the one on the farm, off to one side
     const door = new THREE.Group();
     door.position.set(exit.x - ax, 0, exit.z - az + 0.6);
     arena.add(door);
