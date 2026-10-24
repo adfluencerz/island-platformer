@@ -1011,6 +1011,32 @@ export const ITEMS = {
       '................',
     ],
   },
+  steel: {
+    name: 'Steel',
+    category: 'Material',
+    description: 'A lump of good steel, found now and then in a rock as it breaks up (the bigger the rock, the likelier). Makes swords and arrowheads at the workbench.',
+    maxStack: 999,
+    color: 0x8f9cb0,
+    palette: { o: '#232a35', W: '#ffffff', L: '#d6dde6', M: '#a9b3c1', m: '#7d8899', d: '#5d6470' },
+    sprite: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '.....oooooooo...',
+      '....oLWWLLLLLo..',
+      '...oLWMMMMMMdo..',
+      '..oLLMMMMMMddo..',
+      '..oMMMMMMMMddo..',
+      '..ommmmmmmmdo...',
+      '..ommmmmmmmdo...',
+      '...ooooooooo....',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+  },
   gem: {
     name: 'Sky Gem',
     category: 'Mineral',
@@ -1124,10 +1150,18 @@ ITEMS.wooden_sword = {
     '.oo.............',
   ],
 };
+// ...the wooden sword made better (WEAPONS: they bop harder; the silver one
+// swings faster too): its drawing in steel, then in silver
+const blade = (name, description, color, palette) => ({ ...ITEMS.wooden_sword, name, description, color, palette: { ...ITEMS.wooden_sword.palette, ...palette }, sprite: [...ITEMS.wooden_sword.sprite] });
+ITEMS.steel_sword = blade('Steel sword', 'A steel blade on a leather grip: bops harder, and shakes more loose, than the wooden one. Swing with E in a lobby, or at a boss.', 0x8f9cb0,
+  { o: '#232a35', W: '#e8edf3', w: '#a9b3c1', d: '#5d6470', h: '#7a4f28' });
+ITEMS.silver_sword = blade('Silver sword', 'Light and bright: bops harder still, and swings faster than any other. Swing with E in a lobby, or at a boss.', 0xd8dee8,
+  { o: '#2f3540', W: '#ffffff', w: '#d8dee8', d: '#c9a12a', h: '#2f4a6b' });
+
 ITEMS.mallet = {
   name: 'Mallet',
   category: 'Tool',
-  description: 'A stone head, well padded. Bops harder and shakes more loose than the sword, but slower. Swing with E in a lobby.',
+  description: 'A stone head, well padded. Bops harder and shakes more loose than the wooden sword, but slower. Swing with E in a lobby.',
   maxStack: 1,
   color: 0x9c9a92,
   palette: { o: '#3b2412', W: '#d99b57', w: '#b0743a', L: '#d6d4cc', M: '#a9a79f', d: '#6c6b66', P: '#e8c98f' },
@@ -1148,6 +1182,61 @@ ITEMS.mallet = {
     '.oWwo...........',
     '.ooo............',
     '................',
+  ],
+};
+
+// A bow, for bopping from further off: it shoots an arrow from the backpack
+// (made at the workbench too, five at a time) at the farmer it is aimed at
+ITEMS.bow = {
+  name: 'Bow',
+  category: 'Tool',
+  description: 'Bops a farmer from far off, in a lobby, or a boss: aim at them and press E to shoot. Each shot takes an arrow from your backpack.',
+  maxStack: 1,
+  color: 0xb0743a,
+  palette: { o: '#3b2412', W: '#d99b57', w: '#b0743a', h: '#6e3f1e', s: '#f4f0e6' },
+  sprite: [
+    '..........oooo..',
+    '........oowwwwo.',
+    '......oowwWWWo..',
+    '.....owwWooso...',
+    '....ohWWooso....',
+    '...ohhoooso.....',
+    '..owWo.oso......',
+    '..owWooso.......',
+    '.owWooso........',
+    '.owooso.........',
+    'owWoso..........',
+    'owWso...........',
+    'owWo............',
+    'owo.............',
+    '.o..............',
+    '................',
+  ],
+};
+ITEMS.arrow = {
+  name: 'Arrow',
+  category: 'Ammo',
+  description: 'A steel-tipped arrow, for the bow: one goes with each shot.',
+  maxStack: 999,
+  color: 0xb0743a,
+  palette: { o: '#2a1d14', w: '#c9a066', L: '#e8edf3', M: '#a9b3c1', m: '#5d6470', f: '#e0475b', F: '#ffffff' },
+  sprite: [
+    '.............o..',
+    '............oLo.',
+    '..........ooLMo.',
+    '.........omMMo..',
+    '.........owmo...',
+    '........owoo....',
+    '.......owo......',
+    '......owo.......',
+    '.....owo........',
+    '....owo.........',
+    '.ooowo..........',
+    'offwo...........',
+    'offFo...........',
+    '.oFffo..........',
+    '..offo..........',
+    '...oo...........',
   ],
 };
 

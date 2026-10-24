@@ -40,6 +40,7 @@ const HOTBAR_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=
 
 export const CATEGORIES = {
   Tool: '#6b5a45',
+  Ammo: '#8a4a2a',
   Seed: '#3f7f24',
   Produce: '#c25a12',
   Food: '#d0732a',

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { createFarmer } from './character.js';
 import { TICK_DT, INTERP_DELAY } from '../shared/constants.js';
 import { STATEF } from '../shared/protocol.js';
+import { SWORDS } from '../shared/level.js';
+import { ITEMS } from './items.js';
 import { BOSS_IDS } from '../shared/bosses.js';
 import { createMount } from './mounts.js';
 import { createTackle } from './fishing.js';
@@ -171,7 +173,9 @@ export class Remotes {
       r.farmer.axe.visible = (s.f & STATEF.AXE) !== 0;
       r.farmer.pick.visible = (s.f & STATEF.PICK) !== 0;
       r.farmer.sword.visible = (s.f & STATEF.SWORD) !== 0;
+      if (r.farmer.sword.visible) r.farmer.setSword(ITEMS[SWORDS[Math.floor(s.f / STATEF.BLADE) & 3]]?.color ?? ITEMS.wooden_sword.color);
       r.farmer.mallet.visible = (s.f & STATEF.MALLET) !== 0;
+      r.farmer.bow.visible = (s.f & STATEF.BOW) !== 0;
       r.farmer.rod.visible = (s.f & STATEF.ROD) !== 0;
       r.farmer.anim.line = r.farmer.rod.visible && (s.f & STATEF.CAST) ? ((s.f & STATEF.BITE) ? 'bite' : 'out') : null;
       const mount = Math.floor(s.f / STATEF.MOUNT) & 7; // (riding: src/mounts.js)

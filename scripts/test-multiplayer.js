@@ -16,7 +16,7 @@ import { Farms, normalizePairCode } from '../server/farms.js';
 import { FarmRooms, FarmRoom } from '../server/farmroom.js';
 import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS, DAY_LENGTH_SECONDS } from '../shared/constants.js';
-import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, woodFor, stoneFor, mostStone, mostWood } from '../shared/level.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, WEAPONS, SWORDS, woodFor, stoneFor, steelFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS, OLD_HALF, homeGround, oldHomeGround, farmBlocked, inLake, LAKE, NPC_HOMES, NPC_ROOMS, DOCK, SIGNPOSTS, ROADS, TRAILS, npcDoor } from '../shared/farmland.js';
 import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor } from '../shared/npcs.js';
@@ -38,7 +38,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
-import { BOSSES } from '../shared/balance.js';
+import { BOSSES, BOSS_FIGHT, RECIPES } from '../shared/balance.js';
 import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
 import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
 import { newDeck, shuffle, evaluate, bestHand } from '../shared/cards.js';
@@ -559,6 +559,30 @@ await test('rocks: broken by whoever finishes first, next to it, not too fast; t
   assert.deepEqual(join(room, 'D').conn.last(S.WELCOME).mined, [4]);
 });
 
+await test('steel: now and then a lump in a rock as it breaks up, likelier the bigger it is; it can be knocked loose', () => {
+  const luck = (r) => () => r;
+  assert.equal(steelFor(ROCK.per, luck(0)), 0);
+  assert.equal(steelFor(ROCK.per, luck(0.99)), 1);
+  const share = (size) => {
+    let n = 0;
+    for (let i = 0; i < 4000; i++) n += steelFor(size, mulberry32(i));
+    return n / 4000;
+  };
+  assert.ok(Math.abs(share(ROCK.per) - ROCK.steel) < 0.03, 'a fist-sized one: ROCK.steel of the time');
+  assert.ok(share(ROCK.size[1]) > 2 * share(ROCK.per), 'a big boulder: more often');
+  assert.equal(steelFor(50, luck(0.99)), steelFor(ROCK.size[1], luck(0.99)), 'no mountains');
+  // the lobby rolls it with the stone, for whoever broke the rock, and it is theirs to be knocked loose
+  for (const [r, steel] of [[0, undefined], [0.99, 1]]) {
+    const room = new Room({ code: 'TEST13S', rand: luck(r) });
+    const a = join(room, 'A');
+    const rock = rockOf(room.wilds, 4);
+    room.message(a.p, { t: C.STATE, x: rock.x + 1, y: 0.8, z: rock.z, yaw: 0, f: 1 });
+    room.message(a.p, { t: C.MINE, ...rock });
+    assert.equal(a.conn.last(S.MINED).steel, steel);
+    assert.equal(a.p.bag.steel, steel);
+  }
+});
+
 await test('trees and rocks: the room places them, on dry land at ground level, the same every time', () => {
   const seeds = ['classic', 'mossy-cove-7'];
   for (let gen = 2; gen <= CURRENT_GEN; gen++) for (let i = 0; i < 3; i++) seeds.push(randomSeed(mulberry32(100 * gen + i)).replace(/-v\d+$/, `-v${gen}`));
@@ -969,6 +993,75 @@ await test('bopping: the farmer in front, in reach, knocked back; what they gath
   room.update(Date.now() + DROP_MS + 100);
   assert.equal(a.conn.last(S.PICKED).by, 0);
   assert.equal(room.drops.size, 0);
+});
+
+await test('the swords: steel bops harder than wood, silver harder still and faster; the bow shoots further, straight ahead', () => {
+  // each sword is made from the one before it, and is better than it
+  for (let i = 1; i < SWORDS.length; i++) {
+    const [was, is] = [WEAPONS[SWORDS[i - 1]], WEAPONS[SWORDS[i]]];
+    assert.ok(RECIPES.find((r) => r.makes === SWORDS[i]).needs[SWORDS[i - 1]], `${SWORDS[i]} from ${SWORDS[i - 1]}`);
+    assert.ok(is.knock > was.knock && is.drops > was.drops && BOSS_FIGHT.damage[SWORDS[i]] > BOSS_FIGHT.damage[SWORDS[i - 1]], SWORDS[i]);
+  }
+  assert.ok(WEAPONS.silver_sword.every < WEAPONS.steel_sword.every, 'silver swings faster');
+  const arrows = RECIPES.find((r) => r.makes === 'arrow');
+  assert.deepEqual([arrows.count, Object.keys(arrows.needs).sort()], [5, ['steel', 'wood']]);
+  assert.deepEqual(Object.keys(RECIPES.find((r) => r.makes === 'bow').needs).sort(), ['wood', 'wool']);
+  for (const id of [...Object.keys(WEAPONS), 'steel', 'arrow']) assert.ok(ITEMS[id]?.sprite, `${id} has a picture`);
+  for (const id of Object.keys(WEAPONS)) assert.ok(BOSS_FIGHT.damage[id] >= 1, `${id} bops a boss`);
+
+  const room = new Room({ code: 'TEST15B' });
+  const a = join(room, 'A');
+  const b = join(room, 'B');
+  const { x: sx, z: sz } = room.island.spawn;
+  const at = (who, x, z, y = 0.8) => room.message(who.p, { t: C.STATE, x: sx + x, y, z: sz + z, yaw: 0, f: 1 });
+  const bop = (weapon, yaw = 0) => {
+    b.p.boppedAt = 0;
+    a.p.bopAt = 0;
+    room.message(a.p, { t: C.BOP, weapon, yaw });
+    return b.conn.last(S.BOPPED);
+  };
+  at(a, 8, 0);
+  at(b, 8, 1.2);
+  b.p.bag = { wood: 10 };
+  for (const [weapon, n] of [['wooden_sword', 1], ['steel_sword', 2], ['silver_sword', 3]]) {
+    const { knock, drop } = bop(weapon);
+    assert.deepEqual([knock, drop], [WEAPONS[weapon].knock, ['wood', n]], weapon);
+  }
+  // silver swings again sooner than steel
+  const swingsAfter = (weapon, ms) => {
+    const before = b.conn.all(S.BOPPED).length;
+    b.p.boppedAt = 0;
+    a.p.bopAt = Date.now() - ms;
+    room.message(a.p, { t: C.BOP, weapon, yaw: 0 });
+    return b.conn.all(S.BOPPED).length > before;
+  };
+  assert.deepEqual([swingsAfter('steel_sword', 520), swingsAfter('silver_sword', 520)], [false, true]);
+  // the bow: from eight away, where a sword can't reach; everyone sees the arrow fly at B
+  at(b, 8, 9);
+  const sword = b.conn.all(S.BOPPED).length;
+  bop('silver_sword');
+  assert.equal(b.conn.all(S.BOPPED).length, sword, 'too far for a sword');
+  const hit = bop('bow');
+  assert.deepEqual([hit.id, hit.knock], [b.p.id, WEAPONS.bow.knock]);
+  assert.deepEqual([b.conn.last(S.SHOT).by, b.conn.last(S.SHOT).id], [a.p.id, b.p.id]);
+  assert.equal(a.conn.all(S.SHOT).length, 1, 'only the bow shoots');
+  // ...straight ahead only: a little off to the side, the arrow misses (it still flies)
+  const shots = b.conn.all(S.BOPPED).length;
+  at(b, 12, 9);
+  bop('bow');
+  assert.equal(b.conn.all(S.BOPPED).length, shots, 'off to the side');
+  assert.equal(b.conn.last(S.SHOT).id, undefined);
+  // ...up on a ledge, out of a sword's reach but not an arrow's; too far is too far
+  at(b, 8, 9, 3.8);
+  assert.equal(bop('bow').id, b.p.id);
+  at(b, 8, 1.2, 3.8);
+  const up = b.conn.all(S.BOPPED).length;
+  bop('steel_sword');
+  assert.equal(b.conn.all(S.BOPPED).length, up, 'over a sword\'s reach');
+  at(b, 8, WEAPONS.bow.reach + 1);
+  bop('bow');
+  assert.equal(b.conn.all(S.BOPPED).length, up);
+  room.close();
 });
 
 console.log('party games');
@@ -2189,6 +2282,7 @@ await test('a farm room: farming together, the chest, and the farm kept in the o
   const mined = ann.conn.last(S.MINED);
   assert.deepEqual([mined.id, mined.by], [3, bo.p.id]);
   assert.ok(mined.count >= 1 && mined.at > Date.now());
+  assert.ok(mined.steel === undefined || mined.steel === steelFor(FARM_WILDS.rocks[3].size, () => 0.99), 'steel now and then');
   stand(ann, rockOf(FARM_WILDS, 4), 8);
   room.message(ann.p, { t: C.MINE, ...rockOf(FARM_WILDS, 4) });
   assert.equal(ann.conn.last(S.MINE_DENY)?.id, 4, 'too far');
@@ -2734,6 +2828,11 @@ await test('a boss sleeps till someone comes, fights, gets tougher with more far
   fight.start('rest', { dur: 1e9 });
   assert.equal(fight.bop(1, 'mallet', fight.x + 9, GROUND_STAND_Y, fight.z), null, 'too far');
   assert.equal(fight.bop(1, 'axe', fight.x + 1, GROUND_STAND_Y, fight.z), null, 'not a weapon');
+  // an arrow from further off counts, and a bigger sword takes off more
+  assert.equal(fight.bop(1, 'silver_sword', fight.x + 9, GROUND_STAND_Y, fight.z), null, 'too far for a sword');
+  const was = fight.hp;
+  assert.equal(fight.bop(1, 'bow', fight.x + 9, GROUND_STAND_Y, fight.z).hp, was - BOSS_FIGHT.damage.bow);
+  assert.equal(fight.bop(1, 'silver_sword', fight.x + 1, GROUND_STAND_Y, fight.z).hp, was - BOSS_FIGHT.damage.bow - BOSS_FIGHT.damage.silver_sword);
   let hit;
   for (let i = 0; i < 200 && !hit?.won; i++) hit = fight.bop(1, 'wooden_sword', fight.x + 1, GROUND_STAND_Y, fight.z);
   assert.equal(hit.hp, 0);

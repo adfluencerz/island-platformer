@@ -62,7 +62,7 @@ export const mostWood = (size) => Math.round(TREE.wood[1] * treeSize(size));
 // max] for a rock of size `per` (a fist-sized one); smaller ones still give
 // one, the big boulders by the terraces give the most (`size`: the smallest
 // and biggest rocks there are, so a page can't claim a mountain).
-export const ROCK = { ...ROCK_BALANCE, size: [0.15, 1.1] }; // (hits, regrow, stone, per: shared/balance.js)
+export const ROCK = { ...ROCK_BALANCE, size: [0.15, 1.1] }; // (hits, regrow, stone, per, steel, giant: shared/balance.js)
 
 // ---------- Growing back elsewhere ----------
 // A felled tree or a broken rock grows back in another of its few places
@@ -89,6 +89,13 @@ export function stoneFor(size, rand = Math.random) {
 
 // The most a rock of this size can give (room to keep in the backpack)
 export const mostStone = (size) => Math.max(1, Math.round((ROCK.stone[1] * rockSize(size)) / ROCK.per));
+
+// Steel from breaking a rock of this size, as well: mostly none, now and then
+// a lump (the chance ROCK.steel for a fist-sized one, likelier the bigger the
+// rock: two in three of the biggest boulders have one)
+export function steelFor(size, rand = Math.random) {
+  return Math.floor((ROCK.steel * rockSize(size)) / ROCK.per + rand());
+}
 
 // ---------- Building ----------
 // What can be built on a farm in build mode (src/build.js draws them): one
@@ -265,8 +272,13 @@ export function keptClear(gx, gz) {
 // gathered on this visit, for anyone to pick up (never a rare find, nor
 // gold). Nobody gets hurt. `every`: ms between swings that count. A farmer
 // who was just bopped can't be again for BOP_GRACE ms, and the stone circle
-// where farmers arrive (within SAFE_CIRCLE of it) is for resting.
+// where farmers arrive (within SAFE_CIRCLE of it) is for resting. The bow
+// bops from further off, with an arrow from the backpack.
 // (WEAPONS, BOP_GRACE, SAFE_CIRCLE and DROP_MS: shared/balance.js)
+
+// The swords, each made from the one before: the one in a farmer's hand is
+// sent to the others as its place here (STATEF.BLADE, shared/protocol.js)
+export const SWORDS = ['wooden_sword', 'steel_sword', 'silver_sword'];
 
 // Finds rare enough that the whole lobby hears when one turns up
 export const RARE = {

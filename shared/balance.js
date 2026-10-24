@@ -63,6 +63,8 @@ export const SHOP = {
   ...Object.fromEntries(RELICS.map((relic) => [relic, { sell: 400 }])), // (the sky isles' relics)
   wood: { sell: 6 },
   stone: { sell: 4 },
+  steel: { sell: 30 }, // (a lump of it now and then in a rock)
+  arrow: { sell: 3 }, // (made at the workbench, for the bow)
   // animals, and what they give
   hen: { price: 150, sell: 20 },
   cow: { price: 500, sell: 100},
@@ -232,8 +234,11 @@ export const BENCH_LEVELS = [
 // `regrow`: seconds until it is back (somewhere else; see shared/level.js).
 // `wood`: logs from a tree of size 1 (bigger trees give more). `stone`: from
 // a rock of size `per` (a fist-sized one; the big boulders give the most).
+// `steel`: the chance a rock of size `per` has a lump of steel in it as well
+// (a bigger one: more chance, and the biggest can have two); `giant`: the
+// steel each farmer who helped break up a giant rock gets.
 export const TREE_BALANCE = { hits: 4, regrow: [600, 600], wood: [2, 4] };
-export const ROCK_BALANCE = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4 };
+export const ROCK_BALANCE = { hits: 3, regrow: [900, 900], stone: [1, 2], per: 0.4, steel: 0.25, giant: 3 };
 // The workbench's tools, a tier to each of its levels (sturdy, silver,
 // golden): swings to fell a tree or break a rock with each; `TOOL_EXTRA`: one
 // more log or stone a tree or rock gives with it; `HOE_TILLS`: the tiles a hoe
@@ -330,7 +335,7 @@ export const MOUNTS = {
 // land. `damage`: what one bop of each weapon takes off. `sleep`: seconds an
 // empty arena waits before its boss goes back to sleep, fresh. `shiny`: the
 // kinds a shiny animal can be.
-export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage: { wooden_sword: 1, mallet: 2 }, sleep: 4, shiny: ['hen', 'cow', 'sheep'] };
+export const BOSS_FIGHT = { hitsOut: 3, dizzy: 1.2, knock: 9, grace: 1.5, damage: { wooden_sword: 1, steel_sword: 2, silver_sword: 3, mallet: 2, bow: 1 }, sleep: 4, shiny: ['hen', 'cow', 'sheep'] };
 
 // [[key item, weight, 1, 1], ...]: one of each boss's key pieces, for a loot list
 function bossPieces(weight) {
@@ -527,13 +532,17 @@ export const BUILD_COSTS = {
 // What can be made, in the order it is listed. `needs`: items used up (a
 // tool among them is swapped for the one made, in its slot), and `gold` paid.
 // `level`: the workbench level it takes (BENCH_LEVELS; none: the first).
+// `count`: how many one go makes (none: one).
 export const RECIPES = [
   { makes: 'sturdy_axe', needs: { axe: 1, wood: 12, stone: 8 } },
   { makes: 'sturdy_pickaxe', needs: { pickaxe: 1, wood: 8, stone: 12 } },
   { makes: 'wide_hoe', needs: { hoe: 1, wood: 10, stone: 10 } },
   { makes: 'big_watering_can', needs: { watering_can: 1, wood: 10, stone: 15 } },
   { makes: 'wooden_sword', needs: { wood: 8 } },
+  { makes: 'steel_sword', needs: { wooden_sword: 1, steel: 5, wood: 4 } },
   { makes: 'mallet', needs: { wood: 4, stone: 6 } },
+  { makes: 'bow', needs: { wood: 10, wool: 3 } },
+  { makes: 'arrow', count: 5, needs: { wood: 2, steel: 1 } },
   { makes: 'glider_leaf', needs: { flax: 8, wood: 4 } },
   { makes: 'cheese_press', needs: { wood: 20, stone: 10 } },
   { makes: 'mayo_machine', needs: { wood: 15, stone: 15 } },
@@ -542,6 +551,7 @@ export const RECIPES = [
   { makes: 'silver_axe', level: 2, needs: { sturdy_axe: 1, gold: 400, wood: 20, stone: 30, gem: 1 } },
   { makes: 'silver_pickaxe', level: 2, needs: { sturdy_pickaxe: 1, gold: 400, wood: 30, stone: 20, gem: 1 } },
   { makes: 'silver_hoe', level: 2, needs: { wide_hoe: 1, gold: 400, wood: 25, stone: 25, gem: 1 } },
+  { makes: 'silver_sword', level: 2, needs: { steel_sword: 1, gold: 400, steel: 8, gem: 1 } },
   // level 3
   { makes: 'golden_axe', level: 3, needs: { silver_axe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
   { makes: 'golden_pickaxe', level: 3, needs: { silver_pickaxe: 1, gold: 1000, wood: 40, stone: 40, gem: 3 } },
@@ -628,11 +638,18 @@ export function unmake(items) {
 // ---------- Bopping (lobbies) ----------
 // With one in hand, E bops the farmer in front within `reach`: knocked back
 // (at `knock`), they drop up to `drops` of something gathered this visit.
-// `every`: ms between swings that count.
+// `every`: ms between swings that count. The bow shoots (an arrow from the
+// backpack each time) at a farmer further off, as long as they are nearly
+// straight ahead (`aim`: how straight, as the cosine of how far off it can
+// be) and not too far above or below (`high`, as for a boss).
 export const WEAPONS = {
   wooden_sword: { reach: 1.9, knock: 7, every: 700, drops: 1 },
+  steel_sword: { reach: 2, knock: 9, every: 700, drops: 2 },
+  silver_sword: { reach: 2.1, knock: 10, every: 500, drops: 3 },
   mallet: { reach: 2, knock: 11, every: 1100, drops: 2 },
+  bow: { reach: 12, knock: 5, every: 800, drops: 1, shoots: 'arrow', aim: 0.94, high: 5 },
 };
+export const ARROW_SPEED = 30; // how fast an arrow flies (m/s): just for show, the bop lands as it is shot
 export const BOP_GRACE = 2500; // ms a farmer who was just bopped can't be again
 export const SAFE_CIRCLE = 3.5; // nobody bops or is bopped this close to where farmers arrive
 export const DROP_MS = 45_000; // a drop nobody picks up fades after this (ms)

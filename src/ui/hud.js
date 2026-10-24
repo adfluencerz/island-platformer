@@ -21,7 +21,7 @@ const CONTROLS = [
   ['E', 'Till, plant and harvest; gather, chop or mine (hold to keep at it)'],
   ['E', 'Use what is in front of you: the stall, the workbench, the chest, a machine, the arcade, the kitchen, a door, a portal'],
   ['E', 'With a rod: cast at the water, then again when it bites. With a dish: eat it. With a mount: get on or off'],
-  ['E', 'With a sword or mallet in a lobby: bop the farmer next to you'],
+  ['E', 'With a sword or mallet in a lobby: bop the farmer next to you. With a bow: shoot an arrow at the one you face'],
   ['1 – =', 'Pick an item (or scroll over the bar)'],
   ['Scroll', 'Zoom'],
   ['I', 'Backpack'],
@@ -55,7 +55,7 @@ const TOUCH_CONTROLS = [
   ['Chat', 'Chat (in a lobby, or on a farm with helpers)'],
   ['Pinch', 'Zoom'],
   ['Hold clock', 'Speed up time at home'],
-  ['Tap farmer', 'With a sword or mallet in a lobby: bop them'],
+  ['Tap farmer', 'With a sword, mallet or bow in a lobby: bop them'],
   ['Menu', 'In the panel at the top left'],
 ];
 // With a controller (gamepad.js), playing and in a menu

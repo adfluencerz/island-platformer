@@ -17,10 +17,11 @@ import { TILE_SIZE } from './world.js';
 // A boss's portal on the farm (built from a full set of its key pieces: the
 // Build tab) leads to its arena (src/arena.js), out past the sea on the
 // farm's world; the portal at the arena's front leads home. In there, E with
-// the wooden sword or the mallet in hand bops the boss (shared/bosses.js has
-// how it fights). Its moves catch a farmer who isn't quick: knocked back and
-// dizzy for a moment (slower, no bopping), and after BOSS_FIGHT.hitsOut of
-// those, back at the arena's start to have another go. Nobody gets hurt.
+// a sword or the mallet in hand bops the boss, and the bow shoots at it from
+// further off, an arrow a shot (shared/bosses.js has how it fights). Its
+// moves catch a farmer who isn't quick: knocked back and dizzy for a moment
+// (slower, no bopping), and after BOSS_FIGHT.hitsOut of those, back at the
+// arena's start to have another go. Nobody gets hurt.
 //
 // On a farm with helpers the farm's room runs the fight and says how it goes
 // (BOSS, BOSS_FX, BOSS_WON); on a farm played alone this page runs it, by
@@ -60,6 +61,7 @@ export function createBosses(ctx) {
   let outAt = 0; // (sent back to the start at this time)
   let bopReady = 0;
   let payAt = 0;
+  const _to = new THREE.Vector3(); // (where an arrow of ours flies)
   let now = 0; // (the clock, as of the last update)
   let riding = null; // the mount we are on (a boss's id)
   const stars = dizzyStars(3, 0.38, 0.28);
@@ -96,7 +98,7 @@ export function createBosses(ctx) {
     hits = 0;
     const b = bosses.get(id).s;
     if (b?.phase === 'friendly') inventory.notify(`The ${name(id)} is friendly now`);
-    else if (!Object.keys(WEAPONS).some((w) => inventory.count(w))) inventory.notify(`Bop the ${name(id)} with a wooden sword or a mallet (made at a workbench) until it's dizzy`);
+    else if (!Object.keys(WEAPONS).some((w) => inventory.count(w))) inventory.notify(`Bop the ${name(id)} with a sword, a mallet or a bow (made at a workbench) until it's dizzy`);
     else inventory.notify(`Bop the ${name(id)} until it's dizzy! Jump its shockwaves and seeds`);
   }
 
@@ -129,6 +131,7 @@ export function createBosses(ctx) {
     else if (fx.e === 'bop') {
       boss.view.flinch();
       if (fx.by === me()) hud.flash('Bop!');
+      else if (fx.shot && boss.s) ctx.shotFrom(fx.by, _to.set(boss.s.x, boss.s.y + 1, boss.s.z)); // (someone else's arrow)
     } else if (fx.e === 'wake' && ours) inventory.notify(`The ${name(id)} wakes up, grumpy!`);
     else if (fx.e === 'sleep') {
       boss.view.clearFx();
@@ -251,15 +254,28 @@ export function createBosses(ctx) {
       if (!id) return false;
       const weapon = ctx.weapon();
       if (!weapon) {
-        inventory.notify(`Take a wooden sword or a mallet in hand to bop the ${name(id)}`);
+        inventory.notify(`Take a sword, a mallet or a bow in hand to bop the ${name(id)}`);
         return true;
       }
-      if (now < dizzyUntil || now < bopReady || outAt) return true;
-      bopReady = now + WEAPONS[weapon].every / 1000;
+      const { shoots, every, reach } = WEAPONS[weapon];
       const b = bosses.get(id).s;
+      if (now < dizzyUntil || now < bopReady || outAt || (shoots && b?.phase === 'friendly')) return true; // (no arrows wasted on a friend)
+      if (shoots && !inventory.count(shoots)) {
+        inventory.notify('No arrows left: make some at a workbench, from wood and steel');
+        return true;
+      }
+      bopReady = now + every / 1000;
       if (b) farmer.anim.facing = Math.atan2(b.x - player.position.x, b.z - player.position.z);
       farmer.swing();
-      if (b?.phase !== 'fight' || Math.hypot(b.x - player.position.x, b.z - player.position.z) > WEAPONS[weapon].reach + BODY_R) return true;
+      const inReach = b?.phase === 'fight' && Math.hypot(b.x - player.position.x, b.z - player.position.z) <= reach + BODY_R;
+      if (shoots) {
+        // (an arrow each shot, at the boss if it is in reach, else straight on)
+        inventory.remove(shoots, 1);
+        const { x, y, z } = player.position;
+        const yaw = farmer.anim.facing;
+        ctx.shoot(inReach ? _to.set(b.x, b.y + 1, b.z) : _to.set(x + Math.sin(yaw) * reach, y, z + Math.cos(yaw) * reach));
+      }
+      if (!inReach) return true;
       if (ctx.net()) {
         ctx.net().send({ t: C.BOSS_BOP, boss: id, weapon });
         return true;
@@ -286,8 +302,9 @@ export function createBosses(ctx) {
       const b = id && bosses.get(id).s;
       if (!b) return '';
       if (b.phase === 'friendly') return `The ${name(id)} is your friend now`;
-      if (!ctx.weapon()) return 'Take a sword or a mallet in hand';
-      return b.phase === 'fight' ? `E  Bop the ${name(id)}` : '';
+      if (!ctx.weapon()) return 'Take a sword, a mallet or a bow in hand';
+      if (b.phase !== 'fight') return '';
+      return WEAPONS[ctx.weapon()].shoots ? `E  Shoot at the ${name(id)}` : `E  Bop the ${name(id)}`;
     },
 
     // Is a fight on through this piece (a portal)? (It can't be taken down meanwhile.)
@@ -306,6 +323,9 @@ export function createBosses(ctx) {
 
     // The mount we are on, for STATEF (1 + its boss's place in BOSS_IDS; 0: none)
     mountBits: () => (riding ? BOSS_IDS.indexOf(riding) + 1 : 0),
+
+    // The boss as we last had it (bossFromWire), or null: for tests
+    seen: (id) => bosses.get(id)?.s ?? null,
 
     // Every frame. t: seconds (the page's clock)
     update(dt, t) {

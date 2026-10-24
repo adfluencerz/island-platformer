@@ -336,7 +336,7 @@ export class BossFight {
   bop(who, weapon, x, y, z) {
     if (this.phase !== 'fight' || !WEAPONS[weapon]) return null;
     if (Math.hypot(x - this.x, z - this.z) > WEAPONS[weapon].reach + BODY_R + REACH_SLACK) return null;
-    if (this.y - (y - GROUND_STAND_Y) > 1.6) return null; // (over their head)
+    if (this.y - (y - GROUND_STAND_Y) > (WEAPONS[weapon].high ?? 1.6)) return null; // (over their head: out of reach, but for an arrow)
     this.hp = Math.max(0, this.hp - (BOSS_FIGHT.damage[weapon] ?? 1));
     this.seen.add(who);
     if (this.hp > 1e-6) return { hp: ROUND(this.hp) };
