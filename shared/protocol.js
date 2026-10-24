@@ -57,11 +57,12 @@ export const S = {
   FELLED: 'felled', // { id, by, count, at, shares }: tree id came down; player `by` got count wood (at: on a farm, when it grows back, ms; shares: a giant's, [[player id, count]], each player's wood)
   REGROWN: 'regrown', // { id, n }: tree id has grown back, in its place n (shared/level.js nextSite)
   CHOP_DENY: 'chopDeny', // { id }: that chop did not count (already down, too far, too fast)
-  MINED: 'mined', // { id, by, count, at, shares }: rock id was broken up; player `by` got count stone (at: on a farm, when it comes back, ms; shares: as for FELLED)
+  MINED: 'mined', // { id, by, count, steel, at, shares }: rock id was broken up; player `by` got count stone, and steel (if any; with shares, each who helped gets ROCK.giant) (at: on a farm, when it comes back, ms; shares: as for FELLED)
   GIANT: 'giant', // { kind, id, hp, max, by }: tree or rock id is a giant with hp of max health left (by: who just swung at it; 0: it has just grown huge)
   RESURFACED: 'resurfaced', // { id, n }: rock id is back, in its place n
   MINE_DENY: 'mineDeny', // { id }: that swing did not count (already broken, too far, too fast)
   BOPPED: 'bopped', // { by, id, dx, dz, knock, drop }: player `by` bopped player id, knocking them along dx, dz (a unit vector) at speed knock; drop: [item, count] they dropped, or null
+  SHOT: 'shot', // { by, yaw, id }: player `by` shot an arrow facing yaw (the bow), at player id (none: at nobody); a BOPPED goes with a hit
   DROP: 'drop', // { id, item, count, x, y, z, from, wait }: something dropped (knocked loose by a bop, or THROW), for anyone to walk into (but from, the farmer it came from, for wait ms)
   GAME: 'game', // { game }: the lobby's party game as it is now (null: none; shared/minigame.js wire(): ms -1, gathering till someone is there), whenever that changes
   GAME_COIN: 'gameCoin', // { id, by, score }: coin id in the arena was picked up by player `by`, who has score now
@@ -98,7 +99,7 @@ export const S = {
   CHEST_SPENT: 'chestSpent', // { id, ok }: the answer to CHEST_SPEND (ok: it was all there, and is used up)
   FARM_CLOCK: 'farmClock', // { hours }: the farm's clock, now and then (pages drift)
   BOSS: 'boss', // { boss, s }: how a boss is doing (s: BossFight toWire(), shared/bosses.js), a few times a second while anyone is in its arena
-  BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp } a bop that landed
+  BOSS_FX: 'bossFx', // { boss, fx }: one of its moves (BossFight step()), or { e: 'bop', by, hp, shot } a bop that landed (shot: an arrow's)
   BOSS_WON: 'bossWon', // { boss, by, won }: it turned friendly (by: who bopped it last; won: the player ids who took part)
   MACHINE: 'machine', // { key, state, by, got?, n? }: what is in the machine on tile key now ([item, at, takes, n], or null: empty), after player `by` loaded or collected it (got: the item collected, n of it, for `by`'s backpack)
   FEAST: 'feast', // { dish, by }: player `by` ate a shared dish on this farm: its boost is ours too
@@ -135,12 +136,14 @@ export const STATEF = {
   AXE: 4, // has the axe in hand
   SWING: 8, // swinging the tool in hand
   PICK: 16, // has the pickaxe in hand
-  SWORD: 32, // has the wooden sword in hand
+  SWORD: 32, // has a sword in hand (which one: BLADE)
   MALLET: 64, // has the mallet in hand
   ROD: 128, // has a fishing rod in hand
   CAST: 256, // ...with its line out
   BITE: 512, // ...and the bobber is dipping
   MOUNT: 1024, // riding: (f / MOUNT) & 7 is which mount, 1 + its boss's place in BOSS_IDS (shared/bosses.js); 0 on foot
+  BOW: 8192, // has the bow in hand
+  BLADE: 16384, // the sword in hand: (f / BLADE) & 3 is its place in SWORDS (shared/level.js)
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069]/g;

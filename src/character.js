@@ -236,10 +236,11 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     pick.add(point);
   }
 
-  // For bopping in lobbies, held and swung like the tools: a wooden sword
-  // (a blade, a crossguard, a grip), and a mallet with a padded stone head
+  // For bopping in lobbies, held and swung like the tools: a sword (a blade,
+  // a crossguard, a grip: setSword makes it wood, steel or silver), and a
+  // mallet with a padded stone head
   const sword = new THREE.Group();
-  const swordMat = mat(0xd9a066);
+  const swordMat = ownMat(0xd9a066, null);
   sword.add(part(new THREE.BoxGeometry(0.05, 0.62, 0.11), swordMat, 0, 0.5, 0));
   sword.add(part(new THREE.BoxGeometry(0.07, 0.05, 0.3), handleMat, 0, 0.18, 0));
   sword.add(part(new THREE.CylinderGeometry(0.03, 0.03, 0.2, 6), handleMat, 0, 0.06, 0));
@@ -253,6 +254,21 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     g.visible = false;
     rightArm.pivot.add(g);
   }
+
+  // A bow, held by its grip and kept upright whatever the arm does: an arc of
+  // wood bowed out ahead, its string behind. A shot (swing()) holds it out
+  // in front, aimed.
+  const bow = new THREE.Group();
+  const BOW_R = 0.45;
+  const BOW_ARC = 2;
+  const limbs = new THREE.TorusGeometry(BOW_R, 0.025, 5, 14, BOW_ARC).rotateZ(-BOW_ARC / 2).rotateY(-Math.PI / 2).translate(0, 0, -BOW_R);
+  bow.add(part(limbs, handleMat, 0, 0, 0));
+  const tipZ = BOW_R * (Math.cos(BOW_ARC / 2) - 1);
+  bow.add(part(new THREE.CylinderGeometry(0.006, 0.006, 2 * BOW_R * Math.sin(BOW_ARC / 2), 4), ownMat(0xf4f0e6, null), 0, 0, tipZ));
+  bow.add(part(new THREE.CylinderGeometry(0.034, 0.034, 0.12, 6), ownMat(0x6e3f1e, null), 0, 0, 0)); // (the grip)
+  bow.position.copy(rightArm.end.position);
+  bow.visible = false;
+  rightArm.pivot.add(bow);
 
   // A fishing rod: a long pole held up and out, a reel by the grip; the
   // line hangs from `rodTip` (src/fishing.js draws it and the bobber)
@@ -337,7 +353,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
       rightArm.pivot.rotation.x = -0.6 + twitch;
     }
 
-    // A swing (hoe, axe or pickaxe, the same chop; a cast) overrides the right arm
+    // A swing (hoe, axe or pickaxe, the same chop; a cast; a shot of the bow) overrides the right arm
     hoe.rotation.x = HOE_REST_ANGLE;
     axe.rotation.x = HOE_REST_ANGLE;
     pick.rotation.x = HOE_REST_ANGLE;
@@ -345,7 +361,12 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     mallet.rotation.x = HOE_REST_ANGLE;
     rod.rotation.x = ROD_REST_ANGLE;
     can.rotation.x = 0;
-    if (anim.swing >= 0) {
+    if (bow.visible && anim.swing >= 0) {
+      // (a shot: held out in front, aimed, and no chop)
+      anim.swing += dt / HOE_SWING_TIME;
+      if (anim.swing >= 1) anim.swing = -1;
+      else rightArm.pivot.rotation.x = -1.45;
+    } else if (anim.swing >= 0) {
       anim.swing += dt / HOE_SWING_TIME;
       if (anim.swing >= 1) {
         anim.swing = -1;
@@ -361,6 +382,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
         can.rotation.x = Math.sin(anim.swing * Math.PI) * 0.9; // (tipped to pour)
       }
     }
+    bow.rotation.x = -rightArm.pivot.rotation.x; // (upright)
 
     // On a mount (ride()): sat up on it, legs either side, and it walks instead
     rig.position.y = -height / 2 + (mount ? mount.seat : 0);
@@ -393,6 +415,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     pick,
     sword,
     mallet,
+    bow,
     rod,
     rodTip,
     can,
@@ -400,6 +423,10 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, overalls, hat: ha
     animate,
     swing() {
       if (anim.swing < 0) anim.swing = 0;
+    },
+    // the sword's color (wood, steel or silver)
+    setSword(color) {
+      swordMat.color.setHex(color);
     },
     // the pole's color (the plain, sturdy or golden rod)
     setRod(color) {

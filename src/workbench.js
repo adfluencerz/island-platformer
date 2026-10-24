@@ -7,8 +7,9 @@ import { RECIPES, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js'; // (wh
 // Built on the farm in build mode (src/build.js), and E next to it (or a tap)
 // opens this: things to make from wood and stone. The decorations go in the
 // backpack, to be put down from the Build tab; the better tools take the
-// place of the ones they're made from in the backpack; the sword and the
-// mallet are for bopping other farmers in lobbies. All of it is the page's
+// place of the ones they're made from in the backpack (the swords too); the
+// swords, the mallet and the bow (and its arrows, five at a go) are for
+// bopping other farmers in lobbies, and the bosses. All of it is the page's
 // own, like the backpack, so it works on a friend's farm too. What the
 // backpack is short of comes out of the farm's chest, as in build mode (the
 // farmer's own farm only: a helper has no say over its chest).
@@ -107,14 +108,14 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
   const atTop = (makes) => inventory.count(makes) && !betterThan(makes).length;
 
   // Why this can't be made right now ('': it can)
-  function problem({ makes, needs, level = 1 }) {
+  function problem({ makes, needs, level = 1, count = 1 }) {
     if (upgrades.level('workbench') < level) return `Needs a level ${level} workbench`;
     if (isTool(makes) && inventory.count(makes)) return 'You have one';
     if (isTool(makes) && betterThan(makes).some((id) => inventory.count(id))) return 'You have a better one';
     const lacking = short(needs);
     if (lacking) return lacking;
     const tool = Object.keys(needs).find(isTool);
-    if (!tool && !inventory.canAdd(makes)) return 'No room in the backpack';
+    if (!tool && !inventory.canAdd(makes, count)) return 'No room in the backpack';
     return '';
   }
 
@@ -181,7 +182,8 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
       if (outgrown(recipe.makes)) continue;
       const why = problem(recipe);
       const locked = upgrades.level('workbench') < (recipe.level ?? 1);
-      const text = rowFor(recipe.makes, def.name, def.description, why, 'Make', () => craft(recipe), locked ? ' locked' : '');
+      const title = recipe.count > 1 ? `${def.name} × ${recipe.count}` : def.name;
+      const text = rowFor(recipe.makes, title, def.description, why, 'Make', () => craft(recipe), locked ? ' locked' : '');
       needsRow(text, recipe.needs);
       if (why) el('div', 'bench-why', text, why);
     }
@@ -199,7 +201,7 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
       inventory.upgrade(tool, recipe.makes);
       inventory.notify(`Your ${ITEMS[tool].name.toLowerCase()} is now a ${ITEMS[recipe.makes].name.toLowerCase()}`);
     } else {
-      inventory.add(recipe.makes);
+      inventory.add(recipe.makes, recipe.count ?? 1);
     }
     if (open) render();
   }

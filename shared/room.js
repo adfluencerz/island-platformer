@@ -22,11 +22,12 @@
 // that spot, that the tree is still standing, and that they haven't been
 // felling trees faster than an axe can.
 //
-// With a wooden sword or a mallet in hand (WEAPONS in shared/level.js) a
+// With a sword, a mallet or a bow in hand (WEAPONS in shared/level.js) a
 // farmer can bop another: the room picks who is in front of them and in
-// reach, knocks them back, and has them drop a little of what they gathered
-// on this visit (it keeps count, in p.bag) for anyone to walk into. Drops
-// fade after a while, and aren't kept when the lobby is saved.
+// reach (the bow's arrow: further, and straight ahead), knocks them back,
+// and has them drop a little of what they gathered on this visit (it keeps
+// count, in p.bag) for anyone to walk into. Drops fade after a while, and
+// aren't kept when the lobby is saved.
 //
 // Now and then, as a lobby opens, one tree is a giant, or one rock (shared/giants.js):
 // every swing at it comes here (HIT), so everyone's add up, and what it gives
@@ -52,7 +53,7 @@
 import { MAX_PLAYERS, MAX_NAME, HOLD_MS, PLAYER_COLORS, CLOSE, CLOSE_TEXT, devToolsOn } from './constants.js';
 import { C, S, cleanText, finite } from './protocol.js';
 import { Place } from './place.js';
-import { GROUND_STAND_Y, SPOT_KINDS, RARE, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, DROP_OWN_MS, rollSpot, woodFor, stoneFor, spawnPoint, siteMap } from './level.js';
+import { GROUND_STAND_Y, SPOT_KINDS, RARE, ROCK, WEAPONS, BOP_GRACE, SAFE_CIRCLE, DROP_MS, DROP_OWN_MS, rollSpot, woodFor, stoneFor, steelFor, spawnPoint, siteMap } from './level.js';
 import { islandFor, CLASSIC_SEED } from './worldgen.js';
 import { Giants, giantSwing, giantMax } from './giants.js';
 import { growWilds, wildsToWire, standsAt } from './wilds.js';
@@ -295,12 +296,14 @@ export class Room extends Place {
         }
         this.mined.set(id, 0); // (for good)
         const count = stoneFor(size, this.rand); // (the bigger the rock, the more stone)
+        const steel = steelFor(size, this.rand); // (and now and then a lump of steel)
         p.mineAt = now;
         p.stone += count;
         this.gathered(p, 'stone', count);
+        if (steel) this.gathered(p, 'steel', steel);
         this.rosterDirty = true;
         this.changed = true;
-        this.broadcast({ t: S.MINED, id, by: p.id, count });
+        this.broadcast({ t: S.MINED, id, by: p.id, count, ...(steel && { steel }) });
         break;
       }
       case C.DEV_GIANT: {
@@ -328,6 +331,7 @@ export class Room extends Place {
           if (!q) continue;
           q[item] += count;
           this.gathered(q, item, count);
+          if (!tree && count) this.gathered(q, 'steel', ROCK.giant);
         }
         this.rosterDirty = true;
         const by = hit.shares.find(([who]) => who === p.id)?.[1] ?? 0;
@@ -343,7 +347,9 @@ export class Room extends Place {
         if (!weapon || now - p.bopAt < weapon.every - 150 || this.resting(p)) return;
         p.bopAt = now;
         if (finite(msg.yaw)) p.yaw = msg.yaw;
-        const target = this.inFront(p, weapon.reach, now);
+        const target = this.inFront(p, weapon, now);
+        // (an arrow flies, hit or miss, for everyone to see)
+        if (weapon.shoots) this.broadcast({ t: S.SHOT, by: p.id, yaw: round2(p.yaw), ...(target && { id: target.id }) });
         if (!target) return;
         target.boppedAt = now;
         const d = Math.hypot(target.x - p.x, target.z - p.z);
@@ -456,18 +462,20 @@ export class Room extends Place {
     return !p.game && Math.hypot(p.x - this.island.spawn.x, p.z - this.island.spawn.z) < SAFE_CIRCLE;
   }
 
-  // The nearest farmer in front of p within reach who can be bopped (or null)
-  inFront(p, reach, now) {
+  // The nearest farmer in front of p within the weapon's reach who can be
+  // bopped (or null): roughly in front, or for the bow, (nearly) straight
+  // ahead, and as high up or down as it reaches (WEAPONS)
+  inFront(p, { reach, aim = 0.3, high = 1.2 }, now) {
     const fx = Math.sin(p.yaw);
     const fz = Math.cos(p.yaw);
     let best = null;
     let bestD = reach;
     for (const q of this.players.values()) {
-      if (q === p || !q.conn || q.game !== p.game || now - q.boppedAt < BOP_GRACE || this.resting(q) || Math.abs(q.y - p.y) > 1.2) continue;
+      if (q === p || !q.conn || q.game !== p.game || now - q.boppedAt < BOP_GRACE || this.resting(q) || Math.abs(q.y - p.y) > high) continue;
       const dx = q.x - p.x;
       const dz = q.z - p.z;
       const d = Math.hypot(dx, dz);
-      if (d > bestD || (d > 0.4 && (dx * fx + dz * fz) / d < 0.3)) continue;
+      if (d > bestD || (d > 0.4 && (dx * fx + dz * fz) / d < aim)) continue;
       best = q;
       bestD = d;
     }

@@ -55,7 +55,7 @@ import { Giants, giantSwing, giantMax, gameDay } from '../shared/giants.js';
 import { BossFight, BOSS_IDS, ARENAS, ARENA_R, arenaAt, portalOf, portalBoss } from '../shared/bosses.js';
 import { wildsFromWire, standsAt } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
-import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, nextSite, siteMap, movedKey } from '../shared/level.js';
+import { CROP_GROW_TIME, CROP_PRODUCE, SPAWN, GROUND_STAND_Y, PIECES, MAX_PIECES, mostPieces, TREE, ROCK, CHEST, HOUSE_ROOM, keptClear, chestHasRoom, pieceTiles, inHouseField, spawnPoint, woodFor, stoneFor, steelFor, nextSite, siteMap, movedKey } from '../shared/level.js';
 import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH, cropAgain, cropGives, PLATFORM_PLANTS } from '../shared/balance.js';
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 import { BEANSTALK } from '../shared/balance.js';
@@ -439,7 +439,8 @@ export class FarmRoom extends Place {
         this.mined.set(id, at);
         p.mineAt = now;
         this.changed = true;
-        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(size, this.rand), at });
+        const steel = steelFor(size, this.rand);
+        this.broadcast({ t: S.MINED, id, by: p.id, count: stoneFor(size, this.rand), ...(steel && { steel }), at });
         break;
       }
       case C.DEV_GIANT: {
@@ -478,7 +479,7 @@ export class FarmRoom extends Place {
         const hit = fight.bop(p.id, weapon, p.x, p.y, p.z);
         if (!hit) return;
         p.bossBopAt = now;
-        this.broadcast({ t: S.BOSS_FX, boss, fx: { e: 'bop', by: p.id, hp: hit.hp } });
+        this.broadcast({ t: S.BOSS_FX, boss, fx: { e: 'bop', by: p.id, hp: hit.hp, ...(WEAPONS[weapon].shoots && { shot: 1 }) } });
         if (!hit.won) break;
         this.broadcast({ t: S.BOSS, boss, s: fight.toWire() });
         this.broadcast({ t: S.BOSS_WON, boss, by: p.id, won: hit.won });

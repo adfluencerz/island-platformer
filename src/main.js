@@ -20,6 +20,7 @@ import { createBook } from './book.js';
 import { createFishBoard } from './fishboard.js';
 import { createFishShadows } from './fishshadows.js';
 import { createRipples } from './ripples.js';
+import { createArrows } from './arrows.js';
 import { createHouseRoom } from './house.js';
 import { createWorkbench } from './workbench.js';
 import { createArcade } from './arcade.js';
@@ -43,7 +44,7 @@ import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../sh
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, GLIDE, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
 import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
-import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap, movedKey } from '../shared/level.js';
+import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SWORDS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, steelFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap, movedKey } from '../shared/level.js';
 import { CROPS, createCropView, BEAN_LEDGES } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { createSeasons } from './seasons.js';
@@ -1111,13 +1112,17 @@ function rockMined(m) {
   wildsWorld().breakRock(m.id);
   const got = myShare(m) + extraFrom('pickaxe', m);
   if (got) inventory.add('stone', got);
-  if (m.shares) giantDown('rock', m.id, got, 'stone');
+  // (now and then a lump of steel in it too: for the one who broke it up, or each who helped with a giant)
+  const steel = m.shares ? (got ? ROCK.giant : 0) : m.by === myId ? m.steel ?? 0 : 0;
+  if (steel) inventory.add('steel', steel);
+  if (m.shares) giantDown('rock', m.id, got, steel ? `stone, +${steel} steel` : 'stone');
+  else if (steel) hud.flash(`+${steel} steel!`);
   if (got) skilled('mining', m.shares ? SKILLS.xp.giant : SKILLS.xp.rock, 'stone'); // (after: a level up's notice goes over the giant's)
 }
 
 // On a farm played alone: the rock is ours to break
 function mineAlone(rock) {
-  rockMined({ id: rock.id, by: myId, count: stoneFor(rock.scale) });
+  rockMined({ id: rock.id, by: myId, count: stoneFor(rock.scale), steel: steelFor(rock.scale) });
   farmMined.set(rock.id, comeBackAt(ROCK.regrow));
 }
 
@@ -1380,14 +1385,18 @@ function showFarmWilds({ felled, mined, treeSites, rockSites, giants }) {
 }
 
 // ---------- Bopping (lobbies) ----------
-// With the wooden sword or the mallet in hand (WEAPONS in shared/level.js),
-// E swings it at the nearest farmer in reach (turning to face them), and the
-// lobby says who got bopped (BOPPED): they stumble back, and drop a little
-// of what they gathered here (DROP), which anyone can walk into (PICKUP,
-// PICKED). Not in the stone circle where farmers arrive. Nobody gets hurt.
+// With a sword or the mallet in hand (WEAPONS in shared/level.js), E swings
+// it at the nearest farmer in reach (turning to face them), and the lobby
+// says who got bopped (BOPPED): they stumble back, and drop a little of what
+// they gathered here (DROP), which anyone can walk into (PICKUP, PICKED). The
+// bow shoots an arrow (one from the backpack) at the nearest farmer it is
+// more or less pointed at, further off; everyone sees it fly (SHOT). Not in
+// the stone circle where farmers arrive. Nobody gets hurt.
 const knock = new THREE.Vector3(); // the stumble after a bop, added to walking while it fades
 const drops = new Map(); // id -> { id, item, count, x, y, z, group, pending }
 const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
+const arrows = createArrows(scene);
+const AIM = 0.5; // the bow picks a farmer this far from straight ahead at most (the cosine of it), and turns to them
 let bopReady = 0; // (clock time the weapon can swing again)
 
 const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
@@ -1397,16 +1406,22 @@ const bopWith = () => (shoving() ? 'shove' : weaponInHand());
 const bopStats = (id) => (id === 'shove' ? MINIGAMES.shove : WEAPONS[id]);
 const resting = (pos) => !arenaId && Math.hypot(pos.x - world.spawn.x, pos.z - world.spawn.z) < SAFE_CIRCLE;
 
-// The nearest other farmer within reach (and not resting in the stone circle): { id, pos }, or null
+// The nearest other farmer within reach (and not resting in the stone
+// circle; for the bow, one it is more or less pointed at): { id, pos }, or null
 function bopTarget() {
   const weapon = bopStats(bopWith());
   if (!weapon) return null;
   let best = null;
   let bestD = weapon.reach * 0.9; // (the lobby has a slightly older idea of where they are)
+  const fx = Math.sin(anim.facing);
+  const fz = Math.cos(anim.facing);
   for (const id of remotes.players.keys()) {
     const pos = remotes.positionOf(id);
-    if (!pos || resting(pos) || Math.abs(pos.y - player.position.y) > 1.2) continue;
-    const d = Math.hypot(pos.x - player.position.x, pos.z - player.position.z);
+    if (!pos || resting(pos) || Math.abs(pos.y - player.position.y) > (weapon.high ?? 1.2)) continue;
+    const dx = pos.x - player.position.x;
+    const dz = pos.z - player.position.z;
+    const d = Math.hypot(dx, dz);
+    if (weapon.aim && d > 0.4 && (dx * fx + dz * fz) / d < AIM) continue;
     if (d < bestD) {
       bestD = d;
       best = { id, pos };
@@ -1415,17 +1430,45 @@ function bopTarget() {
   return best;
 }
 
-// Swing the weapon in hand: at the nearest farmer in reach, or at the air
+// Swing the weapon in hand (or shoot the bow): at the nearest farmer in reach, or at the air
 function bop() {
   const id = bopWith();
   const now = clock.elapsedTime;
   if (!id || now < bopReady || anim.swing >= 0) return;
   if (resting(player.position)) return inventory.notify('The stone circle is for resting: no bopping here');
+  const { shoots, every, reach } = bopStats(id);
+  if (shoots && !inventory.count(shoots)) return inventory.notify('No arrows left: make some at a workbench, from wood and steel');
   const target = bopTarget();
   if (target) anim.facing = Math.atan2(target.pos.x - player.position.x, target.pos.z - player.position.z);
   farmer.swing();
-  bopReady = now + bopStats(id).every / 1000;
+  bopReady = now + every / 1000;
+  if (shoots) {
+    inventory.remove(shoots, 1);
+    shootArrow(player.position, anim.facing, target?.pos ?? null, reach);
+  }
   net?.send({ t: C.BOP, weapon: id, yaw: Math.round(anim.facing * 100) / 100 });
+}
+
+// An arrow flying from a farmer at `from` facing yaw: to `to` (a farmer's
+// position), or `reach` on, at nobody
+const arrowFrom = new THREE.Vector3();
+const arrowTo = new THREE.Vector3();
+function shootArrow(from, yaw, to, reach) {
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  arrowFrom.set(from.x + fx * 0.5, from.y + 0.25, from.z + fz * 0.5);
+  if (to) arrowTo.set(to.x, to.y + 0.1, to.z);
+  else arrowTo.set(arrowFrom.x + fx * reach, arrowFrom.y - 0.4, arrowFrom.z + fz * reach);
+  arrows.shoot(arrowFrom, arrowTo);
+}
+
+// SHOT: someone else's arrow (ours flew as we shot it)
+function shotFired(m) {
+  if (m.by === myId) return;
+  const from = remotes.positionOf(m.by);
+  if (!from || !Number.isFinite(m.yaw)) return;
+  remotes.swing(m.by);
+  shootArrow(from, m.yaw, m.id === myId ? player.position : m.id ? remotes.positionOf(m.id) : null, WEAPONS.bow.reach);
 }
 
 function bopped(m) {
@@ -1797,7 +1840,7 @@ function useHint() {
   if (fish) return fish.replace(/^E {2}/, '');
   if (place === 'lobby') {
     const target = bopTarget();
-    if (target && !resting(player.position)) return `Bop ${lobbyNames.get(target.id) ?? 'them'}`;
+    if (target && !resting(player.position)) return `${bopStats(bopWith()).shoots ? 'Shoot at' : 'Bop'} ${lobbyNames.get(target.id) ?? 'them'}`;
   }
   const tree = holding() === 'axe' ? treeInReach() : null;
   if (tree) return chopPrompt(tree);
@@ -2829,6 +2872,12 @@ const bosses = createBosses({
   net: () => farmNet,
   atHome: () => place === 'home',
   weapon: () => weaponInHand(),
+  // (a bow's arrow at the boss: ours, or another farmer's)
+  shoot: (to) => arrows.shoot(arrowFrom.set(player.position.x + Math.sin(anim.facing) * 0.5, player.position.y + 0.25, player.position.z + Math.cos(anim.facing) * 0.5), to),
+  shotFrom(by, to) {
+    const from = remotes.positionOf(by);
+    if (from) arrows.shoot(arrowFrom.set(from.x, from.y + 0.25, from.z), to);
+  },
   putDown,
   arrival: () => arrival(),
   knock(dx, dz, speed) {
@@ -4197,6 +4246,7 @@ function joinLobby({ name, code }) {
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.GIANT, giantNews);
   on(S.BOPPED, (m) => bopped(m));
+  on(S.SHOT, shotFired);
   on(S.BITE, (m) => fishing.bit(m));
   on(S.CAUGHT, (m) => fishing.caught(m));
   onDrops(on);
@@ -4228,7 +4278,8 @@ function sendState(dt, conn = net) {
     x: r(p.x), y: r(p.y), z: r(p.z), yaw: r(anim.facing),
     f: (player.onGround ? STATEF.GROUND : 0) | (hoeGroup.visible ? STATEF.HOE : 0) |
       (farmer.axe.visible ? STATEF.AXE : 0) | (farmer.pick.visible ? STATEF.PICK : 0) | (anim.swing >= 0 ? STATEF.SWING : 0) |
-      (farmer.sword.visible ? STATEF.SWORD : 0) | (farmer.mallet.visible ? STATEF.MALLET : 0) |
+      (farmer.sword.visible ? STATEF.SWORD + Math.max(0, SWORDS.indexOf(inventory.selectedId())) * STATEF.BLADE : 0) |
+      (farmer.mallet.visible ? STATEF.MALLET : 0) | (farmer.bow.visible ? STATEF.BOW : 0) |
       (farmer.rod.visible ? STATEF.ROD : 0) | (fishing.state() ? STATEF.CAST : 0) | (fishing.state() === 'bite' ? STATEF.BITE : 0) |
       bosses.mountBits() * STATEF.MOUNT,
   });
@@ -4518,8 +4569,10 @@ function update(dt) {
   hoeGroup.visible = !lent && holding() === 'hoe'; // only hold a tool while it's selected
   farmer.axe.visible = !lent && holding() === 'axe';
   farmer.pick.visible = !lent && holding() === 'pickaxe';
-  farmer.sword.visible = !lent && inventory.selectedId() === 'wooden_sword';
+  farmer.sword.visible = !lent && SWORDS.includes(inventory.selectedId());
+  if (farmer.sword.visible) farmer.setSword(ITEMS[inventory.selectedId()].color);
   farmer.mallet.visible = !lent && inventory.selectedId() === 'mallet';
+  farmer.bow.visible = !lent && inventory.selectedId() === 'bow';
   farmer.rod.visible = lent || holding() === 'rod';
   if (farmer.rod.visible) farmer.setRod(ITEMS[lent ? 'fishing_rod' : inventory.selectedId()].color);
   farmer.can.visible = !lent && holding() === 'can';
@@ -4531,6 +4584,7 @@ function update(dt) {
   const t = clock.elapsedTime;
   fishing.update(t);
   ripples.update(dt);
+  arrows.update(dt);
   fishShadows.update(dt, fishing.bobber());
   world.updateTrees(dt);
   if (building && place !== 'home') stopBuilding();
@@ -4686,7 +4740,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, weather };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, weather };
 }
 
 loadGame();
