@@ -18,8 +18,10 @@ import { RECIPES, BENCH_LEVELS, PEN_LEVELS } from '../shared/balance.js'; // (wh
 // the hen yard and the pasture (bigger, with room for more animals that give
 // more: src/animals.js). They are the farm's, so only its farmer buys them.
 //
-// A tool you have, or have made better already (a sturdy axe, with a silver
-// one in the backpack), isn't listed: only the next one up its line is.
+// A tool you have made better already (a sturdy axe, with a silver one in
+// the backpack) isn't listed, nor the one you have: only the next one up its
+// line is. At the top of its line, the one you have is still listed, done, as
+// an upgrade at its last level is (the golden axe: as fine as it gets).
 //
 //   Make / Upgrade   make one / buy the next level
 //   E / Esc / ×      close
@@ -101,6 +103,8 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
 
   // A tool there is no making now: you have it, or a better one (made from it)
   const outgrown = (makes) => isTool(makes) && [makes, ...betterThan(makes)].some((id) => inventory.count(id));
+  // ...and of those, the one you have at the top of its line (nothing better to make from it)
+  const atTop = (makes) => inventory.count(makes) && !betterThan(makes).length;
 
   // Why this can't be made right now ('': it can)
   function problem({ makes, needs, level = 1 }) {
@@ -168,8 +172,13 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
     }
     el('div', 'bench-head', listEl, 'Make');
     for (const recipe of RECIPES) {
-      if (outgrown(recipe.makes)) continue;
       const def = ITEMS[recipe.makes];
+      if (atTop(recipe.makes)) {
+        const upgraded = Object.keys(recipe.needs).some(isTool); // (made from the one before: a line of them)
+        rowFor(recipe.makes, def.name, upgraded ? 'As fine as it gets.' : 'You have one.', '', null, null, ' done');
+        continue;
+      }
+      if (outgrown(recipe.makes)) continue;
       const why = problem(recipe);
       const locked = upgrades.level('workbench') < (recipe.level ?? 1);
       const text = rowFor(recipe.makes, def.name, def.description, why, 'Make', () => craft(recipe), locked ? ' locked' : '');
