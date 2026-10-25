@@ -3,11 +3,14 @@
 // account, or a guest), and after that their menu (Esc, or Menu on their
 // controller): back to the game, or getting up from the screen. A controller
 // moves about it as it does the game's menu (src/gamepad.js: it is a
-// .ui-splash in their part of the screen); the boxes are typed in on the
-// keyboard.
+// .ui-splash in their part of the screen). A box is typed in on the keyboard,
+// or with the controller on the keys that open under it (A on the box).
 import { MAX_NAME, PLAYER_COLORS } from '../../shared/constants.js';
 import { PASSWORD_LENGTH } from '../../shared/protocol.js';
 import { el, button, hexColor } from './dom.js';
+
+// The on-screen keys, row by row (Shift: the letters as capitals)
+const KEY_ROWS = ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm', '-_.@!?'];
 
 export class SeatPanel {
   // n: which farmer at the screen (2, 3 or 4). onPick(profile): play a
@@ -32,8 +35,8 @@ export class SeatPanel {
 
     // ---- logging in ----
     const login = this.page('login', 'Log in', 'form');
-    el('div', 'ui-muted', login, 'Your account\'s farm stays yours: you help out here with what you carry.');
-    this.userInput = this.field(login, 'Username', { maxLength: MAX_NAME, autocomplete: 'off', placeholder: 'Type it on the keyboard' });
+    el('div', 'ui-muted', login, 'Your account\'s farm stays yours: you help out here with what you carry. Type on the keyboard, or A on a box for keys to type with the controller.');
+    this.userInput = this.field(login, 'Username', { maxLength: MAX_NAME, autocomplete: 'off' });
     this.passInput = this.field(login, 'Password', { type: 'password', maxLength: PASSWORD_LENGTH[1], autocomplete: 'off' });
     this.loginBtn = button('ui-btn ui-btn-big', login, 'Log in', null);
     this.loginBtn.type = 'submit';
@@ -48,7 +51,7 @@ export class SeatPanel {
     // ---- a guest ----
     const guest = this.page('guest', 'A guest', 'form');
     el('div', 'ui-muted', guest, 'A farmer of this device\'s own, starting out. Kept here, to play again next time.');
-    this.nameInput = this.field(guest, 'Name', { maxLength: MAX_NAME, autocomplete: 'off', placeholder: 'Type it on the keyboard' });
+    this.nameInput = this.field(guest, 'Name', { maxLength: MAX_NAME, autocomplete: 'off' });
     el('span', 'ui-sub', guest, 'Shirt color');
     const swatches = el('div', 'ui-swatches', guest);
     this.color = PLAYER_COLORS[(n * 3) % PLAYER_COLORS.length];
@@ -77,6 +80,50 @@ export class SeatPanel {
     button('ui-btn ui-btn-ghost', menu, 'Get up from the screen', () => this.onLeave());
 
     this.statusEl = el('div', 'ui-status', card);
+
+    // ---- keys to type with a controller, under the box being typed in ----
+    this.keys = el('div', 'seat-keys');
+    this.target = null; // the box they type into
+    this.shift = false;
+    this.letters = [];
+    for (const row of KEY_ROWS) {
+      const line = el('div', 'seat-keys-row', this.keys);
+      for (const ch of row) this.letters.push(button('ui-btn ui-btn-small seat-key', line, ch, () => this.type(this.shift ? ch.toUpperCase() : ch)));
+    }
+    const last = el('div', 'seat-keys-row', this.keys);
+    this.shiftBtn = button('ui-btn ui-btn-small seat-key seat-key-wide', last, 'Shift', () => this.setShift(!this.shift));
+    button('ui-btn ui-btn-small seat-key seat-key-wide', last, '⌫', () => this.type(null)).title = 'Rub out the last one';
+    button('ui-btn ui-btn-small seat-key seat-key-wide', last, 'Done', () => this.closeKeys());
+    // (a box chosen, with A on a controller or a click: the keys open under it)
+    for (const input of this.root.querySelectorAll('input')) input.addEventListener('focus', () => this.openKeys(input));
+  }
+
+  // ---------- The on-screen keys ----------
+  openKeys(input) {
+    if (this.target === input) return;
+    this.target = input;
+    input.closest('label').after(this.keys);
+    this.setShift(false);
+  }
+
+  closeKeys() {
+    this.target = null;
+    this.keys.remove();
+  }
+
+  setShift(on) {
+    this.shift = on;
+    this.shiftBtn.classList.toggle('on', on);
+    for (const key of this.letters) key.textContent = on ? key.textContent.toUpperCase() : key.textContent.toLowerCase();
+  }
+
+  // One more letter in the box (null: one less), up to as many as it takes
+  type(ch) {
+    const box = this.target;
+    if (!box) return;
+    const most = box.maxLength > 0 ? box.maxLength : Infinity;
+    box.value = ch === null ? box.value.slice(0, -1) : (box.value + ch).slice(0, most);
+    if (this.shift && ch) this.setShift(false); // (a capital, then small letters again)
   }
 
   // A page; with a title, it has a Back button to the first page
@@ -98,6 +145,7 @@ export class SeatPanel {
   }
 
   show(name) {
+    this.closeKeys();
     for (const [key, node] of Object.entries(this.pages)) node.hidden = key !== name;
     this.current = name;
     this.root.hidden = false;
@@ -137,6 +185,7 @@ export class SeatPanel {
   }
 
   hide() {
+    this.closeKeys();
     this.root.hidden = true;
   }
 
@@ -144,9 +193,11 @@ export class SeatPanel {
     return !this.root.hidden;
   }
 
-  // Esc (or B): back a page, out of the menu; choosing, it stays (Not now, to leave)
+  // Esc (or B): out of the keys or a box, back a page, out of the menu;
+  // choosing, it stays (Not now, to leave)
   escape() {
-    if (document.activeElement && this.root.contains(document.activeElement) && document.activeElement.matches('input')) document.activeElement.blur();
+    if (this.target) this.closeKeys();
+    else if (document.activeElement && this.root.contains(document.activeElement) && document.activeElement.matches('input')) document.activeElement.blur();
     else if (this.current === 'login' || this.current === 'guest') this.show('who');
     else if (this.current === 'menu') this.hide();
   }
