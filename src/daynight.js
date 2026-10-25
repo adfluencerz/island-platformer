@@ -188,7 +188,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   const _grey = new THREE.Color();
   const FLASH = new THREE.Color(0xe6ecff);
 
-  function apply() {
+  // clock: the clock's panel too (not for a split screen's other views: view())
+  function apply(clock = true) {
     const s = sample(hour);
     if (cloud > 0) for (const p of COLOR_PROPS) overcast(s[p]);
     if (flash > 0) s.sky.lerp(FLASH, flash * 0.7);
@@ -219,6 +220,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
     const night = nightAmount(hour);
     glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
+    if (!clock) return night;
 
     // Clock panel: dial sky color and the sun/moon riding the arc
     const skyHex = `#${s.sky.getHexString()}`;
@@ -261,6 +263,13 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       ui.root.classList.toggle('fast', fastForward && !paused);
       const night = apply();
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
+    },
+    /** A split screen's farmer's own view (src/main.js): the light as far underground as they are (amount, color), and the fireflies round them (focus). */
+    view(focus, amount, color = 0xffffff) {
+      under = amount;
+      caveLight.setHex(color);
+      const night = apply(false);
+      fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {

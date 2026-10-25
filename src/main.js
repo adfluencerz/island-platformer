@@ -10,7 +10,7 @@ import { renderQuests, renderMap } from './quests.js';
 import { npcHomes } from './npchomes.js';
 import { NPCS, NPC_IDS } from '../shared/npcs.js';
 import { createRequests } from './requests.js';
-import { createChest } from './chest.js';
+import { createChest, createChestModel } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
 import { createAnimals, inPen, ANIMAL_KINDS, setPenLevels, penRect } from './animals.js';
 import { createBuildings, POND_WATER_Y } from './build.js';
@@ -38,7 +38,11 @@ import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { Guide } from './ui/guide.js';
 import { TouchControls, isTouch } from './ui/touch.js';
-import { GamepadInput } from './gamepad.js';
+import { GamepadInput, padInUse } from './gamepad.js';
+import { el, hexColor } from './ui/dom.js';
+import { SeatPanel } from './ui/seatpanel.js';
+import { PlayerSync, remembered as rememberedPlayers, logIn as logInPlayer, newGuest, forget as forgetPlayer } from './net/players.js';
+import './seats.css';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
 import { DEFAULT_LOOK } from '../shared/looks.js';
@@ -75,6 +79,110 @@ import { createTrade } from './ui/trade.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
 
+// ---------- The farmers at this screen ----------
+// One seat for each farmer playing at this screen. The first is the page's
+// own: the keyboard, the mouse, a touch screen and its controller, the farm
+// and the account it is saved with. On our own farm more can join (split
+// screen), each on a controller of their own, with a farmer of their own
+// (their account's, or a guest's: their backpack, skills and the rest come
+// along, and are saved back to it), a camera and a part of the screen.
+//
+// The code below is written for one farmer: `player`, `inventory`, `camera`,
+// `walk` and the rest. It works for a seat once that seat's own are in
+// them (become): each frame for each seat in turn (update), and whenever a
+// seat's own windows and buttons do something (seated, forSeat), so their
+// callbacks work for their farmer. Between frames they are the first seat's
+// (the keyboard and the mouse are its).
+const seatsEl = el('div', 'seats', document.body);
+const seats = [];
+let me = null; // the seat the code works for now
+// (each seat's own, in place for the seat the code works for: become)
+let camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock;
+let glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade;
+let workbench, arcade, cooking, readyNoted, learned, pettedOn;
+let fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising;
+let airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown;
+let readyCheck, meal;
+
+// A new seat's own values of those that change (as a farmer starts)
+const freshSeat = () => ({
+  fitZoom: 1,
+  playerZoom: 1,
+  camZoom: 1,
+  camGroundY: 0, // feet height the camera tracks vertically
+  underground: 0, // how far down in one we are (bosses.underground(), as of this frame)
+  landedOn: null, // (the ledge we came down on last, while we stand on it)
+  bopReady: 0, // (clock time the weapon can swing again)
+  jumpPressed: false, // (a press shorter than a frame still jumps)
+  jumpTapped: false, // a fresh press (not the key held down repeating): a jump in the air
+  jumpTappedAt: -Infinity, // when Jump was last pressed (clock.elapsedTime)
+  jumpRising: false, // on the way up from a jump of our own (not a bop's)
+  airTime: 0, // seconds since the farmer was last on the ground
+  stepTimer: 0,
+  airJumps: 0, // jumps left in the air
+  gliding: false,
+  walk: null, // { kind: 'tile' | 'stall' | 'spot' | 'tree' | 'animal', x, y, z, farm, spot, tree, animal, best, stuck }
+  chopping: null, // the tree a tap is chopping
+  mining: null, // the rock a tap is mining
+  hoverAt: null, // where the mouse is over the game (null: off it, or not a mouse)
+  held: null, // { id, x, y }: the mouse button held down, and where it is
+  cameInBy: null, // the house we went inside by (its tile): out through its door again
+  building: null, // build mode: a PIECES id, or 'remove'
+  builtKey: null, // the tile E last built on (holding E builds on each new one)
+  mouseAt: null, // where the mouse is over the screen, while build mode aims with it
+  buildShown: '', // (what the build bar says, so it is only set when it changes)
+  readyCheck: 0,
+  meal: null, // { dish, kinds, level, left (seconds) }, or null
+});
+
+// The code works for `seat` from here on: its own in place (the last one's put away)
+function become(seat) {
+  if (me === seat) return;
+  if (me) {
+    Object.assign(me.vals, { fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising });
+    Object.assign(me.vals, { airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown });
+    Object.assign(me.vals, { readyCheck, meal });
+  }
+  me = seat;
+  ({ camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock } = seat);
+  ({ glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade } = seat);
+  ({ workbench, arcade, cooking, readyNoted, learned, pettedOn } = seat);
+  ({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising } = seat.vals);
+  ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = seat.vals);
+  ({ readyCheck, meal } = seat.vals);
+}
+
+// fn(), as `seat`'s (and back to whoever's it was)
+function within(seat, fn) {
+  const was = me;
+  become(seat);
+  try {
+    return fn();
+  } finally {
+    become(was);
+  }
+}
+
+// fn, made to work for `seat` whenever it is called (a seat's windows and buttons call back)
+const seated = (seat, fn) => (...args) => within(seat, () => fn(...args));
+// A seat's own module's options: every callback in them seated (but active(),
+// which asks whose the keys are now)
+const forSeat = (seat, opts) => Object.fromEntries(Object.entries(opts).map(([k, v]) => [k, typeof v === 'function' && k !== 'active' ? seated(seat, v) : v]));
+
+// A seat (its own things are made as the code below gets to them, makeSeat)
+function newSeat(index) {
+  const root = index === 0 ? el('div', 'seat seat-0', seatsEl) : el('div', `seat seat-${index}`);
+  // rect: its part of the screen (CSS pixels). eye: where its view's trees fade out of the way of.
+  // padIndex: its controller (navigator.getGamepads()), once it has one of its own
+  return { index, root, rect: { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }, vals: freshSeat(), eye: new THREE.Vector3(), padIndex: null, moving: false };
+}
+const first = newSeat(0); // (the page's own)
+seats.push(first);
+me = first;
+({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising } = first.vals);
+({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = first.vals);
+({ readyCheck, meal } = first.vals);
+
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -94,18 +202,13 @@ scene.background = new THREE.Color(0x87ceeb);
 const FOG_NEAR = 30;
 const FOG_FAR = 90;
 const CAVE_FOG = [15, 36]; // (near and far, down in a boss's dungeon)
-let underground = 0; // how far down in one we are (bosses.underground(), as of this frame)
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
 
 // (near: half a unit, not a tenth. The camera is never that close to anything
 // it shows, and the depth buffer is five times finer for it: some phones' is
-// coarse, and surfaces a little apart flickered there)
-const camera = new THREE.PerspectiveCamera(
-  60,
-  window.innerWidth / window.innerHeight,
-  0.5,
-  200
-);
+// coarse, and surfaces a little apart flickered there). Each seat has its own.
+const newCamera = () => new THREE.PerspectiveCamera(60, 1, 0.5, 200);
+camera = first.camera = newCamera();
 
 // Angled follow camera. It keeps a constant offset from a look-at point that
 // eases toward the player's feet each frame (see updateCamera). Vertically it
@@ -120,7 +223,7 @@ const CAM_OFFSET = new THREE.Vector3(
 );
 const CAM_FOLLOW_XZ = 6; // higher = snappier horizontal follow
 const CAM_FOLLOW_Y = 3; // vertical follow is gentler
-const camTarget = new THREE.Vector3(); // point the camera looks at, set once the player exists
+camTarget = first.camTarget = new THREE.Vector3(); // point the camera looks at, set once the player exists
 
 // On a screen taller than it is wide (a phone held upright) the view is
 // narrow, so the camera pulls back to show more of the island to either side:
@@ -131,14 +234,13 @@ const CAM_MAX_ZOOM = 1.6;
 const CAM_ZOOM_NEAR = 0.6;
 const CAM_ZOOM_FAR = 2.2;
 const CAM_ZOOM_EASE = 10;
-const camOffset = new THREE.Vector3();
-let fitZoom = 1;
-let playerZoom = 1;
+camOffset = first.camOffset = new THREE.Vector3();
 const zoomGoal = () => fitZoom * playerZoom;
+// (to the seat's part of the screen)
 function fitCamera() {
   // (a phone can start the page before the screen has a size: wait for the resize)
-  if (!(window.innerWidth > 0 && window.innerHeight > 0)) return;
-  camera.aspect = window.innerWidth / window.innerHeight;
+  if (!(me.rect.w > 0 && me.rect.h > 0)) return;
+  camera.aspect = me.rect.w / me.rect.h;
   camera.updateProjectionMatrix();
   fitZoom = Math.min(Math.sqrt(Math.max(1, 1 / camera.aspect)), CAM_MAX_ZOOM);
   zoomBy(1); // keep the player's zoom inside the range for the new shape
@@ -148,7 +250,7 @@ function zoomBy(factor) {
   playerZoom = THREE.MathUtils.clamp(playerZoom * factor, CAM_ZOOM_NEAR / fitZoom, CAM_ZOOM_FAR / fitZoom);
 }
 fitCamera();
-let camZoom = zoomGoal();
+camZoom = zoomGoal();
 
 // ---------- Lighting ----------
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444466, 1.0);
@@ -259,8 +361,11 @@ scene.add(water);
 // ---------- Inventory ----------
 // Toolbar + backpack UI (see inventory.js). Opening the backpack pauses
 // player input, so drop any keys that were held at that moment. The backpack
-// goes everywhere with you, and is saved with the farm (see Saving).
-const inventory = createInventory({
+// goes everywhere with you, and is saved with the farm (see Saving). Each
+// seat has its own, in its own part of the screen.
+const newInventory = (seat) => createInventory(forSeat(seat, {
+  parent: seat.root,
+  active: () => me === seat,
   onOpenChange: (open) => open && keys.clear(),
   onBuild: (piece) => startBuilding(piece),
   onAdd: (id) => {
@@ -277,20 +382,22 @@ const inventory = createInventory({
   renderBook: (el) => book.render(el),
   renderQuests: (el) => renderQuests(el, npcs, missionCtx()),
   renderMap: (el) => renderMap(el, whereOnFarm()),
-});
+}));
+inventory = first.inventory = newInventory(first);
 
 // ---------- Skills ----------
 // Farming, animals, woodcutting and mining (and fishing, once there is
 // fishing) level up by doing them (skills.js): each level a little more
 // chance of one more of what they give, and the overall level unlocks the
 // double jump. Yours wherever you farm: saved with the backpack.
-const skills = createSkills({
+const newSkills = (seat) => createSkills(forSeat(seat, {
   onLevelUp: (title, detail) => {
     sound.play('cheer');
     hud.flash(title);
     inventory.notify(detail);
   },
-});
+}));
+skills = first.skills = newSkills(first);
 // What a skill's work counts as, for the neighbours' requests (shared/npcs.js)
 const DEED_OF = { farming: 'harvest', woodcutting: 'chop', mining: 'mine' };
 // XP in skill for what was got, and now and then (the skill's bonus) one more of item
@@ -332,7 +439,7 @@ const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm
 const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
 // an egg, milk or wool: into the backpack, with Animals XP
 const collectProduce = (item) => collect(item) && (skilled('animals', SKILLS.xp[item] ?? 0, item), true);
-const pettedOn = new WeakMap(); // animal -> the game day she was last petted (Animals XP once a day)
+pettedOn = first.pettedOn = new WeakMap(); // animal -> the game day she was last petted (Animals XP once a day: each seat's own)
 
 function letOutAnimal(kind) {
   if (visiting()) return inventory.notify('Only the farmer lets animals out here');
@@ -567,7 +674,6 @@ function stalkUnderfoot() {
 // Landing on a platform plant: a bounce shroom's cap throws us up `bounce`
 // times as high as a jump, and a lily leaf wilts after `wilts` landings, to
 // grow back (on a farm with helpers the room hears it as a pick: HARVEST)
-let landedOn = null; // (the ledge we came down on last, while we stand on it)
 function landOnPlant(box) {
   const crop = box.plant;
   const key = tileKeyFor(crop.view.group.position.x, crop.view.group.position.z);
@@ -929,7 +1035,8 @@ function updateSpots(dt, t) {
 // its rocks are (see Mining rocks): farmFelled.
 const CHOP_REACH = 1.3; // from the bark
 const SWING_GAP = 0.15; // seconds between swings, so everyone else sees each one
-const chop = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
+const newChop = () => ({ id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() }); // (each seat's own: chop, mine)
+chop = first.chop = newChop();
 const farmFelled = new Map(); // the farm's felled trees: id -> when it grows back (wall clock ms)
 const farmTreeSites = new Map(); // how often each grew back: id -> count (which of its places it is in: shared/level.js nextSite)
 
@@ -1038,7 +1145,7 @@ const comeBackAt = ([lo, hi]) => Math.round(Date.now() + (lo + Math.random() * (
 // alone the page breaks the rock itself and keeps when it comes back
 // (farmMined, saved with the farm).
 const MINE_REACH = 1.3; // from the rock's edge, as it is drawn
-const mine = { id: -1, hits: 0, swingAt: -1, nextSwing: 0, pending: new Set() };
+mine = first.mine = newChop();
 const farmMined = new Map(); // the farm's broken rocks: id -> when a new one surfaces (wall clock ms)
 const farmRockSites = new Map(); // (as farmTreeSites)
 
@@ -1403,12 +1510,11 @@ function showFarmWilds({ felled, mined, treeSites, rockSites, giants }) {
 // bow shoots an arrow (one from the backpack) at the nearest farmer it is
 // more or less pointed at, further off; everyone sees it fly (SHOT). Not in
 // the stone circle where farmers arrive. Nobody gets hurt.
-const knock = new THREE.Vector3(); // the stumble after a bop, added to walking while it fades
+knock = first.knock = new THREE.Vector3(); // the stumble after a bop, added to walking while it fades
 const drops = new Map(); // id -> { id, item, count, x, y, z, group, pending }
 const lobbyNames = new Map(); // player id -> name (for "Ann bopped you")
 const arrows = createArrows(scene);
 const AIM = 0.5; // the bow picks a farmer this far from straight ahead at most (the cosine of it), and turns to them
-let bopReady = 0; // (clock time the weapon can swing again)
 
 const weaponInHand = () => (Object.hasOwn(WEAPONS, inventory.selectedId() ?? '') ? inventory.selectedId() : null);
 // (in the arenas of games that say so, GAMES, empty hands shove: MINIGAMES.shove in shared/balance.js)
@@ -1566,14 +1672,15 @@ function updateDrops(dt, t) {
 }
 
 // ---------- Player ----------
-const player = {
+const newBody = () => ({
   radius: 0.5,
   height: 1.6,
   position: new THREE.Vector3(0, 2, 4),
   velocity: new THREE.Vector3(0, 0, 0),
   onGround: false,
-};
-const lastGoodSpot = new THREE.Vector3().copy(player.position); // where the farmer last was, if a number ever goes bad (update)
+});
+player = first.player = newBody();
+lastGoodSpot = first.lastGoodSpot = new THREE.Vector3().copy(player.position); // where the farmer last was, if a number ever goes bad (update)
 
 // Ground level (top of the base ground box) is y = 0, so the player's
 // resting height when standing on bare ground (GROUND_STAND_Y, shared/level.js)
@@ -1582,12 +1689,16 @@ const lastGoodSpot = new THREE.Vector3().copy(player.position); // where the far
 // ---------- Character model ----------
 // The farmer (character.js). Collision still uses the simple box in `player`;
 // the model is purely visual. Everyone else in the game wears the same model,
-// in their own clothes and shirt color (remotes.js).
-const farmer = createFarmer({ height: player.height });
-const playerMesh = farmer.root; // positioned at player.position (collision center)
-const hoeGroup = farmer.hoe;
-const anim = farmer.anim;
-scene.add(playerMesh);
+// in their own clothes and shirt color (remotes.js). A seat's farmer, its model's parts.
+function makeFarmer(seat) {
+  seat.farmer = createFarmer({ height: seat.player.height });
+  seat.playerMesh = seat.farmer.root; // positioned at player.position (collision center)
+  seat.hoeGroup = seat.farmer.hoe;
+  seat.anim = seat.farmer.anim;
+  scene.add(seat.playerMesh);
+}
+makeFarmer(first);
+({ farmer, playerMesh, hoeGroup, anim } = first);
 
 function animateCharacter(dt, moving) {
   farmer.animate(dt, {
@@ -1603,7 +1714,7 @@ function startHoeSwing() {
 }
 
 camTarget.set(player.position.x, player.position.y - player.height / 2, player.position.z);
-let camGroundY = camTarget.y; // feet height the camera tracks vertically
+camGroundY = camTarget.y;
 
 function updateCamera(dt) {
   const feetY = player.position.y - player.height / 2;
@@ -1623,14 +1734,33 @@ function updateCamera(dt) {
   camZoom += (zoomGoal() - camZoom) * damp(CAM_ZOOM_EASE, dt);
   if (!Number.isFinite(camZoom)) camZoom = zoomGoal(); // never leave the camera nowhere
   camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
+  camera.position.copy(camTarget).add(camOffset);
+  camera.lookAt(camTarget);
+}
+
+// What the scene needs for a seat's view, just before it is drawn (draw):
+// the fog and the shadows round where its camera looks. split: one of
+// several views, which also each have their own light (down in a dungeon or
+// not), rain and leaves in the air, and the night's glow round their farmer.
+function lookFrom(split) {
+  if (place === 'title') return followSun(MENU_CAM.look, 0);
+  if (split && place !== 'lobby') npcs.showSigns(npcs.signs(), player.position); // (the neighbours' signs: what they have for this farmer)
   // Pushed back with the camera, so zooming out shows more island, not more fog
   // (underground, in a boss's dungeon, closer: the dark all round)
   scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, CAVE_FOG[0], underground) * Math.max(1, camZoom);
   scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, CAVE_FOG[1], underground) * Math.max(1, camZoom);
   reachSun(camZoom);
-
-  camera.position.copy(camTarget).add(camOffset);
-  camera.lookAt(camTarget);
+  if (split) {
+    const cave = bosses.underground();
+    const inside = indoors() || cave.k > 0.5;
+    dayNight.view(player.position, cave.k, cave.light);
+    if (place !== 'lobby') seasons.relight();
+    weather.place(player.position, inside);
+    seasons.place(inside ? null : player.position);
+    buildings.setNight(dayNight.night(), player.position);
+    water.visible = cave.k < 0.5;
+    playerMesh.add(dayNight.glow);
+  }
   followSun(camTarget, SUN_AHEAD * Math.max(1, camZoom));
 }
 updateCamera(0);
@@ -1652,19 +1782,17 @@ function updateMenuCamera(t) {
     MENU_CAM.look.z + Math.cos(a) * MENU_CAM.radius
   );
   camera.lookAt(MENU_CAM.look);
-  followSun(MENU_CAM.look, 0);
 }
 
 // ---------- Input ----------
 // The keys drive the farmer only while nothing else has the keyboard: the
 // title screen, the backpack, the chat line or the pause menu.
-const keys = new Set();
-let jumpPressed = false; // (a press shorter than a frame still jumps)
-let jumpTapped = false; // a fresh press (not the key held down repeating): a jump in the air
-const menuOpen = () => inventory.isOpen() || shop.isOpen() || dialog.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen() || trade.isOpen();
-const inputBlocked = () => !splash.hidden || menuOpen() || hud.isTyping() || partyFrozen();
+keys = first.keys = new Set(); // (each seat's own: what its farmer holds down)
+// (a seat's menu, and the first seat's, the game's menu: splash.js; the title screen holds everyone up)
+const menuOpen = () => inventory.isOpen() || shop.isOpen() || dialog.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen() || trade.isOpen() || !!me.panel?.isOpen();
+const inputBlocked = () => (me === first ? !splash.hidden : place === 'title') || menuOpen() || hud.isTyping() || partyFrozen();
 window.addEventListener('keydown', (e) => {
-  if (inputBlocked()) return;
+  if (inputBlocked() || e.target.closest?.('input, textarea, select')) return; // (or a box being typed in: a farmer's login, at a split screen)
   keys.add(e.code);
   if (e.code === 'Space') jumpPressed = true;
   if (e.code === 'Space' && !e.repeat) {
@@ -1893,10 +2021,7 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') jumpRising = false;
 });
 
-window.addEventListener('resize', () => {
-  fitCamera();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+window.addEventListener('resize', () => layout());
 
 // A phone can take the GPU back from a page in the background (Safari often
 // does, after a while in another app). three.js picks up again if the browser
@@ -1938,19 +2063,13 @@ function jump() {
 const COYOTE_TIME = 0.1; // seconds
 const JUMP_BUFFER = 0.12; // seconds
 const JUMP_CUT = 0.5; // what is left of the speed up when Jump is let go early
-let jumpTappedAt = -Infinity; // when Jump was last pressed (clock.elapsedTime)
-let jumpRising = false; // on the way up from a jump of our own (not a bop's)
-let airTime = 0; // seconds since the farmer was last on the ground
 const STEP_EVERY = 0.32; // seconds between footsteps at a walk
-let stepTimer = 0;
-let airJumps = 0; // jumps left in the air
 const puffs = createPuffs(scene);
 
 // With a glider leaf in the backpack (made at the workbench), Jump held on
 // the way down opens it over the farmer's head, and they float down no
 // faster than GLIDE.fall (src/glider.js draws it)
-const glider = createGlider(farmer);
-let gliding = false;
+glider = first.glider = createGlider(farmer);
 
 function airJump() {
   airJumps--;
@@ -2020,30 +2139,43 @@ const TAP_PX = 14;
 const ARRIVE = 0.1; // how close to the middle of a tile counts as there
 const FARM_REACH = 2.2; // tapping a tile within this farms it
 const STUCK_TIME = 0.3; // seconds without getting closer: hop, and if that does no good, stop
-let walk = null; // { kind: 'tile' | 'stall' | 'spot' | 'tree' | 'animal', x, y, z, farm, spot, tree, animal, best, stuck }
-let chopping = null; // the tree a tap is chopping
-let mining = null; // the rock a tap is mining
 
 const raycaster = new THREE.Raycaster();
 const _ndc = new THREE.Vector2();
 const _hit = new THREE.Vector3();
+// The ray from the seat's camera through x, y on the screen (in its part of it)
+function aimAt(x, y) {
+  const { rect } = me;
+  _ndc.set(((x - rect.x) / rect.w) * 2 - 1, -((y - rect.y) / rect.h) * 2 + 1);
+  raycaster.setFromCamera(_ndc, camera);
+}
+// Is x, y on the screen in the seat's own part of it?
+const onMyScreen = (x, y) => x >= me.rect.x && x < me.rect.x + me.rect.w && y >= me.rect.y && y < me.rect.y + me.rect.h;
 
-// The tile marker: a square outline on the tile being walked to
-const marker = new THREE.Mesh(
-  new THREE.RingGeometry(0.56, 0.67, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false })
-);
-marker.visible = false;
-scene.add(marker);
+// The tile marker: a square outline on the tile being walked to (each seat's own)
+function newMarker() {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.56, 0.67, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false })
+  );
+  ring.visible = false;
+  scene.add(ring);
+  return ring;
+}
+marker = first.marker = newMarker();
 
 // The tile cursor: at home with the hoe or seeds in hand, standing still, a
 // faint square on the tile in front, the one E farms (see updateTileCursor)
-const tileCursor = new THREE.Mesh(
-  new THREE.RingGeometry(0.64, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: 0xfff3d6, transparent: true, opacity: 0.5, depthWrite: false })
-);
-tileCursor.visible = false;
-scene.add(tileCursor);
+function newTileCursor() {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.64, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xfff3d6, transparent: true, opacity: 0.5, depthWrite: false })
+  );
+  ring.visible = false;
+  scene.add(ring);
+  return ring;
+}
+tileCursor = first.tileCursor = newTileCursor();
 
 // The tile the farmer faces (the next one over, the way they look)
 const frontTile = () => tileKeyFor(player.position.x + Math.sin(anim.facing) * 0.95, player.position.z + Math.cos(anim.facing) * 0.95);
@@ -2059,7 +2191,6 @@ function updateTileCursor(moving) {
 
 // The hover outline: with a mouse, a white line round what it points at, a
 // tree or a rock, else (at home) the tile
-let hoverAt = null; // where the mouse is over the game (null: off it, or not a mouse)
 const hoverMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false });
 const hoverTile = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.68, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2), hoverMat);
 const hoverRing = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 32).rotateX(-Math.PI / 2), hoverMat);
@@ -2071,9 +2202,8 @@ canvas.addEventListener('pointerleave', () => (hoverAt = null));
 const _base = new THREE.Vector3();
 function updateHover() {
   hoverTile.visible = hoverRing.visible = false;
-  if (!hoverAt || held || building || place === 'title' || inputBlocked()) return;
-  _ndc.set((hoverAt.x / window.innerWidth) * 2 - 1, -(hoverAt.y / window.innerHeight) * 2 + 1);
-  raycaster.setFromCamera(_ndc, camera);
+  if (!hoverAt || held || building || place === 'title' || inputBlocked() || !onMyScreen(hoverAt.x, hoverAt.y)) return;
+  aimAt(hoverAt.x, hoverAt.y);
   const things = new Map(); // object -> [where its foot is, how wide the ring round it]
   for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, [tree.group, 0, 0.45 + tree.scale * 0.35]);
   for (const rock of world.rocks) if (rock.state === 'up') things.set(rock.mesh, [rock.mesh, rock.scale * 0.3, rock.radius + 0.2]);
@@ -2114,7 +2244,7 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (e.pointerType !== 'mouse' || e.button === 0) presses.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
-  if (e.pointerType === 'mouse' && e.button === 0 && place !== 'title' && !building && !inputBlocked()) {
+  if (e.pointerType === 'mouse' && e.button === 0 && place !== 'title' && !building && !inputBlocked() && onMyScreen(e.clientX, e.clientY)) {
     stopWalking();
     held = { id: e.pointerId, x: e.clientX, y: e.clientY };
     canvas.setPointerCapture(e.pointerId); // (keeps steering over the HUD)
@@ -2144,7 +2274,7 @@ canvas.addEventListener('pointerup', (e) => {
 // fingers pinched on the screen. Spreading them, or wheeling up, comes closer.
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault(); // or a trackpad pinch zooms the page
-  if (place === 'title' || inputBlocked()) return;
+  if (place === 'title' || inputBlocked() || !onMyScreen(e.clientX, e.clientY)) return;
   const lines = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
   zoomBy(Math.exp(THREE.MathUtils.clamp(lines, -100, 100) * 0.002));
 }, { passive: false });
@@ -2174,8 +2304,8 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function tapAt(x, y) {
-  _ndc.set((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1);
-  raycaster.setFromCamera(_ndc, camera);
+  if (!onMyScreen(x, y)) return; // (another farmer's part of a split screen)
+  aimAt(x, y);
   stopWalking();
   if (building) return tapToBuild();
   const target = tappedThing() ?? tappedGround();
@@ -2367,13 +2497,11 @@ function lookRoundPrompt() {
 // long as it is held: the farmer heads for the spot on the ground (at their
 // own feet' height) under the mouse, every frame, so the mouse steers. Let go
 // quickly and it was a click after all (above).
-let held = null; // { id, x, y }: the mouse button held down, and where it is
 const _feet = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const FOLLOW_CLOSE = 0.3; // the mouse this close to the farmer: stand still
 
 function followMouse(dt) {
-  _ndc.set((held.x / window.innerWidth) * 2 - 1, -(held.y / window.innerHeight) * 2 + 1);
-  raycaster.setFromCamera(_ndc, camera);
+  aimAt(held.x, held.y);
   _feet.constant = -(player.position.y - player.height / 2);
   if (!raycaster.ray.intersectPlane(_feet, _hit)) return { x: 0, z: 0 };
   const dx = _hit.x - player.position.x;
@@ -2460,7 +2588,6 @@ function houseDoorInReach() {
     return Math.hypot(player.position.x - door.x, player.position.z - (door.z + 0.6)) < DOOR_REACH;
   }) ?? null;
 }
-let cameInBy = null; // the house we went inside by (its tile): out through its door again
 
 function goInside() {
   cameInBy = houseDoorInReach() ?? buildings.find('house');
@@ -2480,10 +2607,6 @@ function goOutside() {
 }
 const BUILD_REACH = 2.4; // a tile this close is built on from where you stand (the farm's room allows 2.6)
 const FARM_EDGE = HOME_HALF - 3; // tiles out to here (the farm's room allows one more)
-let building = null; // build mode: a PIECES id, or 'remove'
-let builtKey = null; // the tile E last built on (holding E builds on each new one)
-let mouseAt = null; // where the mouse is over the screen, while build mode aims with it
-let buildShown = ''; // (what the build bar says, so it is only set when it changes)
 const pendingBuilds = new Map(); // tiles we built on that the farm's room hasn't said yes to yet -> what came out of the backpack for it
 const pendingUnbuilds = new Set(); // and pieces we asked it to take down
 
@@ -2498,7 +2621,7 @@ function stopBuilding() {
   building = null;
   mouseAt = null;
   buildShown = '';
-  buildings.preview(null);
+  buildings.preview(null, null, false, me.index);
   hud.setBuilding(null);
 }
 
@@ -2512,8 +2635,7 @@ function inBuildReach(key) {
 // (taking down: the piece in front, else the path underfoot)
 function buildTarget() {
   if (mouseAt) {
-    _ndc.set((mouseAt.x / window.innerWidth) * 2 - 1, -(mouseAt.y / window.innerHeight) * 2 + 1);
-    raycaster.setFromCamera(_ndc, camera);
+    aimAt(mouseAt.x, mouseAt.y);
     const tile = tappedGround();
     if (tile) return tileKeyFor(tile.x, tile.z);
   }
@@ -2529,6 +2651,7 @@ function standingAt(x, z) {
   const near = (p, r = 0.85) => p && Math.abs(p.x - x) < r && Math.abs(p.z - z) < r;
   if (near(player.position, 0.75)) return 'you';
   if ([...remotes.players.keys()].some((id) => near(remotes.positionOf(id)))) return 'someone';
+  if (seats.some((seat) => seat !== me && near(seat.player.position))) return 'someone'; // (another farmer at the screen)
   return animals.list().some((animal) => animal.root.visible && near(animal.pos)) ? 'someone' : '';
 }
 
@@ -2677,7 +2800,7 @@ window.addEventListener('keydown', (e) => WALK_KEYS.has(e.code) && (mouseAt = nu
 function updateBuilding() {
   const key = buildTarget();
   const problem = buildProblemAt(key);
-  buildings.preview(key, building, !problem);
+  buildings.preview(key, building, !problem, me.index);
   // (holding E lays a path, or takes pieces down, as you go: a fence, a gate, a wall or a block at a time)
   if (keys.has('KeyE') && key !== builtKey && !problem && !PIECES[building]?.solid && !PIECES[building]?.joins) buildAt(key, { quiet: true });
   const piece = PIECES[building];
@@ -2725,14 +2848,23 @@ let farmOnScreen = false; // the home farm's soil and crops are in the scene
 // (a lobby's day starts mid-morning, in good light: LOBBY_DAWN, shared/giants.js)
 
 const remotes = new Remotes(scene, { waterFrom });
-const touch = new TouchControls(); // (only shown on a touch screen)
-// A controller plays as the keyboard does; in a menu it moves a highlight about (gamepad.js)
-const pad = new GamepadInput({
-  inMenu: () => !splash.hidden || menuOpen() || hud.isTyping(),
-  onCycle: (dir) => inventory.cycle(dir),
-  onZoom: (factor) => zoomBy(factor),
-  onConnect: () => inventory.notify('Controller ready: A jump, X use, Y backpack, Menu for the menu'),
+touch = first.touch = new TouchControls({ parent: first.root }); // (only shown on a touch screen; the first seat's)
+// (the seats after it: no touch screen)
+const NO_TOUCH = { direction: () => ({ x: 0, z: 0 }), setReady() {}, setBite() {}, setPlace() {} };
+// A controller plays as the keyboard does; in a menu it moves a highlight about
+// (gamepad.js). Each seat reads its own (pickPad).
+const newPad = (seat) => new GamepadInput({
+  ...forSeat(seat, {
+    inMenu: () => inputBlocked() && !partyFrozen(),
+    onCycle: (dir) => inventory.cycle(dir),
+    onZoom: (factor) => zoomBy(factor),
+    onConnect: () => seat === first && seats.length === 1 && inventory.notify('Controller ready: A jump, X use, Y backpack, Menu for the menu'),
+  }),
+  pick: (pads) => pickPad(seat, pads),
+  root: seat.root,
+  keyboard: seat === first,
 });
+pad = first.pad = newPad(first);
 
 // The water at x, z, to fish in: { water, y } (which FISHING table, and its
 // surface), or null: land. In a lobby, its sea and its pond; on a farm, the
@@ -2771,21 +2903,41 @@ function waterFrom(x0, z0, yaw) {
   }
   return null;
 }
-const hud = new Hud({
-  onTravel: () => splash.show({ page: 'online' }),
-  onMenu: () => splash.show(),
-  isMenuOpen: () => !splash.hidden,
-  onMenuEscape: () => splash.escape(),
-  onHome: () => goHome(),
-  onChat: (text) => (place === 'lobby' ? net : farmNet)?.send({ t: C.CHAT, text }),
-  isBlocked: () => menuOpen() || !splash.hidden,
-  onPrompt: (text) => touch.setReady(!!text),
-  onStopBuilding: () => stopBuilding(),
-  onTrade: (id) => askTrade(id),
+// The HUD (src/ui/hud.js): each seat's, in its part of the screen. The first
+// seat's has the game's menu (splash.js); another's, its own (seatMenu).
+const newHud = (seat) => new Hud({
+  ...forSeat(seat, seat === first ? {
+    onTravel: () => splash.show({ page: 'online' }),
+    onMenu: () => splash.show(),
+    isMenuOpen: () => !splash.hidden,
+    onMenuEscape: () => splash.escape(),
+    onHome: () => goHome(),
+    onChat: (text) => (place === 'lobby' ? net : farmNet)?.send({ t: C.CHAT, text }),
+    isBlocked: () => menuOpen() || !splash.hidden,
+    onPrompt: (text) => touch.setReady(!!text),
+    onStopBuilding: () => stopBuilding(),
+    onTrade: (id) => askTrade(id),
+  } : {
+    onTravel: () => inventory.notify(`Only ${seatName(first)} can head online from here`),
+    onMenu: () => seat.panel.openMenu(),
+    isMenuOpen: () => seat.panel.isOpen(),
+    onMenuEscape: () => seat.panel.escape(),
+    onHome: () => {},
+    onChat: () => {},
+    isBlocked: () => menuOpen(),
+    onPrompt: () => {},
+    onStopBuilding: () => stopBuilding(),
+    onTrade: () => {},
+  }),
+  parent: seat.root,
+  active: () => me === seat,
+  usesPad: seat === first ? padInUse : () => true,
 });
+hud = first.hud = newHud(first);
 
-// A new farmer's first steps, ticked off as they're done (src/ui/guide.js)
-const guide = new Guide({ parent: hud.root, anchor: hud.panel });
+// A new farmer's first steps, ticked off as they're done (src/ui/guide.js; the first seat's)
+guide = first.guide = new Guide({ parent: hud.root, anchor: hud.panel });
+const NO_GUIDE = { update() {} };
 const guideState = () => ({
   place: place === 'home' && farmVisit ? 'farm' : place,
   tilled: farmVisit ? 0 : farmTiles.size,
@@ -2802,27 +2954,33 @@ const guideState = () => ({
 // save beside the backpack. Fish swim about under the water near us
 // (fishshadows.js), coming up now and then with a ripple (ripples.js). In a
 // lobby's fishing contest everyone fishes, a rod lent to anyone without one.
-const fishLog = createFishLog();
+fishLog = first.fishLog = createFishLog();
 // What we have ever had, for the collection book (book.js, the bag's Book
 // tab): saved with the backpack
-const book = createBook({ fishLog, beaten: () => Object.keys(bosses.record().won).filter((id) => bosses.record().won[id] > 0) });
+const newBook = (seat) => createBook({ fishLog: seat.fishLog, beaten: seated(seat, () => Object.keys(bosses.record().won).filter((id) => bosses.record().won[id] > 0)) });
+book = first.book = newBook(first);
 const ripples = createRipples(scene);
 const inContest = () => place === 'lobby' && !!arenaId && partyGame?.kind === 'fishing_contest';
-const fishing = createFishing({
-  scene, farmer, player, inventory, hud, touch, ripples,
-  waterAhead: () => (player.onGround && !menuOpen() && !indoors() ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
-  hour: () => dayNight.hour(),
-  lobby: () => (place === 'lobby' ? net : null),
-  rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : inContest() && !weaponInHand() ? 'fishing_rod' : null),
-  skill: () => skills.level('fishing'),
-  landed(item, grams) {
-    skills.gain('fishing', SKILLS.xp.fish);
-    if (isFish(item)) npcs.did('fish'); // (and Finn: shared/npcs.js)
-    return fishLog.landed(item, grams);
-  },
-  sooner: () => boostOf(meal, 'bite'),
+// (each seat's own line and bobber)
+const newFishing = (seat) => createFishing({
+  scene, ripples, farmer: seat.farmer, player: seat.player, inventory: seat.inventory, hud: seat.hud, touch: seat.touch,
+  ...forSeat(seat, {
+    waterAhead: () => (player.onGround && !menuOpen() && !indoors() ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
+    hour: () => dayNight.hour(),
+    lobby: () => (place === 'lobby' ? net : null),
+    rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : inContest() && !weaponInHand() ? 'fishing_rod' : null),
+    skill: () => skills.level('fishing'),
+    landed(item, grams) {
+      skills.gain('fishing', SKILLS.xp.fish);
+      if (isFish(item)) npcs.did('fish'); // (and Finn: shared/npcs.js)
+      return fishLog.landed(item, grams);
+    },
+    sooner: () => boostOf(meal, 'bite'),
+  }),
 });
-const fishShadows = createFishShadows({ scene, ripples, player, regions: fishRegions });
+fishing = first.fishing = newFishing(first);
+// (round the first seat's farmer)
+const fishShadows = createFishShadows({ scene, ripples, player: { get position() { return first.player.position; } }, regions: fishRegions });
 
 // Where the fish under the water swim now (fishshadows.js): along the shore
 // of the island we are on (near us), and in its ponds
@@ -2881,34 +3039,20 @@ function fishRegions() {
 
 // ---------- The bosses ----------
 // Their portals on the farm, their arenas out past the sea, the fights and
-// what they give (bosses.js; shared/bosses.js has the rules)
-const bosses = createBosses({
+// what they give (bosses.js; shared/bosses.js has the rules). The farm's
+// bosses and dungeons are one (bossWorld); each seat has its part of them
+// (`bosses`: what happens to its farmer, what they have won).
+const bossWorld = createBosses({
   world: worlds.home,
-  player,
-  farmer,
-  inventory,
-  hud,
   giantBars,
   buildings,
-  myId: () => myId,
   net: () => farmNet,
   atHome: () => place === 'home',
-  weapon: () => weaponInHand(),
   day: () => dayNight.day(),
-  // (a bow's arrow at the boss: ours, or another farmer's)
-  shoot: (to) => arrows.shoot(arrowFrom.set(player.position.x + Math.sin(anim.facing) * 0.5, player.position.y + 0.25, player.position.z + Math.cos(anim.facing) * 0.5), to),
+  // (another farmer's arrow)
   shotFrom(by, to) {
     const from = remotes.positionOf(by);
     if (from) arrows.shoot(arrowFrom.set(from.x, from.y + 0.25, from.z), to);
-  },
-  putDown,
-  arrival: () => arrival(),
-  knock(dx, dz, speed) {
-    stopWalking();
-    knock.set(dx * speed, 0, dz * speed);
-    player.velocity.y = 5;
-    player.onGround = false;
-    anim.squash = -0.2;
   },
   // (played alone, a beaten boss's portal goes: its key pieces are used up)
   removePortal(boss) {
@@ -2917,18 +3061,50 @@ const bosses = createBosses({
     buildings.remove(key);
     placeChest();
   },
-  farmIsOurs: () => place === 'home' && farmOnScreen && (!farmVisit || farmVisit.mine),
-  addShiny: (kind) => !!animals.addShiny(kind),
-  save: () => saveGame(),
 });
+const newBosses = (seat) => ({
+  ...bossWorld,
+  ...bossWorld.seat({
+    player: seat.player,
+    farmer: seat.farmer,
+    inventory: seat.inventory,
+    hud: seat.hud,
+    ...forSeat(seat, {
+      // (in the fights: the farm's room's id for us, or played alone, the seat's)
+      id: () => (seat === first ? myId : seat.index),
+      weapon: () => weaponInHand(),
+      // (a bow's arrow at the boss)
+      shoot: (to) => arrows.shoot(arrowFrom.set(player.position.x + Math.sin(anim.facing) * 0.5, player.position.y + 0.25, player.position.z + Math.cos(anim.facing) * 0.5), to),
+      putDown,
+      arrival: () => arrival(),
+      knock(dx, dz, speed) {
+        stopWalking();
+        knock.set(dx * speed, 0, dz * speed);
+        player.velocity.y = 5;
+        player.onGround = false;
+        anim.squash = -0.2;
+      },
+      // (their own farm: for a farmer who joined at the screen, not this one)
+      farmIsOurs: () => seat === first && place === 'home' && farmOnScreen && (!farmVisit || farmVisit.mine),
+      addShiny: (kind) => !!animals.addShiny(kind),
+      save: () => saveGame(),
+    }),
+  }),
+});
+bosses = first.bosses = newBosses(first);
 // (after the HUD: its key handler goes first, see shop.js). The merchant
 // asks for something each game day (requests.js), handed over at the stall.
-const shop = createShop({
-  inventory,
-  requests: createRequests({ day: () => dayNight.day(), inventory }),
-  onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
-  known: (id) => !!ITEMS[id]?.recipe && learned.has(ITEMS[id].recipe), // (a recipe in the book already)
+const newShop = (seat) => createShop({
+  inventory: seat.inventory,
+  requests: createRequests({ day: () => dayNight.day(), inventory: seat.inventory }),
+  ...forSeat(seat, {
+    parent: seat.root,
+    active: () => me === seat,
+    onOpenChange: (open) => (open ? keys.clear() : saveGame()), // a trade is saved as soon as you walk off
+    known: (id) => !!ITEMS[id]?.recipe && learned.has(ITEMS[id].recipe), // (a recipe in the book already)
+  }),
 });
+shop = first.shop = newShop(first);
 
 // ---------- The neighbours ----------
 // Rosa, Basil, Finn and Mabel (shared/npcs.js), in and about their homes out
@@ -2937,30 +3113,44 @@ const shop = createShop({
 // have done what opens it) and what they would like you to do. E at their
 // door goes in (their room is out past the sea, as the house's is), and E at
 // the door inside comes back out. Where you stand with them is yours, saved
-// with your backpack.
-const npcs = createNpcs({ parent: worlds.home.root, inventory, ctx: () => missionCtx() });
+// with your backpack: each seat's own (`npcs`, the neighbours with where its
+// farmer stands with them; the first seat's, the farm's, is what shows of
+// their homes and yards).
+const npcWorld = createNpcs({ parent: worlds.home.root });
+const newNpcs = (seat) => ({
+  ...npcWorld,
+  ...npcWorld.standing({ inventory: seat.inventory, ctx: seated(seat, () => missionCtx()), onMends: () => showMends(), story: seat === first }),
+});
+// Finn's dock is mended if it is for anyone at the screen
+const showMends = () => npcHomes.dock.mend(seats.some((seat) => seat.npcs?.mended()));
+npcs = first.npcs = newNpcs(first);
 const missionCtx = () => ({
   have: (item) => inventory.count(item),
   built: (piece) => (place === 'home' && !(farmVisit && !farmVisit.mine) ? buildings.findAll(piece).length : 0), // (not what stands on a friend's farm we are visiting)
 });
-const dialog = createDialog({
-  npcs,
-  day: () => dayNight.day(),
-  hour: () => dayNight.hour(),
-  ctx: missionCtx,
-  onShop: (id) => openNpcShop(id),
-  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
-  notify: (text) => inventory.notify(text),
-  onDone: ({ mission, gold, items }) => {
-    sound.play('cheer');
-    hud.flash(`${NPCS[mission.npc].name}: ${mission.title}!`);
-    const got = [gold && `${gold}g`, ...items.map(([item, n]) => `${n > 1 ? `${n} × ` : ''}${ITEMS[item].name}`)].filter(Boolean);
-    if (got.length) inventory.notify(`From ${NPCS[mission.npc].name}: ${got.join(', ')}`);
-    if (mission.gives.opens === 'shop') inventory.notify(`${NPCS[mission.npc].title} is open to you now`);
-    readyNoted.delete(mission.id);
-    saveGame();
-  },
+const newDialog = (seat) => createDialog({
+  npcs: seat.npcs,
+  ...forSeat(seat, {
+    parent: seat.root,
+    active: () => me === seat,
+    day: () => dayNight.day(),
+    hour: () => dayNight.hour(),
+    ctx: missionCtx,
+    onShop: (id) => openNpcShop(id),
+    onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+    notify: (text) => inventory.notify(text),
+    onDone: ({ mission, gold, items }) => {
+      sound.play('cheer');
+      hud.flash(`${NPCS[mission.npc].name}: ${mission.title}!`);
+      const got = [gold && `${gold}g`, ...items.map(([item, n]) => `${n > 1 ? `${n} × ` : ''}${ITEMS[item].name}`)].filter(Boolean);
+      if (got.length) inventory.notify(`From ${NPCS[mission.npc].name}: ${got.join(', ')}`);
+      if (mission.gives.opens === 'shop') inventory.notify(`${NPCS[mission.npc].title} is open to you now`);
+      readyNoted.delete(mission.id);
+      saveGame();
+    },
+  }),
 });
+dialog = first.dialog = newDialog(first);
 // A neighbour's shop (src/shop.js): their shelves, those not open to you
 // yet locked, at their prices less a friend's discount
 function openNpcShop(id) {
@@ -3023,8 +3213,7 @@ function whereOnFarm() {
 }
 
 // A word when a request you have heard is ready to hand over (once, till it is)
-const readyNoted = new Set();
-let readyCheck = 0;
+readyNoted = first.readyNoted = new Set();
 function watchRequests(dt) {
   if ((readyCheck -= dt) > 0) return;
   readyCheck = 1;
@@ -3071,7 +3260,8 @@ function forageSpot() {
   }
   return null;
 }
-const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, forageSpot, onPickUp: (item, count) => inventory.add(item, count), isItem: (id) => !!ITEMS[id] });
+// (picked up by whichever farmer at the screen walks into it: i, their seat)
+const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, forageSpot, onPickUp: (item, count, i = 0) => within(seats[i] ?? first, () => inventory.add(item, count)), isItem: (id) => !!ITEMS[id] });
 
 // Put down what the backpack's window carries (inventory.js onDrop), at our
 // feet: in a lobby, or on a farm with helpers, its room has it, for anyone to
@@ -3104,45 +3294,64 @@ function dropFromBackpack(id, count) {
 // farm's save). It is a thing to bump into while it is there.
 let ownChest = {}; // item -> count
 let roomChest = {}; // what the room's chest has, as it last said
-const chest = createChest({
-  inventory,
-  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
-  onPut: (item, count) => {
-    if (farmVisit) return farmNet?.send({ t: C.CHEST_PUT, item, count });
-    if (!chestHasRoom(ownChest, item, count)) {
-      inventory.add(item, count, { quiet: true }); // (back where it came from)
-      return inventory.notify('The chest is full');
-    }
-    ownChest[item] = (ownChest[item] ?? 0) + count;
-    chest.setItems(ownChest);
-  },
-  onTake: (item, count) => {
-    if (farmVisit) return farmNet?.send({ t: C.CHEST_TAKE, item, count });
-    const n = Math.min(count, ownChest[item] ?? 0);
-    if (!n || !inventory.add(item, n)) return;
-    ownChest[item] -= n;
-    if (!ownChest[item]) delete ownChest[item];
-    chest.setItems(ownChest);
-    chest.refresh();
-  },
-});
-worlds.home.root.add(chest.root);
+// The chest on the farm is one; each seat has a window onto it (`chest`:
+// what is in it, whose it is and whether it is there are everyone's)
+const chestModel = createChestModel();
+function newChest(seat) {
+  const view = createChest({
+    inventory: seat.inventory,
+    model: chestModel,
+    ...forSeat(seat, {
+      parent: seat.root,
+      active: () => me === seat,
+      onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+      onPut: (item, count) => {
+        if (farmVisit) return farmNet?.send({ t: C.CHEST_PUT, item, count });
+        if (!chestHasRoom(ownChest, item, count)) {
+          inventory.add(item, count, { quiet: true }); // (back where it came from)
+          return inventory.notify('The chest is full');
+        }
+        ownChest[item] = (ownChest[item] ?? 0) + count;
+        chest.setItems(ownChest);
+      },
+      onTake: (item, count) => {
+        if (farmVisit) return farmNet?.send({ t: C.CHEST_TAKE, item, count });
+        const n = Math.min(count, ownChest[item] ?? 0);
+        if (!n || !inventory.add(item, n)) return;
+        ownChest[item] -= n;
+        if (!ownChest[item]) delete ownChest[item];
+        chest.setItems(ownChest);
+        chest.refresh();
+      },
+    }),
+  });
+  seat.chestWindow = view;
+  const everyone = (what) => (...args) => seats.forEach((s) => s.chestWindow[what](...args));
+  return { ...view, show: everyone('show'), setOwner: everyone('setOwner'), setItems: everyone('setItems'), refresh: everyone('refresh') };
+}
+chest = first.chest = newChest(first);
+worlds.home.root.add(chestModel.root);
 
 // ---------- Trading, in a lobby ----------
 // (shared/trade.js keeps the trade; src/ui/trade.js shows it.) Ask a farmer
 // standing near (their Trade button in the list), or say yes when one asks.
 const TRADE_ASK_REACH = 4.5; // (the lobby lets it be from 5)
-const trade = createTrade({
-  inventory,
-  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
-  onOffer: (offer) => net?.send({ t: C.TRADE_OFFER, ...offer }),
-  onReady: (ready, v) => net?.send({ t: C.TRADE_READY, ready, v }),
-  onCancel: () => {
-    net?.send({ t: C.TRADE_CANCEL });
-    trade.close();
-  },
-  onAnswer: (id) => askTrade(id),
+const newTrade = (seat) => createTrade({
+  inventory: seat.inventory,
+  ...forSeat(seat, {
+    parent: seat.root,
+    active: () => me === seat,
+    onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+    onOffer: (offer) => net?.send({ t: C.TRADE_OFFER, ...offer }),
+    onReady: (ready, v) => net?.send({ t: C.TRADE_READY, ready, v }),
+    onCancel: () => {
+      net?.send({ t: C.TRADE_CANCEL });
+      trade.close();
+    },
+    onAnswer: (id) => askTrade(id),
+  }),
 });
+trade = first.trade = newTrade(first);
 
 function askTrade(id) {
   if (place !== 'lobby' || !net) return;
@@ -3198,12 +3407,17 @@ function pourOwnChest(theirs) {
 
 // The workbench (workbench.js): built in build mode, and E next to one opens it
 const BENCH_REACH = 1.7; // from its middle
-const workbench = createWorkbench({
-  inventory,
-  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
-  upgrades: { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade },
-  chest: { stock: chestStock, spend: spendFromChest },
+const newWorkbench = (seat) => createWorkbench({
+  inventory: seat.inventory,
+  ...forSeat(seat, {
+    parent: seat.root,
+    active: () => me === seat,
+    onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  }),
+  upgrades: forSeat(seat, { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade }),
+  chest: forSeat(seat, { stock: chestStock, spend: spendFromChest }),
 });
+workbench = first.workbench = newWorkbench(first);
 
 // What the workbench uses of the chest ({ item: count }, what the backpack is
 // short of): from our own chest at once, or on our farm with helpers from the
@@ -3238,7 +3452,8 @@ function spendFromChest(items) {
 
 // The arcade (arcade.js): built in build mode too, and E next to it opens
 // it; every game won or lost is saved
-const arcade = createArcade({ inventory, onOpenChange: (open) => (open ? keys.clear() : saveGame()), onChange: () => saveGame() });
+const newArcade = (seat) => createArcade({ inventory: seat.inventory, ...forSeat(seat, { parent: seat.root, active: () => me === seat, onOpenChange: (open) => (open ? keys.clear() : saveGame()), onChange: () => saveGame() }) });
+arcade = first.arcade = newArcade(first);
 
 // ---------- The farm's upgrades ----------
 // Bought at the workbench (workbench.js), and saved with the farm (`levels`):
@@ -3303,20 +3518,25 @@ function upgrade(id) {
 // happened), and what anyone collects goes into their own backpack.
 const machines = createMachines({ buildings, root: worlds.home.root });
 const pendingLoads = new Map(); // tiles we loaded a machine on that the farm's room hasn't said yes to yet -> what came out of the backpack for it
-const learned = new Set(); // the kitchen's recipes read into the recipe book
+learned = first.learned = new Set(); // the kitchen's recipes read into the recipe book (each seat's own)
 const known = (dish) => DISHES[dish]?.learn === 'start' || learned.has(dish);
-const cooking = createCooking({
-  inventory,
-  known,
-  onCampfire: (key, dish, n, took) => loadMachine(key, dish, n, took) && npcs.did('cook'), // (Mabel likes to hear of it: shared/npcs.js)
-  onKitchen: (dish, n) => {
-    inventory.add(dish, n);
-    npcs.did('cook');
-    houseRoom.cooked();
-    puffs.puff(new THREE.Vector3().copy(houseRoom.potSpot()), { rise: true });
-  },
-  onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+const newCooking = (seat) => createCooking({
+  inventory: seat.inventory,
+  ...forSeat(seat, {
+    parent: seat.root,
+    active: () => me === seat,
+    known,
+    onCampfire: (key, dish, n, took) => loadMachine(key, dish, n, took) && npcs.did('cook'), // (Mabel likes to hear of it: shared/npcs.js)
+    onKitchen: (dish, n) => {
+      inventory.add(dish, n);
+      npcs.did('cook');
+      houseRoom.cooked();
+      puffs.puff(new THREE.Vector3().copy(houseRoom.potSpot()), { rise: true });
+    },
+    onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+  }),
 });
+cooking = first.cooking = newCooking(first);
 
 // game hours, in words
 function timeLeft(hours) {
@@ -3449,7 +3669,6 @@ function readRecipe(id) {
 // time: another puts the last one's out. A dish double-clicked in the
 // backpack is eaten too. A `shared` one (the farm feast) eaten on a farm with
 // helpers: the room tells everyone there (FEAST), and it is theirs as well.
-let meal = null; // { dish, kinds, level, left (seconds) }, or null
 function eat(dish = inventory.selectedId(), fromSlot = true) {
   if (!DISHES[dish] || !(fromSlot ? inventory.consumeSelected(1) : inventory.remove(dish, 1))) return;
   meal = { dish, ...boostFrom(dish) };
@@ -3486,6 +3705,9 @@ function showChest(on, collider = on) {
   }
 }
 const splash = new Splash({
+  parent: first.root,
+  onAddPlayer: () => startJoin(),
+  players: () => seats.length,
   onPlay: joinLobby,
   onHome: () => goHome(),
   onHelping: () => farmSync.helping(),
@@ -3539,7 +3761,7 @@ const splash = new Splash({
 // server/presence.js): an invitation to a lobby pops up the moment it comes
 // (ui/invite.js), wherever we are, and when a lobby we said yes to (or
 // started) opens, off we go to it.
-const invites = new InvitePopups({ onAnswer: (party, yes) => presence.send({ t: PC.ANSWER, party, yes }) });
+const invites = new InvitePopups({ parent: first.root, onAnswer: (party, yes) => presence.send({ t: PC.ANSWER, party, yes }) });
 const presence = new PresenceLink({
   auth: () => (farmSync.account() ? farmSync.auth() : null),
   onMessage: (m) => {
@@ -3573,6 +3795,7 @@ function dressMe() {
 
 // The wardrobe in the house: the menu's Your farmer page (what we wear is kept with the account)
 function openWardrobe() {
+  if (me !== first) return inventory.notify(me.profile?.kind === 'account' ? 'Your clothes are kept with your account: change them in your own game' : 'A guest wears what they came in');
   if (!farmSync.account()) return inventory.notify('Log in to change clothes: they are kept with your account');
   keys.clear();
   splash.show({ page: 'farmer', direct: true });
@@ -3626,6 +3849,7 @@ function goHome() {
 // Onto a farm's room: ours (its helpers may be on it) or a friend's
 async function joinFarm(id) {
   const mine = id === farmSync.id();
+  endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (a farm's room is for the farmer of this page alone)
   if (farmVisit) leaveFarm();
   farmNet?.leave();
   farmNet = null;
@@ -3960,6 +4184,7 @@ function leaveLobbyWorld() {
 // place as us are drawn. Once it is over, the results (and the prize) a
 // moment, and home: to the farm we were on before (backToFarm).
 const partyHud = new PartyHud({
+  parent: first.root,
   onLeave: () => backToFarm(),
   nameOf: (id) => lobbyNames.get(id) ?? 'Someone',
 });
@@ -4182,6 +4407,7 @@ function partyOver(m) {
 }
 
 function joinLobby({ name, code }) {
+  endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (a lobby too)
   net?.leave();
   splash.setStatus('Walking over…');
   const conn = (net = new Connection({ name, color: myColor(), look: myLook(), code, auth: farmSync.auth() }));
@@ -4416,12 +4642,21 @@ function showFarm(farm) {
   animals.restore(farm, farmHours()); // (the eggs due while we were away are in the nest)
 }
 
+// The first seat's save: the farm, and its farmer's own (character)
 function currentSave() {
   if (farmOnScreen) homeFarm = captureFarm();
-  return { v: SAVE_VERSION, farm: homeFarm, backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize() };
+  return { v: SAVE_VERSION, farm: homeFarm, ...within(first, character) };
 }
 
+// What a farmer carries wherever they go, for their save: the backpack and the rest (the seat's)
+function character() {
+  return { backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize() };
+}
+
+// Everyone's at the screen: the farm and the first seat's farmer, and each
+// farmer who joined them (to their own account, or this browser: saveSeat)
 function saveGame() {
+  for (const seat of seats) if (seat !== first && seat.profile) saveSeat(seat);
   if (!saving) return;
   // (on our farm with its helpers: the animals are ours to keep, the rest is the room's)
   if (farmVisit?.mine) farmNet?.send({ t: C.ANIMALS, state: { ...animals.capture(), levels: { ...farmLevels } } });
@@ -4451,9 +4686,18 @@ function keepAside(name, text) {
 function useSave(save) {
   if (save.v > SAVE_VERSION) {
     saving = false;
-    hud.setConnStatus('This farm was saved by a newer version of the game. Reload the page to play it: nothing is saved until then.');
+    first.hud.setConnStatus('This farm was saved by a newer version of the game. Reload the page to play it: nothing is saved until then.');
     return false;
   }
+  homeFarm = save.farm ?? null;
+  within(first, () => useCharacter(save));
+  if (farmOnScreen) showFarm(homeFarm);
+  return true;
+}
+
+// A farmer's own out of their save, into the seat (its backpack and the rest;
+// what joined the kit since, for an older save)
+function useCharacter(save) {
   // (a lamp post or bench made at the workbench before they were built
   // straight from wood and stone comes back as what it cost)
   const unmade = {};
@@ -4464,7 +4708,6 @@ function useSave(save) {
   book.restore(save.found); // (none before the book: what is in the backpack, below)
   npcs.restore(save.npcs); // (none before the neighbours: nobody met yet)
   for (const [item, n] of Object.entries(unmake(unmade))) gift(item, n);
-  homeFarm = save.farm ?? null;
   bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
   learned.clear();
   for (const dish of Array.isArray(save.recipes) ? save.recipes : []) if (DISHES[dish]?.cook === 'kitchen') learned.add(dish);
@@ -4473,9 +4716,7 @@ function useSave(save) {
   if (save.v < 2) gift('flax_seeds', 5);
   if (save.v < 3) gift('axe', 1);
   if (save.v < 6) gift('pickaxe', 1);
-  book.seed([...inventory.serialize().slots.map((s) => s?.id), ...Object.keys(homeFarm?.chest ?? {})]);
-  if (farmOnScreen) showFarm(homeFarm);
-  return true;
+  book.seed([...inventory.serialize().slots.map((s) => s?.id), ...Object.keys(save.farm?.chest ?? {})]);
 }
 
 function loadGame() {
@@ -4521,12 +4762,282 @@ setInterval(saveGame, 5000);
 addEventListener('pagehide', leavePage);
 document.addEventListener('visibilitychange', () => document.hidden && leavePage());
 
+// ---------- More farmers at the screen: a split screen ----------
+// On our own farm, played in this page (not with its online helpers, nor in
+// a lobby), up to MAX_SEATS farmers play at once, each on a controller of
+// their own. The menu's Add a player waits for A (or Start) on a controller
+// nobody has; once two are playing, Start on another joins straight away.
+// The new farmer's panel asks who they are (src/ui/seatpanel.js): a farmer
+// played here before, their account (logging in), or a guest
+// (src/net/players.js). Their backpack, gold, skills and the rest come
+// along, and are saved back to them (saveSeat) as the farm is saved, and
+// when they get up from the screen. The farm is the first seat's: what they
+// grow, build or put in the chest stays on it. Heading online (a lobby, a
+// farm's room) is the first seat's alone: everyone else gets up first.
+const MAX_SEATS = 4;
+const JOIN_WAIT = 30_000; // ms the menu's Add a player waits for a controller
+const JOIN_BUTTONS = [0, 9]; // A, and Start (Menu): its press joins
+let joining = null; // waiting for a new farmer's controller: { until } (performance.now())
+const padsDown = []; // which controllers had a join button down, last frame (by index)
+const joinEl = el('div', 'seats-join', seatsEl);
+joinEl.hidden = true;
+
+// Why no one else can join now ('': they can)
+function coopProblem() {
+  if (place !== 'home' || farmVisit || farmNet || !farmOnScreen) return 'Farmers join at the screen on your own farm';
+  if (farmSync.shared()) return 'Your farm is played with its online helpers: a split screen is for a farm played here';
+  if (seats.length >= MAX_SEATS) return `${MAX_SEATS} farmers at one screen is as many as fit`;
+  return '';
+}
+
+// The menu's Add a player: wait for a controller of the new farmer's own. Why not ('' : waiting)
+function startJoin() {
+  const problem = coopProblem();
+  if (problem) return problem;
+  if (padInUse() && first.pad.index !== null) first.padIndex = first.pad.index; // (the controller the first farmer plays with stays theirs)
+  joining = { until: performance.now() + JOIN_WAIT };
+  showJoinHint();
+  return '';
+}
+
+function stopJoin() {
+  joining = null;
+  showJoinHint();
+}
+
+// Each frame: a press of A or Start on a controller nobody has, while the
+// menu's Add a player waits (or Start, once two play): a new farmer
+function watchJoin() {
+  const pads = [...(navigator.getGamepads?.() ?? [])];
+  if (joining && (performance.now() > joining.until || !splash.hidden || coopProblem())) stopJoin();
+  for (const p of pads) {
+    if (!p?.connected) continue;
+    const down = JOIN_BUTTONS.some((b) => p.buttons[b]?.pressed);
+    const fresh = down && !padsDown[p.index];
+    padsDown[p.index] = down;
+    if (!fresh || seats.some((seat) => seat.padIndex === p.index) || (!joining && !p.buttons[9]?.pressed)) continue;
+    if (joining || (seats.length > 1 && !coopProblem())) {
+      stopJoin();
+      return addSeat(p.index);
+    }
+  }
+}
+
+// What the screen says of joining: waiting for a controller, or, three at
+// it, how a fourth joins (in the empty part)
+function showJoinHint() {
+  const n = seats.length + 1;
+  joinEl.hidden = !joining && seats.length !== 3;
+  joinEl.classList.toggle('waiting', !!joining);
+  joinEl.textContent = '';
+  if (joining) {
+    joinEl.append(`Player ${n}: press A on your controller`);
+    el('small', '', joinEl, 'Esc or the menu: not now');
+  } else if (seats.length === 3) {
+    joinEl.append('Another farmer?');
+    el('small', '', joinEl, 'Press Start on a controller to join');
+  }
+}
+
+// A new seat, on controller padIndex: its farmer waits (hidden) till they
+// have said who they are
+function addSeat(padIndex) {
+  const index = [1, 2, 3].find((i) => !seats.some((seat) => seat.index === i));
+  const seat = newSeat(index);
+  seat.padIndex = padIndex;
+  seat.root.classList.add('choosing');
+  seatsEl.append(seat.root);
+  makeSeat(seat);
+  seats.push(seat);
+  seats.sort((a, b) => a.index - b.index);
+  layout();
+  within(seat, () => {
+    playerMesh.visible = false;
+    hud.showHome();
+    putDown(besideFirst(seat));
+  });
+  placeChest(); // (its window onto the chest: what is in it, and whose it is)
+  seat.panel.choose(playerChoices());
+  return seat;
+}
+
+// Everything a seat has of its own (the first seat's are made as the code gets to them)
+function makeSeat(seat) {
+  seat.camera = newCamera();
+  seat.camTarget = new THREE.Vector3();
+  seat.camOffset = new THREE.Vector3();
+  seat.inventory = newInventory(seat);
+  seat.skills = newSkills(seat);
+  seat.pettedOn = new WeakMap();
+  seat.chop = newChop();
+  seat.mine = newChop();
+  seat.knock = new THREE.Vector3();
+  seat.player = newBody();
+  seat.lastGoodSpot = new THREE.Vector3().copy(seat.player.position);
+  makeFarmer(seat);
+  seat.keys = new Set();
+  seat.glider = createGlider(seat.farmer);
+  seat.marker = newMarker();
+  seat.tileCursor = newTileCursor();
+  seat.touch = NO_TOUCH;
+  seat.pad = newPad(seat);
+  seat.hud = newHud(seat);
+  seat.guide = NO_GUIDE;
+  seat.fishLog = createFishLog();
+  seat.book = newBook(seat);
+  seat.fishing = newFishing(seat);
+  seat.bosses = newBosses(seat);
+  seat.shop = newShop(seat);
+  seat.npcs = newNpcs(seat);
+  seat.dialog = newDialog(seat);
+  seat.readyNoted = new Set();
+  seat.chest = newChest(seat);
+  seat.trade = newTrade(seat);
+  seat.workbench = newWorkbench(seat);
+  seat.arcade = newArcade(seat);
+  seat.learned = new Set();
+  seat.cooking = newCooking(seat);
+  seat.tag = el('div', 'seat-tag', seat.root);
+  seat.panel = new SeatPanel({
+    parent: seat.root,
+    n: seat.index + 1,
+    onPick: (profile) => seatFarmer(seat, profile),
+    onLogin: async ({ username, password }) => seatFarmer(seat, await logInPlayer(username, password)),
+    onGuest: ({ name, color }) => seatFarmer(seat, newGuest(name, color)),
+    onForget: (profile) => forgetPlayer(profile.id),
+    onLeave: () => dropSeat(seat),
+  });
+}
+
+// The farmers played here before, who aren't at the screen now (nor the first seat's own)
+const playerChoices = () => rememberedPlayers().filter((p) => p.id !== farmSync.id() && !seats.some((seat) => seat.profile?.id === p.id));
+
+// Where a new farmer stands: beside the first one
+const besideFirst = (seat) => ({ x: first.player.position.x + 0.8 * seat.index, y: first.player.position.y, z: first.player.position.z + 0.6 });
+
+// Who a seat's farmer is, by name
+function seatName(seat) {
+  if (seat === first) return farmSync.account()?.username ?? 'Player 1';
+  return seat.profile?.name ?? `Player ${seat.index + 1}`;
+}
+
+// A seat's farmer is `profile`'s (src/net/players.js): theirs out of their
+// save (a new guest: a starter kit), on the farm beside the first farmer.
+// Throws with why not.
+async function seatFarmer(seat, profile) {
+  if (profile.kind === 'account' && profile.farm.id === farmSync.id()) throw new Error(`That is ${seatName(first)}'s own farmer, playing already`);
+  if (seats.some((other) => other.profile?.id === profile.id)) throw new Error(`${profile.name} is playing already`);
+  const sync = new PlayerSync(profile, { onLost: (why) => within(seat, () => inventory.notify(why)) });
+  const save = await sync.open();
+  if (save?.v > SAVE_VERSION) throw new Error(`${profile.name}'s farmer was saved by a newer version of the game: reload the page to play them`);
+  if (!seats.includes(seat)) return; // (they got up meanwhile)
+  Object.assign(seat, { profile, sync, ownFarm: save?.farm ?? null });
+  within(seat, () => {
+    if (save?.v >= 1) useCharacter(save);
+    else for (const [item, count] of STARTER_KIT) gift(item, count); // (a new guest)
+    dress(profile.color ?? PLAYER_COLORS[seat.index], profile.look ?? DEFAULT_LOOK);
+    playerMesh.visible = true;
+    putDown(besideFirst(seat));
+    inventory.notify(`Welcome to the farm, ${profile.name}!`);
+  });
+  seat.root.classList.remove('choosing');
+  seat.panel.hide();
+  showMends();
+  showTags();
+  saveSeat(seat);
+}
+
+// A seat's farmer, saved back to them (their farm as it was: theirs stays where it is)
+function saveSeat(seat) {
+  seat.sync?.push({ v: SAVE_VERSION, farm: seat.ownFarm, ...within(seat, character) });
+}
+
+// A farmer gets up from the screen (why: what everyone is told, if they are)
+function dropSeat(seat, why = '') {
+  if (seat === first || !seats.includes(seat)) return;
+  const save = seat.profile && { v: SAVE_VERSION, farm: seat.ownFarm, ...within(seat, character) };
+  within(seat, () => {
+    if (building) stopBuilding();
+    fishing.dispose();
+    bosses.leave();
+  });
+  seats.splice(seats.indexOf(seat), 1);
+  scene.remove(seat.playerMesh, seat.marker, seat.tileCursor);
+  if (dayNight.glow.parent === seat.playerMesh) first.playerMesh.add(dayNight.glow);
+  seat.root.remove();
+  if (seats.length === 1) first.padIndex = null; // (alone again: any controller is the first farmer's)
+  layout();
+  showMends();
+  if (seat.profile) first.inventory.notify(why || `${seat.profile.name} got up from the screen: their farmer is saved`);
+  seat.sync?.close(save);
+}
+
+// Everyone but the first farmer gets up (heading online, say)
+function endCoop(why) {
+  for (const seat of [...seats]) dropSeat(seat, why);
+  stopJoin();
+}
+
+// The name over each part of a split screen
+function showTags() {
+  for (const seat of seats) {
+    if (!seat.tag) seat.tag = el('div', 'seat-tag', seat.root);
+    seat.tag.textContent = '';
+    el('i', 'ui-dot', seat.tag).style.background = hexColor(seat === first ? myColor() : seat.profile?.color ?? 0xffffff);
+    seat.tag.append(seatName(seat));
+  }
+}
+
+// The controller a seat reads: its own (padIndex); the first seat's, playing
+// alone, the first connected (as it always was)
+function pickPad(seat, pads) {
+  if (seat.padIndex !== null) return pads[seat.padIndex]?.connected ? pads[seat.padIndex] : null;
+  if (seat !== first || seats.length > 1 || joining) return null;
+  return pads.find((p) => p?.connected) ?? null;
+}
+
+// Each seat's part of the screen: all of it, alone; two side by side (one
+// over the other on a screen taller than wide); three or four, its quarters
+function layout() {
+  const { innerWidth: w, innerHeight: h } = window;
+  const n = seats.length;
+  const wide = w >= h;
+  const cells = n === 1 ? [[0, 0, 1, 1]]
+    : n === 2 ? (wide ? [[0, 0, 0.5, 1], [0.5, 0, 0.5, 1]] : [[0, 0, 1, 0.5], [0, 0.5, 1, 0.5]])
+    : [[0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]];
+  // (a line of the gap's color between the parts: each loses a pixel at an edge it shares)
+  const px = ([cx, cy, cw, ch]) => {
+    const [x0, y0, x1, y1] = [Math.round(cx * w), Math.round(cy * h), Math.round((cx + cw) * w), Math.round((cy + ch) * h)];
+    const [l, t, r, b] = [x0 + (x0 > 0), y0 + (y0 > 0), x1 - (x1 < w), y1 - (y1 < h)];
+    return { x: l, y: t, w: r - l, h: b - t };
+  };
+  seats.forEach((seat, i) => {
+    seat.rect = px(cells[i]);
+    Object.assign(seat.root.style, { left: `${seat.rect.x}px`, top: `${seat.rect.y}px`, width: `${seat.rect.w}px`, height: `${seat.rect.h}px` });
+    seat.root.classList.toggle('by-clock', seat.rect.y === 0 && seat.rect.x + seat.rect.w === w); // (the clock is over its top right: daynight.js)
+    within(seat, fitCamera);
+  });
+  const spare = n === 3 && px(cells[3]);
+  Object.assign(joinEl.style, spare ? { left: `${spare.x}px`, top: `${spare.y}px`, width: `${spare.w}px`, height: `${spare.h}px` } : { left: '', top: '', width: '', height: '' });
+  seatsEl.classList.toggle('split', n > 1);
+  renderer.setSize(w, h);
+  showJoinHint();
+  showTags();
+}
+
 // ---------- Game loop ----------
 const clock = new THREE.Clock();
-const _chest = new THREE.Vector3(); // trees between the camera and here fade out
-playerMesh.add(dayNight.glow); // night-time glow follows the player
+playerMesh.add(dayNight.glow); // night-time glow follows the player (in a split screen, each one's in their own view: lookFrom)
 
+// Each frame: each seat's farmer, then the world they are all in
 function update(dt) {
+  watchJoin();
+  for (const seat of seats) within(seat, () => updateSeat(dt));
+  updateWorld(dt);
+}
+
+// A seat's farmer, each frame: its input, its moving about, what it is doing
+function updateSeat(dt) {
   pad.poll(dt); // (its buttons press their keys, before the keys are read)
   if (inputBlocked()) keys.clear();
 
@@ -4550,6 +5061,7 @@ function update(dt) {
 
   const moveVec = new THREE.Vector3(moveX, 0, moveZ);
   const moving = moveVec.lengthSq() > 0;
+  me.moving = moving; // (the animals scurry off from a farmer on the move)
   if (moving) moveVec.multiplyScalar((MOVE_SPEED * devSpeed * (arenaId ? 1 : bosses.speed()) * boostOf(meal, 'speed') * Math.min(moveVec.length(), 1)) / moveVec.length()); // (dizzy from a boss: slower; riding, or after a meal, maybe faster; in a party game's arena everyone runs alike)
   player.velocity.x = moveVec.x + knock.x;
   player.velocity.z = moveVec.z + knock.z;
@@ -4640,10 +5152,6 @@ function update(dt) {
 
   const t = clock.elapsedTime;
   fishing.update(t);
-  ripples.update(dt);
-  arrows.update(dt);
-  fishShadows.update(dt, fishing.bobber());
-  world.updateTrees(dt);
   if (building && place !== 'home') stopBuilding();
   if (place === 'lobby' && arenaId) {
     updateArena(dt);
@@ -4659,10 +5167,7 @@ function update(dt) {
     sendState(dt);
     remotes.update(dt, t);
   } else {
-    merchant.update(dt, t, player.position);
-    npcs.update(dt, t, player.position, dayNight.hour());
-    npcHomes.animate(t);
-    chest.update(dt);
+    npcs.updateSigns(dt); // (what the neighbours have for this farmer, over their heads)
     if (place === 'home') {
       watchRequests(dt);
       updateChopping();
@@ -4675,16 +5180,39 @@ function update(dt) {
       remotes.update(dt, t);
     }
   }
+  bosses.update(dt, t); // (what the bosses and the dungeons mean for this farmer)
+  if (me === first ? splash.hidden : true) guide.update(dt, guideState());
+  underground = bosses.underground().k;
+  updateMeal(dt);
+  if (place === 'title') updateMenuCamera(t);
+  else updateCamera(dt);
+  // (where its view's trees fade out of the way, between the camera and here)
+  me.eye.set(player.position.x, player.position.y + 0.3, player.position.z);
+}
 
-  farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: !inputBlocked(), at: player.position });
+// The world, each frame (after each seat's farmer: the first seat's own are in place)
+function updateWorld(dt) {
+  const t = clock.elapsedTime;
+  ripples.update(dt);
+  arrows.update(dt);
+  fishShadows.update(dt, fishing.bobber());
+  world.updateTrees(dt);
+  if (place !== 'lobby') {
+    merchant.update(dt, t, nearestFarmer(merchant.root.position));
+    npcs.update(dt, t, seats.map((seat) => seat.player.position), dayNight.hour(), npcs.signs());
+    npcHomes.animate(t);
+    chestModel.update(dt, seats.some((seat) => seat.chestWindow.isOpen()));
+  }
+
+  const playing = seats.some((seat) => within(seat, () => !inputBlocked())); // (anyone, not behind a menu)
+  farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: playing, at: seats.map((seat) => seat.player.position) });
   regrowFarm();
   rollFarmGiants();
-  bosses.update(dt, t);
+  bossWorld.update(dt, t);
   giantBars.update(t);
   windTime.value += dt * (1 + weather.wind.length() * 0.6); // (the grass sways harder in a storm's wind)
-  _chest.set(player.position.x, player.position.y + 0.3, player.position.z);
-  world.updateTreeFade(dt, _chest, camera);
-  if (place === 'lobby') updateSkyFade(dt, _chest, camera); // (and sky isles over us: src/skyisles.js)
+  world.updateTreeFade(dt, me.eye, camera, seats.map((seat) => [seat.eye, seat.camera]));
+  if (place === 'lobby') updateSkyFade(dt, me.eye, camera); // (and sky isles over us: src/skyisles.js)
   world.update(t);
   water.position.y = WATER_Y + Math.sin(t * 0.8) * 0.03;
 
@@ -4694,17 +5222,17 @@ function update(dt) {
   // still fast-forward it).
   const atHome = place !== 'lobby' && !farmVisit;
   presence.where(place === 'lobby' ? 'lobby' : farmVisit ? 'farm' : 'home'); // (for friends' lists)
-  if (splash.hidden) guide.update(dt, guideState());
-  const fastForward = keys.has('KeyT') && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
+  // (anyone at the screen holding T; and the clock stops only while everyone is in a menu)
+  const fastForward = seats.some((seat) => seat.keys.has('KeyT')) && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
+  const allInMenus = seats.every((seat) => within(seat, () => menuOpen() || (seat === first && !splash.hidden)));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour() - devJump; // (and the developer tools' jump, as if it passed now)
   devJump = 0;
   // down in a boss's dungeon: no sky, no sea, a dim light of its own
   const cave = bosses.underground();
-  underground = cave.k;
   dayNight.setUnderground(cave.k, cave.light);
   water.visible = cave.k < 0.5;
   dayNight.update(dt, {
-    paused: atHome && (menuOpen() || !splash.hidden),
+    paused: atHome && allInMenus,
     fastForward,
     focus: player.position,
   });
@@ -4719,23 +5247,26 @@ function update(dt) {
   const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: indoors() || cave.k > 0.5 });
   dayNight.setNote(season && (sky ? `${season} · ${sky}` : season));
   machines.update(farmHours(), t, dt);
-  updateMeal(dt);
   houseRoom.setNight(dayNight.night());
   npcHomes.setNight(dayNight.night());
-  houseRoom.update(t, player.position);
+  houseRoom.update(t, seats.map((seat) => seat.player.position));
   seasons.frame(dt, { home: place !== 'lobby', focus: indoors() || cave.k > 0.5 ? null : player.position });
   lightFarmers(hemi.color, 0.13 * hemi.intensity); // (their edges catch the sky's light)
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
-      player: { pos: player.position, moving, onGround: player.onGround },
-      collect: collectProduce, // (the eggs)
+      players: seats.map((seat) => ({
+        pos: seat.player.position,
+        moving: seat.moving,
+        onGround: seat.player.onGround,
+        collect: seated(seat, collectProduce), // (the eggs)
+      })),
     });
   }
-
-  if (place === 'title') updateMenuCamera(t);
-  else updateCamera(dt);
 }
+
+// The farmer at the screen nearest `at` (where they are)
+const nearestFarmer = (at) => seats.map((seat) => seat.player.position).reduce((a, b) => (Math.hypot(b.x - at.x, b.z - at.z) < Math.hypot(a.x - at.x, a.z - at.z) ? b : a));
 
 // What E does here at home, for the prompt
 function homePrompt() {
@@ -4771,9 +5302,34 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   if (!frozen) {
     update(dt);
-    renderer.render(scene, camera);
+    draw();
   }
   requestAnimationFrame(animate);
+}
+
+// Each seat's view, in its part of the screen (alone: all of it)
+const SPLIT_GAP = new THREE.Color(0x1d120a); // (between the views)
+function draw() {
+  const split = seats.length > 1;
+  const { innerWidth: w, innerHeight: h } = window;
+  renderer.setScissorTest(split);
+  renderer.setViewport(0, 0, w, h);
+  if (split) {
+    renderer.setScissor(0, 0, w, h);
+    renderer.setClearColor(SPLIT_GAP);
+    renderer.clear();
+  }
+  for (const seat of seats) {
+    within(seat, () => {
+      const { x, y, w: vw, h: vh } = seat.rect;
+      if (split) {
+        renderer.setViewport(x, h - y - vh, vw, vh);
+        renderer.setScissor(x, h - y - vh, vw, vh);
+      }
+      lookFrom(split);
+      renderer.render(scene, camera);
+    });
+  }
 }
 
 // Testing: `seconds` of game time, in steps of `dt`, as fast as they compute
@@ -4804,10 +5360,11 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw: () => renderer.render(scene, camera), sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, weather };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, seats, addSeat, dropSeat, seatFarmer, startJoin, within, layout };
 }
 
 loadGame();
+layout();
 splash.show({ from: 'title' });
 openFarm();
 animate();

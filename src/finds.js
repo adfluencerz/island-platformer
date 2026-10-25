@@ -36,7 +36,8 @@ function roll(table = FINDS) {
 
 // freeSpot(): somewhere on the farm for a find, { x, y, z } (y: the ground), or null.
 // forageSpot(): somewhere out in the valley for forage, { x, y, z, ground }, or null.
-// onPickUp(item, count): into the backpack; false if there was no room.
+// onPickUp(item, count, i): into the backpack (of farmer i, of update's at);
+// false if there was no room.
 // isItem(id): an item there is (a save is not to be trusted).
 export function createFarmFinds({ scene, freeSpot, forageSpot = () => null, onPickUp, isItem = () => true }) {
   const finds = []; // { item, count, mesh, x, y, z, age, retryAt, own, away, wild } (own: dropped by the farmer; away: they have stepped off it since; wild: forage)
@@ -99,8 +100,9 @@ export function createFarmFinds({ scene, freeSpot, forageSpot = () => null, onPi
   }
 
   // active: on our own farm, alone. counting: being played (not behind a menu).
-  // at: the farmer's position (Vector3).
+  // at: the farmer's position (Vector3), or each farmer's at the screen.
   function update(dt, t, { active, counting, at }) {
+    const farmers = [at].flat();
     for (const find of finds) find.mesh.visible = active;
     if (!active) {
       if (finds.some((f) => !f.own)) clear();
@@ -126,10 +128,11 @@ export function createFarmFinds({ scene, freeSpot, forageSpot = () => null, onPi
       mesh.scale.setScalar(size * Math.min(1, find.age / GROW));
       mesh.position.y = find.y + Math.sin(t * 2 + find.x) * 0.15;
       mesh.rotation.y += dt * 1.5;
-      const near = Math.hypot(find.x - at.x, mesh.position.y - at.y, find.z - at.z) < REACH;
-      if (find.own && !find.away) find.away = !near; // (dropped: not back into the backpack till we have stepped off it)
-      if (!near || (find.own && !find.away) || performance.now() < find.retryAt) continue;
-      if (onPickUp(find.item, find.count)) remove(find);
+      const near = farmers.map((at) => Math.hypot(find.x - at.x, mesh.position.y - at.y, find.z - at.z) < REACH);
+      if (find.own && !find.away) find.away = !near.some(Boolean); // (dropped: not back into the backpack till we have stepped off it)
+      const i = near.indexOf(true);
+      if (i < 0 || (find.own && !find.away) || performance.now() < find.retryAt) continue;
+      if (onPickUp(find.item, find.count, i)) remove(find);
       else find.retryAt = performance.now() + 1000;
     }
   }

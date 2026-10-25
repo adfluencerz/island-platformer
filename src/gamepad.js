@@ -55,6 +55,11 @@ let usingPad = false; // the last thing pressed was on a controller (prompts say
 export const padInUse = () => usingPad;
 for (const type of ['keydown', 'mousedown', 'touchstart']) addEventListener(type, (e) => e.isTrusted && (usingPad = false), { capture: true, passive: true });
 
+// A farmer at a split screen of their own (src/main.js seats) plays with a
+// controller of their own: each one's GamepadInput reads the controller
+// main.js picks for it (pick), and moves its highlight about the menus and
+// windows in its farmer's part of the screen (root) only.
+
 // (from the page, as a real key's comes, not at the window: so the listeners
 // that catch keys on their way down, the HUD's, have them first)
 const key = (type, code) => document.body.dispatchEvent(new KeyboardEvent(type, { code, key: KEY_NAMES[code] ?? code, bubbles: true, cancelable: true }));
@@ -86,8 +91,13 @@ export class GamepadInput {
   // inMenu(): a menu, a window or the chat line has the keys (not the farmer).
   // onCycle(dir): the toolbar's next item (1) or the one before (-1).
   // onZoom(factor): the camera nearer (< 1) or further. onConnect(name).
-  constructor({ inMenu, onCycle, onZoom, onConnect }) {
-    Object.assign(this, { inMenu, onCycle, onZoom, onConnect });
+  // pick(pads): the controller to read, of navigator.getGamepads() (default:
+  // the first connected). root: where its menus and windows are. keyboard:
+  // its farmer has the keyboard and the mouse too (the first one does), so
+  // which was used last says what the prompts show.
+  constructor({ inMenu, onCycle, onZoom, onConnect, pick = (pads) => pads.find((p) => p?.connected) ?? null, root = document, keyboard = true }) {
+    Object.assign(this, { inMenu, onCycle, onZoom, onConnect, pick, root, keyboard });
+    this.index = null; // the controller last read with something pressed on it (its index)
     this.was = []; // the buttons down last frame
     this.held = new Map(); // key code -> the buttons holding it down
     this.walk = { x: 0, y: 0 };
@@ -97,13 +107,19 @@ export class GamepadInput {
     addEventListener('gamepadconnected', (e) => this.onConnect?.(e.gamepad.id));
   }
 
+  // The last thing pressed was on a controller (the keyboard's farmer); a
+  // farmer without the keyboard always plays with one
+  using() {
+    return !this.keyboard || usingPad;
+  }
+
   // The stick as the world's x and z (as the touch stick's: up the screen is -z)
   direction() {
     return { x: this.walk.x, z: this.walk.y };
   }
 
   poll(dt) {
-    const pad = [...(navigator.getGamepads?.() ?? [])].find((p) => p?.connected);
+    const pad = this.pick([...(navigator.getGamepads?.() ?? [])]);
     if (!pad) {
       this.letGo();
       this.walk.x = this.walk.y = 0;
@@ -113,8 +129,11 @@ export class GamepadInput {
     const pressed = (i) => down[i] && !this.was[i];
     const left = stick(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
     const right = stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
-    const woke = !usingPad; // (the controller picked up again: in a menu, this press only shows the highlight)
-    if (down.some(Boolean) || left.x || left.y || right.x || right.y) usingPad = true;
+    const woke = !this.using(); // (the controller picked up again: in a menu, this press only shows the highlight)
+    if (down.some(Boolean) || left.x || left.y || right.x || right.y) {
+      if (this.keyboard) usingPad = true;
+      this.index = pad.index;
+    }
 
     const menu = this.inMenu();
     if (menu || this.overlay) {
@@ -165,14 +184,14 @@ export class GamepadInput {
   // The menu or window on top (the title screen's, or a window like the
   // backpack's), or null: playing (the buttons on the screen, then)
   layer() {
-    const open = [...document.querySelectorAll('.ui-splash, .inv-menu')].filter(shown);
+    const open = [...this.root.querySelectorAll('.ui-splash, .inv-menu')].filter(shown);
     return open.at(-1) ?? null;
   }
 
   // What the highlight can go to: the layer's buttons and slots, and an
   // invitation's (over everything)
   targets(layer) {
-    const roots = layer ? [layer, ...document.querySelectorAll('.ui-invites')] : [...document.querySelectorAll(OVERLAYS)];
+    const roots = layer ? [layer, ...this.root.querySelectorAll('.ui-invites')] : [...this.root.querySelectorAll(OVERLAYS)];
     return roots.flatMap((root) => [...root.querySelectorAll(FOCUSABLE)]).filter(shown);
   }
 
@@ -183,7 +202,7 @@ export class GamepadInput {
       if (pressed(BTN.B) || pressed(BTN.MENU)) this.tap('Escape');
       return;
     }
-    if (!usingPad) return this.blur(); // (the mouse or the keys have it: no highlight in their way)
+    if (!this.using()) return this.blur(); // (the mouse or the keys have it: no highlight in their way)
     // (what it can go to, looked for only when it has to go somewhere)
     let found = null;
     const list = () => (found ??= this.targets(layer));

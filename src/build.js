@@ -2042,13 +2042,18 @@ export function createBuildings(world) {
   }
 
   // ---------- The see-through piece build mode shows where it would go ----------
-  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x8cff7a, transparent: true, opacity: 0.45, depthWrite: false });
-  const ghostEdge = new THREE.Mesh(
-    new THREE.RingGeometry(0.62, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
-    ghostMat
-  );
-  ghostEdge.position.y = 0.09;
-  let ghost = null; // { group, id, key }
+  // (one for each farmer building: slot, their seat at the screen, src/main.js)
+  const ghosts = []; // slot -> { mat, edge, group, id, key }
+  function ghostSlot(slot) {
+    if (ghosts[slot]) return ghosts[slot];
+    const mat = new THREE.MeshBasicMaterial({ color: 0x8cff7a, transparent: true, opacity: 0.45, depthWrite: false });
+    const edge = new THREE.Mesh(
+      new THREE.RingGeometry(0.62, 0.7, 4, 1, Math.PI / 4).rotateX(-Math.PI / 2),
+      mat
+    );
+    edge.position.y = 0.09;
+    return (ghosts[slot] = { mat, edge, group: null, id: null, key: null });
+  }
 
   return {
     // what stands on tile key (any tile of it), or null
@@ -2160,18 +2165,19 @@ export function createBuildings(world) {
     },
 
     // Show where `id` would go on tile key (null: nowhere), green or red
-    // (ok). id 'remove': just the tile's outline.
-    preview(key, id, ok) {
+    // (ok). id 'remove': just the tile's outline. slot: whose (a seat's)
+    preview(key, id, ok, slot = 0) {
+      const ghost = ghostSlot(slot);
       if (!key) {
-        if (ghost) ghost.group.visible = false;
+        if (ghost.group) ghost.group.visible = false;
         return;
       }
       const [gx, gz] = gridOf(key);
-      if (!ghost || ghost.id !== id || ghost.key !== key) {
-        if (ghost) {
+      if (!ghost.group || ghost.id !== id || ghost.key !== key) {
+        if (ghost.group) {
           world.root.remove(ghost.group);
           // (the chest's shapes are its own, not shared like the pieces')
-          if (ghost.id === 'farm_chest') ghost.group.traverse((obj) => obj.isMesh && obj !== ghostEdge && obj.geometry.dispose());
+          if (ghost.id === 'farm_chest') ghost.group.traverse((obj) => obj.isMesh && obj !== ghost.edge && obj.geometry.dispose());
           else disposeOwn(ghost.group);
         }
         const group = id === 'remove' || !PIECES[id]
@@ -2181,16 +2187,16 @@ export function createBuildings(world) {
             : model(id, gx, gz, joinedAt(id, gx, gz)).group;
         group.traverse((obj) => {
           if (!obj.isMesh) return;
-          obj.material = ghostMat;
+          obj.material = ghost.mat;
           obj.castShadow = false;
         });
-        group.add(ghostEdge);
+        group.add(ghost.edge);
         group.position.set(gx * TILE_SIZE, 0.01, gz * TILE_SIZE);
         world.root.add(group);
-        ghost = { group, id, key };
+        Object.assign(ghost, { group, id, key });
       }
       ghost.group.visible = true;
-      ghostMat.color.set(ok ? 0x8cff7a : 0xff6b5a);
+      ghost.mat.color.set(ok ? 0x8cff7a : 0xff6b5a);
     },
   };
 }

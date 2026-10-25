@@ -2,7 +2,7 @@
 
 /* Stardew-ish wood-and-parchment palette */
 :root {
-  --inv-slot: clamp(28px, calc((100vw - 120px) / 12), 56px);
+  --inv-slot: clamp(28px, calc((100cqw - 120px) / 12), 56px);
   --inv-ink: #5b2b0a;
   --inv-outline: #3d1a04;
   --inv-wood: #d97a1c;
@@ -166,7 +166,7 @@
 .inv-window {
   position: relative;
   padding: 22px 20px 16px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100cqw - 24px);
   box-sizing: border-box;
   animation: inv-in 0.15s ease-out;
 }
@@ -309,16 +309,16 @@
 :root.compact .inv-tabs .inv-tab { font-size: 20px; padding: 5px 9px 9px; }
 /* A phone held upright: the window as wide as the screen whichever tab is open,
    and the tabs across it, clear of the close button, as big as fits */
-@media (max-width: 520px) {
+@container seat (max-width: 520px) {
   :root.compact .bag-window { width: 100%; margin-top: 40px; }
   /* (seven tabs: in two rows if they don't fit in one, the first row against the window) */
   :root.compact .bag-window .inv-tabs { left: 8px; right: 30px; gap: 3px; top: auto; bottom: calc(100% - 5px); flex-wrap: wrap-reverse; }
-  :root.compact .bag-window .inv-tab { flex: 0 0 auto; white-space: nowrap; font-size: clamp(14px, 4.6vw, 20px); padding: 5px 7px 9px; }
+  :root.compact .bag-window .inv-tab { flex: 0 0 auto; white-space: nowrap; font-size: clamp(14px, 4.6cqw, 20px); padding: 5px 7px 9px; }
 }
 .inv-pack[hidden], .inv-build[hidden] { display: none; }
 
 /* (as wide as the backpack's grid, or the screen, less the window's padding) */
-.inv-build { width: min(calc(12 * var(--inv-slot) + 33px), calc(100vw - 76px)); }
+.inv-build { width: min(calc(12 * var(--inv-slot) + 33px), calc(100cqw - 76px)); }
 .inv-build-note { font-size: 20px; margin-bottom: 10px; opacity: 0.8; }
 .inv-build-groups { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .inv-build-group {

@@ -37,7 +37,7 @@ const times = (p) => (p === 0.5 ? '½' : String(p)) + '×';
 
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
 // onChange(): gold was won or lost (the page saves).
-export function createArcade({ inventory, onOpenChange, onChange }) {
+export function createArcade({ inventory, onOpenChange, onChange, parent = document.body, active = () => true }) {
   let open = false;
   let tab = 'coin';
   let stake = 50;
@@ -48,7 +48,7 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
   let lucky = null; // Lucky Hand: the game being played (or the last one)
   let picks = new Set(); // Lucky Hand: the places in the hand picked
 
-  const menuEl = el('div', 'inv-menu arcade-menu', document.body);
+  const menuEl = el('div', 'inv-menu arcade-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame arcade-window', menuEl);
   const tabsEl = el('div', 'inv-tabs', windowEl);
@@ -353,7 +353,7 @@ export function createArcade({ inventory, onOpenChange, onChange }) {
   // Capture phase, like the workbench's: while the arcade is open it has the
   // keyboard (E closes it, except while typing a stake)
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     const typing = e.target === stakeIn;
     if ((e.code === 'Escape' || (e.code === 'KeyE' && !typing)) && !e.repeat) setOpen(false);

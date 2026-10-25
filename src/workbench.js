@@ -60,11 +60,11 @@ const UPGRADES = [
 // chest: { stock(): { item: count } of what the chest has to make things
 // with, spend({ item: count }): a promise of whether it was all there, and
 // is used up now }
-export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { stock: () => ({}), spend: async () => false } }) {
+export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { stock: () => ({}), spend: async () => false }, parent = document.body, active = () => true }) {
   let open = false;
   let busy = false; // (waiting to hear whether the chest had it)
 
-  const menuEl = el('div', 'inv-menu bench-menu', document.body);
+  const menuEl = el('div', 'inv-menu bench-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame bench-window', menuEl);
   el('div', 'inv-tab inv-frame', windowEl, 'Workbench');
@@ -226,7 +226,7 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
 
   // Capture phase, like the chest's: while the workbench is open it has the keyboard
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     if ((e.code === 'Escape' || e.code === 'KeyE') && !e.repeat) setOpen(false);
   }, true);

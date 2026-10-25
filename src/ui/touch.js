@@ -98,9 +98,10 @@ function holdButton(node, code) {
 }
 
 export class TouchControls {
-  constructor() {
+  // parent: where its buttons go (the first farmer's part of the screen, src/main.js)
+  constructor({ parent = document.body } = {}) {
     this.stick = { x: 0, y: 0 }; // where the thumbstick points: -1..1, y down the screen
-    const root = (this.root = el('div', 'tc', document.body));
+    const root = (this.root = el('div', 'tc', parent));
 
     // ---- the thumbstick ----
     const base = el('div', 'tc-stick', root);

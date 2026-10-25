@@ -1,7 +1,7 @@
 import './trade.css';
 import { ITEMS, spriteURL } from '../items.js';
 import { COLS, SLOT_COUNT, CATEGORIES } from '../inventory.js';
-import { el, button } from './dom.js';
+import { el, button, placeTip } from './dom.js';
 import { TRADE, tradeable } from '../../shared/trade.js';
 
 // ---------- Trading with another farmer, in a lobby ----------
@@ -22,14 +22,14 @@ import { TRADE, tradeable } from '../../shared/trade.js';
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
 // onOffer({ items, gold }), onReady(ready, v), onCancel(), onAnswer(id): say
 // yes to farmer id's ask (TRADE_ASK them back)
-export function createTrade({ inventory, onOpenChange, onOffer, onReady, onCancel, onAnswer }) {
+export function createTrade({ inventory, onOpenChange, onOffer, onReady, onCancel, onAnswer, parent = document.body, active = () => true }) {
   let open = false;
   let name = ''; // whom with
   let state = null; // the lobby's TRADE: { with, v, n, mine, theirs, ready, theirsReady }
   let sent = 0; // offers we've made (TRADE's n says which the lobby has: till it has the last, ours stands)
 
   // ---------- The window ----------
-  const menuEl = el('div', 'inv-menu trade-menu', document.body);
+  const menuEl = el('div', 'inv-menu trade-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame trade-window', menuEl);
   const tabEl = el('div', 'inv-tab inv-frame', windowEl);
@@ -72,11 +72,11 @@ export function createTrade({ inventory, onOpenChange, onOffer, onReady, onCance
   const hintEl = el('div', 'inv-hint chest-hint', windowEl);
   el('span', 'mouse-only', hintEl, 'Click your things: offer the stack (right click: one more) · Click your offer: take it back');
   el('span', 'touch-only', hintEl, 'Tap your things to offer them · Tap your offer to take it back');
-  const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
+  const tooltipEl = el('div', 'inv-tooltip inv-frame', parent);
   tooltipEl.hidden = true;
 
   // ---------- Someone asks ----------
-  const askEl = el('div', 'trade-ask inv-frame', document.body);
+  const askEl = el('div', 'trade-ask inv-frame', parent);
   askEl.hidden = true;
   const askText = el('span', '', askEl);
   let askFrom = 0;
@@ -189,10 +189,7 @@ export function createTrade({ inventory, onOpenChange, onOffer, onReady, onCance
       <div class="inv-tt-name">${def.name}</div>
       <div class="inv-tt-cat" style="color:${CATEGORIES[def.category]}">${def.category}</div>
       <div class="inv-tt-meta">${note}</div>`;
-    const r = tooltipEl.getBoundingClientRect();
-    const left = x + 20 + r.width > window.innerWidth ? x - r.width - 12 : x + 20;
-    const top = y + 20 + r.height > window.innerHeight ? y - r.height - 12 : y + 20;
-    tooltipEl.style.transform = `translate(${Math.max(4, left)}px, ${Math.max(4, top)}px)`;
+    placeTip(tooltipEl, x, y);
   }
 
   gridEl.addEventListener('mousedown', (e) => {
@@ -218,7 +215,7 @@ export function createTrade({ inventory, onOpenChange, onOffer, onReady, onCance
   // Capture phase, like the chest's: while the window is open it has the
   // keyboard (the gold box still gets what is typed)
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     if (e.code === 'Escape' && !e.repeat) onCancel();
     if (e.code === 'Enter' && e.target === goldIn) goldIn.blur();
     if (e.target !== goldIn) e.stopPropagation();

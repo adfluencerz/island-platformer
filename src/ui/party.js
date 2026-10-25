@@ -18,9 +18,9 @@ function scoreText(kind, score) {
 
 export class PartyHud {
   // onLeave(): Head home (and once the results have been up a while). nameOf(id): a player's name.
-  constructor({ onLeave, nameOf }) {
+  constructor({ onLeave, nameOf, parent = document.body }) {
     Object.assign(this, { onLeave, nameOf });
-    this.root = el('div', 'ui-party inv-frame', document.body);
+    this.root = el('div', 'ui-party inv-frame', parent);
     this.root.hidden = true;
     this.title = el('div', 'ui-party-title', this.root);
     this.line = el('div', 'ui-party-line', this.root);

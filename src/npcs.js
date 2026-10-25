@@ -104,10 +104,11 @@ function signSprite(kind) {
 }
 const SIGN_RANGE = 22; // they show from this far off
 
-// parent: the farm's world root (they are only on the farm). inventory:
-// the backpack (count, remove, add, earn, canAdd). ctx(): what the missions
-// are checked against ({ have(item), built(piece) }, main.js).
-export function createNpcs({ parent, inventory, ctx }) {
+// parent: the farm's world root (they are only on the farm). Where a farmer
+// stands with them is standing()'s: each farmer at the screen has their own
+// (src/main.js seats), from their save; the signs over the neighbours' heads
+// are each one's own (showSigns: in their own view of a split screen).
+export function createNpcs({ parent }) {
   // ---------- The people ----------
   const people = {};
   for (const id of NPC_IDS) {
@@ -178,16 +179,18 @@ export function createNpcs({ parent, inventory, ctx }) {
     return true;
   }
 
-  // dt, t: game time; you: the farmer's position; hour: the farm's clock
-  function update(dt, t, you, hour) {
-    updateSigns(dt);
+  // dt, t: game time; you: the farmers' positions (they watch the nearest);
+  // hour: the farm's clock; signs: which sign each shows (a standing's signs())
+  function update(dt, t, you, hour, signs = {}) {
     npcHomes.setHour(hour);
+    const farmers = [you].flat();
     for (const p of Object.values(people)) {
       const doing = routine(p.id, hour);
       if (doing !== p.doing) begin(p, doing);
       const moving = p.doing === 'yard' && wander(p, dt);
       const asleep = p.doing === 'sleep';
       // they watch you come over (behind the counter, without turning their back on it)
+      const you = farmers.reduce((a, b) => (Math.hypot(b.x - p.at.x, b.z - p.at.z) < Math.hypot(a.x - p.at.x, a.z - p.at.z) ? b : a));
       const dx = you.x - p.at.x;
       const dz = you.z - p.at.z;
       const near = !moving && !asleep && Math.hypot(dx, dz) < WATCH_RANGE && Math.abs(you.y - STAND_Y - p.at.y) < 2;
@@ -206,29 +209,18 @@ export function createNpcs({ parent, inventory, ctx }) {
       }
       p.zzz.visible = asleep;
       if (asleep) p.zzz.position.set(p.at.x + 0.4, 1.5 + Math.sin(t * 1.5) * 0.12, p.at.z - 0.5);
-      // the sign over their head, if they have something for you
-      for (const [kind, sprite] of Object.entries(p.signs)) {
-        sprite.visible = !asleep && p.sign === kind && Math.hypot(dx, dz) < SIGN_RANGE;
-        if (sprite.visible) sprite.position.set(p.at.x, p.at.y + 2.5 + Math.sin(t * 2.2 + p.at.x) * 0.07, p.at.z);
-      }
+      p.bob = Math.sin(t * 2.2 + p.at.x) * 0.07;
     }
+    showSigns(signs, farmers[0]);
   }
-  // which sign each of them should show: the most pressing thing they have
-  // for you (a request to hand over, then a message to tell, a moment to
-  // share, a request to hear)
-  let signCheck = 0;
-  function updateSigns(dt) {
-    if ((signCheck -= dt) > 0) return;
-    signCheck = 0.5;
-    const here = ctx();
-    for (const id of NPC_IDS) {
-      const st = status(id, here);
-      let sign = null;
-      if (st.mission && st.heard && st.ready) sign = 'ready';
-      else if (messagesFor(id, states, deeds).length) sign = 'message';
-      else if (momentsDue(id, states[id], view(id)).length) sign = 'moment';
-      else if (st.mission && !st.heard) sign = 'new';
-      people[id].sign = sign;
+  // The sign over each one's head, if they have something for you (signs: a
+  // standing's signs(); you: where you are)
+  function showSigns(signs, you) {
+    for (const p of Object.values(people)) {
+      for (const [kind, sprite] of Object.entries(p.signs)) {
+        sprite.visible = p.doing !== 'sleep' && signs[p.id] === kind && Math.hypot(you.x - p.at.x, you.z - p.at.z) < SIGN_RANGE;
+        if (sprite.visible) sprite.position.set(p.at.x, p.at.y + 2.5 + (p.bob ?? 0), p.at.z);
+      }
     }
   }
 
@@ -269,15 +261,35 @@ export function createNpcs({ parent, inventory, ctx }) {
     return { x: door.x, z: door.z + 0.9 };
   };
 
-  // ---------- Where you stand with them ----------
+  return {
+    update,
+    showSigns,
+    talkable,
+    doorInReach,
+    exitInReach,
+    entry,
+    outside,
+    inside: (pos) => roomAt(pos.x, pos.z),
+    doing: (id) => people[id].doing,
+    asleep: (id) => people[id].doing === 'sleep',
+    roots: () => Object.values(people).map((p) => [p.id, p.model.root]),
+    standing,
+  };
+}
+
+// ---------- Where a farmer stands with them ----------
+// inventory: the farmer's backpack (count, remove, add, earn, canAdd). ctx():
+// what their missions are checked against ({ have(item), built(piece) },
+// main.js). onMends(mended): Finn's dock as they see it (the farm shows it
+// mended if it is for anyone at the screen). story: what shows of the
+// neighbours' homes and yards is theirs (the farm's own farmer's).
+function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), story = true }) {
   let states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
   let deeds = {};
 
   // The farm as you see it: Finn's dock mended once you have done that for him
-  function showMends() {
-    const mended = Object.values(MISSIONS).some((m) => m.gives.mends === 'dock' && states[m.npc].done.includes(m.id));
-    npcHomes.dock.mend(mended);
-  }
+  const mended = () => Object.values(MISSIONS).some((m) => m.gives.mends === 'dock' && states[m.npc].done.includes(m.id));
+  const showMends = () => onMends(mended());
 
   const state = (id) => states[id];
   const hearts = (id) => heartsFor(states[id].points, FRIENDSHIP);
@@ -294,7 +306,7 @@ export function createNpcs({ parent, inventory, ctx }) {
     chose: (key) => states[id].chose[key],
   });
   // What shows of their home and yard, for how you stand with them (src/npchomes.js)
-  const showStory = (id) => npcHomes.show(id, view(id));
+  const showStory = (id) => story && npcHomes.show(id, view(id));
   const showAll = () => NPC_IDS.forEach(showStory);
 
   // Give what a reward has in it (gold, items): false, and nothing given, if
@@ -316,19 +328,32 @@ export function createNpcs({ parent, inventory, ctx }) {
     return { mission, heard, needs, ready: heard && needs.every((n) => n.ok) };
   }
 
+  // which sign each of them shows you: the most pressing thing they have
+  // for you (a request to hand over, then a message to tell, a moment to
+  // share, a request to hear)
+  const signs = {};
+  let signCheck = 0;
+  function updateSigns(dt) {
+    if ((signCheck -= dt) > 0) return;
+    signCheck = 0.5;
+    const here = ctx();
+    for (const id of NPC_IDS) {
+      const st = status(id, here);
+      let sign = null;
+      if (st.mission && st.heard && st.ready) sign = 'ready';
+      else if (messagesFor(id, states, deeds).length) sign = 'message';
+      else if (momentsDue(id, states[id], view(id)).length) sign = 'moment';
+      else if (st.mission && !st.heard) sign = 'new';
+      signs[id] = sign;
+    }
+  }
+
   showAll(); // (a new farmer has no save to read: what shows with nothing done yet, shows)
 
   return {
-    update,
-    talkable,
-    doorInReach,
-    exitInReach,
-    entry,
-    outside,
-    inside: (pos) => roomAt(pos.x, pos.z),
-    doing: (id) => people[id].doing,
-    asleep: (id) => people[id].doing === 'sleep',
-    roots: () => Object.values(people).map((p) => [p.id, p.model.root]),
+    // Each frame (dt: game time): the signs over their heads, as they are for you now
+    updateSigns,
+    signs: () => signs,
 
     state,
     hearts,
@@ -435,6 +460,7 @@ export function createNpcs({ parent, inventory, ctx }) {
       showAll();
     },
     showMends,
+    mended,
     showAll,
     // (the developer tools: their mission now, done, as if handed over, and
     // what it gives given (the first of a choice of rewards); nothing taken.

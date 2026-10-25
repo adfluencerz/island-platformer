@@ -19,9 +19,9 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   flex-direction: column;
   gap: 10px;
   padding: 22px 24px;
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
-  max-height: calc(100dvh - 32px); /* (the screen less the browser's bars) */
+  width: min(440px, calc(100cqw - 32px));
+  max-height: calc(100cqh - 32px);
+  max-height: calc(100cqh - 32px); /* (the screen less the browser's bars) */
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -253,7 +253,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   align-items: center;
   gap: 12px;
   padding: 8px 10px 8px 16px;
-  max-width: min(460px, calc(100vw - 540px));
+  max-width: min(460px, calc(100cqw - 540px));
   z-index: 10;
 }
 .ui-build-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.05; }
@@ -282,7 +282,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   top: 38%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: clamp(50px, 9.8vw, 90px);
+  font-size: clamp(50px, 9.8cqw, 90px);
   font-weight: 700;
   white-space: nowrap;
   color: #fff;
@@ -346,7 +346,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   position: fixed;
   right: 12px;
   bottom: calc(var(--inv-slot) + 40px); /* above the toolbar */
-  width: min(360px, calc(100vw - 24px));
+  width: min(360px, calc(100cqw - 24px));
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -379,7 +379,7 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-chat-form { display: flex; }
 .ui-chat-form .ui-input { flex: 1; }
 
-@media (max-width: 760px) {
+@container seat (max-width: 760px) {
   .ui-players { width: 190px; }
 }
 

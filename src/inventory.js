@@ -3,6 +3,7 @@ import { ITEMS, PIECE_ICONS, spriteURL } from './items.js';
 import { PIECES, BUILD_GROUPS } from '../shared/level.js';
 import { buzz } from './ui/touch.js';
 import { play } from './sound.js';
+import { frameOf, placeTip } from './ui/dom.js';
 
 // ---------- Slot-based inventory (Stardew Valley style) ----------
 // 3 rows x 12 slots. The first row doubles as the always-visible toolbar; the
@@ -109,7 +110,9 @@ function iconImg(parent) {
 // onDrop({ id, count }): put the carried stack down on the ground; true if
 // it went (false: it stays carried, and onDrop has said why).
 // onEat(id): a dish double-clicked in the backpack, to eat one.
-export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {}, renderBook = () => {}, renderQuests = () => {}, renderMap = () => {} } = {}) {
+// parent: where its toolbar and windows go (a farmer's part of a split
+// screen, src/main.js). active(): the keys pressed now are its farmer's.
+export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {}, renderBook = () => {}, renderQuests = () => {}, renderMap = () => {}, parent = document.body, active = () => true } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
@@ -130,19 +133,19 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   }
 
   // Toolbar, bottom center
-  const hotbarEl = el('div', 'inv-hotbar inv-frame', document.body);
+  const hotbarEl = el('div', 'inv-hotbar inv-frame', parent);
   const hotbarViews = HOTBAR.map((i) => makeSlot(hotbarEl, i, HOTBAR_LABELS[i]));
 
   // Gold counter, top right
-  const fundsEl = el('div', 'inv-funds inv-frame', document.body);
+  const fundsEl = el('div', 'inv-funds inv-frame', parent);
   iconImg(fundsEl).src = spriteURL(ITEMS.coin);
   const digitEls = Array.from({ length: FUNDS_DIGITS }, () => el('span', 'inv-digit', fundsEl));
 
   // Pickup notices, bottom left
-  const toastsEl = el('div', 'inv-toasts', document.body);
+  const toastsEl = el('div', 'inv-toasts', parent);
 
   // Backpack menu
-  const menuEl = el('div', 'inv-menu', document.body);
+  const menuEl = el('div', 'inv-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame bag-window', menuEl);
   const tabsEl = el('div', 'inv-tabs', windowEl);
@@ -196,12 +199,12 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   el('span', 'mouse-only', hintEl).textContent = 'Click: pick up / place · Right click or Ctrl+click: take one (Shift: half) · Shift+click: move to/from toolbar · Click outside: drop';
   el('span', 'touch-only', hintEl).textContent = 'Tap: pick up / place · Hold: take one · Tap outside: drop · The top row is your toolbar';
 
-  const heldEl = el('div', 'inv-held', document.body);
+  const heldEl = el('div', 'inv-held', parent);
   const heldImg = iconImg(heldEl);
   const heldCount = el('span', 'inv-count', heldEl);
   heldEl.hidden = true;
 
-  const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
+  const tooltipEl = el('div', 'inv-tooltip inv-frame', parent);
   tooltipEl.hidden = true;
 
   // ---------- Rendering ----------
@@ -319,11 +322,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
       <div class="inv-tt-desc">${def.description}</div>
       ${stackLine}${sellLine}`;
     tooltipEl.hidden = false;
-    // Sit below-right of the cursor, flipping when it would leave the screen
-    const r = tooltipEl.getBoundingClientRect();
-    const left = x + 20 + r.width > window.innerWidth ? x - r.width - 12 : x + 20;
-    const top = y + 20 + r.height > window.innerHeight ? y - r.height - 12 : y + 20;
-    tooltipEl.style.transform = `translate(${Math.max(4, left)}px, ${Math.max(4, top)}px)`;
+    placeTip(tooltipEl, x, y); // (below-right of the cursor, flipping when it would leave the screen)
   }
 
   // ---------- Toasts ----------
@@ -575,7 +574,7 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
 
   // ---------- Input ----------
   window.addEventListener('keydown', (e) => {
-    if (e.target.closest?.('input, textarea, select')) return; // typing a name or a chat line
+    if (!active() || e.target.closest?.('input, textarea, select')) return; // (another farmer's keys; typing a name or a chat line)
     if (e.code === 'KeyI' && !e.repeat) {
       if (!open) setTab('pack'); // (the bag opens on the backpack, even after the Build tab)
       setOpen(!open);
@@ -725,7 +724,9 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
   });
 
   window.addEventListener('pointermove', (e) => {
-    heldEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+    if (!active()) return;
+    const f = frameOf(heldEl);
+    heldEl.style.transform = `translate(${e.clientX - f.x}px, ${e.clientY - f.y}px)`;
     const slot = e.target.closest?.('[data-index]');
     showTooltip(slot && !held ? slots[Number(slot.dataset.index)] : null, e.clientX, e.clientY);
   });

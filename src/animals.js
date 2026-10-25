@@ -855,7 +855,7 @@ export function createAnimals() {
     }
   }
 
-  function think(a, dt, player) {
+  function think(a, dt, players) {
     const bedtime = isBedtime(hours);
     if (a.state === 'asleep') {
       if (bedtime) {
@@ -875,9 +875,9 @@ export function createAnimals() {
       }
     }
 
-    const toPlayer = Math.hypot(player.pos.x - a.pos.x, player.pos.z - a.pos.z);
     const calm = ['petted', 'toDoor', 'roost', 'emerge'].includes(a.state);
-    if (!calm && a.def.startle && player.moving && player.onGround && toPlayer < a.def.startle) {
+    const player = !calm && a.def.startle && players.find((p) => p.moving && p.onGround && Math.hypot(p.pos.x - a.pos.x, p.pos.z - a.pos.z) < a.def.startle);
+    if (player) {
       // off she goes, away from the farmer
       const away = Math.atan2(a.pos.x - player.pos.x, a.pos.z - player.pos.z) + rand(-0.5, 0.5);
       walkTo(a, clampRoam(a, { x: a.pos.x + Math.sin(away) * 1.8, z: a.pos.z + Math.cos(away) * 1.8 }), 'scurry');
@@ -915,7 +915,7 @@ export function createAnimals() {
 
   // Animals keep a little room between them (and nudge the farmer aside: the
   // bigger ones, which you'd otherwise walk through)
-  function makeRoom(player) {
+  function makeRoom(players) {
     for (let i = 0; i < animals.length; i++) {
       const a = animals[i];
       if (!a.root.visible) continue;
@@ -933,14 +933,17 @@ export function createAnimals() {
         b.pos.x += dx * push;
         b.pos.z += dz * push;
       }
-      if (a.kind === 'hen' || player.pos.y > 1.2 + a.def.radius) continue;
-      const dx = player.pos.x - a.pos.x;
-      const dz = player.pos.z - a.pos.z;
-      const d = Math.hypot(dx, dz);
-      const room = a.def.radius + 0.35;
-      if (d < room && d > 0) {
-        player.pos.x += (dx / d) * (room - d);
-        player.pos.z += (dz / d) * (room - d);
+      if (a.kind === 'hen') continue;
+      for (const player of players) {
+        if (player.pos.y > 1.2 + a.def.radius) continue;
+        const dx = player.pos.x - a.pos.x;
+        const dz = player.pos.z - a.pos.z;
+        const d = Math.hypot(dx, dz);
+        const room = a.def.radius + 0.35;
+        if (d < room && d > 0) {
+          player.pos.x += (dx / d) * (room - d);
+          player.pos.z += (dz / d) * (room - d);
+        }
       }
     }
   }
@@ -989,15 +992,16 @@ export function createAnimals() {
     }
   }
 
-  // player: { pos, moving, onGround } (pos is moved if she's in the way).
-  // collect(item): one into the backpack, false if it's full.
-  function update(dt, t, { hours: now, player, collect }) {
+  // players: [{ pos, moving, onGround, collect }], each farmer about (pos is
+  // moved if she's in the way; collect(item): one into their backpack, false
+  // if it's full). (Or one, as player and collect.)
+  function update(dt, t, { hours: now, player, collect, players = [{ ...player, collect }] }) {
     hours = now;
     for (const a of animals) {
-      think(a, dt, player);
+      think(a, dt, players);
       if (a.kind === 'hen') lay(a);
     }
-    makeRoom(player);
+    makeRoom(players);
     for (const a of animals) animate(a, dt, t);
     for (const a of animals) a.twinkle?.(t);
 
@@ -1005,8 +1009,8 @@ export function createAnimals() {
       const egg = eggs[i];
       egg.wobble = Math.max(0, egg.wobble - dt * 0.7);
       egg.mesh.rotation.x = Math.sin(t * 14) * 0.25 * egg.wobble;
-      const near = Math.hypot(player.pos.x - egg.x, player.pos.z - egg.z) < EGG_REACH && player.pos.y < 1.6;
-      if (near && collect?.(egg.large ? 'large_egg' : 'egg')) {
+      const near = (p) => Math.hypot(p.pos.x - egg.x, p.pos.z - egg.z) < EGG_REACH && p.pos.y < 1.6;
+      if (players.some((p) => near(p) && p.collect?.(egg.large ? 'large_egg' : 'egg'))) {
         root.remove(egg.mesh);
         eggs.splice(i, 1);
       }

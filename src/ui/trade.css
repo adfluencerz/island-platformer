@@ -2,7 +2,7 @@
    (inventory.css, chest.css), like the shop */
 .trade-window {
   width: max-content;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100cqw - 24px);
   margin-top: 30px; /* room for the tab */
 }
 

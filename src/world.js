@@ -1216,11 +1216,11 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     clearFoliageOnTile,
     restoreFoliage,
     // eye: the player's chest; trees in front of it fade out
-    updateTreeFade(dt, eye, camera) {
+    // views: [[eye, camera], ...] (a split screen: a tree in the way of any of them fades)
+    updateTreeFade(dt, eye, camera, views = [[eye, camera]]) {
       const k = damp(8, dt);
-      _eye.copy(eye);
       for (const tree of trees) {
-        const blocking = tree.state === 'up' && blocksView(tree, _eye, camera);
+        const blocking = tree.state === 'up' && views.some(([at, cam]) => blocksView(tree, _eye.copy(at), cam));
         tree.fade += ((blocking ? 0.25 : 1) - tree.fade) * k;
         const transparent = tree.fade < 0.99;
         for (const mat of tree.materials) {

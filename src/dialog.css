@@ -1,13 +1,13 @@
 /* Talking to a neighbour (src/dialog.js): built from the backpack's and the shop's pieces */
 .talk-window {
-  width: min(560px, calc(100vw - 24px));
+  width: min(560px, calc(100cqw - 24px));
   margin-top: 30px; /* room for the tab */
 }
 
 /* (all but Shop and Bye: it scrolls on a screen too short for it) */
 .talk-body {
-  max-height: calc(100vh - 150px);
-  max-height: calc(100dvh - 150px);
+  max-height: calc(100cqh - 150px);
+  max-height: calc(100cqh - 150px);
   overflow-y: auto;
   /* room for the bubble to bump into, without moving anything */
   margin-right: -8px;
@@ -137,9 +137,9 @@
 :root.compact .talk-key { width: 22px; height: 22px; font-size: 15px; }
 
 /* A short screen (a phone on its side): all of it smaller, to fit */
-@media (max-height: 460px) {
+@container seat (max-height: 460px) {
   .talk-window { margin-top: 26px; padding: 14px 14px 10px; }
-  .talk-body { max-height: calc(100vh - 112px); max-height: calc(100dvh - 112px); }
+  .talk-body { max-height: calc(100cqh - 112px); max-height: calc(100cqh - 112px); }
   .talk-face, :root.compact .talk-face { width: 44px; height: 44px; }
   .talk-say, :root.compact .talk-say { min-height: 44px; padding: 5px 10px; font-size: 17px; }
   .talk-hearts { margin: 2px 0 4px 2px; font-size: 15px; }

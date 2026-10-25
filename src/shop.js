@@ -2,7 +2,7 @@ import './shop.css';
 import { ITEMS, spriteURL } from './items.js';
 import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
 import { MERCHANT_STOCK } from '../shared/balance.js';
-import { el, button } from './ui/dom.js';
+import { el, button, placeTip } from './ui/dom.js';
 
 // ---------- A shop ----------
 // Opened with E at the merchant's stall on the home farm (merchant.js), or
@@ -66,13 +66,13 @@ const coinImg = (parent) => {
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
 // requests: the merchant's request of the day (src/requests.js), or none.
 // known(id): a recipe already in the book (not to be bought again).
-export function createShop({ inventory, onOpenChange, requests = null, known = () => false }) {
+export function createShop({ inventory, onOpenChange, requests = null, known = () => false, parent = document.body, active = () => true }) {
   let open = false;
   let shop = MERCHANT; // whose shop it is: { title, shelves: [{ title, items, locked, lockText }], lines, request, discount }
   const lines = (kind) => shop.lines[kind] ?? LINES[kind];
   const priceOf = (id) => Math.max(1, Math.round(ITEMS[id].price * (1 - (shop.discount ?? 0))));
 
-  const menuEl = el('div', 'inv-menu shop-menu', document.body);
+  const menuEl = el('div', 'inv-menu shop-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame shop-window', menuEl);
   const tabEl = el('div', 'inv-tab inv-frame', windowEl, 'Merchant');
@@ -143,7 +143,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
   el('span', 'mouse-only', hintEl, 'Click to buy one (Shift: five) · Click your items: sell the stack · Right click: sell one');
   el('span', 'touch-only', hintEl, 'Tap to buy one · Tap your items: sell the stack');
 
-  const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
+  const tooltipEl = el('div', 'inv-tooltip inv-frame', parent);
   tooltipEl.hidden = true;
 
   // ---------- Rendering ----------
@@ -215,10 +215,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     tooltipEl.hidden = !html;
     if (!html) return;
     tooltipEl.innerHTML = html;
-    const r = tooltipEl.getBoundingClientRect();
-    const left = x + 20 + r.width > window.innerWidth ? x - r.width - 12 : x + 20;
-    const top = y + 20 + r.height > window.innerHeight ? y - r.height - 12 : y + 20;
-    tooltipEl.style.transform = `translate(${Math.max(4, left)}px, ${Math.max(4, top)}px)`;
+    placeTip(tooltipEl, x, y);
   }
 
   const tooltipHTML = (def, offer) => `
@@ -278,7 +275,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
   // Capture phase, registered after the HUD's: while the shop is open it has
   // the keyboard, and nothing behind it (backpack, toolbar, the farmer) sees keys
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     if ((e.code === 'Escape' || e.code === 'KeyE') && !e.repeat) setOpen(false);
   }, true);

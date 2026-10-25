@@ -65,11 +65,16 @@ export class Splash {
   // onAddFriend(username): { name, friends }. onAnswerFriend(id, yes). onRemoveFriend(id).
   // onStartParty(ids, game): start a lobby for that game (LOBBY_GAMES), inviting those friends (partyStatus() and
   // partyOver() say how it goes). onCancelParty(). onInviteToLobby(ids): to the one we are in.
+  // parent: where it goes (the first farmer's part of the screen, src/main.js).
+  // onAddPlayer(): another farmer joins at this screen, on a controller of
+  // their own (a split screen): '' once it waits for them, else why not.
+  // players(): how many farmers are at this screen.
   constructor(options) {
     Object.assign(this, options);
+    const parent = options.parent ?? document.body;
     this.pages = {};
     this.codeInputs = [];
-    const root = (this.root = el('div', 'ui-splash', document.body));
+    const root = (this.root = el('div', 'ui-splash', parent));
     const card = (this.card = el('div', 'ui-card inv-frame', root));
     const titleRow = el('div', 'ui-title-row', card);
     el('h1', 'ui-logo', titleRow, 'Island Platformer');
@@ -102,6 +107,12 @@ export class Splash {
     nav('Play online', 'online');
     nav('Friends', 'friends');
     this.farmerNav = nav('Your farmer', 'farmer'); // (with an account)
+    this.addBtn = button('ui-btn ui-btn-ghost ui-nav', main, 'Add a player (split screen)', () => {
+      const problem = this.onAddPlayer?.() ?? 'Not here';
+      if (problem) this.setStatus(problem, true);
+      else this.hide();
+    });
+    this.addBtn.title = 'Another farmer joins you at this screen, on a controller of their own';
     nav('Controls', 'controls');
     // sound effects and music, on or off (M in game does both)
     const soundRow = el('div', 'ui-row', main);
@@ -202,7 +213,7 @@ export class Splash {
     addHelp(this.page('controls', 'Controls'));
 
     // ---- The welcome: logging in, or making an account (a window of its own) ----
-    this.welcome = el('div', 'ui-splash', document.body);
+    this.welcome = el('div', 'ui-splash', parent);
     this.welcome.hidden = true;
     const welcomeCard = el('div', 'ui-card inv-frame', this.welcome);
     el('h1', 'ui-logo', el('div', 'ui-title-row', welcomeCard), 'Island Platformer');
@@ -453,8 +464,10 @@ export class Splash {
     else if (place === 'lobby') text.append('In ', el('b', '', null, session.room.name), '. Everyone else keeps playing.');
     else if (visit && !visit.mine) text.append('Helping on ', el('b', '', null, visit.name), '.');
     else if (visit) text.append('On your farm. It keeps going for everyone on it.');
+    else if ((this.players?.() ?? 1) > 1) text.append(`On your farm, ${this.players()} farmers at this screen. It keeps going while they play.`);
     else text.append('On your farm. Time waits while the menu is open.');
     this.mainBtn.textContent = title ? 'Go to my farm' : 'Resume';
+    this.addBtn.hidden = title || place !== 'home' || !!visit;
     this.homeBtn.hidden = title || !(place === 'lobby' || (visit && !visit.mine));
   }
 
