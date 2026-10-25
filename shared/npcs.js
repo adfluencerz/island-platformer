@@ -7,19 +7,29 @@
 //
 // A mission's `needs`, each one of:
 //   { item, count }          that many of item, handed over from the backpack
-//   { items: [...], count }  that many of any of them (eggs, large or not)
+//   { items: [...], count, label }
+//                            that many of any of them (eggs, large or not),
+//                            called `label` in the window
 //   { deed, count }          done that many times since the mission was given:
 //                            'pet' (an animal, the first time each day),
-//                            'fish' (a fish landed: not junk)
+//                            'fish' (a fish landed: not junk),
+//                            'harvest' (a crop picked), 'chop' (a tree felled),
+//                            'mine' (a rock broken), 'cook' (a meal made, in the
+//                            kitchen or on a campfire: a whole batch counts once)
+//   { deed: 'tell', who, count: 1 }
+//                            the mission's `message` told to who (another
+//                            neighbour) when you talk to them
 //   { built, count }         that many of a piece built on the farm, to see
 // `gives`: { gold, items: [[item, count]], opens: a shelf or 'shop' (the
-// shop itself), mends: something on the farm put right ('dock') }
+// shop itself), mends: something on the farm put right ('dock'), choose: [{
+// label, gold, items }] one more reward to take your pick of }
 // `intro` is what they say when they ask, `waiting` while they wait, `thanks`
-// when it is done.
+// when it is done. A `message` ({ to, say, reply }) is what you tell `to`, and
+// what they answer.
 //
 // How much a neighbour likes you (hearts, FRIENDSHIP in shared/balance.js)
-// grows with a chat once a day and every mission done, and takes a little
-// off what their shop asks.
+// grows with a chat once a day, every mission done and what you hear from them
+// (shared/talk.js), and takes a little off what their shop asks.
 
 export const NPC_IDS = ['rosa', 'basil', 'finn', 'mabel'];
 
@@ -54,7 +64,7 @@ export const NPCS = {
         id: 'rosa_breakfast',
         title: 'Breakfast at the ranch',
         ask: 'Bring Rosa 4 eggs and a milk',
-        needs: [{ items: ['egg', 'large_egg'], count: 4 }, { item: 'milk', count: 1 }],
+        needs: [{ items: ['egg', 'large_egg'], count: 4, label: 'Eggs' }, { item: 'milk', count: 1 }],
         gives: { gold: 250, items: [['hen', 1]] },
         intro: 'The farmhands are coming for breakfast and my hens have gone broody on me, the lot of them. Could you bring me four eggs and a bottle of milk?',
         waiting: 'Four eggs and a milk, love. Your hens lay one a day each, and your cow has milk every morning.',
@@ -80,8 +90,55 @@ export const NPCS = {
         waiting: 'Two cheeses. A cheese press at your workbench turns milk into cheese.',
         thanks: 'First prize, I can feel it! You\'ve been a true friend to the ranch. This is for you.',
       },
+      {
+        id: 'rosa_note',
+        title: 'A word with Mabel',
+        ask: 'Tell Mabel that Rosa wants her honey cake on Friday',
+        needs: [{ deed: 'tell', who: 'mabel', count: 1 }],
+        gives: { gold: 200, items: [['large_egg', 3]] },
+        message: {
+          to: 'mabel',
+          say: 'Rosa says Friday, and the usual honey cake, and the cheese is in her cellar.',
+          reply: 'Friday, is it? Tell her I\'ll save her the crispy end. She always did love the crust.',
+        },
+        intro: 'I promised Mabel a word about Friday\'s honey cake, and I haven\'t a minute to walk over! Could you pop by her bakery and tell her I\'ll want the usual, and that the cheese is in my cellar?',
+        waiting: 'Mabel\'s at the bakery, north-east, at the forest\'s edge. Just tell her Rosa says Friday, the usual, and the cheese is in the cellar.',
+        thanks: 'The crispy end, bless her! You\'ve saved my legs a long walk. Here, a few of the big eggs for your trouble.',
+      },
+      {
+        id: 'rosa_trough',
+        title: 'Water for the herd',
+        ask: 'Build a water trough and a hay cart on your farm',
+        needs: [{ built: 'water_trough', count: 1 }, { built: 'hay_cart', count: 1 }],
+        gives: { gold: 600 },
+        intro: 'A farm is only a ranch once the animals have a trough to drink from and a cart to eat off. Build both on your land, and I\'ll know you\'re ready for the big stuff.',
+        waiting: 'A water trough and a hay cart, from the Build tab (the Decor group). Both go on your own land.',
+        thanks: 'Now that\'s a proper ranch! Look at them. Here: you\'ve earned a little something.',
+      },
+      {
+        id: 'rosa_herd',
+        title: 'The pick of the herd',
+        ask: 'Pet 10 animals, and bring Rosa a bolt of cloth',
+        needs: [{ deed: 'pet', count: 10 }, { item: 'cloth', count: 1 }],
+        gives: {
+          gold: 300,
+          choose: [
+            { label: 'A cow', items: [['cow', 1]] },
+            { label: 'A sheep', items: [['sheep', 1]] },
+            { label: 'Three hens', items: [['hen', 3]] },
+          ],
+        },
+        intro: 'You\'ve been good for this ranch, and it\'s been good for me. Show me you love a whole herd: ten good pets, and a bolt of cloth for the guest quilt. Then take your pick of my animals. Any one. I mean it.',
+        waiting: 'Ten pets (an animal counts once a day), and a bolt of cloth. A loom at the workbench weaves wool into cloth.',
+        thanks: 'There! A friend of the herd, and the cloth is lovely. Look after them well, love.',
+      },
     ],
     lines: {
+      accepted: ['Wonderful! I knew I could count on you, love.', 'Marvellous. Off you go, then!'],
+      later: ['Of course, love. No rush at all.', 'Whenever you\'re ready. The animals aren\'t going anywhere.'],
+      reward: ['Well, there\'d be %s for you.', 'I\'d make it worth your while: %s.'],
+      choose: 'Go on, take your pick!',
+      open: ['Of course, love. What\'s on your mind?', 'Pull up a stool! What shall we talk about?'],
       intro: 'Well hello there! You must be the new farmer up the lane. I\'m Rosa, and this is Meadow Ranch. Hens, sheep, cows: if it moos or clucks, I\'ve raised it.',
       morning: ['Morning! The girls have been up since dawn, and so have I.', 'Up early? Good. Animals don\'t wait for anyone.'],
       day: ['Hello again, neighbour!', 'Afternoon! Mind the hens, they\'re nosy.'],
@@ -161,8 +218,53 @@ export const NPCS = {
         waiting: 'A scarecrow on your farm (from the Build tab), and two pumpkins.',
         thanks: 'Not a crow in sight! You\'ve a gardener\'s heart. I\'ll even sell you golden seeds now, the few I have.',
       },
+      {
+        id: 'basil_harvest',
+        title: 'A good harvest',
+        ask: 'Harvest 15 crops from your fields',
+        needs: [{ deed: 'harvest', count: 15 }],
+        gives: { gold: 450, items: [['tomato_seeds', 5]] },
+        intro: 'Marigold used to say a gardener is measured in harvests, not words. Pick fifteen crops from your own fields, young one, and I\'ll know you\'re one of us.',
+        waiting: 'Fifteen crops, picked ripe. Any kind counts, and a tomato plant or a berry bush counts every time it\'s picked again.',
+        thanks: 'Fifteen! My knees ache just thinking of it. Here, tomato seeds. They\'ll give and give.',
+      },
+      {
+        id: 'basil_note',
+        title: 'A word for Finn',
+        ask: 'Tell Finn that his sea lavender seeds are ready',
+        needs: [{ deed: 'tell', who: 'finn', count: 1 }],
+        gives: { gold: 250, items: [['carrot_seeds', 6]] },
+        message: {
+          to: 'finn',
+          say: 'Basil says your sea lavender seeds are ready, and your compost was splendid.',
+          reply: 'Ha! The old goat kept them all winter. Tell him I\'ll row him some more seaweed on Thursday.',
+        },
+        intro: 'Finn left me some sea lavender seeds last spring, and I never gave them back. I\'m not one for the dunes, not with my knees. Would you tell him they\'re ready, and that his seaweed compost did wonders?',
+        waiting: 'Finn\'s on the dunes, south of the farm, at the end of the road. Tell him his sea lavender seeds are ready.',
+        thanks: 'Seaweed on Thursday! Well, well. Here, carrot seeds: a thank you from an old gardener to a young one.',
+      },
+      {
+        id: 'basil_cotton',
+        title: 'Cotton for the clouds',
+        ask: 'Bring Basil 2 cloud cotton',
+        needs: [{ item: 'cloud_cotton', count: 2 }],
+        gives: {
+          choose: [
+            { label: '3 golden seeds', items: [['golden_seeds', 3]] },
+            { label: '900 gold', gold: 900 },
+          ],
+        },
+        intro: 'There\'s one thing I never managed: cloud cotton, from the beanstalk plants. Grow me two, and bring them down, and I\'ll know you\'ve truly mastered the garden. Marigold would have wept.',
+        waiting: 'Two cloud cotton. The seeds are on my rare shelf, and the plant climbs: you pick it up among the leaves.',
+        thanks: 'Soft as a cloud. Marigold would have wept, and then made a quilt. Thank you, young one.',
+      },
     ],
     lines: {
+      accepted: ['Thank you. That\'s very kind, very kind indeed.', 'Splendid, splendid. Take your time. Plants do.'],
+      later: ['Of course, of course. Another day.', 'No hurry. The garden will keep, and so will I.'],
+      reward: ['Hm. I\'d find you %s, I think.', 'Oh, I\'d give you %s, somewhere in all this.'],
+      choose: 'Hm, which? Whichever you like, young one.',
+      open: ['Hm? Oh, yes. A chat. What about?', 'Ah, conversation. Rare as rain. Go on.'],
       intro: 'Oh! A visitor. Hello, hello. I\'m Basil. I grow seeds. Well, the plants grow seeds; I just help them along. Have a look around, but mind the seedlings.',
       morning: ['Good morning. The dew\'s still on the leaves. Best time of day.', 'Morning! I\'ve been talking to the tomatoes. They say hello.'],
       day: ['Ah, hello again.', 'Warm one today. The sunflowers are loving it.'],
@@ -241,8 +343,53 @@ export const NPCS = {
         waiting: 'Five seashells. They wash up on the dunes, along the south shore.',
         thanks: 'She\'ll be over the moon! Here, she made ye some fish stew. Best in the valley, after Mabel\'s.',
       },
+      {
+        id: 'finn_driftwood',
+        title: 'Planks for the boat',
+        ask: 'Chop 6 trees for Finn',
+        needs: [{ deed: 'chop', count: 6 }],
+        gives: { gold: 300, items: [['bait', 20]] },
+        intro: 'That storm took more than the dock, matey. Me old rowboat\'s in pieces, and me back\'s not what it was. Fell six trees for me, anywhere ye like, and I\'ll know there\'s planks to be had.',
+        waiting: 'Six trees felled with the axe, on yer farm or anywhere else. Chop till they\'re down.',
+        thanks: 'That\'s a lot o\' planks! Me boat\'ll float again. Here, a barrel of bait for yer trouble.',
+      },
+      {
+        id: 'finn_note',
+        title: 'Not a word about the seaweed',
+        ask: 'Tell Rosa that Finn ate a whole carrot',
+        needs: [{ deed: 'tell', who: 'rosa', count: 1 }],
+        gives: { gold: 250, items: [['grilled_fish', 2]] },
+        message: {
+          to: 'rosa',
+          say: 'Finn says he ate a whole carrot. Raw. And not a word about the seaweed.',
+          reply: 'A carrot! Well I never. Tell him there\'s a pie in it if he has another.',
+        },
+        intro: 'Rosa\'s always on at me to eat me vegetables. Go and tell her I ate a whole carrot. Raw! And not a word about the seaweed, mind.',
+        waiting: 'Rosa\'s at Meadow Ranch, west over the meadow. Tell her I ate a whole carrot, raw, and keep quiet about the seaweed.',
+        thanks: 'A pie! She\'s a hard woman to please. Here, a couple o\' fish off the grill.',
+      },
+      {
+        id: 'finn_legend',
+        title: 'After dark',
+        ask: 'Bring Finn a lanternfish and a moonfish',
+        needs: [{ item: 'lanternfish', count: 1 }, { item: 'moonfish', count: 1 }],
+        gives: {
+          choose: [
+            { label: 'A golden rod', items: [['golden_rod', 1]] },
+            { label: '1000 gold', gold: 1000 },
+          ],
+        },
+        intro: 'There\'s fish that only bite after dark, matey. Lanternfish at dusk, and the moonfish when the night\'s deep. Land me one of each, from the sea off me dock, and I\'ll give ye something I\'ve been keeping.',
+        waiting: 'A lanternfish (they bite from six till eleven at night) and a moonfish (from eight at night till five). Both in the sea, off the dock.',
+        thanks: 'Moonlight on scales, there\'s nothing like it. Ye\'ve earned every bit, matey.',
+      },
     ],
     lines: {
+      accepted: ['Good on ye, matey!', 'That\'s the spirit! Fair winds, then.'],
+      later: ['Aye, no bother. The tide\'ll wait.', 'Another day, then. The fish aren\'t going anywhere.'],
+      reward: ['Ye\'d get %s for it, and me thanks.', 'There\'d be %s in it for ye, matey.'],
+      choose: 'Choose, matey! Both are good.',
+      open: ['Aye, matey, I\'ve time. What\'ll it be?', 'Pull up a barrel! What d\'ye want to know?'],
       intro: 'Ahoy! Name\'s Finn. Fished these waters man and boy, and me father before me. If it swims, I\'ve caught it. Or it\'s caught me.',
       morning: ['Mornin\'! Fish bite best at dawn, when the sea\'s still sleepy.', 'Up with the tide, are ye?'],
       day: ['Ahoy again!', 'Fair wind today. Good for the boats, bad for the bobbers.'],
@@ -310,8 +457,63 @@ export const NPCS = {
         waiting: 'A cheese omelette, dear. It\'s in your recipe book: cook it in the kitchen in your house.',
         thanks: 'Oh, it\'s lovely! Better than mine, and don\'t you dare tell anyone I said so. Here, an old recipe card of my gran\'s.',
       },
+      {
+        id: 'mabel_berries',
+        title: 'Berries for the tarts',
+        ask: 'Bring Mabel 8 berries',
+        needs: [{ items: ['berries', 'strawberry'], count: 8, label: 'Berries' }],
+        gives: { gold: 350, items: [['berry_skewer', 3]] },
+        intro: 'There\'s a bake sale on Saturday, and I\'m clean out of berries! Eight, dear, wild ones from the meadow or the bank, and I\'ll make a tart for everyone in the valley.',
+        waiting: 'Eight berries, wild berries or wild strawberries. They turn up in the meadow, on the strawberry bank, and in the forest.',
+        thanks: 'Look at the colour of them! Tarts for everyone. Here, a few skewers for the road.',
+      },
+      {
+        id: 'mabel_cook',
+        title: 'Practice makes pie',
+        ask: 'Cook 3 meals of your own',
+        needs: [{ deed: 'cook', count: 3 }],
+        gives: { gold: 400, items: [['honey', 2]] },
+        intro: 'You can\'t learn to cook by reading, dear, you learn by burning things. Cook three meals of your own, on a campfire or in your kitchen, and then we\'ll talk proper baking.',
+        waiting: 'Three meals cooked, on a campfire on your farm or in the kitchen in your house. A whole batch counts as one, and anything will do, even a fried egg!',
+        thanks: 'And nobody got hurt? Wonderful! Here, a little honey for the next batch.',
+      },
+      {
+        id: 'mabel_note',
+        title: 'Courgettes on the doorstep',
+        ask: 'Tell Basil to stop leaving courgettes on her step',
+        needs: [{ deed: 'tell', who: 'basil', count: 1 }],
+        gives: { gold: 250, items: [['mushroom_pie', 1]] },
+        message: {
+          to: 'basil',
+          say: 'Mabel says thank you, but please, no more courgettes on her doorstep.',
+          reply: 'No more? But they\'re her favourites! Tell her... tell her I\'ll leave marrows instead.',
+        },
+        intro: 'Basil leaves courgettes on my doorstep every week, each the size of a cow, and I can\'t say a word because he means so well. Would you tell him, ever so gently, that I\'m fresh out of ideas?',
+        waiting: 'Basil\'s cottage is east, past the fields. Tell him, gently: thank you, but no more courgettes.',
+        thanks: 'Marrows! Oh, that man. Well, I\'ll think of something. Here, have a pie for the trouble.',
+      },
+      {
+        id: 'mabel_feast',
+        title: 'A feast for the valley',
+        ask: 'Bring Mabel a farm feast',
+        needs: [{ item: 'farm_feast', count: 1 }],
+        gives: {
+          choose: [
+            { label: 'Mabel\'s recipe box (3 cards)', items: [['recipe_card', 3]] },
+            { label: '1600 gold', gold: 1600 },
+          ],
+        },
+        intro: 'Thirty years I\'ve fed this valley, and I\'d love, just once, to sit down and be fed. Cook me a farm feast, dear. The recipe\'s on my shelf, and the whole valley will thank you.',
+        waiting: 'A farm feast. The recipe is on my shelf. It takes pumpkins, carrots, cheese, honey and fish, and you cook it in the kitchen in your house.',
+        thanks: 'Oh, my dear! I shall sit down for the first time in years. Thank you.',
+      },
     ],
     lines: {
+      accepted: ['Oh, lovely! I knew you would, dear.', 'You\'re a treasure. Off you pop!'],
+      later: ['Of course, dear. When you\'re ready.', 'No rush, love. The kettle\'s always on.'],
+      reward: ['I\'d make it worth your while, dear: %s.', 'Well, there\'s %s for you, love.'],
+      choose: 'Now, which would you like, dear?',
+      open: ['Of course, dear! Sit, sit. What shall we talk about?', 'Oh, I do love a chat. Go on, dear.'],
       intro: 'Oh, hello dear! Come in, come in, mind the flour. I\'m Mabel. I bake, I cook, and I know everybody\'s business. You must be the new farmer! Everyone\'s talking about you.',
       morning: ['Morning, dear! The first loaves are just out of the oven. Smell that!', 'Up early! You and me both. Dough doesn\'t knead itself.'],
       day: ['Hello again, love!', 'Afternoon, dear. Kettle\'s on, if you fancy a cuppa.'],
@@ -346,10 +548,15 @@ export const MISSIONS = Object.fromEntries(NPC_IDS.flatMap((npc) => NPCS[npc].mi
 // ---------- Where you stand with a neighbour ----------
 // state, per neighbour: { met, done: [mission ids], since: { mission id:
 // { deed: count when it was asked } }, heard: [mission ids they've asked],
-// points (friendship), chatDay (the game day you last chatted) }. deeds:
-// how many times each deed has been done, all told.
+// points (friendship), chatDay (the game day you last chatted), seen: [what
+// they have told you that counts once: shared/talk.js], chose: { what you
+// answered when asked: shared/talk.js } }. deeds: how many times each deed
+// has been done, all told.
 
-export const freshNpcState = () => ({ met: false, done: [], heard: [], since: {}, points: 0, chatDay: -1 });
+export const freshNpcState = () => ({ met: false, done: [], heard: [], since: {}, points: 0, chatDay: -1, seen: [], chose: {} });
+
+// What a deed is counted under: 'pet', or 'tell:mabel' (telling Mabel)
+export const deedKey = (need) => (need.who ? `${need.deed}:${need.who}` : need.deed);
 
 // Their mission now (the first not done), or null: all done
 export function currentMission(npc, state) {
@@ -373,10 +580,43 @@ export function progress(mission, state, { have, deeds, built }) {
     let n = 0;
     if (need.item) n = have(need.item);
     else if (need.items) n = need.items.reduce((sum, item) => sum + have(item), 0);
-    else if (need.deed) n = (deeds[need.deed] ?? 0) - (state.since[mission.id]?.[need.deed] ?? 0);
+    else if (need.deed) n = (deeds[deedKey(need)] ?? 0) - (state.since[mission.id]?.[deedKey(need)] ?? 0);
     else if (need.built) n = built(need.built);
     return { need, have: Math.max(0, n), count: need.count, ok: n >= need.count };
   });
+}
+
+// The messages you are carrying to `to` (a neighbour's id): [{ from, mission }]
+// for every neighbour whose request now is to tell `to` something, that you
+// have heard and haven't told yet. states: id -> state; deeds: as for progress
+export function messagesFor(to, states, deeds) {
+  const out = [];
+  for (const from of NPC_IDS) {
+    if (from === to) continue;
+    const mission = currentMission(from, states[from]);
+    if (mission?.message?.to !== to || !states[from].heard.includes(mission.id)) continue;
+    if (progress(mission, states[from], { have: () => 0, deeds, built: () => 0 }).every((n) => n.ok)) continue;
+    out.push({ from, mission });
+  }
+  return out;
+}
+
+// What a mission gives, in words: "250g, a hen, their shop opens" (for the
+// window), or as they would say it, `speech`: "250 gold, a hen and the keys to
+// my shop"
+export function rewardText(mission, itemName, speech = false) {
+  const g = mission.gives;
+  const parts = [];
+  if (g.gold) parts.push(speech ? `${g.gold} gold` : `${g.gold}g`);
+  for (const [item, n] of g.items ?? []) parts.push(`${n > 1 ? `${n} × ` : ''}${itemName(item).toLowerCase()}`);
+  if (g.opens === 'shop') parts.push(speech ? 'the keys to my shop' : 'their shop opens');
+  else if (g.opens) parts.push(speech ? `a look at my ${g.opens.toLowerCase()} shelf` : `the ${g.opens.toLowerCase()} shelf`);
+  if (g.mends === 'dock') parts.push('the dock mended');
+  if (g.choose) {
+    const picks = g.choose.map((c) => c.label.toLowerCase());
+    parts.push(`your pick of ${picks.length > 1 ? `${picks.slice(0, -1).join(', ')} or ${picks.at(-1)}` : picks[0]}`);
+  }
+  return speech && parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join(', ');
 }
 
 // The hearts for so many points (FRIENDSHIP: points a heart, the most hearts)

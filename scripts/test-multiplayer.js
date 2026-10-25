@@ -19,7 +19,8 @@ import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS, DAY_LENGTH_SECONDS } f
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, WEAPONS, SWORDS, woodFor, stoneFor, steelFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
 import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS, OLD_HALF, homeGround, oldHomeGround, farmBlocked, inLake, LAKE, NPC_HOMES, NPC_ROOMS, DOCK, SIGNPOSTS, ROADS, TRAILS, npcDoor } from '../shared/farmland.js';
-import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor } from '../shared/npcs.js';
+import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor, messagesFor, rewardText } from '../shared/npcs.js';
+import { TALK, nodesOf, holds, textOf, chatTopics, momentsDue, followUps, rewardFor, hear, hubOptions, cleanState } from '../shared/talk.js';
 import { ITEMS } from '../src/items.js';
 import { MERCHANT_STOCK, FRIENDSHIP, FARM_FORAGE } from '../shared/balance.js';
 import { HOUSE_ROOM, movedKey } from '../shared/level.js';
@@ -705,12 +706,26 @@ await test('the neighbours: what they ask and give is all there is, their shops 
         assert.ok(need.count > 0);
         if (need.item) assert.ok(ITEMS[need.item], `${m.id} needs ${need.item}`);
         else if (need.items) assert.ok(need.items.every((item) => ITEMS[item]));
-        else if (need.deed) assert.ok(['pet', 'fish'].includes(need.deed));
-        else assert.ok(PIECES[need.built], `${m.id} needs ${need.built} built`);
+        else if (need.deed) {
+          assert.ok(['pet', 'fish', 'harvest', 'chop', 'mine', 'cook', 'tell'].includes(need.deed), `${m.id}: nobody counts ${need.deed}`);
+          if (need.deed === 'tell') {
+            assert.ok(NPCS[need.who] && need.who !== id && need.count === 1, `${m.id} tells ${need.who}`);
+            assert.ok(m.message?.to === need.who && m.message.say && m.message.reply, `${m.id} has no message to tell`);
+          }
+        } else assert.ok(PIECES[need.built], `${m.id} needs ${need.built} built`);
       }
       for (const [item, n] of m.gives.items ?? []) assert.ok(ITEMS[item] && n > 0, `${m.id} gives ${item}`);
+      if (m.gives.choose) {
+        assert.ok(m.gives.choose.length >= 2, `${m.id} offers no choice`);
+        for (const pick of m.gives.choose) {
+          assert.ok(pick.label && (pick.gold > 0 || pick.items?.length), `${m.id}: ${pick.label} gives nothing`);
+          for (const [item, n] of pick.items ?? []) assert.ok(ITEMS[item] && n > 0, `${m.id} gives ${item}`);
+        }
+      }
     }
-    for (const text of ['intro', 'morning', 'day', 'evening', 'chat', 'asleep', 'locked', 'done', 'shop', 'bought']) assert.ok(npc.lines[text]?.length, `${id} has nothing to say for ${text}`);
+    assert.ok(npc.missions.length >= 7, `${id} has few requests`);
+    for (const text of ['intro', 'morning', 'day', 'evening', 'chat', 'asleep', 'locked', 'done', 'shop', 'bought', 'accepted', 'later', 'reward', 'open']) assert.ok(npc.lines[text]?.length, `${id} has nothing to say for ${text}`);
+    assert.ok(npc.lines.choose && npc.lines.reward.every((line) => line.includes('%s')), `${id}'s lines for a reward`);
   }
   // everything the merchant used to sell is still for sale somewhere
   for (const [id, def] of Object.entries(ITEMS)) if (def.price) assert.ok(sold.has(id), `nobody sells ${id}`);
@@ -757,6 +772,187 @@ await test('a neighbour\'s requests: one at a time, counted from when they asked
   const finn = freshNpcState();
   finn.done.push(...NPCS.finn.missions.map((m) => m.id));
   assert.equal(currentMission('finn', finn), null);
+});
+
+await test('the neighbours pass messages round the valley: each tells one of the others something, and is told something', () => {
+  const sends = {};
+  for (const id of NPC_IDS) {
+    const messages = NPCS[id].missions.filter((m) => m.message);
+    assert.equal(messages.length, 1, `${id} should send one message`);
+    sends[id] = messages[0].message.to;
+  }
+  assert.deepEqual(Object.values(sends).sort(), [...NPC_IDS].sort(), 'everyone is told one');
+  // (and it goes right round: from anyone, through everyone, back to them)
+  let at = NPC_IDS[0];
+  for (let i = 0; i < NPC_IDS.length; i++) at = sends[at];
+  assert.equal(at, NPC_IDS[0]);
+  // carrying one: asked, not yet told; told; told before it was asked doesn't count
+  const states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
+  const deeds = {};
+  const ctx = { have: () => 0, deeds, built: () => 0 };
+  states.rosa.done.push('rosa_pet', 'rosa_breakfast', 'rosa_wool', 'rosa_fair');
+  assert.deepEqual(messagesFor('mabel', states, deeds), [], 'not asked yet');
+  deeds['tell:mabel'] = 1; // (told Mabel something else, before)
+  states.rosa.heard.push('rosa_note');
+  states.rosa.since.rosa_note = { ...deeds };
+  assert.deepEqual(messagesFor('mabel', states, deeds).map((m) => m.from), ['rosa']);
+  assert.deepEqual(messagesFor('basil', states, deeds), [], 'it is for Mabel only');
+  assert.ok(progress(MISSIONS.rosa_note, states.rosa, ctx).every((n) => !n.ok));
+  deeds['tell:mabel'] += 1;
+  assert.ok(progress(MISSIONS.rosa_note, states.rosa, ctx).every((n) => n.ok));
+  assert.deepEqual(messagesFor('mabel', states, deeds), [], 'told: nothing more to carry');
+});
+
+await test('the new requests count what you do since they were asked: crops picked, trees felled, rocks broken, meals cooked', () => {
+  const state = freshNpcState();
+  const deeds = { harvest: 40, chop: 3 };
+  const ctx = { have: () => 0, deeds, built: () => 0 };
+  state.heard.push('basil_harvest');
+  state.since.basil_harvest = { ...deeds };
+  deeds.harvest += 14;
+  assert.deepEqual(progress(MISSIONS.basil_harvest, state, ctx).map((n) => [n.have, n.count, n.ok]), [[14, 15, false]]);
+  deeds.harvest += 1;
+  assert.ok(progress(MISSIONS.basil_harvest, state, ctx).every((n) => n.ok));
+  // each is its own count
+  assert.deepEqual(progress(MISSIONS.finn_driftwood, { ...state, since: { finn_driftwood: { chop: 3 } } }, ctx).map((n) => n.have), [0]);
+  // and a reward you pick is told in words
+  assert.equal(rewardText(MISSIONS.rosa_herd, (item) => ITEMS[item].name), '300g, your pick of a cow, a sheep or three hens');
+  assert.equal(rewardText(MISSIONS.finn_legend, (item) => ITEMS[item].name), 'your pick of a golden rod or 1000 gold');
+});
+
+await test('what the neighbours say: every topic has its words, its conditions name real things, and each has two moments to share', () => {
+  const lengths = (node) => {
+    assert.ok(node.text?.length > 0 && node.text.length <= 56, `${node.id}: its button reads "${node.text}"`);
+    const say = typeof node.say === 'function' ? node.say({ hearts: 0, done: () => false, heard: () => false, met: () => false, chose: () => undefined }) : node.say;
+    for (const line of [].concat(say)) assert.ok(typeof line === 'string' && line.length > 20 && line.length <= 300, `${node.id}: what they say is ${line?.length} long`);
+  };
+  const cond = (id, where, c) => {
+    if (!c) return;
+    if (c.hearts != null) assert.ok(Number.isInteger(c.hearts) && c.hearts >= 1 && c.hearts <= FRIENDSHIP.hearts, `${where}: ${c.hearts} hearts`);
+    for (const m of [].concat(c.done ?? [], c.heard ?? [])) assert.ok(MISSIONS[m], `${where}: no request ${m}`);
+    for (const n of [].concat(c.met ?? [])) assert.ok(NPCS[n] && n !== id, `${where}: can't have met ${n}`);
+    if (c.chose) assert.ok(Object.values(nodesOf(id)).some((n) => n.keep && n.keep[0] === c.chose[0] && n.keep[1] === c.chose[1]), `${where}: nothing to choose ${c.chose}`);
+    for (const one of c.any ?? []) cond(id, where, one);
+    cond(id, where, c.no);
+  };
+  for (const id of NPC_IDS) {
+    const nodes = nodesOf(id);
+    const topics = TALK[id].topics;
+    assert.equal(new Set(topics.map((t) => t.id)).size, topics.length, `${id}'s topics share a name`);
+    assert.ok(topics.filter((t) => !t.event).length >= 5, `${id} has little to chat about`);
+    for (const node of Object.values(nodes)) {
+      lengths(node);
+      cond(id, node.id, node.if);
+      if (node.keep) assert.ok(node.root.event, `${node.id}: only a moment is remembered`);
+      for (const [item, n] of node.gives?.items ?? []) assert.ok(ITEMS[item] && n > 0, `${node.id} gives ${item}`);
+      if (node.gives) assert.ok(node.gives.gold > 0 || node.gives.items?.length, `${node.id} gives nothing`);
+      // what a node says is a function of what you chose before: it must always say something
+      if (typeof node.say === 'function') {
+        for (const keep of Object.values(nodes).filter((n) => n.keep).map((n) => n.keep)) {
+          const said = node.say({ hearts: 5, done: () => true, heard: () => true, met: () => true, chose: (key) => (key === keep[0] ? keep[1] : undefined) });
+          assert.ok(typeof said === 'string' && said.length > 20, `${node.id} says nothing for ${keep}`);
+        }
+      }
+    }
+    // the moments: two of them, one earlier and one later, each a question with answers that are remembered
+    const moments = topics.filter((t) => t.event);
+    assert.equal(moments.length, 2, `${id} has ${moments.length} moments`);
+    assert.ok(moments[0].if.hearts < moments[1].if.hearts, `${id}'s moments are in the wrong order`);
+    for (const moment of moments) {
+      assert.ok(moment.then.length >= 2 && moment.then.every((a) => a.keep && a.keep[0] === moment.id && !a.then), `${moment.id}'s answers`);
+      assert.ok(moment.gives, `${moment.id} gives nothing`);
+    }
+  }
+});
+
+await test('what they say: topics open with hearts and what you have done, a moment counts once when you answer it, and they remember', () => {
+  const states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
+  const view = (id, hearts) => ({
+    hearts,
+    done: (m) => states[MISSIONS[m].npc].done.includes(m),
+    heard: (m) => states[MISSIONS[m].npc].heard.includes(m),
+    met: (n) => states[n].met,
+    chose: (key) => states[id].chose[key],
+  });
+  const ids = (list) => list.map((t) => t.node.id);
+  const rosa = states.rosa;
+  assert.deepEqual(ids(chatTopics('rosa', rosa, view('rosa', 0))), ['ranch', 'animals']);
+  assert.ok(ids(chatTopics('rosa', rosa, view('rosa', 1))).includes('clementine'), 'a heart: her hen');
+  assert.ok(!ids(chatTopics('rosa', rosa, view('rosa', 1))).includes('others'), 'she has nothing to say about people you have not met');
+  states.basil.met = true;
+  assert.ok(ids(chatTopics('rosa', rosa, view('rosa', 1))).includes('others'));
+  const others = TALK.rosa.topics.find((t) => t.id === 'others');
+  assert.deepEqual(followUps(others, view('rosa', 1)).map((n) => n.text), ['Basil?'], 'only the ones you have met');
+  assert.ok(!ids(chatTopics('rosa', rosa, view('rosa', 5))).includes('fair'), 'the fair: once the cheese is done');
+  rosa.done.push('rosa_fair');
+  assert.ok(ids(chatTopics('rosa', rosa, view('rosa', 1))).includes('fair'));
+  // what you have not heard comes first, and is marked
+  const first = chatTopics('rosa', rosa, view('rosa', 1));
+  assert.ok(first.every((t) => t.isNew));
+  const ranch = TALK.rosa.topics[0];
+  assert.deepEqual(hear(ranch, rosa), { points: FRIENDSHIP.topic, gives: undefined }, 'a new topic is worth a little');
+  assert.equal(hear(ranch, rosa), null, 'and only the first time');
+  assert.equal(hear(ranch.then[0], rosa), null, 'its follow-ups are not');
+  assert.equal(chatTopics('rosa', rosa, view('rosa', 1)).at(-1).node.id, 'ranch', 'heard ones go last');
+  assert.ok(!chatTopics('rosa', rosa, view('rosa', 1)).find((t) => t.node.id === 'ranch').isNew);
+  // a moment waits, starred, until you answer it
+  assert.deepEqual(momentsDue('rosa', rosa, view('rosa', 1)), []);
+  const moment = TALK.rosa.topics.find((t) => t.id === 'rosa_first');
+  assert.deepEqual(momentsDue('rosa', rosa, view('rosa', 2)).map((n) => n.id), ['rosa_first']);
+  assert.ok(!ids(chatTopics('rosa', rosa, view('rosa', 2))).includes('rosa_first'), 'not in the chat until you have been through it');
+  assert.equal(rewardFor(moment, rosa), null, 'hearing the question is not answering it');
+  assert.equal(hear(moment, rosa), null);
+  assert.deepEqual(momentsDue('rosa', rosa, view('rosa', 2)).map((n) => n.id), ['rosa_first']);
+  assert.deepEqual(hear(moment.then[0], rosa), { points: FRIENDSHIP.moment, gives: moment.gives });
+  assert.equal(rosa.chose.rosa_first, 'honest');
+  assert.deepEqual(momentsDue('rosa', rosa, view('rosa', 2)), []);
+  assert.ok(ids(chatTopics('rosa', rosa, view('rosa', 2))).includes('rosa_first'), 'now it is something you can ask about again');
+  // changing your mind is allowed, and pays nothing more
+  assert.equal(hear(moment.then[1], rosa), null);
+  assert.equal(rosa.chose.rosa_first, 'proud');
+  assert.deepEqual(rosa.seen.filter((n) => n === 'rosa_first'), ['rosa_first']);
+  // they bring up what you said
+  const calf = TALK.rosa.topics.find((t) => t.id === 'rosa_calf');
+  assert.ok(!textOf(ranch, view('rosa', 4)).includes('Buttercup'));
+  hear(calf.then[0], rosa);
+  assert.ok(textOf(ranch, view('rosa', 4)).includes('Buttercup'));
+  hear(calf.then[2], rosa);
+  assert.ok(textOf(ranch, view('rosa', 4)).includes('Beefcake'));
+});
+
+await test('the window\'s first list: a message to tell, their request, a moment of theirs, a chat', () => {
+  const states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
+  const c = { hearts: 0, done: () => false, heard: () => false, met: () => false, chose: () => undefined };
+  const hub = (id, status, extra = {}, hearts = 0) => hubOptions({ npc: id, state: states[id], c: { ...c, hearts }, status, messages: [], ...extra }).map((o) => o.kind);
+  const mission = MISSIONS.mabel_mushrooms;
+  assert.deepEqual(hub('mabel', { mission, heard: false }), ['ask', 'chat']);
+  assert.deepEqual(hub('mabel', { mission, heard: true, ready: false }), ['progress', 'chat']);
+  assert.deepEqual(hub('mabel', { mission, heard: true, ready: true }), ['handover', 'chat']);
+  assert.deepEqual(hub('mabel', { mission: null }), ['chat'], 'nothing to ask: just a chat');
+  assert.deepEqual(hub('mabel', { mission, heard: true, ready: true }, {}, 2), ['handover', 'moment', 'chat'], 'a heart event waits too');
+  const messages = [{ from: 'rosa', mission: MISSIONS.rosa_note }];
+  assert.deepEqual(hub('mabel', { mission, heard: false }, { messages }, 2), ['deliver', 'ask', 'moment', 'chat'], 'a message first');
+  assert.ok(hubOptions({ npc: 'mabel', state: states.mabel, c, status: { mission: null }, messages }).every((o) => o.kind === 'chat' || o.hot), 'what they wait on is starred');
+});
+
+await test('a save from before all this still loads: what is not known is left out, and nothing met is a fresh start', () => {
+  assert.deepEqual(cleanState('rosa', undefined), freshNpcState());
+  assert.deepEqual(cleanState('rosa', 'rubbish'), freshNpcState());
+  // (as the neighbours were first saved: no topics heard, nothing chosen)
+  const old = { met: true, done: ['rosa_pet', 'rosa_breakfast', 'gone_since'], heard: ['rosa_wool'], since: { rosa_wool: { pet: 3 }, nope: { pet: 1 } }, points: 85, chatDay: 4 };
+  assert.deepEqual(cleanState('rosa', old), { met: true, done: ['rosa_pet', 'rosa_breakfast'], heard: ['rosa_wool'], since: { rosa_wool: { pet: 3 } }, points: 85, chatDay: 4, seen: [], chose: {} });
+  // and a whole chain done is more to do now, not nothing
+  const finished = cleanState('finn', { met: true, done: ['finn_dock', 'finn_catch', 'finn_bass', 'finn_shells'] });
+  assert.equal(currentMission('finn', finished).id, 'finn_driftwood');
+  assert.ok(isOpen('finn', finished, 'Better rods'), 'what they had open stays open');
+  // what was kept: only what is real
+  const kept = cleanState('basil', { seen: ['garden', 'garden', 'nothing', 4, 'basil_plant'], chose: { basil_plant: 'sunflower', basil_picture: 'nonsense', nothing: 'at all' } });
+  assert.deepEqual(kept.seen, ['garden', 'basil_plant']);
+  assert.deepEqual(kept.chose, { basil_plant: 'sunflower' });
+  assert.deepEqual(cleanState('basil', { seen: 'garden', chose: ['basil_plant', 'sunflower'], points: -5, chatDay: 'x' }), freshNpcState());
+  // saved and read back, a state is as it was
+  const state = { ...freshNpcState(), met: true, seen: ['ranch'], chose: { rosa_calf: 'buttercup' }, points: 120, chatDay: 9, done: ['rosa_pet'] };
+  assert.deepEqual(cleanState('rosa', JSON.parse(JSON.stringify(state))), state);
 });
 
 await test('a shuffle is the same everywhere: every number kept, the same order for the same draws', () => {

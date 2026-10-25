@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createFarmer, damp } from './character.js';
-import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor } from '../shared/npcs.js';
+import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor, messagesFor } from '../shared/npcs.js';
+import { chatTopics, momentsDue, hubOptions, hear as hearNode, rewardFor, cleanState } from '../shared/talk.js';
 import { NPC_HOMES, npcDoor } from '../shared/farmland.js';
 import { FRIENDSHIP } from '../shared/balance.js';
 import { npcHomes, roomAt } from './npchomes.js';
@@ -12,12 +13,17 @@ import { npcHomes, roomAt } from './npchomes.js';
 // evening, and asleep in bed at night. They turn to watch you come over, and
 // E (or a tap) talks to them (src/dialog.js): a chat, their shop, and what
 // they would like you to do for them (missions), which is how their shop
-// opens to you.
+// opens to you. Over the head of one with something for you there is a
+// little sign: a "!" (a request to hear), a tick (one to hand over), a
+// speech bubble (a message you carry to them) or a heart (a moment of
+// theirs to share).
 //
 // Where you stand with each (met, their missions asked and done, how much
-// they like you) is yours, saved with your backpack (serialize()), and so
-// are your deeds: how many times you have petted an animal (the first time
-// each day) or landed a fish, for the missions that count them.
+// they like you, what they have told you and what you answered) is yours,
+// saved with your backpack (serialize()), and so are your deeds: how many
+// times you have petted an animal (the first time each day), landed a fish,
+// picked a crop, felled a tree, broken a rock or cooked a dish, for the
+// missions that count them.
 
 const TALK_REACH = 1.9; // to someone stood beside you
 const COUNTER_REACH = 2.5; // to someone behind their counter, across it
@@ -66,9 +72,42 @@ function zzzSprite() {
   return sprite;
 }
 
+// The little signs over their heads, drawn in strokes (no font to depend on)
+const SIGNS = {
+  new: { back: '#f2b630', draw(c) { c.fillStyle = '#5b2b0a'; c.beginPath(); c.roundRect(28, 12, 8, 26, 4); c.fill(); c.beginPath(); c.arc(32, 47, 5, 0, Math.PI * 2); c.fill(); } },
+  ready: { back: '#5fb84a', draw(c) { c.strokeStyle = '#fff'; c.lineWidth = 8; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); c.moveTo(17, 33); c.lineTo(28, 44); c.lineTo(48, 20); c.stroke(); } },
+  message: { back: '#4f9fd8', draw(c) { c.fillStyle = '#fff'; for (const x of [18, 32, 46]) { c.beginPath(); c.arc(x, 33, 5, 0, Math.PI * 2); c.fill(); } } },
+  moment: { back: '#e8668a', draw(c) { c.fillStyle = '#fff'; c.beginPath(); c.moveTo(32, 46); c.bezierCurveTo(12, 32, 18, 16, 32, 26); c.bezierCurveTo(46, 16, 52, 32, 32, 46); c.fill(); } },
+};
+const signTextures = {};
+function signSprite(kind) {
+  if (!signTextures[kind]) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const c = canvas.getContext('2d');
+    c.fillStyle = '#3d1a04';
+    c.beginPath();
+    c.arc(32, 32, 30, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = SIGNS[kind].back;
+    c.beginPath();
+    c.arc(32, 32, 26, 0, Math.PI * 2);
+    c.fill();
+    SIGNS[kind].draw(c);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    signTextures[kind] = tex;
+  }
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTextures[kind], transparent: true, depthWrite: false }));
+  sprite.scale.set(0.7, 0.7, 1);
+  return sprite;
+}
+const SIGN_RANGE = 22; // they show from this far off
+
 // parent: the farm's world root (they are only on the farm). inventory:
-// the backpack (count, remove, add, earn, canAdd).
-export function createNpcs({ parent, inventory }) {
+// the backpack (count, remove, add, earn, canAdd). ctx(): what the missions
+// are checked against ({ have(item), built(piece) }, main.js).
+export function createNpcs({ parent, inventory, ctx }) {
   // ---------- The people ----------
   const people = {};
   for (const id of NPC_IDS) {
@@ -80,7 +119,13 @@ export function createNpcs({ parent, inventory }) {
     const zzz = zzzSprite();
     zzz.visible = false;
     parent.add(zzz);
-    people[id] = { id, model, doing: null, at: new THREE.Vector3(), y: 0, yaw: 0, goal: null, wait: 0, zzz, greeted: false };
+    const signs = Object.fromEntries(Object.keys(SIGNS).map((kind) => {
+      const sprite = signSprite(kind);
+      sprite.visible = false;
+      parent.add(sprite);
+      return [kind, sprite];
+    }));
+    people[id] = { id, model, doing: null, at: new THREE.Vector3(), y: 0, yaw: 0, goal: null, wait: 0, zzz, greeted: false, signs, sign: null };
   }
 
   const roomOf = (id) => npcHomes.rooms[id];
@@ -135,6 +180,7 @@ export function createNpcs({ parent, inventory }) {
 
   // dt, t: game time; you: the farmer's position; hour: the farm's clock
   function update(dt, t, you, hour) {
+    updateSigns(dt);
     for (const p of Object.values(people)) {
       const doing = routine(p.id, hour);
       if (doing !== p.doing) begin(p, doing);
@@ -159,6 +205,29 @@ export function createNpcs({ parent, inventory }) {
       }
       p.zzz.visible = asleep;
       if (asleep) p.zzz.position.set(p.at.x + 0.4, 1.5 + Math.sin(t * 1.5) * 0.12, p.at.z - 0.5);
+      // the sign over their head, if they have something for you
+      for (const [kind, sprite] of Object.entries(p.signs)) {
+        sprite.visible = !asleep && p.sign === kind && Math.hypot(dx, dz) < SIGN_RANGE;
+        if (sprite.visible) sprite.position.set(p.at.x, p.at.y + 2.5 + Math.sin(t * 2.2 + p.at.x) * 0.07, p.at.z);
+      }
+    }
+  }
+  // which sign each of them should show: the most pressing thing they have
+  // for you (a request to hand over, then a message to tell, a moment to
+  // share, a request to hear)
+  let signCheck = 0;
+  function updateSigns(dt) {
+    if ((signCheck -= dt) > 0) return;
+    signCheck = 0.5;
+    const here = ctx();
+    for (const id of NPC_IDS) {
+      const st = status(id, here);
+      let sign = null;
+      if (st.mission && st.heard && st.ready) sign = 'ready';
+      else if (messagesFor(id, states, deeds).length) sign = 'message';
+      else if (momentsDue(id, states[id], view(id)).length) sign = 'moment';
+      else if (st.mission && !st.heard) sign = 'new';
+      people[id].sign = sign;
     }
   }
 
@@ -214,6 +283,21 @@ export function createNpcs({ parent, inventory }) {
   const like = (id, points) => {
     states[id].points = Math.min(states[id].points + points, FRIENDSHIP.perHeart * FRIENDSHIP.hearts);
   };
+  // Where you stand with id, as what they say is checked against (shared/talk.js `holds`)
+  const view = (id) => ({
+    hearts: hearts(id),
+    done: (m) => !!MISSIONS[m] && states[MISSIONS[m].npc].done.includes(m),
+    heard: (m) => !!MISSIONS[m] && states[MISSIONS[m].npc].heard.includes(m),
+    met: (other) => !!states[other]?.met,
+    chose: (key) => states[id].chose[key],
+  });
+  // Give what a reward has in it (gold, items): false, and nothing given, if
+  // the backpack hasn't room for the items
+  const fits = (items) => items.every(([item, n]) => inventory.canAdd(item, n));
+  const give = ({ gold, items }) => {
+    if (gold) inventory.earn(gold);
+    for (const [item, n] of items ?? []) inventory.add(item, n);
+  };
 
   // What there is to tell (ctx: { have(item), built(piece) } for the
   // missions): their mission now, asked or not, and how far it has come
@@ -241,6 +325,11 @@ export function createNpcs({ parent, inventory }) {
     state,
     hearts,
     status,
+    view,
+    // What there is to say to them: the window's first list (src/dialog.js),
+    // their Chat menu, and what you carry to tell them
+    hub: (id, here) => hubOptions({ npc: id, state: states[id], c: view(id), status: status(id, here), messages: messagesFor(id, states, deeds) }),
+    topics: (id) => chatTopics(id, states[id], view(id)),
     shopOpen: (id, shelf) => isOpen(id, states[id], shelf),
     // what their shop takes off its prices, for how much they like you (0 to 1)
     discount: (id) => hearts(id) * FRIENDSHIP.discount,
@@ -258,6 +347,27 @@ export function createNpcs({ parent, inventory }) {
       like(id, FRIENDSHIP.chat);
       return true;
     },
+    // Hear a node of what they say (shared/talk.js): what it gave ({ points,
+    // gives }, or null: nothing, or not the first time), or { full: true } if
+    // the backpack has no room for what it gives (and nothing happened)
+    hear(id, node) {
+      const reward = rewardFor(node, states[id]);
+      if (reward?.gives?.items && !fits(reward.gives.items)) return { full: true };
+      hearNode(node, states[id]);
+      if (reward) {
+        like(id, reward.points);
+        if (reward.gives) give(reward.gives);
+      }
+      return reward;
+    },
+    // You tell `to` what you carry for them from `from`: what you told, and
+    // what they answer ({ say, reply }), or null (nothing for them)
+    tell(to, from) {
+      const mission = messagesFor(to, states, deeds).find((m) => m.from === from)?.mission;
+      if (!mission) return null;
+      deeds[`tell:${to}`] = (deeds[`tell:${to}`] ?? 0) + 1;
+      return mission.message;
+    },
     // They ask you their mission now (counting deeds from here)
     listen(id) {
       const s = states[id];
@@ -268,13 +378,18 @@ export function createNpcs({ parent, inventory }) {
       return mission;
     },
     // Hand over what their mission needs: what it gave ({ mission, gold,
-    // items }), or null (not ready, or no room in the backpack for what it gives)
-    handOver(id, ctx) {
+    // items }), or null (not ready, or no choice of the reward you were to
+    // pick: `pick` is the place of your choice in what the mission lets you
+    // choose from), or { full: true } (no room in the backpack for what it gives)
+    handOver(id, ctx, pick = 0) {
       const st = status(id, ctx);
       if (!st.ready) return null;
       const { mission } = st;
-      const gives = mission.gives.items ?? [];
-      if (!gives.every(([item, n]) => inventory.canAdd(item, n))) return { full: true };
+      const choice = mission.gives.choose ? mission.gives.choose[pick] : null;
+      if (mission.gives.choose && !choice) return null;
+      const gives = [...(mission.gives.items ?? []), ...(choice?.items ?? [])];
+      const gold = (mission.gives.gold ?? 0) + (choice?.gold ?? 0);
+      if (!fits(gives)) return { full: true };
       for (const { need } of st.needs) {
         if (need.item) inventory.remove(need.item, need.count);
         else if (need.items) {
@@ -290,10 +405,9 @@ export function createNpcs({ parent, inventory }) {
       s.done.push(mission.id);
       delete s.since[mission.id];
       like(id, FRIENDSHIP.mission);
-      if (mission.gives.gold) inventory.earn(mission.gives.gold);
-      for (const [item, n] of gives) inventory.add(item, n);
+      give({ gold, items: gives });
       if (mission.gives.mends) showMends();
-      return { mission, gold: mission.gives.gold ?? 0, items: gives };
+      return { mission, gold, items: gives, choice };
     },
 
     // ---------- Deeds ----------
@@ -306,28 +420,14 @@ export function createNpcs({ parent, inventory }) {
     serialize: () => ({ deeds: { ...deeds }, people: structuredClone(states) }),
     // (a save from before the neighbours: everyone not met yet)
     restore(saved) {
-      states = Object.fromEntries(NPC_IDS.map((id) => {
-        const s = saved?.people?.[id];
-        const fresh = freshNpcState();
-        if (!s || typeof s !== 'object') return [id, fresh];
-        const ids = new Set(NPCS[id].missions.map((m) => m.id));
-        const list = (v) => (Array.isArray(v) ? v.filter((m) => ids.has(m)) : []);
-        const since = Object.fromEntries(Object.entries(s.since && typeof s.since === 'object' ? s.since : {}).filter(([m, d]) => ids.has(m) && d && typeof d === 'object'));
-        return [id, {
-          met: !!s.met,
-          done: list(s.done),
-          heard: list(s.heard),
-          since,
-          points: Number.isFinite(s.points) ? Math.max(0, s.points) : 0,
-          chatDay: Number.isFinite(s.chatDay) ? s.chatDay : -1,
-        }];
-      }));
+      states = Object.fromEntries(NPC_IDS.map((id) => [id, cleanState(id, saved?.people?.[id])]));
       deeds = Object.fromEntries(Object.entries(saved?.deeds && typeof saved.deeds === 'object' ? saved.deeds : {}).filter(([, n]) => Number.isInteger(n) && n >= 0));
       showMends();
     },
     showMends,
     // (the developer tools: their mission now, done, as if handed over, and
-    // what it gives given; nothing taken. The mission, or null: none left)
+    // what it gives given (the first of a choice of rewards); nothing taken.
+    // The mission, or null: none left)
     finish(id) {
       const s = states[id];
       const mission = currentMission(id, s);
@@ -337,10 +437,15 @@ export function createNpcs({ parent, inventory }) {
       s.done.push(mission.id);
       delete s.since[mission.id];
       like(id, FRIENDSHIP.mission);
-      if (mission.gives.gold) inventory.earn(mission.gives.gold);
-      for (const [item, n] of mission.gives.items ?? []) inventory.add(item, n);
+      const choice = mission.gives.choose?.[0];
+      give({ gold: (mission.gives.gold ?? 0) + (choice?.gold ?? 0), items: [...(mission.gives.items ?? []), ...(choice?.items ?? [])] });
       if (mission.gives.mends) showMends();
       return mission;
+    },
+    // (and some hearts, to see what they are good for)
+    befriend(id, hearts = FRIENDSHIP.hearts) {
+      states[id].met = true;
+      states[id].points = Math.min(FRIENDSHIP.perHeart * FRIENDSHIP.hearts, Math.max(states[id].points, hearts * FRIENDSHIP.perHeart));
     },
     // (and everyone forgotten)
     reset() {
