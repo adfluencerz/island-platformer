@@ -3881,7 +3881,7 @@ function showRoomFarm(m) {
     const [key, bare, life] = Array.isArray(t) ? t : [t, 0];
     tillTileAt(...keyXZ(key), bare, life);
   }
-  for (const [key, piece] of m.built ?? []) buildings.place(key, piece);
+  buildings.placeAll(m.built ?? []);
   machines.restore(m.machines, m.hours);
   placeChest();
   showFarmWilds(m);
@@ -4382,7 +4382,7 @@ function showFarm(farm) {
     const bareNow = growing.has(key) ? 0 : (bare || 0) + away;
     if (bareNow < life) tillTileAt(...keyXZ(key), bareNow, life);
   }
-  for (const [key, piece] of farm.built ?? []) buildings.place(key, piece);
+  buildings.placeAll(farm.built ?? []);
   machines.restore(farm.machines, farmHours()); // (what was in them, done or not by now)
   placeChest();
   showFarmWilds(farm);

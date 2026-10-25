@@ -111,7 +111,8 @@ export function steelFor(size, rand = Math.random) {
 // the way up. A gate `joins` the fences beside it like a fence, but is walked
 // through, and a stone arch or a wood arbor joins the walls (or fences)
 // beside it the same way. A low stone wall, a rail, picket, wattle, log or rope
-// fence or a box hedge is hopped over like a fence; a palisade, like a stone wall, can't be. A farm has `one`
+// fence or a box hedge is hopped over like a fence; a palisade, like a stone wall, can't be. A `path` joins
+// up with the paths round it (of any kind). A farm has `one`
 // farm chest at most (src/chest.js): built, it stands where it was put; on a
 // farm with helpers there is one by the plaza till then, so the harvest
 // always has somewhere to go.
@@ -119,8 +120,8 @@ export function steelFor(size, rand = Math.random) {
 export const PIECES = {
   wood_fence: { name: 'Wood fence', solid: true, joins: true },
   stone_wall: { name: 'Stone wall', solid: true, joins: true },
-  wood_path: { name: 'Wood path' },
-  stone_path: { name: 'Stone path' },
+  wood_path: { name: 'Wood path', path: true },
+  stone_path: { name: 'Stone path', path: true },
   wood_gate: { name: 'Wood gate', joins: true },
   wood_crate: { name: 'Wood crate', solid: true, block: 0.9 },
   stone_step: { name: 'Stone step', solid: true, block: 0.45 },
@@ -138,14 +139,14 @@ export const PIECES = {
   straw_stack: { name: 'Straw stack', solid: true, block: 1.35 },
   log_tower: { name: 'Log tower', solid: true, block: 1.8 },
   stone_arch: { name: 'Stone arch', joins: true },
-  cobble_path: { name: 'Cobble path' },
+  cobble_path: { name: 'Cobble path', path: true },
   rail_fence: { name: 'Rail fence', solid: true, joins: true },
   wood_arbor: { name: 'Wood arbor', joins: true },
-  gravel_path: { name: 'Gravel path' },
+  gravel_path: { name: 'Gravel path', path: true },
   mossy_stone_block: { name: 'Mossy stone block', solid: true, block: 1 },
   stone_well: { name: 'Stone well', solid: true },
   box_hedge: { name: 'Box hedge', solid: true, joins: true },
-  stepping_stones: { name: 'Stepping stones' },
+  stepping_stones: { name: 'Stepping stones', path: true },
   tree_stump: { name: 'Tree stump', solid: true, block: 0.45 },
   crate_stack: { name: 'Crate stack', solid: true, block: 1.35 },
   stone_lantern: { name: 'Stone lantern', solid: true },
