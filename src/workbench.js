@@ -105,7 +105,7 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
   // A tool there is no making now: you have it, or a better one (made from it)
   const outgrown = (makes) => isTool(makes) && [makes, ...betterThan(makes)].some((id) => inventory.count(id));
   // ...and of those, the one you have at the top of its line (nothing better to make from it)
-  const atTop = (makes) => inventory.count(makes) && !betterThan(makes).length;
+  const atTop = (makes) => outgrown(makes) && inventory.count(makes) && !betterThan(makes).length;
 
   // Why this can't be made right now ('': it can)
   function problem({ makes, needs, level = 1, count = 1 }) {
