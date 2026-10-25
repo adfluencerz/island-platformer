@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { BOSS_IDS, ARENAS, ARENA_R, arenaExit } from '../shared/bosses.js';
-import { MAIN, ROOM_W, DOOR_W, LAYOUTS, roomCount, roomRect, gateAt, sideDoorAt, chestAt, dungeonExit } from '../shared/dungeons.js';
-import { DUNGEONS } from '../shared/balance.js';
+import { MAIN, ROOM_W, DOOR_W, LAYOUTS, roomCount, roomRect, gateAt, sideDoorAt, chestAt, dungeonExit, foeRooms } from '../shared/dungeons.js';
 import { createFoe } from './dungeonfoes.js';
 
 // ---------- The bosses' dungeons ----------
@@ -1455,8 +1454,7 @@ export function createDungeons(world) {
   function foesOf(id) {
     const d = dungeons.get(id);
     if (!d.foes) {
-      const count = DUNGEONS[id].foes.reduce((a, n) => a + n, 0);
-      d.foes = Array.from({ length: count }, () => createFoe(id, d.group));
+      d.foes = foeRooms(id).map(() => createFoe(id, d.group)); // (the main rooms', and the side rooms' guards)
     }
     return d.foes;
   }
