@@ -38,7 +38,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
-import { DungeonRun, ROOMS, ROOM_W, roomRect, roomEntry, roomAt, dungeonAt, dungeonStart, dungeonExit, gateAt, dungeonFromWire, foeHits } from '../shared/dungeons.js';
+import { DungeonRun, MAIN, ROOM_W, LAYOUTS, roomCount, roomRect, roomEntry, roomAt, roomOpen, dungeonAt, dungeonStart, dungeonExit, gateAt, sideDoorAt, chestAt, chestLoot, foeRooms, dungeonFromWire, foeHits } from '../shared/dungeons.js';
 import { BOSSES, BOSS_FIGHT, RECIPES, DUNGEONS, DUNGEON } from '../shared/balance.js';
 import { levelOf, cleanSkills, overallLevel, canDoubleJump, swingsAt, bonusChance } from '../shared/skills.js';
 import { SKILLS, DOUBLE_JUMP } from '../shared/balance.js';
@@ -2993,25 +2993,54 @@ await test('a boss fight on a farm with helpers: its portal, the bops, and the p
   room.close();
 });
 
-await test('every boss has a dungeon in front of its arena: rooms in a row, clear of everything else, a bridge into the arena', () => {
+await test('every boss has a dungeon in front of its arena: main rooms one after another, side rooms off them, clear of everything else, a bridge into the arena', () => {
   for (const id of BOSS_IDS) {
     assert.ok(DUNGEONS[id], `${id} has a dungeon`);
-    assert.equal(DUNGEONS[id].foes.length, ROOMS);
+    assert.equal(DUNGEONS[id].foes.length, MAIN);
+    assert.equal(DUNGEONS[id].guards.length, LAYOUTS[id].sides.length);
+    assert.ok(LAYOUTS[id].sides.length >= 2, 'a side room or two');
+    assert.ok(new Set(LAYOUTS[id].shift).size > 1, 'not all in a straight line');
     const { x: ax, z: az } = ARENAS[id];
-    // the rooms one after another, the last by the arena; in each, its own number
-    for (let k = 0; k < ROOMS; k++) {
+    // the main rooms one after another, the last by the arena; in each, its own number
+    for (let k = 0; k < MAIN; k++) {
       const r = roomRect(id, k);
       assert.equal(r.x1 - r.x0, ROOM_W);
       if (k) assert.equal(r.z1, roomRect(id, k - 1).z0, 'next to the one before');
       assert.equal(roomAt(id, (r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2), k);
       assert.equal(dungeonAt(r.x0 + 1, r.z1 - 1), id);
       assert.equal(arenaAt(r.x0 + 1, r.z0 + 0.1), null, 'not in the arena');
-      assert.equal(gateAt(id, k).z, r.z0, 'its gate in its far wall');
+      // its gate in its far wall, where it meets the next room (with room either side of it)
+      const g = gateAt(id, k);
+      const next = k < MAIN - 1 ? roomRect(id, k + 1) : { x0: ax - 2, x1: ax + 2 };
+      assert.equal(g.z, r.z0);
+      assert.ok(g.x - 1.7 >= Math.max(r.x0, next.x0) && g.x + 1.7 <= Math.min(r.x1, next.x1), `${id} gate ${k}`);
+      assert.equal(roomAt(id, roomEntry(id, k).x, roomEntry(id, k).z), k, 'farmers come in inside it');
+    }
+    // the side rooms: off the side wall of their main room, the door in its middle, the chest across from it
+    LAYOUTS[id].sides.forEach(([k, side], s) => {
+      const r = roomRect(id, MAIN + s);
+      const m = roomRect(id, k);
+      const door = sideDoorAt(id, s);
+      assert.ok(side > 0 ? r.x0 > m.x1 : r.x1 < m.x0, 'beside it');
+      assert.ok(r.z0 > m.z0 && r.z1 < m.z1, 'no deeper than it');
+      assert.ok(door.z > r.z0 + 1.2 && door.z < r.z1 - 1.2 && door.x > Math.min(m.x1, r.x1) - 0.1 - (side < 0 ? 99 : 0));
+      assert.equal(roomAt(id, door.x + side * 1.2, door.z), MAIN + s, 'through the door: in it');
+      assert.equal(roomAt(id, door.x - side * 1.2, door.z), k, 'back through: in the main room');
+      assert.equal(dungeonAt(door.x, door.z), id, 'in the doorway: still in the dungeon');
+      assert.equal(roomAt(id, chestAt(id, s).x, chestAt(id, s).z), MAIN + s);
+      assert.equal(roomAt(id, roomEntry(id, MAIN + s).x, roomEntry(id, MAIN + s).z), MAIN + s);
+    });
+    // no two rooms overlap, nor touch another dungeon or arena
+    for (let a = 0; a < roomCount(id); a++) {
+      for (let b = a + 1; b < roomCount(id); b++) {
+        const [p, q] = [roomRect(id, a), roomRect(id, b)];
+        assert.ok(!(p.x0 < q.x1 && q.x0 < p.x1 && p.z0 < q.z1 && q.z0 < p.z1), `${id} rooms ${a} and ${b}`);
+      }
     }
     assert.equal(roomAt(id, dungeonStart(id).x, dungeonStart(id).z), 0, 'farmers come into the first room');
     assert.equal(roomAt(id, dungeonExit(id).x, dungeonExit(id).z), 0, 'the way home by it');
     // the bridge: from the last room's gate straight on into the arena
-    const bridge = (gateAt(id, ROOMS - 1).z + az + ARENA_R) / 2;
+    const bridge = (gateAt(id, MAIN - 1).z + az + ARENA_R) / 2;
     assert.equal(dungeonAt(ax, bridge), id);
     assert.equal(roomAt(id, ax, bridge), -1);
     assert.equal(arenaAt(ax, az + ARENA_R), id);
@@ -3019,8 +3048,8 @@ await test('every boss has a dungeon in front of its arena: rooms in a row, clea
     assert.equal(arenaAt(arenaStart(id).x, arenaStart(id).z), id);
     assert.ok(Math.abs(arenaExit(id).x - ax) > 3 && arenaAt(arenaExit(id).x, arenaExit(id).z) === id);
     // clear of the other arenas and dungeons, the farm, the house's room and the neighbours'
-    const r0 = roomRect(id, 0);
-    for (const [x, z] of [[r0.x0, r0.z1], [r0.x1, r0.z1], [r0.x0, r0.z0], [r0.x1, roomRect(id, ROOMS - 1).z0]]) {
+    const corners = Array.from({ length: roomCount(id) }, (_, room) => roomRect(id, room)).flatMap((r) => [[r.x0, r.z0], [r.x1, r.z0], [r.x0, r.z1], [r.x1, r.z1]]);
+    for (const [x, z] of corners) {
       for (const other of BOSS_IDS) {
         if (other === id) continue;
         assert.ok(Math.hypot(x - ARENAS[other].x, z - ARENAS[other].z) > ARENA_R + 3, `${id} by ${other}'s arena`);
@@ -3037,7 +3066,8 @@ await test('a dungeon: its foes wake when a farmer comes into their room, go for
   const def = DUNGEONS.parsnip;
   const start = dungeonStart('parsnip');
   const a = { id: 1, x: start.x, y: GROUND_STAND_Y, z: start.z };
-  assert.equal(run.foes.length, def.foes.reduce((s, n) => s + n, 0));
+  assert.equal(run.foes.length, [...def.foes, ...def.guards].reduce((s, n) => s + n, 0));
+  assert.deepEqual(run.foes.map((f) => f.room), foeRooms('parsnip'));
   assert.ok(run.foes.every((f) => f.state === 'idle' && f.hp === def.hp));
   // the same layout everywhere (a page draws it before the room says where they are)
   assert.deepEqual(new DungeonRun('parsnip', mulberry32(9)).toWire(), run.toWire());
@@ -3082,7 +3112,7 @@ await test('a dungeon: its foes wake when a farmer comes into their room, go for
   }
   assert.equal(run.cleared, 1);
   // the next rooms the same, in order, the last onto the bridge
-  for (let k = 1; k < ROOMS; k++) {
+  for (let k = 1; k < MAIN; k++) {
     for (const [i, f] of run.foes.entries()) {
       if (f.room !== k) continue;
       f.y = 0;
@@ -3090,10 +3120,10 @@ await test('a dungeon: its foes wake when a farmer comes into their room, go for
     }
     assert.equal(run.cleared, k + 1);
   }
-  assert.equal(dungeonFromWire('parsnip', run.toWire()).cleared, ROOMS);
+  assert.equal(dungeonFromWire('parsnip', run.toWire()).cleared, MAIN);
   // nobody about for a while: all as it was again (not while someone is in its arena)
   for (let i = 0; i < DUNGEON.reset * 2; i++) run.step(1, [], true);
-  assert.equal(run.cleared, ROOMS, 'someone in the arena');
+  assert.equal(run.cleared, MAIN, 'someone in the arena');
   let reset = [];
   for (let i = 0; i <= DUNGEON.reset; i++) reset.push(...run.step(1, []));
   assert.deepEqual(reset, [{ e: 'reset' }]);
@@ -3124,6 +3154,52 @@ await test('each dungeon\'s foes go at a farmer their own way: a hop, a dash, a 
     if (d.move === 'dart') assert.ok(high > d.fly * 0.5, `${id} flies`);
     if (d.move === 'dash') assert.ok(fastest > d.walk * 2 && high === 0, `${id} dashes`);
   }
+});
+
+await test('a side room: its door opens with its main room, its foes guard a chest, and the chest is each farmer\'s once a day', () => {
+  const id = 'lion';
+  const run = new DungeonRun(id, mulberry32(11));
+  const [k] = LAYOUTS[id].sides[0];
+  const side = MAIN; // (side room 0)
+  const at = chestAt(id, 0);
+  const inside = roomEntry(id, side);
+  // shut till its main room is cleared
+  assert.ok(!roomOpen(id, side, k) && roomOpen(id, side, k + 1));
+  assert.ok(roomOpen(id, 0, 0) && !roomOpen(id, 1, 0) && roomOpen(id, 1, 1));
+  // its guards sleep while nobody is in there, and wake when someone is
+  const guards = run.foes.filter((f) => f.room === side);
+  assert.equal(guards.length, DUNGEONS[id].guards[0]);
+  const a = { id: 1, x: inside.x, y: GROUND_STAND_Y, z: inside.z };
+  run.step(0.1, [{ ...a, ...roomEntry(id, k) }]);
+  assert.ok(guards.every((f) => f.state === 'idle'));
+  for (let i = 0; i < 10; i++) run.step(0.1, [a]);
+  assert.ok(guards.every((f) => f.state !== 'idle'), 'awake');
+  for (const f of guards) assert.equal(roomAt(id, f.x, f.z), side, 'kept in their room');
+  // the chest: not while they are up, not from across the room
+  assert.deepEqual(run.openChest('Ann', at.x - at.side, at.z, 0, 1), { why: 'guarded' });
+  assert.deepEqual(run.openChest('Ann', inside.x, inside.z + 3, 0, 1), { why: 'far' });
+  for (const [i, f] of run.foes.entries()) {
+    if (f.room !== side) continue;
+    f.y = 0;
+    while (f.state !== 'down') run.bop(1, 'silver_sword', f.x + 1, GROUND_STAND_Y, f.z, i);
+  }
+  assert.equal(run.cleared, 0, 'a side room is no gate on the way');
+  const got = run.openChest('Ann', at.x - at.side, at.z, 0, 1);
+  assert.ok(Array.isArray(got.items) && got.items.length >= 1, 'something in it');
+  for (const [item, n] of got.items) assert.ok(ITEMS[item] && Number.isInteger(n) && n >= 1, item);
+  assert.deepEqual(run.openChest('Ann', at.x - at.side, at.z, 0, 1), { why: 'empty' }, 'once a day');
+  assert.ok(run.openChest('Bo', at.x - at.side, at.z, 0, 1).items, 'each farmer their own');
+  // all as it was again: the guards back, but what Ann took today is still hers
+  run.reset();
+  assert.ok(run.foes.filter((f) => f.room === side).every((f) => f.state === 'idle' && f.hp === DUNGEONS[id].hp));
+  for (const f of run.foes) if (f.room === side) run.start(f, 'down', {});
+  assert.deepEqual(run.openChest('Ann', at.x - at.side, at.z, 0, 1), { why: 'empty' });
+  assert.ok(run.openChest('Ann', at.x - at.side, at.z, 0, 2).items, 'the next day, again');
+  // what a chest can have: coins, steel, arrows, seeds, a gem now and then, the boss's own key piece once in a while
+  const seen = new Map();
+  for (let i = 0; i < 400; i++) for (const [item, n] of chestLoot(id, mulberry32(i))) seen.set(item, (seen.get(item) ?? 0) + n);
+  for (const item of ['coin', 'steel', 'arrow', 'gem', BOSSES[id].key]) assert.ok(seen.has(item), item);
+  for (const item of seen.keys()) assert.ok(ITEMS[item], item);
 });
 
 await test('a dungeon on a farm with helpers: the room moves the foes, counts the bops, opens the gates, and says so', () => {
@@ -3170,6 +3246,23 @@ await test('a dungeon on a farm with helpers: the room moves the foes, counts th
   for (let i = 0; i < (DUNGEON.reset + 1) * 4; i++) room.tickBosses((now += 250));
   assert.deepEqual(b.conn.last(S.DUNGEON_FX).fx, { e: 'reset' });
   assert.equal(run.cleared, 0);
+  // a side room's chest: its guards down, opened by Ann for her, once a game day
+  const s = 0;
+  const side = MAIN + s;
+  const chest = chestAt('lion', s);
+  const by = { x: chest.x - chest.side, z: chest.z };
+  room.message(a.p, { t: C.STATE, x: by.x, y: GROUND_STAND_Y, z: by.z, yaw: 0, f: 1 });
+  room.message(a.p, { t: C.DUNGEON_CHEST, boss: 'lion', chest: s });
+  assert.equal(a.conn.last(S.DUNGEON_LOOT).why, 'guarded');
+  for (const f of run.foes) if (f.room === side) run.start(f, 'down', {});
+  room.message(a.p, { t: C.DUNGEON_CHEST, boss: 'lion', chest: s });
+  const loot = a.conn.last(S.DUNGEON_LOOT);
+  assert.ok(Array.isArray(loot.items) && loot.items.length && loot.chest === s);
+  assert.equal(b.conn.last(S.DUNGEON_LOOT), undefined, 'hers alone');
+  room.message(a.p, { t: C.DUNGEON_CHEST, boss: 'lion', chest: s });
+  assert.equal(a.conn.last(S.DUNGEON_LOOT).why, 'empty');
+  room.message(a.p, { t: C.DUNGEON_CHEST, boss: 'parsnip', chest: s });
+  assert.equal(a.conn.all(S.DUNGEON_LOOT).length, 3, 'not that dungeon here');
   room.close();
 });
 

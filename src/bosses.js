@@ -6,7 +6,7 @@ import {
   BossFight, BOSS_IDS, BODY_R, arenaAt, arenaStart, arenaExit, portalOf, portalBoss, bossFromWire,
   rollHits, swoopHits, waveHits, seedAt, seedHits, swarmAt, swarmHits,
 } from '../shared/bosses.js';
-import { DungeonRun, ROOMS, FOE_R, dungeonAt, roomAt, roomEntry, dungeonStart, dungeonExit, dungeonFromWire, foeHits } from '../shared/dungeons.js';
+import { DungeonRun, MAIN, FOE_R, CHEST_REACH, LAYOUTS, isSide, dungeonAt, roomAt, roomEntry, dungeonStart, dungeonExit, chestAt, dungeonFromWire, foeHits } from '../shared/dungeons.js';
 import { ITEMS } from './items.js';
 import { createArenas } from './arena.js';
 import { createDungeons, THEMES as DUNGEON_LOOKS } from './dungeon.js';
@@ -22,8 +22,10 @@ import { TILE_SIZE } from './world.js';
 // (src/arena.js); a portal by the dungeon's way in, and one in the arena,
 // lead home. In the dungeon, E with a sword or the mallet in hand bops the
 // nearest foe in the room, and the bow shoots at one further off; the gate
-// on opens once the room's foes are all down, and the last one onto the
-// bridge into the arena. In there, the same bops the boss (shared/bosses.js
+// on opens once the room's foes are all down (and the doors to its side
+// rooms), and the last one onto the bridge into the arena. In a side room,
+// once its foes are down, E at its chest opens it: what is in it goes in the
+// backpack (or, with no room, is owed: as a boss's prize), once a game day. In there, the same bops the boss (shared/bosses.js
 // has how it fights). Its moves catch a farmer who isn't quick, and so do the
 // foes: knocked back and dizzy for a moment (slower, no bopping), and after
 // BOSS_FIGHT.hitsOut of those, back at the start of the arena (or of the
@@ -44,7 +46,8 @@ import { TILE_SIZE } from './world.js';
 // ctx (from main.js): world (the farm's), player, farmer, inventory, hud,
 // giantBars, buildings, myId(), net() (the farm's room, null playing alone),
 // atHome(), weapon() (the weapon in hand), putDown(pos), knock(dx, dz,
-// speed), arrival(), removePortal(boss) (playing alone: it is used up),
+// speed), arrival(), removePortal(boss) (playing alone: it is used up), day()
+// (the game day: a dungeon's chests are ours once a day),
 // farmIsOurs() (our own farm, its animals ours to drive), addShiny(kind),
 // save()
 
@@ -65,7 +68,7 @@ export function createBosses(ctx) {
   // boss -> { s: its dungeon as the room (or our own run) last had it (dungeonFromWire), shown: where each foe is drawn }
   const dungeons = new Map(BOSS_IDS.map((id) => [id, { s: null, shown: [] }]));
   const aloneRuns = new Map(); // boss -> its DungeonRun, on a farm played alone
-  let rec = { won: {}, shinies: [], owed: [] }; // (record())
+  let rec = { won: {}, shinies: [], owed: [], looted: { day: 0, chests: [] } }; // (record(); looted: the dungeons' chests we have opened today, 'boss:chest')
   let hits = 0; // times its boss (or the foes) caught us since we came into the arena or the dungeon (or were last sent back)
   let graceUntil = 0;
   let dizzyUntil = 0;
@@ -117,7 +120,7 @@ export function createBosses(ctx) {
     lastRoom = `${id}:0`; // (what to do is said here)
     const { name: where, foe } = DUNGEONS[id];
     if (bosses.get(id).s?.phase === 'friendly') inventory.notify(`The ${name(id)} is friendly now`);
-    else if ((dungeons.get(id).s?.cleared ?? 0) >= ROOMS) inventory.notify(`The ${where}: the way to the ${name(id)} is open`);
+    else if ((dungeons.get(id).s?.cleared ?? 0) >= MAIN) inventory.notify(`The ${where}: the way to the ${name(id)} is open`);
     else if (!Object.keys(WEAPONS).some((w) => inventory.count(w))) inventory.notify(`The ${where}! Bop the ${foe[1]} with a sword, a mallet or a bow (made at a workbench) to get through to the ${name(id)}`);
     else inventory.notify(`The ${where}! Bop the ${foe[1]} in each room to open the way on to the ${name(id)}`);
   }
@@ -304,9 +307,11 @@ export function createBosses(ctx) {
       if (fx.by === me()) hud.flash(fx.hp > 0 ? 'Bop!' : 'Poof!');
       else if (fx.shot && dungeonView.top(id, fx.foe, _to)) ctx.shotFrom(fx.by, _to); // (someone else's arrow)
     } else if (fx.e === 'open' && Number.isInteger(fx.room) && ours) {
-      const last = fx.room >= ROOMS - 1;
+      const last = fx.room >= MAIN - 1;
+      const sides = LAYOUTS[id].sides.filter(([k]) => k === fx.room).length;
       hud.flash(last ? 'The way is open!' : 'The gate is open!');
-      inventory.notify(last ? `The last gate is open: over the bridge to the ${name(id)}!` : `The gate is open: on to the next room!`);
+      inventory.notify((last ? `The last gate is open: over the bridge to the ${name(id)}!` : 'The gate is open: on to the next room!') +
+        (sides ? ` And a door to a side room${sides > 1 ? 's' : ''}: something might be in there` : ''));
     } else if (fx.e === 'reset') {
       const d = dungeons.get(id);
       d.s = null;
@@ -318,9 +323,60 @@ export function createBosses(ctx) {
   function roomNotice(id, k) {
     const s = dungeons.get(id).s ?? freshOf(id);
     const up = s.foes.filter((f) => f.room === k && f.state !== 'down').length;
-    if (!up || k < s.cleared) return;
     const { foe } = DUNGEONS[id];
-    inventory.notify(`${up} ${up > 1 ? foe[1] : foe[0]}! Bop ${up > 1 ? 'them all' : 'it'} to open the ${k >= ROOMS - 1 ? `way to the ${name(id)}` : 'gate'}`);
+    const them = `${up} ${up > 1 ? foe[1] : foe[0]}`;
+    if (isSide(k)) {
+      if (looted(id, k - MAIN)) inventory.notify('A side room: its chest is empty (yours again tomorrow)');
+      else inventory.notify(up ? `A side room, a chest in it! ${them} guard${up > 1 ? '' : 's'} it: bop ${up > 1 ? 'them' : 'it'}, then open it` : 'A side room: open the chest!');
+      return;
+    }
+    if (!up || k < s.cleared) return;
+    inventory.notify(`${them}! Bop ${up > 1 ? 'them all' : 'it'} to open the ${k >= MAIN - 1 ? `way to the ${name(id)}` : 'gate'}`);
+  }
+
+  // ---------- Chests ----------
+  // Have we opened side room s's chest today?
+  const looted = (id, s) => rec.looted.day === ctx.day() && rec.looted.chests.includes(`${id}:${s}`);
+
+  // The chest we are by in a side room of the dungeon we are in: { id, s, guarded }, or null
+  function chestInReach() {
+    const id = inDungeon();
+    const room = id ? roomAt(id, player.position.x, player.position.z) : -1;
+    if (!isSide(room)) return null;
+    const s = room - MAIN;
+    const at = chestAt(id, s);
+    if (Math.hypot(player.position.x - at.x, player.position.z - at.z) > CHEST_REACH) return null;
+    const run = dungeons.get(id).s ?? freshOf(id);
+    return { id, s, guarded: run.foes.some((f) => f.room === room && f.state !== 'down') };
+  }
+
+  function openChest({ id, s, guarded }) {
+    if (guarded) return inventory.notify(`Bop the ${DUNGEONS[id].foe[1]} guarding it first`);
+    if (looted(id, s)) return inventory.notify('You have emptied this one today: come back tomorrow');
+    if (ctx.net()) return ctx.net().send({ t: C.DUNGEON_CHEST, boss: id, chest: s });
+    const run = aloneRuns.get(id);
+    if (run) onLoot({ boss: id, chest: s, ...run.openChest('me', player.position.x, player.position.z, s, ctx.day()) });
+  }
+
+  // DUNGEON_LOOT (or our own run's): what was in the chest, into the backpack
+  function onLoot({ boss: id, chest: s, items, why }) {
+    if (!DUNGEONS[id]) return;
+    if (!Array.isArray(items)) {
+      if (why === 'guarded') inventory.notify(`Bop the ${DUNGEONS[id].foe[1]} guarding it first`);
+      else if (why === 'empty') inventory.notify('You have emptied this one today: come back tomorrow');
+      return;
+    }
+    if (rec.looted.day !== ctx.day()) rec.looted = { day: ctx.day(), chests: [] };
+    rec.looted.chests.push(`${id}:${s}`);
+    const words = [];
+    for (const [item, n] of items) {
+      if (!ITEMS[item] || !Number.isInteger(n) || n < 1) continue;
+      if (!inventory.add(item, n)) rec.owed.push([item, n]);
+      words.push(item === 'coin' ? `${n * ITEMS.coin.currency} gold` : `${n > 1 ? `${n} × ` : ''}${ITEMS[item].name.toLowerCase()}`);
+    }
+    hud.flash('Treasure!');
+    inventory.notify(`In the chest: ${words.join(', ')}`);
+    ctx.save();
   }
 
   // A dungeon as it is before anyone comes (its foes all resting where they start)
@@ -402,6 +458,7 @@ export function createBosses(ctx) {
     onWon: (m) => BOSSES[m.boss] && Array.isArray(m.won) && onWon(m.boss, m.won),
     onDungeon: (m) => DUNGEONS[m.boss] && (dungeons.get(m.boss).s = dungeonFromWire(m.boss, m.s)),
     onDungeonFx: (m) => DUNGEONS[m.boss] && m.fx && onDungeonFx(m.boss, m.fx),
+    onLoot,
     // Onto a farm's room (bosses and dungeons: as its FARM has them), or off it (none)
     welcome(list = {}, ways = {}) {
       alone.clear();
@@ -425,6 +482,8 @@ export function createBosses(ctx) {
       if (portal) return enter(portal), true;
       const exit = exitInReach();
       if (exit) return leave(exit), true;
+      const chest = chestInReach();
+      if (chest && !chest.guarded) return openChest(chest), true; // (guarded: E bops the guards)
       const way = inDungeon();
       if (way) {
         const weapon = ctx.weapon();
@@ -480,11 +539,13 @@ export function createBosses(ctx) {
       const portal = portalInReach();
       if (portal) return `E  Go through the ${name(portal)} portal`;
       if (exitInReach()) return 'E  Go home through the portal';
+      const chest = chestInReach();
+      if (chest && !chest.guarded) return looted(chest.id, chest.s) ? 'Empty: yours again tomorrow' : 'E  Open the chest';
       const way = inDungeon();
       if (way) {
         const weapon = ctx.weapon();
         if (!weapon) return 'Take a sword, a mallet or a bow in hand';
-        if (foeInReach(way, weapon) === null) return '';
+        if (foeInReach(way, weapon) === null) return chest ? `Bop the ${DUNGEONS[chest.id].foe[1]} guarding the chest first` : '';
         return `E  ${WEAPONS[weapon].shoots ? 'Shoot at' : 'Bop'} the ${DUNGEONS[way].foe[0]}`;
       }
       const id = here();
@@ -557,7 +618,7 @@ export function createBosses(ctx) {
         const near = way === id || inArena === id;
         if (near) showFoes(id, dt);
         const fresh = d.s ? null : freshOf(id);
-        dungeonView.update(dt, t, id, near, way === id, d.s ?? fresh, d.s ? d.shown : fresh.foes);
+        dungeonView.update(dt, t, id, near, way === id, d.s ?? fresh, d.s ? d.shown : fresh.foes, (s) => looted(id, s));
         if (way === id) checkFoes(id);
       }
       // a farm played alone: its fights are ours to run
@@ -609,13 +670,15 @@ export function createBosses(ctx) {
       }
     },
 
-    // For the save (top level: it is ours, wherever we are): { won: { boss: times }, shinies, owed }
+    // For the save (top level: it is ours, wherever we are): { won: { boss: times }, shinies, owed, looted: { day, chests } }
     record: () => rec,
     restore(saved) {
       const won = Object.fromEntries(Object.entries(saved?.won ?? {}).filter(([id, n]) => BOSSES[id] && Number.isInteger(n) && n > 0));
       const shinies = (Array.isArray(saved?.shinies) ? saved.shinies : []).filter((kind) => BOSS_FIGHT.shiny.includes(kind)).slice(0, 20);
-      const owed = (Array.isArray(saved?.owed) ? saved.owed : []).filter((o) => Array.isArray(o) && ITEMS[o[0]] && Number.isInteger(o[1]) && o[1] > 0).slice(0, 20);
-      rec = { won, shinies, owed };
+      const owed = (Array.isArray(saved?.owed) ? saved.owed : []).filter((o) => Array.isArray(o) && ITEMS[o[0]] && Number.isInteger(o[1]) && o[1] > 0).slice(0, 40);
+      const day = Number.isInteger(saved?.looted?.day) ? saved.looted.day : 0;
+      const chests = (Array.isArray(saved?.looted?.chests) ? saved.looted.chests : []).filter((key) => typeof key === 'string' && key.length < 24).slice(0, 20);
+      rec = { won, shinies, owed, looted: { day, chests } };
     },
   };
 }

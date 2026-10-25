@@ -1,10 +1,15 @@
 // Boss dungeons (DUNGEONS and DUNGEON in shared/balance.js). The way to each
-// boss's arena (shared/bosses.js) is a dungeon of ROOMS rooms in a row, out
-// in front of the arena (the way the camera looks: farmers walk in, away
-// from it, room after room). The boss's portal on the farm leads into the
-// first room, and a way home stands by where farmers come in. Each room has
-// foes, little ones of the boss's own kind; the gate at its far end opens
-// once they are all bopped down, the last one onto a bridge into the arena.
+// boss's arena (shared/bosses.js) is a dungeon, out in front of the arena
+// (the way the camera looks: farmers walk in, away from it). MAIN rooms lead
+// one after another to it, each a little to one side of the one before
+// (LAYOUTS: each dungeon's own), and off a couple of them a door opens into a
+// side room, with a chest in it. The boss's portal on the farm leads into the
+// first room, and a way home stands by where farmers come in. Every room has
+// foes, little ones of the boss's own kind: the gate at a main room's far end
+// (and the doors to its side rooms) opens once its foes are all bopped down,
+// the last one onto a bridge into the arena. A side room's foes guard its
+// chest: once they are down, a farmer can open it for what is in it (a roll
+// of DUNGEON.chest, and of the dungeon's own loot), once a day.
 //
 // A DungeonRun is one dungeon and its foes: a room's foes wake when a farmer
 // comes into it, and go for whoever is nearest in there (a hop, a dash, a
@@ -14,54 +19,144 @@
 // (src/bosses.js): the same rules either way. Whether a foe caught a farmer
 // is that farmer's own page's (foeHits), as bops are. Left empty a while
 // (nobody in it, nor in its arena), it is all as it was again.
-import { DUNGEONS, DUNGEON, BOSS_FIGHT, WEAPONS } from './balance.js';
-import { GROUND_STAND_Y } from './level.js';
+import { DUNGEONS, DUNGEON, BOSSES, BOSS_FIGHT, WEAPONS } from './balance.js';
+import { GROUND_STAND_Y, rollBundle } from './level.js';
 import { ARENAS, ARENA_R, BOSS_IDS } from './bosses.js';
 
-export const ROOMS = 3;
-export const ROOM_W = 12; // a room, across
+export const MAIN = 4; // the rooms on the way through
+export const ROOM_W = 12; // a main room, across
 export const ROOM_D = 11; // ...and deep (from the camera in)
-export const DOOR_W = 2.4; // a gate's width, in the middle of a room's far wall
+export const SIDE_W = 8; // a side room, across
+export const SIDE_D = 8; // ...and deep
+export const WALL_T = 0.6; // a wall's thickness
+export const DOOR_W = 2.4; // a gate's width (or a side door's)
 const OUT = ARENA_R + 3; // from the arena's middle to the last room's far wall (a bridge between)
 export const FOE_R = 0.45; // how wide a foe is, from its middle
 export const FOE_H = 0.7; // ...and how tall
+export const CHEST_REACH = 1.6; // (to open a chest)
 const REACH_SLACK = 0.8; // (the room has a slightly older idea of where everyone is)
 const EDGE = 0.7; // (foes keep this far in from a room's walls)
 const ROUND = (v) => Math.round(v * 100) / 100;
 
-// Room k (0: the first, where farmers come in; ROOMS - 1: the last, by the
-// arena) of boss id's dungeon: x0..x1 across, z0 (its far side, with the
-// gate) to z1 (the near side)
-export function roomRect(id, k) {
+// Each dungeon's rooms. `shift`: how far each main room, first to last, is to
+// one side of the line to its arena (+x: right; the last one's gate is on the
+// line, onto the bridge). `sides`: its side rooms, [the main room each is off,
+// which side of it (-1: left, 1: right)]
+export const LAYOUTS = {
+  parsnip: { shift: [0, 2.5, -2.5, 0], sides: [[0, -1], [2, 1]] },
+  lion: { shift: [0, -3, 0, 2], sides: [[1, 1], [3, -1]] },
+  bee: { shift: [2, 2, -2, 0], sides: [[0, -1], [2, 1]] },
+  crow: { shift: [0, -2.5, 2.5, -1], sides: [[1, -1], [2, 1]] },
+  toad: { shift: [-2, 1, 3, 0], sides: [[0, 1], [3, -1]] },
+};
+export const sideCount = (id) => LAYOUTS[id].sides.length;
+export const roomCount = (id) => MAIN + sideCount(id);
+export const isSide = (room) => room >= MAIN;
+
+// Room `room` of boss id's dungeon (0: the first main room, where farmers
+// come in; MAIN - 1: the last, by the arena; MAIN + s: side room s): x0..x1
+// across, z0 (its far side) to z1 (its near side), inside its walls
+export function roomRect(id, room) {
   const { x, z } = ARENAS[id];
-  const z0 = z + OUT + (ROOMS - 1 - k) * ROOM_D;
-  return { x0: x - ROOM_W / 2, x1: x + ROOM_W / 2, z0, z1: z0 + ROOM_D };
+  const layout = LAYOUTS[id];
+  if (room < MAIN) {
+    const z0 = z + OUT + (MAIN - 1 - room) * ROOM_D;
+    const cx = x + layout.shift[room];
+    return { x0: cx - ROOM_W / 2, x1: cx + ROOM_W / 2, z0, z1: z0 + ROOM_D };
+  }
+  const [k, side] = layout.sides[room - MAIN];
+  const m = roomRect(id, k);
+  const zm = (m.z0 + m.z1) / 2;
+  const x0 = side > 0 ? m.x1 + WALL_T : m.x0 - WALL_T - SIDE_W; // (past the main room's wall)
+  return { x0, x1: x0 + SIDE_W, z0: zm - SIDE_D / 2, z1: zm + SIDE_D / 2 };
 }
 
-// Where farmers come in (and are sent back to the start of a room after one
-// catch too many), and the way home, by the first room's near wall
-export const roomEntry = (id, k) => ({ x: ARENAS[id].x, z: roomRect(id, k).z1 - 1.4 });
-export const dungeonStart = (id) => roomEntry(id, 0);
-export const dungeonExit = (id) => ({ x: ARENAS[id].x + ROOM_W / 2 - 1.8, z: roomRect(id, 0).z1 - 1.1 });
-// The gate out of room k, in the middle of its far wall
-export const gateAt = (id, k) => ({ x: ARENAS[id].x, z: roomRect(id, k).z0 });
-// How far out the dungeon reaches (for the farm's room: where farmers may be)
-export const dungeonFar = (id) => Math.max(Math.abs(ARENAS[id].x) + ROOM_W / 2, Math.abs(roomRect(id, 0).z1));
+// The gate out of main room k, in its far wall: where it overlaps the next
+// room (the last one's on the line to the arena, onto the bridge)
+export function gateAt(id, k) {
+  const r = roomRect(id, k);
+  if (k >= MAIN - 1) return { x: ARENAS[id].x, z: r.z0 };
+  const n = roomRect(id, k + 1);
+  return { x: (Math.max(r.x0, n.x0) + Math.min(r.x1, n.x1)) / 2, z: r.z0 };
+}
 
-// The boss whose dungeon x, z is in (its rooms, or the bridge into its arena), or null
+// The door into side room s, in the side wall of the main room it is off
+export function sideDoorAt(id, s) {
+  const [k, side] = LAYOUTS[id].sides[s];
+  const m = roomRect(id, k);
+  return { x: side > 0 ? m.x1 + WALL_T / 2 : m.x0 - WALL_T / 2, z: (m.z0 + m.z1) / 2, side, room: k };
+}
+
+// Is the way into room `room` open, with `cleared` main rooms cleared? (the
+// first is; a main room's once the one before is cleared; a side room's
+// once the main room it is off is)
+export function roomOpen(id, room, cleared) {
+  if (isSide(room)) return cleared > LAYOUTS[id].sides[room - MAIN][0];
+  return cleared >= room;
+}
+
+// Where farmers come into a room (and are sent back to after one catch too
+// many): the first, by its near wall; a main room, in through the gate from
+// the one before; a side room, in through its door. And the way home, by
+// the first room's near wall, and where a side room's chest stands (at its
+// far side, facing in: `side` the way it faces away from)
+export function roomEntry(id, room) {
+  if (room === 0) return { x: (roomRect(id, 0).x0 + roomRect(id, 0).x1) / 2, z: roomRect(id, 0).z1 - 1.4 };
+  if (!isSide(room)) return { x: gateAt(id, room - 1).x, z: roomRect(id, room).z1 - 1.4 };
+  const door = sideDoorAt(id, room - MAIN);
+  return { x: door.x + door.side * 1.5, z: door.z };
+}
+export const dungeonStart = (id) => roomEntry(id, 0);
+export const dungeonExit = (id) => ({ x: roomRect(id, 0).x1 - 1.8, z: roomRect(id, 0).z1 - 1.1 });
+export function chestAt(id, s) {
+  const r = roomRect(id, MAIN + s);
+  const side = LAYOUTS[id].sides[s][1];
+  return { x: side > 0 ? r.x1 - 1.1 : r.x0 + 1.1, z: (r.z0 + r.z1) / 2, side };
+}
+
+// How far out the dungeon reaches (for the farm's room: where farmers may be)
+export function dungeonFar(id) {
+  let far = 0;
+  for (let room = 0; room < roomCount(id); room++) {
+    const r = roomRect(id, room);
+    far = Math.max(far, ...[r.x0, r.x1, r.z0, r.z1].map((v) => Math.abs(v) + WALL_T));
+  }
+  return far;
+}
+
+// Which of boss id's rooms x, z is in (-1: none: on the bridge, or in a doorway between)
+export function roomAt(id, x, z) {
+  for (let room = 0; room < roomCount(id); room++) {
+    const r = roomRect(id, room);
+    if (x >= r.x0 - 0.3 && x <= r.x1 + 0.3 && z >= r.z0 && z <= r.z1) return room;
+  }
+  return -1;
+}
+
+// The boss whose dungeon x, z is in (its rooms, the doorways, or the bridge into its arena), or null
 export function dungeonAt(x, z) {
   for (const id of BOSS_IDS) {
     const { x: ax, z: az } = ARENAS[id];
-    if (Math.abs(x - ax) <= ROOM_W / 2 + 0.5 && z >= az + ARENA_R + 1.5 && z <= roomRect(id, 0).z1 + 0.5) return id;
+    if (Math.abs(x - ax) <= DOOR_W && z >= az + ARENA_R + 1.5 && z <= roomRect(id, MAIN - 1).z0 + 0.5) return id; // (the bridge)
+    for (let room = 0; room < roomCount(id); room++) {
+      const r = roomRect(id, room);
+      if (x >= r.x0 - WALL_T - 0.1 && x <= r.x1 + WALL_T + 0.1 && z >= r.z0 - 0.5 && z <= r.z1 + 0.5) return id;
+    }
   }
   return null;
 }
 
-// Which of boss id's rooms x, z is in (-1: none, on the bridge)
-export function roomAt(id, x, z) {
-  const last = roomRect(id, ROOMS - 1);
-  if (z < last.z0 || Math.abs(x - ARENAS[id].x) > ROOM_W / 2 + 0.5) return -1;
-  return Math.max(0, ROOMS - 1 - Math.floor((z - last.z0) / ROOM_D));
+// Which room each of a dungeon's foes is in: the main rooms' (DUNGEONS
+// `foes`), then the side rooms' (`guards`)
+export function foeRooms(id) {
+  const { foes, guards } = DUNGEONS[id];
+  return [...foes, ...guards].flatMap((n, room) => Array(n).fill(room));
+}
+
+// What a chest in boss id's dungeon has in it: [[item, count], ...] (coins as 'coin')
+export function chestLoot(id, rand = Math.random) {
+  const { rolls, loot, key } = DUNGEON.chest;
+  return rollBundle({ rolls, loot: [...loot, ...DUNGEONS[id].loot, [BOSSES[id].key, key, 1, 1]] }, rand);
 }
 
 const STATES = ['idle', 'roam', 'windup', 'attack', 'hurt', 'down']; // (as numbers on the wire: only ever added to)
@@ -75,22 +170,24 @@ export class DungeonRun {
     this.reset();
   }
 
-  // Every foe fresh and resting in its room, the gates shut
+  // Every foe fresh and resting in its room, the gates shut (what each farmer
+  // took from the chests is kept: a chest is theirs again the next day)
   reset() {
-    this.cleared = 0; // rooms cleared, in order: the gates of the first `cleared` are open
+    this.cleared = 0; // main rooms cleared, in order: the gates of the first `cleared` are open
     this.emptyFor = 0;
     this.stirred = false; // (anything happened since it was last reset)
+    this.looted ??= new Map(); // chest -> Map(farmer -> the day they opened it)
     this.foes = [];
-    this.def.foes.forEach((n, room) => {
+    [...this.def.foes, ...this.def.guards].forEach((n, room) => {
       const r = roomRect(this.id, room);
-      const cols = Math.min(n, 3);
+      const cols = Math.min(n, isSide(room) ? 2 : 3);
       for (let i = 0; i < n; i++) {
         // spread over the far two thirds of the room, a little out of line
         // (the same on every page: drawn there before the room says where they are)
         const col = i % cols;
         const row = Math.floor(i / cols);
-        const x = (r.x0 + r.x1) / 2 + (col - (cols - 1) / 2) * 3.2 + (((i * 7 + room) % 5) - 2) * 0.2;
-        const z = r.z0 + 2.4 + row * 2.8 + (((i * 3 + room) % 4) - 1.5) * 0.25;
+        const x = (r.x0 + r.x1) / 2 + (col - (cols - 1) / 2) * (isSide(room) ? 2.6 : 3.2) + (((i * 7 + room) % 5) - 2) * 0.2;
+        const z = r.z0 + 2.2 + row * 2.6 + (((i * 3 + room) % 4) - 1.5) * 0.25;
         this.foes.push({ room, x, y: this.restY, z, yaw: 0, hp: this.def.hp, state: 'idle', t: 0, m: {} });
       }
     });
@@ -262,8 +359,29 @@ export class DungeonRun {
     this.start(f, 'down', {});
     f.y = 0;
     const was = this.cleared;
-    while (this.cleared < ROOMS && this.foes.every((g) => g.room !== this.cleared || g.state === 'down')) this.cleared++;
+    while (this.cleared < MAIN && this.roomClear(this.cleared)) this.cleared++;
     return { hp: 0, ...(this.cleared > was && { opened: this.cleared - 1 }) };
+  }
+
+  // Are room `room`'s foes all down?
+  roomClear(room) {
+    return this.foes.every((g) => g.room !== room || g.state === 'down');
+  }
+
+  // Farmer `who` (their name) at x, z opening side room s's chest on game
+  // day `day`: what is in it for them ([[item, count], ...]), or why not
+  // ({ why }: not in that room by it, its foes still up, theirs already today)
+  openChest(who, x, z, s, day) {
+    if (!Number.isInteger(s) || s < 0 || s >= sideCount(this.id)) return { why: 'none' };
+    const at = chestAt(this.id, s);
+    if (roomAt(this.id, x, z) !== MAIN + s || Math.hypot(x - at.x, z - at.z) > CHEST_REACH + REACH_SLACK) return { why: 'far' };
+    if (!this.roomClear(MAIN + s)) return { why: 'guarded' };
+    const looted = this.looted.get(s) ?? new Map();
+    if (looted.get(who) === day) return { why: 'empty' };
+    looted.set(who, day);
+    this.looted.set(s, looted);
+    this.stirred = true;
+    return { items: chestLoot(this.id, this.rand) };
   }
 
   // As sent to the pages: { c: rooms cleared, f: [[x, y, z, yaw, state, t, hp], ...] } (state as a number)
@@ -273,18 +391,18 @@ export class DungeonRun {
 }
 
 // A dungeon as a page has it from toWire(): { cleared, foes: [{ room, x, y,
-// z, yaw, state, t, hp }] } (each foe's room from the boss's DUNGEONS), or null
+// z, yaw, state, t, hp }] } (each foe's room: foeRooms()), or null
 export function dungeonFromWire(id, w) {
-  const counts = DUNGEONS[id]?.foes;
-  if (!counts || !w || !Number.isInteger(w.c) || !Array.isArray(w.f) || w.f.length !== counts.reduce((a, b) => a + b, 0)) return null;
-  const rooms = counts.flatMap((n, room) => Array(n).fill(room));
+  if (!DUNGEONS[id] || !w || !Number.isInteger(w.c) || !Array.isArray(w.f)) return null;
+  const rooms = foeRooms(id);
+  if (w.f.length !== rooms.length) return null;
   const foes = [];
   for (const [i, f] of w.f.entries()) {
     if (!Array.isArray(f) || f.length < 7 || !f.every(Number.isFinite)) return null;
     const [x, y, z, yaw, state, t, hp] = f;
     foes.push({ room: rooms[i], x, y, z, yaw, state: STATES[state] ?? 'idle', t, hp });
   }
-  return { cleared: Math.max(0, Math.min(ROOMS, w.c)), foes };
+  return { cleared: Math.max(0, Math.min(MAIN, w.c)), foes };
 }
 
 // ---------- What catches a farmer ----------
