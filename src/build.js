@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PIECES, pieceTiles } from '../shared/level.js';
-import { TILE_SIZE } from './world.js';
+import { TILE_SIZE, mulberry32 } from './world.js';
 import { chestModel, CHEST_W } from './chest.js';
 import { createItemMesh } from './itemmesh.js';
 
@@ -42,7 +42,7 @@ const MATS = {
   benchTop: mat(0xc28a52),
   iron: mat(0x5d6470, { roughness: 0.5, metalness: 0.4 }),
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
-  flame: mat(0xffb03a, { emissive: 0xff8a1a, emissiveIntensity: 0.6 }), // (a torch's: burning day and night)
+  flame: mat(0xffa23a, { emissive: 0xff7a1a, emissiveIntensity: 0.6, transparent: true, opacity: 0.72, depthWrite: false }), // (a torch's: burning day and night)
   flameCore: mat(0xfff0a0, { emissive: 0xffd060, emissiveIntensity: 0.8 }),
   soil: mat(0x5b3a1e),
   leaf: mat(0x4f9e3c),
@@ -102,6 +102,7 @@ const MATS = {
 // a boss's portal's swirl, by its boss: [deep, light]
 const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight], crow: [MATS.crowPortal, MATS.crowPortalLight], toad: [MATS.toadPortal, MATS.toadPortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
+const lump = new THREE.IcosahedronGeometry(0.5, 1); // rounder than a ball: a sack, a heap of hay
 const box = new THREE.BoxGeometry(1, 1, 1);
 const flag = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
 const log = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
@@ -110,6 +111,8 @@ const tip = new THREE.ConeGeometry(0.5, 1, 8);
 const barrel = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
 const pyramid = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4); // a square base 1 across
 const shoulder = new THREE.CylinderGeometry(0.3, 0.5, 1, 12); // narrowing to the top, as a churn does
+const flare = new THREE.CylinderGeometry(0.4, 0.5, 1, 8); // a log's foot, wider at the ground
+const rootShape = new THREE.CylinderGeometry(0.25, 0.5, 1, 6); // a root, thinning away from the trunk
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // ---------- Light at night ----------
@@ -118,7 +121,7 @@ const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 // they light up the ground and what stands around them. (Always the same few
 // lights, however many are built: more would slow the game down.)
 const GLOWS = {
-  lamp_post: [0, 1.92, 0],
+  lamp_post: [0, 1.96, 0],
   stone_lantern: [0, 1.03, 0],
   house: [0, 0, 0], // (set below: the lamp over the door)
   torch: [0, 1.5, 0],
@@ -263,25 +266,112 @@ function part(group, geo, material, x, y, z, sx, sy, sz) {
   return mesh;
 }
 
-// A stone wall `h` tall: a pier in the middle of the tile, and a run of
-// stone to each wall or fence it joins
-function stoneWall(g, solids, h, joined) {
-  part(g, box, MATS.stone, 0, h / 2, 0, 0.56, h, 0.56);
-  part(g, box, MATS.stoneLight, 0, h + 0.05, 0, 0.64, 0.1, 0.64);
-  part(g, box, MATS.stoneDark, 0, Math.min(0.12, h / 8), 0, 0.62, Math.min(0.24, h / 4), 0.62);
-  solids.push({ x: 0, y: h / 2, z: 0, w: 0.56, h, d: 0.56 });
-  for (const [dx, dz] of joined) {
-    const run = (w) => [dx ? 0.5 : w, dz ? 0.5 : w];
-    const [w, d] = run(0.46);
-    part(g, box, MATS.stone, dx * 0.25, h * 0.45, dz * 0.25, w, h * 0.9, d);
-    const [cw, cd] = run(0.54);
-    part(g, box, MATS.stoneLight, dx * 0.25, h * 0.9 + 0.05, dz * 0.25, cw, 0.1, cd);
-    // a course of darker stones along the bottom, and one halfway
-    const [bw, bd] = run(0.5);
-    part(g, box, MATS.stoneDark, dx * 0.25, Math.min(0.12, h / 8), dz * 0.25, bw, Math.min(0.24, h / 4), bd);
-    part(g, box, MATS.stoneDark, dx * 0.25, h * 0.48, dz * 0.25, bw, 0.08, bd);
-    solids.push({ x: dx * 0.25, y: h / 2, z: dz * 0.25, w, h, d });
+// A stone wall `h` tall: a run of stone to each wall or fence it joins, and
+// a pier in the middle of the tile where it stands alone, ends, turns a
+// corner or branches. A straight run goes on unbroken from tile to tile. Its
+// stones are laid in courses, each course's joints half a stone along from
+// the one below's, on one grid along the wall so they carry on into the next
+// tile's (a stone on a tile's edge is shared, half each side)
+const WALL_STONE = 0.5; // a stone's length
+function stoneWall(g, solids, h, joined, gx, gz) {
+  const base = Math.min(0.24, h / 4); // the darker course along the bottom
+  const straight = joined.length === 2 && joined[0][0] === -joined[1][0] && joined[0][1] === -joined[1][1];
+  if (!straight) {
+    // the pier: blocks of stone stood one on another, a cap on top
+    const courses = Math.max(1, Math.round((h - base) / 0.4));
+    const ch = (h - base) / courses;
+    part(g, box, MATS.stoneDark, 0, h / 2, 0, 0.52, h, 0.52); // (showing in the joints)
+    part(g, box, MATS.stoneDark, 0, base / 2, 0, 0.62, base, 0.62);
+    for (let c = 0; c < courses; c++) part(g, box, hash(gx * 4 + c, gz) < 0.3 ? MATS.stoneLight : MATS.stone, 0, base + ch * (c + 0.5), 0, 0.56, ch - 0.03, 0.56);
+    part(g, box, MATS.stoneLight, 0, h + 0.05, 0, 0.64, 0.1, 0.64);
+    solids.push({ x: 0, y: h / 2, z: 0, w: 0.56, h, d: 0.56 });
   }
+  // the wall along [ax, az], from a0 to a1 along it (from the tile's middle)
+  const top = h * 0.9;
+  const courses = Math.max(1, Math.round((top - base) / 0.4));
+  const ch = (top - base) / courses;
+  const run = (ax, az, a0, a1) => {
+    const mid = (a0 + a1) / 2;
+    // the whole length of it, k thick and `high` tall, its middle y up
+    const slab = (material, y, high, k) => part(g, box, material, ax * mid, y, az * mid, ax ? a1 - a0 : k, high, az ? a1 - a0 : k);
+    slab(MATS.stoneDark, top / 2, top, 0.42); // (showing in the joints)
+    slab(MATS.stoneDark, base / 2, base, 0.5);
+    slab(MATS.stoneLight, top + 0.05, 0.1, 0.54); // the coping
+    const u = ax ? gx : gz; // the tile's middle, along the wall
+    const across = ax ? gz * 2 : gx * 2 + 1;
+    for (let c = 0; c < courses; c++) {
+      const off = (c % 2) * WALL_STONE / 2;
+      const y = base + ch * (c + 0.5);
+      for (let k = Math.floor((u + a0 - off) / WALL_STONE); k * WALL_STONE + off < u + a1 - 1e-6; k++) {
+        const from = k * WALL_STONE + off - u;
+        const to = from + WALL_STONE;
+        // a joint where the stone ends, not where the tile does
+        const s0 = Math.max(from, a0) + (from >= a0 - 1e-6 ? 0.015 : 0);
+        const s1 = Math.min(to, a1) - (to <= a1 + 1e-6 ? 0.015 : 0);
+        const r = hash(k * 8 + c, across);
+        const thick = 0.44 + r * 0.05; // (some a little proud of the rest)
+        part(g, box, r < 0.3 ? MATS.stoneLight : MATS.stone, ax * (s0 + s1) / 2, y, az * (s0 + s1) / 2, ax ? s1 - s0 : thick, ch - 0.03, az ? s1 - s0 : thick);
+      }
+    }
+    solids.push({ x: ax * mid, y: h / 2, z: az * mid, w: ax ? a1 - a0 : 0.46, h, d: az ? a1 - a0 : 0.46 });
+  };
+  if (straight) {
+    const [[dx, dz]] = joined;
+    run(Math.abs(dx), Math.abs(dz), -0.5, 0.5);
+  } else {
+    for (const [dx, dz] of joined) run(Math.abs(dx), Math.abs(dz), Math.min(0, (dx + dz) * 0.5), Math.max(0, (dx + dz) * 0.5));
+  }
+}
+
+// A boulder's shape, 1 tall and 1 across (scaled to its size), a little
+// different on every tile: a ball of facets, each corner pushed in or out,
+// cut flat underneath and on top (to stand on), so its top is smaller than
+// its middle and the edge round it uneven. Its own shape (`own`).
+const BOULDER_CUT = [-0.2, 0.27]; // where the ball is cut, from its middle (it's 1 across)
+function boulderShape(rand) {
+  const geo = new THREE.IcosahedronGeometry(0.5, 1);
+  const pos = geo.attributes.position;
+  const bumps = new Map(); // (a corner is in several faces: pushed the same in each)
+  const v = new THREE.Vector3();
+  const [low, high] = BOULDER_CUT;
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const key = `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    if (!bumps.has(key)) bumps.set(key, 0.84 + rand() * 0.24);
+    v.multiplyScalar(bumps.get(key));
+    pos.setXYZ(i, v.x, (THREE.MathUtils.clamp(v.y, low, high) - low) / (high - low) - 0.5, v.z);
+  }
+  geo.computeVertexNormals();
+  geo.userData.own = true;
+  return geo;
+}
+
+// A mossy stone block's moss: cells across its top, and how likely each is
+// grown over, by how many cells it is from the corner the moss grows from
+const MOSS_CELLS = 4;
+const MOSS_COVER = [1, 0.95, 0.7, 0.45, 0.2, 0.08, 0];
+
+// A fire `h` tall, its foot at (x, y, z): a tongue of flame, see-through
+// enough that the yellow heart in it shows, and `tongues` smaller ones
+// leaning out round it, a little differently on every tile (r). Named
+// 'flame': it flickers (setNight stretches it up and down from its foot)
+function fire(g, x, y, z, h, tongues, r) {
+  const f = new THREE.Group();
+  f.position.set(x, y, z);
+  f.name = 'flame';
+  f.userData.h = 1;
+  part(f, tip, MATS.flameCore, 0, h * 0.33, 0, h * 0.42, h * 0.66, h * 0.42).castShadow = false;
+  part(f, tip, MATS.flame, 0, h / 2, 0, h * 0.56, h, h * 0.56).castShadow = false;
+  for (let i = 0; i < tongues; i++) {
+    const k = h * (0.45 + ((r * 10 + i * 7) % 3) * 0.1);
+    const lean = new THREE.Group();
+    lean.rotation.y = (i / tongues) * Math.PI * 2 + r * 6;
+    const tongue = part(lean, tip, MATS.flame, h * 0.14, k * 0.42, 0, k * 0.46, k, k * 0.46);
+    tongue.rotation.z = -0.4;
+    tongue.castShadow = false;
+    f.add(lean);
+  }
+  g.add(f);
 }
 
 // A wood crate `h` tall and `w` across, its bottom at y0: a frame around
@@ -646,7 +736,7 @@ function model(id, gx, gz, joined) {
       solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.2, h: FENCE_H, d: dz ? 0.5 : 0.2 });
     }
   } else if (id === 'stone_wall' || id === 'low_stone_wall') {
-    stoneWall(g, solids, id === 'stone_wall' ? WALL_H : FENCE_H, joined);
+    stoneWall(g, solids, id === 'stone_wall' ? WALL_H : FENCE_H, joined, gx, gz);
   } else if (id === 'rail_fence') {
     // a squat post, and three split rails to each fence or wall it joins,
     // resting a little unevenly, as if cut by hand
@@ -665,7 +755,8 @@ function model(id, gx, gz, joined) {
     }
   } else if (id === 'box_hedge') {
     // a clipped hedge: a bush in the middle of the tile, grown on to each
-    // fence, wall or hedge it joins, with tufts of new growth on top
+    // fence, wall or hedge it joins as wide as itself (so a row of them is one
+    // hedge), with tufts of new growth on top
     const r = hash(gx, gz);
     const h = FENCE_H - 0.1;
     part(g, box, MATS.hedge, 0, h / 2, 0, 0.62, h, 0.62);
@@ -673,9 +764,9 @@ function model(id, gx, gz, joined) {
     solids.push({ x: 0, y: FENCE_H / 2, z: 0, w: 0.62, h: FENCE_H, d: 0.62 });
     const tufts = [[0, 0]];
     for (const [dx, dz] of joined) {
-      part(g, box, MATS.hedge, dx * 0.25, h / 2, dz * 0.25, dx ? 0.5 : 0.56, h, dz ? 0.5 : 0.56);
-      part(g, box, MATS.hedgeDark, dx * 0.25, 0.08, dz * 0.25, dx ? 0.5 : 0.6, 0.16, dz ? 0.5 : 0.6).castShadow = false;
-      solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.56, h: FENCE_H, d: dz ? 0.5 : 0.56 });
+      part(g, box, MATS.hedge, dx * 0.25, h / 2, dz * 0.25, dx ? 0.5 : 0.62, h, dz ? 0.5 : 0.62);
+      part(g, box, MATS.hedgeDark, dx * 0.25, 0.08, dz * 0.25, dx ? 0.5 : 0.66, 0.16, dz ? 0.5 : 0.66).castShadow = false;
+      solids.push({ x: dx * 0.25, y: FENCE_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.62, h: FENCE_H, d: dz ? 0.5 : 0.62 });
       tufts.push([dx * 0.3, dz * 0.3]);
     }
     tufts.forEach(([x, z], i) => {
@@ -804,37 +895,44 @@ function model(id, gx, gz, joined) {
       coil.castShadow = false;
       part(g, barrel, MATS.plankB, coil.position.x, h + 0.035, coil.position.z, 0.14, 0.05, 0.14).castShadow = false;
     } else if (id === 'tree_stump') {
-      // a sawn-off stump in its bark, roots spreading into the ground, and
-      // its rings on top
+      // a sawn-off stump in its bark and its rings on top
       const r = hash(gx, gz);
       part(g, log, MATS.bark, 0, h / 2, 0, 0.9, h, 0.9);
       [[0.8, MATS.endGrain], [0.6, MATS.crate], [0.44, MATS.endGrain], [0.26, MATS.crate], [0.1, MATS.endGrain]].forEach(([k, m], i) => {
         part(g, log, m, 0, h + 0.004 + i * 0.002, 0, k, 0.008, k).castShadow = false;
       });
+      // its foot flaring out, and roots tapering away from it into the ground
+      part(g, flare, MATS.bark, 0, 0.09, 0, 1.06, 0.18, 1.06);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2 + r * 6;
-        const root = part(g, box, MATS.bark, Math.cos(a) * 0.42, 0.07, Math.sin(a) * 0.42, 0.18, 0.16, 0.34);
-        root.rotation.y = -a + Math.PI / 2;
-        root.rotation.x = 0.35;
+        const len = 0.38 + ((r * 10 + i * 3) % 3) * 0.03;
+        const dip = 0.6; // (how steeply it goes down into the ground: its end is under it)
+        const root = new THREE.Group();
+        root.rotation.y = -a;
+        part(root, rootShape, MATS.bark, 0.25 + (len / 2) * Math.cos(dip), 0.19 - (len / 2) * Math.sin(dip), 0, 0.3, len, 0.26).rotation.z = -(Math.PI / 2 + dip);
+        g.add(root);
       }
     } else if (id === 'grain_sacks') {
       // plump sacks of flax seed, two lying along the tile and two across
-      // them on top, each tied at the neck, over a dark core so no light
-      // shows between them
+      // them on top, each gathered in at one end to a tie and a tuft of
+      // sacking past it, over a dark core so no light shows between them
       const r = hash(gx, gz);
-      part(g, box, MATS.twine, 0, h / 2 - 0.04, 0, w - 0.3, h - 0.2, w - 0.3);
+      part(g, box, MATS.twine, 0, h / 2 - 0.04, 0, w - 0.56, h - 0.3, w - 0.56);
       const sack = (x, y, z, along, i) => {
-        const turn = (m) => {
-          if (along) m.rotation.z = Math.PI / 2;
-          else m.rotation.x = Math.PI / 2;
+        const [ax, az] = along ? [1, 0] : [0, 1];
+        const end = i % 2 ? 1 : -1; // (the end its neck is at)
+        const mat = i % 2 ? MATS.sack : MATS.sackDark;
+        // its length along [ax, az] and its thickness across, its middle o along from (x, y, z)
+        const lie = (geo, material, o, dy, len, k) => {
+          const m = part(g, geo, material, x + ax * o, y + dy, z + az * o, k, len, k);
+          if (along) m.rotation.z = -end * Math.PI / 2;
+          else m.rotation.x = end * Math.PI / 2;
           return m;
         };
-        const [ax, az] = along ? [1, 0] : [0, 1];
-        const mat = i % 2 ? MATS.sack : MATS.sackDark;
-        turn(part(g, barrel, mat, x, y, z, along ? 0.44 : 0.48, 0.66, along ? 0.48 : 0.44));
-        for (const s of [-1, 1]) part(g, ball, mat, x + ax * s * 0.33, y, z + az * s * 0.33, along ? 0.28 : 0.46, 0.42, along ? 0.46 : 0.28);
-        turn(part(g, barrel, MATS.twine, x + ax * 0.46, y + 0.02, z + az * 0.46, 0.12, 0.05, 0.12)).castShadow = false;
-        part(g, ball, mat, x + ax * 0.5, y + 0.04, z + az * 0.5, 0.12, 0.12, 0.12).castShadow = false;
+        part(g, lump, mat, x, y, z, along ? 0.82 : 0.52, 0.46, along ? 0.52 : 0.82);
+        lie(shoulder, mat, end * 0.42, 0.03, 0.1, 0.2); // the neck, narrowing to the tie
+        lie(barrel, MATS.twine, end * 0.47, 0.03, 0.03, 0.12).castShadow = false;
+        part(g, lump, mat, x + ax * end * 0.51, y + 0.04, z + az * end * 0.51, 0.1, 0.13, 0.1).castShadow = false;
       };
       const flip = r < 0.5;
       for (const s of [-1, 1]) {
@@ -948,41 +1046,63 @@ function model(id, gx, gz, joined) {
       part(g, box, MATS.plankA, 0, h - 0.04, 0, w, 0.08, w);
       [-0.24, 0, 0.24].forEach((o) => part(g, box, MATS.plankB, o, h + 0.005, 0, 0.02, 0.01, w - 0.04).castShadow = false);
     } else if (id === 'boulder') {
-      // a rough boulder, worn flat on top where it is stood on, with chunks
-      // of it bulging out at the sides and lichen on some
+      // a rough, faceted boulder, broad at its foot and worn flat on top
+      // where it is stood on, a couple of fallen chips beside it and lichen
+      // on some
       const r = hash(gx, gz);
-      part(g, box, MATS.stoneDark, 0, (h - 0.06) / 2, 0, w - 0.3, h - 0.06, w - 0.3); // (up into the flat top, not level with it)
-      for (let i = 0; i < 8; i++) {
-        // four big chunks low at its corners, four smaller ones higher up its sides
-        const low = i < 4;
-        const a = (i / 4) * Math.PI * 2 + (low ? Math.PI / 4 : 0) + (r - 0.5) * 0.4;
-        const k = (low ? 0.56 : 0.46) + ((r * 10 + i) % 3) * 0.03;
-        const d = low ? 0.24 : 0.22;
-        const chunk = part(g, ball, (i + Math.floor(r * 4)) % 3 ? MATS.stone : MATS.stoneLight, Math.cos(a) * d, low ? 0.24 : 0.56, Math.sin(a) * d, k, k * 0.8, k);
-        chunk.rotation.y = a + r * 3;
+      const rand = mulberry32(Math.floor(r * 4294967296));
+      part(g, boulderShape(rand), r < 0.5 ? MATS.stone : MATS.stoneLight, 0, h / 2, 0, 0.98, h, 0.98).rotation.y = rand() * Math.PI * 2;
+      for (let i = 0; i < 2; i++) {
+        const a = rand() * Math.PI * 2;
+        const k = 0.14 + rand() * 0.08;
+        part(g, ball, MATS.stoneDark, Math.cos(a) * 0.46, k * 0.3, Math.sin(a) * 0.46, k, k * 0.7, k).rotation.y = a;
       }
-      const top = part(g, flag, r < 0.5 ? MATS.stone : MATS.stoneLight, 0, h - 0.06, 0, w - 0.06, 0.12, w - 0.1);
-      top.rotation.y = r * 2;
       if (r < 0.6) {
         const a = r * 10;
-        part(g, flag, MATS.lichen, Math.cos(a) * 0.18, h + 0.003, Math.sin(a) * 0.18, 0.26, 0.006, 0.2).castShadow = false;
-        part(g, flag, MATS.moss, -Math.cos(a) * 0.2, h + 0.003, -Math.sin(a) * 0.12, 0.16, 0.006, 0.14).castShadow = false;
+        part(g, flag, MATS.lichen, Math.cos(a) * 0.14, h + 0.003, Math.sin(a) * 0.14, 0.22, 0.006, 0.17).castShadow = false;
+        part(g, flag, MATS.moss, -Math.cos(a) * 0.16, h + 0.003, -Math.sin(a) * 0.1, 0.14, 0.006, 0.12).castShadow = false;
       }
     } else if (id === 'mossy_stone_block') {
-      // old stone grown over with moss: a cushion of it on top, spilling
-      // down the sides in patches
+      // old stone, dressed like a stone block, grown over from one corner:
+      // moss in a grid of cells on top, thick at that corner and thinning out
+      // across it, the stone showing past it, and moss hanging down the two
+      // sides by the corner under its edge (all one mesh: mergeParts)
       const r = hash(gx, gz);
+      const rand = mulberry32(Math.floor(r * 4294967296));
       part(g, box, r < 0.5 ? MATS.stone : MATS.stoneDark, 0, h / 2, 0, w, h, w);
       part(g, box, MATS.stoneDark, 0, Math.min(0.1, h / 4), 0, w + 0.02, Math.min(0.2, h / 2), w + 0.02);
       for (const [fx, fz] of DIRS) part(g, box, MATS.stoneDark, fx * 0.485, h / 2, fz * 0.485, fz ? w : 0.03, 0.05, fz ? 0.03 : w);
-      part(g, box, MATS.moss, 0, h, 0, w - 0.02, 0.04, w - 0.02);
-      for (const [fx, fz] of DIRS) {
-        for (let i = 0; i < 2; i++) {
-          const o = ((r * 10 + i * 3 + fx + fz * 2 + 6) % 3 - 1) * 0.25;
-          const len = 0.2 + ((r * 7 + i * 0.4) % 1) * 0.35;
-          part(g, box, i ? MATS.mossDark : MATS.moss, fx * 0.485 + fz * o, h - len / 2, fz * 0.485 + fx * o, fz ? 0.24 : 0.03, len, fz ? 0.03 : 0.24).castShadow = false;
+      const [cx, cz] = CORNERS[Math.floor(r * 4)];
+      const cell = w / MOSS_CELLS;
+      const mid = (i) => -w / 2 + cell * (i + 0.5);
+      const grown = [];
+      for (let i = 0; i < MOSS_CELLS; i++) {
+        for (let j = 0; j < MOSS_CELLS; j++) {
+          const far = (cx > 0 ? MOSS_CELLS - 1 - i : i) + (cz > 0 ? MOSS_CELLS - 1 - j : j);
+          grown[i * MOSS_CELLS + j] = rand() < MOSS_COVER[far];
         }
       }
+      const moss = [];
+      const lay = (x, y, z, sx, sy, sz) => moss.push([box, rand() < 0.3 ? MATS.mossDark : MATS.moss, new THREE.Matrix4().compose(partAt.set(x, y, z), partTurn.identity(), partSize.set(sx, sy, sz))]);
+      const hang = () => cell * [0.5, 1, 1, 1.5][Math.floor(rand() * 4)];
+      const edgeI = cx > 0 ? MOSS_CELLS - 1 : 0;
+      const edgeJ = cz > 0 ? MOSS_CELLS - 1 : 0;
+      for (let i = 0; i < MOSS_CELLS; i++) {
+        for (let j = 0; j < MOSS_CELLS; j++) {
+          if (!grown[i * MOSS_CELLS + j]) continue;
+          const t = 0.02 + rand() * 0.02;
+          lay(mid(i), h + t / 2, mid(j), cell + 0.002, t, cell + 0.002);
+          if (i === edgeI) {
+            const len = hang();
+            lay(cx * (w / 2 + 0.01), h + 0.02 - len / 2, mid(j), 0.02, len + 0.02, cell);
+          }
+          if (j === edgeJ) {
+            const len = hang();
+            lay(mid(i), h + 0.02 - len / 2, cz * (w / 2 + 0.01), cell, len + 0.02, 0.02);
+          }
+        }
+      }
+      g.add(mergeParts(moss));
     } else if (id === 'stone_pillar') {
       // a round column on a square plinth, with a square cap to stand on
       const r = hash(gx, gz);
@@ -1142,10 +1262,11 @@ function model(id, gx, gz, joined) {
     }
     part(g, box, MATS.post, 0.12, 0.3, 0, 0.06, 0.06, 0.8); // the axle
     for (const x of [-0.33, 0.45]) part(g, box, MATS.plankB, x, 0.66, 0, 0.05, 0.24, 0.6);
-    // the hay, heaped over the sides, with wisps sticking out
-    part(g, box, MATS.straw, 0.06, 0.8, 0, 0.74, 0.3, 0.56);
-    part(g, ball, MATS.straw, 0.06, 0.96, 0, 0.7, 0.36, 0.5);
-    part(g, ball, MATS.strawDark, 0.06 + (r - 0.5) * 0.2, 1.08, 0.02, 0.4, 0.22, 0.32);
+    // the hay, filling the bed and heaped up over its sides, with wisps
+    // sticking out
+    part(g, box, MATS.straw, 0.06, 0.7, 0, 0.74, 0.16, 0.56);
+    part(g, lump, MATS.straw, 0.06, 0.82, 0, 0.88, 0.42, 0.68);
+    part(g, lump, MATS.strawDark, 0.06 + (r - 0.5) * 0.24, 0.98, (r - 0.5) * 0.1, 0.5, 0.26, 0.42);
     for (let i = 0; i < 6; i++) {
       const a = i * 1.9 + r * 6;
       const wisp = part(g, box, MATS.strawDark, 0.06 + Math.cos(a) * 0.3, 0.92, Math.sin(a) * 0.22, 0.2, 0.02, 0.03);
@@ -1208,11 +1329,7 @@ function model(id, gx, gz, joined) {
     part(g, shaft, MATS.post, 0, 0.62, 0, 0.09, 1.24, 0.09);
     part(g, shaft, MATS.straw, 0, 1.28, 0, 0.18, 0.16, 0.18);
     part(g, shaft, MATS.twine, 0, 1.25, 0, 0.19, 0.04, 0.19).castShadow = false;
-    const flame = part(g, tip, MATS.flame, 0, 1.5, 0, 0.2, 0.32, 0.2);
-    flame.castShadow = false;
-    flame.name = 'flame';
-    flame.userData.h = 0.32;
-    part(g, tip, MATS.flameCore, 0, 1.46, 0, 0.1, 0.18, 0.1).castShadow = false;
+    fire(g, 0, 1.33, 0, 0.36, 3, hash(gx, gz));
     solids.push({ x: 0, y: 0.7, z: 0, w: 0.2, h: 1.4, d: 0.2 });
   } else if (id === 'signpost') {
     // a post with two arrow boards, pointing off one way and back the other,
@@ -1284,9 +1401,11 @@ function model(id, gx, gz, joined) {
     part(g, box, light, 0, 0.45, 0, 0.94, 0.1, 0.42);
     part(g, box, MATS.stoneDark, 0, 0.398, 0, 0.9, 0.01, 0.4).castShadow = false;
     if (r < 0.4) {
+      // a patch of it at one end, growing on over the back edge
       const s = r < 0.2 ? -1 : 1;
-      part(g, box, MATS.moss, s * 0.3, 0.502, -0.08, 0.26, 0.012, 0.2).castShadow = false;
-      part(g, box, MATS.mossDark, s * 0.4, 0.42, -0.1, 0.12, 0.08, 0.22).castShadow = false;
+      part(g, flag, MATS.moss, s * 0.33, 0.503, -0.1, 0.22, 0.012, 0.18).rotation.y = r * 9;
+      part(g, flag, MATS.mossDark, s * 0.24, 0.504, -0.15, 0.12, 0.012, 0.1).rotation.y = r * 5;
+      part(g, box, MATS.mossDark, s * 0.3, 0.47, -0.213, 0.2, 0.07, 0.012);
     }
     solids.push({ x: 0, y: 0.25, z: 0, w: 0.94, h: 0.5, d: 0.42 });
   } else if (id === 'sundial') {
@@ -1581,11 +1700,18 @@ function model(id, gx, gz, joined) {
     solids.push({ x: 0, y: top / 2, z: 0, w: 0.24, h: top, d: 0.24 });
     solids.push({ x: 0, y: top + 0.4, z: 0, w: 0.6, h: 0.8, d: 0.56 });
   } else if (id === 'lamp_post') {
+    // an iron post on a stepped foot, and on top a lantern: panes of lit
+    // glass in an iron frame, a pointed roof and a knob on that
     part(g, box, MATS.iron, 0, 0.08, 0, 0.36, 0.16, 0.36);
-    part(g, box, MATS.iron, 0, 1.05, 0, 0.1, 2, 0.1);
-    part(g, box, MATS.iron, 0, 2.1, 0, 0.4, 0.06, 0.4);
-    part(g, box, MATS.lantern, 0, 1.92, 0, 0.28, 0.3, 0.28).castShadow = false;
-    part(g, box, MATS.iron, 0, 2.17, 0, 0.18, 0.08, 0.18);
+    part(g, box, MATS.iron, 0, 0.2, 0, 0.22, 0.08, 0.22);
+    part(g, box, MATS.iron, 0, 0.98, 0, 0.1, 1.6, 0.1);
+    part(g, box, MATS.iron, 0, 1.76, 0, 0.18, 0.06, 0.18); // the collar the lantern sits in
+    part(g, box, MATS.iron, 0, 1.8, 0, 0.32, 0.04, 0.32);
+    part(g, box, MATS.lantern, 0, 1.96, 0, 0.26, 0.28, 0.26).castShadow = false;
+    for (const [x, z] of CORNERS) part(g, box, MATS.iron, x * 0.14, 1.96, z * 0.14, 0.04, 0.3, 0.04);
+    part(g, box, MATS.iron, 0, 2.12, 0, 0.34, 0.04, 0.34);
+    part(g, pyramid, MATS.iron, 0, 2.22, 0, 0.36, 0.16, 0.36);
+    part(g, ball, MATS.iron, 0, 2.32, 0, 0.07, 0.07, 0.07);
     solids.push({ x: 0, y: 1.1, z: 0, w: 0.3, h: 2.2, d: 0.3 });
   } else if (id === 'garden_bench') {
     part(g, box, MATS.benchTop, 0, 0.42, 0.04, 0.92, 0.07, 0.36); // the seat, facing the camera
@@ -1782,11 +1908,7 @@ function model(id, gx, gz, joined) {
       l.rotation.z = Math.PI / 2 - 0.3;
       l.rotation.y = (k * Math.PI) / 3 + r * 2;
     }
-    const flame = part(g, tip, MATS.flame, 0, 0.36, 0, 0.26, 0.4, 0.26);
-    flame.castShadow = false;
-    flame.name = 'flame';
-    flame.userData.h = 0.4;
-    part(g, tip, MATS.flameCore, 0, 0.3, 0, 0.13, 0.22, 0.13).castShadow = false;
+    fire(g, 0, 0.12, 0, 0.5, 5, r);
     for (const s of [-1, 1]) {
       part(g, box, MATS.post, s * 0.44, 0.3, 0, 0.04, 0.6, 0.04);
       part(g, box, MATS.post, s * 0.44, 0.62, 0, 0.12, 0.04, 0.04).rotation.z = 0.5;
