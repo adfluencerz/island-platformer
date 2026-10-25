@@ -181,6 +181,7 @@ export function createNpcs({ parent, inventory, ctx }) {
   // dt, t: game time; you: the farmer's position; hour: the farm's clock
   function update(dt, t, you, hour) {
     updateSigns(dt);
+    npcHomes.setHour(hour);
     for (const p of Object.values(people)) {
       const doing = routine(p.id, hour);
       if (doing !== p.doing) begin(p, doing);
@@ -282,6 +283,7 @@ export function createNpcs({ parent, inventory, ctx }) {
   const hearts = (id) => heartsFor(states[id].points, FRIENDSHIP);
   const like = (id, points) => {
     states[id].points = Math.min(states[id].points + points, FRIENDSHIP.perHeart * FRIENDSHIP.hearts);
+    showStory(id);
   };
   // Where you stand with id, as what they say is checked against (shared/talk.js `holds`)
   const view = (id) => ({
@@ -291,6 +293,10 @@ export function createNpcs({ parent, inventory, ctx }) {
     met: (other) => !!states[other]?.met,
     chose: (key) => states[id].chose[key],
   });
+  // What shows of their home and yard, for how you stand with them (src/npchomes.js)
+  const showStory = (id) => npcHomes.show(id, view(id));
+  const showAll = () => NPC_IDS.forEach(showStory);
+
   // Give what a reward has in it (gold, items): false, and nothing given, if
   // the backpack hasn't room for the items
   const fits = (items) => items.every(([item, n]) => inventory.canAdd(item, n));
@@ -358,6 +364,7 @@ export function createNpcs({ parent, inventory, ctx }) {
         like(id, reward.points);
         if (reward.gives) give(reward.gives);
       }
+      if (node.keep) showStory(id); // (what you said, remembered where they live)
       return reward;
     },
     // You tell `to` what you carry for them from `from`: what you told, and
@@ -404,7 +411,7 @@ export function createNpcs({ parent, inventory, ctx }) {
       const s = states[id];
       s.done.push(mission.id);
       delete s.since[mission.id];
-      like(id, FRIENDSHIP.mission);
+      like(id, FRIENDSHIP.mission); // (and what it changes where they live)
       give({ gold, items: gives });
       if (mission.gives.mends) showMends();
       return { mission, gold, items: gives, choice };
@@ -423,8 +430,10 @@ export function createNpcs({ parent, inventory, ctx }) {
       states = Object.fromEntries(NPC_IDS.map((id) => [id, cleanState(id, saved?.people?.[id])]));
       deeds = Object.fromEntries(Object.entries(saved?.deeds && typeof saved.deeds === 'object' ? saved.deeds : {}).filter(([, n]) => Number.isInteger(n) && n >= 0));
       showMends();
+      showAll();
     },
     showMends,
+    showAll,
     // (the developer tools: their mission now, done, as if handed over, and
     // what it gives given (the first of a choice of rewards); nothing taken.
     // The mission, or null: none left)
@@ -446,12 +455,14 @@ export function createNpcs({ parent, inventory, ctx }) {
     befriend(id, hearts = FRIENDSHIP.hearts) {
       states[id].met = true;
       states[id].points = Math.min(FRIENDSHIP.perHeart * FRIENDSHIP.hearts, Math.max(states[id].points, hearts * FRIENDSHIP.perHeart));
+      showStory(id);
     },
     // (and everyone forgotten)
     reset() {
       states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
       deeds = {};
       showMends();
+      showAll();
     },
   };
 }
