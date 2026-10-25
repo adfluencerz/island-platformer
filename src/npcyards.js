@@ -354,13 +354,13 @@ function finnHome(g, home, { addCollider, anims, glows, story }) {
   for (const [x, zz] of [[3.6, 1.2], [4.3, 0.6]]) barrel(g, [x, zz]);
   part(g, box, woodMat, [3.8, 0.3, -0.8], [0.6, 0.6, 0.6], [0, 0.4, 0]);
   addCollider({ x: home.x + 3.95, y: 0.45, z: home.z + 0.4, w: 1.4, h: 0.9, d: 2.4 });
-  // lobster pots stacked, with their buoys
-  for (const [x, zz, y] of [[4.6, 3.2, 0.0], [5.4, 3.0, 0.0], [5.0, 3.1, 0.55]]) {
+  // lobster pots stacked, with their buoys, west of the hut (the road comes in from the east)
+  for (const [x, zz, y] of [[-5.6, 6.0, 0.0], [-4.8, 5.8, 0.0], [-5.2, 5.9, 0.55]]) {
     part(g, new THREE.CylinderGeometry(0.5, 0.5, 0.55, 10, 1, false, 0, Math.PI), mat(0xb89a5a), [x, y + 0.27, zz], [1, 1, 1], [0, 0, Math.PI / 2]);
     part(g, box, mat(0x6e5a3a), [x, y + 0.04, zz], [1.0, 0.05, 0.5]);
   }
-  for (const [x, zz, color] of [[4.0, 3.4, 0xd8452f], [4.3, 3.6, 0xf2c230]]) part(g, ball, mat(color), [x, 0.18, zz], [0.17, 0.17, 0.17]);
-  addCollider({ x: home.x + 5.0, y: 0.5, z: home.z + 3.1, w: 2.0, h: 1, d: 0.9 });
+  for (const [x, zz, color] of [[-4.0, 6.2, 0xd8452f], [-4.3, 6.5, 0xf2c230]]) part(g, ball, mat(color), [x, 0.18, zz], [0.17, 0.17, 0.17]);
+  addCollider({ x: home.x - 5.2, y: 0.5, z: home.z + 5.9, w: 2.0, h: 1, d: 0.9 });
   // an upturned boat on the sand to the west
   part(g, new THREE.CylinderGeometry(0.7, 0.7, 3, 12, 1, false, 0, Math.PI), mat(0x8a5a32), [-4.4, 0.02, 1.6], [0.6, 1, 1], [0, Math.PI / 2, Math.PI / 2]);
   part(g, box, mat(0xd8452f), [-4.4, 0.44, 1.6], [0.16, 0.04, 3.02]);

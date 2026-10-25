@@ -325,10 +325,13 @@ export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notif
     showChat();
   }
 
-  // The follow-ups to a node, and a way back to the chat (not out of a moment of theirs: you answer it)
+  // The follow-ups to a node, and a way back
   function more(node, list) {
     const out = list.map((n) => ({ text: n.text, run: () => talk(n) }));
+    // (a moment of theirs: leave it for another time, or, if you have shared it, go back to the chat)
     if (!node.root.event) out.push({ text: 'Something else.', back: true, run: () => showChat() });
+    else if (npcs.state(who).seen.includes(node.root.id)) out.push({ text: 'Something else.', back: true, run: () => showChat() });
+    else out.push({ text: 'Another time.', back: true, run: () => showHub() });
     return out;
   }
 

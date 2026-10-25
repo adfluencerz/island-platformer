@@ -74,7 +74,7 @@ function buildDock(root, { addCollider, removeCollider }) {
   const noteMat = new THREE.MeshStandardMaterial({ map: signTexture('Closed!', { paper: '#fff4e0', ink: '#a8392f' }), roughness: 0.9 });
   part(broken, box, [darkWoodMat, darkWoodMat, darkWoodMat, darkWoodMat, noteMat, darkWoodMat], [x, DECK_Y + 0.6, BROKEN_AT - 0.17], [0.8, 0.26, 0.03]);
   addCollider({ x, y: DECK_Y - 0.25, z: (z0 + BROKEN_AT) / 2, w, h: 0.5, d: BROKEN_AT - z0 });
-  const ropeStop = addCollider({ x, y: DECK_Y + 0.5, z: BROKEN_AT - 0.2, w, h: 1, d: 0.2 });
+  let ropeStop = addCollider({ x, y: DECK_Y + 0.5, z: BROKEN_AT - 0.2, w, h: 1, d: 0.2 });
   // mended: a lantern at the end, and bollards to tie a boat to
   part(mended, box, postMat, [x + w / 2 - 0.15, DECK_Y + 0.9, z1 - 0.4], [0.12, 1.8, 0.12]);
   const lamp = part(mended, ball, lanternMat, [x + w / 2 - 0.15, DECK_Y + 1.7, z1 - 0.25], [0.13, 0.17, 0.13]);
@@ -90,7 +90,7 @@ function buildDock(root, { addCollider, removeCollider }) {
     } else if (!on && rest) {
       removeCollider(rest);
       rest = null;
-      addCollider({ x, y: DECK_Y + 0.5, z: BROKEN_AT - 0.2, w, h: 1, d: 0.2 });
+      ropeStop = addCollider({ x, y: DECK_Y + 0.5, z: BROKEN_AT - 0.2, w, h: 1, d: 0.2 });
     }
   }
   mend(false);

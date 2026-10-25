@@ -2930,7 +2930,7 @@ const shop = createShop({
 const npcs = createNpcs({ parent: worlds.home.root, inventory, ctx: () => missionCtx() });
 const missionCtx = () => ({
   have: (item) => inventory.count(item),
-  built: (piece) => (place === 'home' ? buildings.findAll(piece).length : 0),
+  built: (piece) => (place === 'home' && !(farmVisit && !farmVisit.mine) ? buildings.findAll(piece).length : 0), // (not what stands on a friend's farm we are visiting)
 });
 const dialog = createDialog({
   npcs,

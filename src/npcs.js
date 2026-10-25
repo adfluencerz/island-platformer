@@ -316,6 +316,8 @@ export function createNpcs({ parent, inventory, ctx }) {
     return { mission, heard, needs, ready: heard && needs.every((n) => n.ok) };
   }
 
+  showAll(); // (a new farmer has no save to read: what shows with nothing done yet, shows)
+
   return {
     update,
     talkable,

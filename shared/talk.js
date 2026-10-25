@@ -470,7 +470,7 @@ export function hear(node, state) {
 export function hubOptions({ npc, state, c, status, messages }) {
   const options = [];
   for (const { from, mission } of messages) {
-    options.push({ kind: 'deliver', from, mission, text: `I\'ve a message for you, from ${NPCS[from].name}.`, hot: true });
+    options.push({ kind: 'deliver', from, mission, text: `Tell ${NPCS[npc].name}: "${mission.message.say}"`, hot: true });
   }
   if (status.mission) {
     if (!status.heard) options.push({ kind: 'ask', text: 'Is there anything I can do for you?', hot: true });

@@ -933,6 +933,9 @@ await test('the window\'s first list: a message to tell, their request, a moment
   const messages = [{ from: 'rosa', mission: MISSIONS.rosa_note }];
   assert.deepEqual(hub('mabel', { mission, heard: false }, { messages }, 2), ['deliver', 'ask', 'moment', 'chat'], 'a message first');
   assert.ok(hubOptions({ npc: 'mabel', state: states.mabel, c, status: { mission: null }, messages }).every((o) => o.kind === 'chat' || o.hot), 'what they wait on is starred');
+  // the words you carry are the words on the button
+  const deliver = hubOptions({ npc: 'mabel', state: states.mabel, c, status: { mission: null }, messages }).find((o) => o.kind === 'deliver');
+  assert.ok(deliver.text.includes(MISSIONS.rosa_note.message.say), 'the message is on the button');
 });
 
 await test('a save from before all this still loads: what is not known is left out, and nothing met is a fresh start', () => {
