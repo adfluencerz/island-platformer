@@ -454,10 +454,12 @@ export const SKY_CHESTS = {
 // prices are the items' own (SHOP). The merchant at the stall keeps only the
 // basics:
 export const MERCHANT_STOCK = ['turnip_seeds', 'carrot_seeds', 'flax_seeds', 'watering_can', 'bait'];
-// How much a neighbour likes you: points for a chat (once a game day) and
-// for each thing you do for them; a heart for every `perHeart` points, up
+// How much a neighbour likes you: points for a chat (once a game day), for
+// each thing you do for them, for each new thing they tell you (`topic`, once
+// each) and for a moment of theirs that you shared (`moment`: one of the
+// heart events in shared/talk.js); a heart for every `perHeart` points, up
 // to `hearts`; each heart takes `discount` off what their shop asks
-export const FRIENDSHIP = { chat: 10, mission: 40, perHeart: 40, hearts: 5, discount: 0.02 };
+export const FRIENDSHIP = { chat: 10, mission: 40, topic: 4, moment: 10, perHeart: 40, hearts: 5, discount: 0.02 };
 
 // ---------- Forage in the valley ----------
 // What turns up in the farm's biomes, out in the valley round the old farm,

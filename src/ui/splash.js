@@ -15,7 +15,8 @@
 //   visit, and your farm's helpers, friends who can come and farm on it,
 //   invited with a code.
 // - Controls.
-// - Your farmer: the shirt's color, and logging out.
+// - Your farmer: the wardrobe (what they wear, the shirt's color among it:
+//   ui/wardrobe.js), and logging out.
 // Without an account (src/net/farm.js), a welcome of its own comes first,
 // apart from the menu: logging in, or making an account (a username, a
 // password and a shirt color). Once in, it isn't seen again. (No server, no
@@ -29,6 +30,7 @@ import { el, button, copyText, hexColor } from './dom.js';
 import { addHelp } from './hud.js';
 import { LOBBY_GAMES } from '../../shared/arenas.js';
 import * as sound from '../sound.js';
+import { Wardrobe } from './wardrobe.js';
 
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
 // ", a loot run": what a lobby is for, after its name ('' for none)
@@ -55,9 +57,10 @@ export class Splash {
   // onHelpers(): our farm's helpers, [{ id, name }]. onRemoveHelper(id). onInvite(): an invite
   // code for a helper, { code, expiresIn }.
   // where(): where we are, { place, visit, session } (Hud.here).
-  // account(): { username, color }, or null. onRegister({ username, password, color }),
+  // account(): { username, color, look }, or null. onRegister({ username, password, color }),
   // onLogin({ username, password }): resolve once done (or throw, with why).
-  // onLogout(). onColor(color): a new shirt color.
+  // onLogout(). onTryOn(look, color): wear this now (the wardrobe's pick).
+  // onDress(look, color): keep it with the account (resolves to the account, or throws).
   // onFriends(): { friends: [{ id, name, color, online, where, lastOnline }], asks: [{ id, name }] }.
   // onAddFriend(username): { name, friends }. onAnswerFriend(id, yes). onRemoveFriend(id).
   // onStartParty(ids, game): start a lobby for that game (LOBBY_GAMES), inviting those friends (partyStatus() and
@@ -98,6 +101,7 @@ export class Splash {
     const nav = (label, page) => button('ui-btn ui-btn-ghost ui-nav', main, label, () => this.open(page));
     nav('Play online', 'online');
     nav('Friends', 'friends');
+    this.farmerNav = nav('Your farmer', 'farmer'); // (with an account)
     nav('Controls', 'controls');
     // sound effects and music, on or off (M in game does both)
     const soundRow = el('div', 'ui-row', main);
@@ -235,8 +239,11 @@ export class Splash {
 
     // ---- Your farmer ----
     const farmer = this.page('farmer', 'Your farmer');
-    el('div', 'ui-sub', farmer, 'Shirt color');
-    this.farmerSwatches = this.swatches(farmer, (color) => this.changeColor(color));
+    this.wardrobe = new Wardrobe(farmer, {
+      onTryOn: (look, color) => this.onTryOn(look, color),
+      onSave: (look, color) => this.onDress(look, color),
+      onStatus: (text, isError) => this.setStatus(text, isError),
+    });
     el('div', 'ui-muted', farmer, 'Other farmers see you in it in lobbies and on farms.');
     button('ui-btn ui-btn-ghost', farmer, 'Log out', () => {
       if (confirm('Log out? Your farm stays on the server: log in again to play it, here or anywhere.')) this.onLogout();
@@ -252,7 +259,7 @@ export class Splash {
     const node = el(tag, 'ui-page', this.card);
     if (title) {
       const head = el('div', 'ui-page-head', node);
-      button('ui-btn ui-btn-small ui-btn-ghost', head, '‹ Back', () => this.showPage(parent));
+      button('ui-btn ui-btn-small ui-btn-ghost', head, '‹ Back', () => this.back());
       el('h2', '', head, title);
     }
     this.pages[name] = { node, parent };
@@ -351,16 +358,6 @@ export class Splash {
     }
   }
 
-  async changeColor(color) {
-    try {
-      await this.onColor(color);
-      this.setStatus('');
-    } catch (e) {
-      this.setStatus(e.message, true);
-      this.farmerSwatches.mark(this.account()?.color);
-    }
-  }
-
   // The account as the server has it now: on the title screen, the way in
   // (logging in) or out of it
   accountChanged() {
@@ -376,13 +373,16 @@ export class Splash {
   showWho() {
     const account = this.account();
     this.whoBtn.parentNode.hidden = !account;
+    this.farmerNav.hidden = !account;
     if (account) this.whoBtn.textContent = `Playing as ${account.username} ✎`;
   }
 
   // from: 'title' (the page just opened), or anything else for in game.
   // page: the page to open on. message: why we are here, when it was not the player's choice.
-  show({ from = 'game', page = 'main', message = '' } = {}) {
+  // direct: opened on that page from the game (the house's wardrobe): Back goes back to the game.
+  show({ from = 'game', page = 'main', message = '', direct = false } = {}) {
     this.from = from === 'title' ? 'title' : 'game';
+    this.direct = direct && this.from === 'game' ? page : null;
     this.hidden = false;
     this.showSound(); // (M may have changed it)
     this.root.hidden = false;
@@ -404,6 +404,7 @@ export class Splash {
   }
 
   hide() {
+    if (this.current === 'farmer') this.wardrobe.hide();
     this.hidden = true;
     this.root.hidden = true;
     document.body.classList.remove('in-menu');
@@ -412,12 +413,19 @@ export class Splash {
   // Esc: out of a box being typed in, back a page, or (in game) out of the menu
   escape() {
     if (this.root.contains(document.activeElement) && document.activeElement.matches('input, select')) document.activeElement.blur();
-    else if (this.current !== 'main') this.showPage(this.pages[this.current].parent);
+    else if (this.current !== 'main') this.back();
     else if (this.from === 'game') this.hide();
+  }
+
+  // Back a page (or, from a page opened straight from the game, back to the game)
+  back() {
+    if (this.direct === this.current) this.hide();
+    else this.showPage(this.pages[this.current].parent);
   }
 
   showPage(name) {
     if (this.current === 'party' && name !== 'party' && this.party) this.cancelParty(); // (Back, or Esc)
+    if (this.current === 'farmer' && name !== 'farmer') this.wardrobe.hide(); // (what was picked is kept)
     for (const [key, { node }] of Object.entries(this.pages)) node.hidden = key !== name;
     this.current = name;
     this.card.scrollTop = 0;
@@ -429,7 +437,10 @@ export class Splash {
     this.showPage(name);
     if (name === 'online') this.showLobbyCard();
     else if (name === 'friends') this.showFriends();
-    else if (name === 'farmer') this.farmerSwatches.mark(this.account()?.color);
+    else if (name === 'farmer') {
+      const account = this.account();
+      if (account) this.wardrobe.show(account.look, account.color);
+    }
   }
 
   // The one part of the main page that changes: where we are, and the way on

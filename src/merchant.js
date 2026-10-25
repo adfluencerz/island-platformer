@@ -22,6 +22,20 @@ export const TRADE_SPOT = { x: STALL.x, z: STALL.z + FRONT + 0.8 }; // where a c
 const TRADE_REACH = 1.9;
 const WATCH_RANGE = 7; // the merchant turns to look at you inside this
 
+// The merchant's own clothes (shared/looks.js): a purple shirt (createMerchant),
+// green overalls, a brown hat and a mustache gone gray, reading glasses for
+// the price tags
+const MERCHANT_LOOK = {
+  hat: 'cowboy',
+  hatColor: 0x6b4a2b,
+  hairColor: 0xbdb8b0,
+  face: 'glasses',
+  whiskers: 'mustache',
+  bottomsColor: 0x3f6b3a,
+  neck: 'neckerchief',
+  neckColor: 0xd4a017,
+};
+
 const woodMat = foliageMat(0xa0682f);
 const darkWoodMat = foliageMat(0x7a4a22);
 const topMat = foliageMat(0xc48a4a);
@@ -174,7 +188,7 @@ export function buildStall({ root, addCollider }) {
 // The merchant behind the counter. update() needs the player, so main.js
 // drives it each frame while you're home.
 export function createMerchant() {
-  const merchant = createFarmer({ shirt: 0x7b4fa0, overalls: 0x3f6b3a, hat: 0x6b4a2b, band: 0xd4a017, mustache: true });
+  const merchant = createFarmer({ shirt: 0x7b4fa0, look: MERCHANT_LOOK });
   merchant.hoe.visible = false;
   merchant.root.position.set(STALL.x, 0.8, STALL.z - 0.3); // close behind the counter
   let greeted = false; // hopped hello since you came close

@@ -1,5 +1,5 @@
 import './quests.css';
-import { NPCS, NPC_IDS } from '../shared/npcs.js';
+import { NPCS, NPC_IDS, MISSIONS } from '../shared/npcs.js';
 import { HOME_HALF, NPC_HOMES, STALL, homeGround, LAKE } from '../shared/farmland.js';
 import { portraitURL, needText, heartText } from './dialog.js';
 import { el } from './ui/dom.js';
@@ -30,24 +30,25 @@ export function renderQuests(root, npcs, ctx) {
       continue;
     }
     const st = npcs.status(id, ctx);
-    if (!st.mission) {
-      el('div', 'quest-text done', body, `Everything ${npc.name} asked is done.`);
-      continue;
+    const hub = npcs.hub(id, ctx);
+    if (!st.mission) el('div', 'quest-text done', body, `Everything ${npc.name} asked is done.`);
+    else if (!st.heard) el('div', 'quest-text', body, `${npc.name} has something to ask you: go and see them.`);
+    else {
+      el('div', `quest-title${st.ready ? ' ready' : ''}`, body, `${st.mission.title}: ${st.mission.ask}${st.ready ? ' (ready to hand over!)' : ''}`);
+      const needs = el('div', 'quest-needs', body);
+      for (const n of st.needs) {
+        const { text, icon } = needText(n.need);
+        const row = el('span', `quest-need${n.ok ? ' ok' : ''}`, needs);
+        const img = el('img', 'inv-icon', row);
+        img.src = icon;
+        img.alt = '';
+        el('span', '', row, `${text} ${Math.min(n.have, n.count)}/${n.count}`);
+      }
     }
-    if (!st.heard) {
-      el('div', 'quest-text', body, `${npc.name} has something to ask you: go and see them.`);
-      continue;
-    }
-    el('div', `quest-title${st.ready ? ' ready' : ''}`, body, `${st.mission.title}: ${st.mission.ask}${st.ready ? ' (ready to hand over!)' : ''}`);
-    const needs = el('div', 'quest-needs', body);
-    for (const n of st.needs) {
-      const { text, icon } = needText(n.need);
-      const row = el('span', `quest-need${n.ok ? ' ok' : ''}`, needs);
-      const img = el('img', 'inv-icon', row);
-      img.src = icon;
-      img.alt = '';
-      el('span', '', row, `${text} ${Math.min(n.have, n.count)}/${n.count}`);
-    }
+    // what else is on between you
+    for (const o of hub) if (o.kind === 'deliver') el('div', 'quest-text', body, `You have a message for ${npc.name}, from ${NPCS[o.from].name}.`);
+    if (hub.some((o) => o.kind === 'moment')) el('div', 'quest-text', body, `✦ There is something ${npc.name} would like to share.`);
+    if (state.done.length) el('div', 'quest-done', body, `Done: ${state.done.map((m) => MISSIONS[m].title).join(', ')}`);
   }
 }
 
@@ -121,7 +122,7 @@ export function renderMap(root, you) {
   for (const id of NPC_IDS) {
     const home = NPC_HOMES[id];
     const [x, y] = at(home.x, home.z);
-    house(x, y, `#${NPCS[id].look.shirt.toString(16).padStart(6, '0')}`);
+    house(x, y, `#${NPCS[id].shirt.toString(16).padStart(6, '0')}`);
     label(`${NPCS[id].name}: ${NPCS[id].trade.toLowerCase()}`, x, y + 20);
   }
   const [sx, sy] = at(STALL.x, STALL.z);

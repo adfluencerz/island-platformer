@@ -1,13 +1,13 @@
 // Messages between a client and the online place it is in: a lobby
 // (shared/room.js) or a farm with helpers on it (server/farmroom.js). Every
 // message is a JSON object whose `t` field is one of these; the comments list
-// the other fields. JOIN, STATE, CHAT and PING (and ROSTER, SNAP, CHAT and
-// PONG back) are the same in both.
+// the other fields. JOIN, STATE, DRESS, CHAT and PING (and ROSTER, SNAP, CHAT
+// and PONG back) are the same in both.
 import { PIN_LENGTH, MAX_NAME } from './constants.js';
 
 // client -> lobby
 export const C = {
-  JOIN: 'join', // { v, name, key, back, color, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name and color are the ones that count; name, color: as the page has them)
+  JOIN: 'join', // { v, name, key, back, color, look, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name, color and look are the ones that count; name, color, look: as the page has them; look: shared/looks.js)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
   TAKE: 'take', // { id, key? }: gathered (or walked into) what is on spot id (key: true, an old key opens a sky_vault, and is used up)
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale; the room goes by its own, shared/wilds.js)
@@ -23,6 +23,7 @@ export const C = {
   HIT: 'hit', // { kind, id, x, z, size, tool }: a swing at the giant tree or rock (kind: 'tree' or 'rock') id, which the page has at x, z (size: as for CHOP; tool: the item in hand)
   DEV_GIANT: 'devGiant', // { kind, id }: developer tools (shared/constants.js DEV_TOOLS): tree or rock id grows into a giant now
   GAME_COIN: 'gameCoin', // { id }: walked into coin id in the arena (coin rush)
+  DRESS: 'dress', // { color, look }: we changed clothes (as for JOIN: an account's own count, read off it again)
   CHAT: 'chat', // { text }
   PING: 'ping', // { c }: answered with PONG carrying the same c
   // on a farm (JOIN there also carries auth: "<farm id>.<token>", the joiner's own farm, see server/farms.js)
@@ -50,8 +51,8 @@ export const C = {
 
 // lobby -> client
 export const S = {
-  WELCOME: 'welcome', // { id, name, color, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, game, board, boardAt, resumed } (board: as for BOARD; boardAt: where it stands, { x, z, yaw }, shared/fishing.js boardFor) (game: as for GAME) (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z, from, wait], ...] (as for DROP); giants: Giants toSave(), shared/giants.js)
-  ROSTER: 'roster', // { list: [{ id, name, color, finds, rares, wood, stone, game, away }] } (game: the party game id they are off in, 0: in the lobby)
+  WELCOME: 'welcome', // { id, name, color, look, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, game, board, boardAt, resumed } (board: as for BOARD; boardAt: where it stands, { x, z, yaw }, shared/fishing.js boardFor) (game: as for GAME) (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z, from, wait], ...] (as for DROP); giants: Giants toSave(), shared/giants.js)
+  ROSTER: 'roster', // { list: [{ id, name, color, look, finds, rares, wood, stone, game, away }] } (game: the party game id they are off in, 0: in the lobby)
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count, items? }: spot id was emptied by player `by` (items: a sky isle chest's [[item, count], ...]; its item is 'chest')
@@ -83,7 +84,7 @@ export const S = {
   CHAT: 'chat', // { from, name, color, text } (from 0: the lobby itself)
   PONG: 'pong', // { c }
   // on a farm
-  FARM: 'farm', // { id, name, color, farm: { id, name, owner }, mine, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, bosses, dungeons, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
+  FARM: 'farm', // { id, name, color, look, farm: { id, name, owner }, mine, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, bosses, dungeons, chest, hours, animals, roster, pos, resumed } (felled, mined: [[tree or rock id, when it comes back]])
   //   (WELCOME on a farm. mine: this is your own farm. crops: [[key, crop, plantedAt, wateredAt?], ...], plantedAt (and wateredAt, once watered) in the farm's game hours.
   //   tilled: [[key, bare, life], ...], bare: game seconds it has lain bare, life: how long it may. built: [[key, piece], ...].
   //   machines: [[key, item, at, takes], ...] (shared/machines.js). chest: { item: count }. hours: the farm's clock, in game hours since it began)

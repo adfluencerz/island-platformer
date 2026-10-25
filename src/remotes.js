@@ -6,6 +6,7 @@ import { SWORDS } from '../shared/level.js';
 import { ITEMS } from './items.js';
 import { BOSS_IDS } from '../shared/bosses.js';
 import { createMount } from './mounts.js';
+import { cleanLook, sameLook } from '../shared/looks.js';
 import { createTackle } from './fishing.js';
 
 // ---------- Other players ----------
@@ -110,10 +111,10 @@ export class Remotes {
       seen.add(p.id);
       let r = this.players.get(p.id);
       if (!r) {
-        const farmer = createFarmer({ shirt: p.color });
+        const farmer = createFarmer({ shirt: p.color, look: cleanLook(p.look) });
         farmer.root.visible = false; // until it has a position
         this.scene.add(farmer.root);
-        r = { id: p.id, farmer, samples: new Samples(), tag: null, name: '', color: -1, away: false,
+        r = { id: p.id, farmer, samples: new Samples(), tag: null, name: '', color: -1, look: cleanLook(p.look), away: false,
           last: new THREE.Vector3(), wasGround: true, wasSwinging: false };
         this.players.set(p.id, r);
       }
@@ -128,6 +129,12 @@ export class Remotes {
         }
         r.tag = makeNameTag(p.name, p.color);
         r.farmer.root.add(r.tag);
+      }
+      // (new clothes: dressed again)
+      const look = cleanLook(p.look);
+      if (!sameLook(look, r.look)) {
+        r.look = look;
+        r.farmer.setLook(look);
       }
       r.away = p.away;
       r.tag.material.opacity = p.away ? 0.4 : 1;

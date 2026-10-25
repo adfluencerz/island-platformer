@@ -217,6 +217,7 @@ export class FarmRoom extends Place {
       id: p.id,
       name: p.name,
       color: p.color,
+      look: p.look,
       farm: { id: this.farmId, name: this.name, owner: this.ownerName, helpers: this.helpers() },
       mine: p.owner,
       ...(p.visitor && { visitor: true }), // (a friend looking round: they farm nothing)

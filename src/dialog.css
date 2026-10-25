@@ -4,11 +4,14 @@
   margin-top: 30px; /* room for the tab */
 }
 
-/* (all but Chat, Shop and Bye: it scrolls on a screen too short for it) */
+/* (all but Shop and Bye: it scrolls on a screen too short for it) */
 .talk-body {
   max-height: calc(100vh - 150px);
   max-height: calc(100dvh - 150px);
   overflow-y: auto;
+  /* room for the bubble to bump into, without moving anything */
+  margin-right: -8px;
+  padding-right: 8px;
 }
 
 .talk-head {
@@ -36,7 +39,8 @@
   font-weight: 600;
   line-height: 1.1;
 }
-.talk-say.bump { animation: inv-bump 0.25s ease-out; }
+.talk-say.bump { animation: talk-bump 0.25s ease-out; }
+@keyframes talk-bump { 40% { transform: scale(1.025); } }
 
 .talk-hearts {
   margin: 4px 0 8px 2px;
@@ -56,7 +60,6 @@
 }
 .talk-ask.ready { border-style: solid; background: #e8f5c8; }
 .talk-ask.done { opacity: 0.8; border-style: solid; }
-.talk-ask.new { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .talk-ask-title { font-size: 24px; font-weight: 700; }
 .talk-ask-text { font-size: 20px; }
 .talk-needs { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
@@ -82,13 +85,56 @@
 .talk-actions .talk-btn { flex: 1; }
 .talk-btn:disabled { opacity: 0.55; cursor: default; }
 .talk-btn.locked { opacity: 0.75; }
-.talk-hand { width: 100%; }
+
+/* what you can say: numbered, the ones they are waiting on starred, what you haven't heard yet marked new */
+.talk-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.talk-ask:not([hidden]) + .talk-options { margin-top: 10px; }
+.talk-option {
+  width: 100%;
+  font-size: 22px;
+  line-height: 1.05;
+}
+.talk-key {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--inv-outline);
+  border-radius: 6px;
+  background: var(--inv-paper);
+  font-size: 18px;
+  font-weight: 700;
+}
+.talk-option-text { flex: 1; }
+.talk-option.hot { background: #ffe9a8; }
+.talk-option.hot .talk-key { background: #f2b630; }
+.talk-option.hot .talk-option-text::before {
+  content: '★ ';
+  font-family: system-ui, sans-serif;
+  color: #c9801a;
+}
+.talk-option.new .talk-option-text::after {
+  content: ' ✦ new';
+  font-family: system-ui, sans-serif;
+  font-size: 0.7em;
+  color: #c9801a;
+}
+.talk-option.back { opacity: 0.8; }
+.talk-option:focus-visible { outline: 3px solid #3d1a04; outline-offset: 1px; }
 
 :root.compact .talk-say { font-size: 18px; min-height: 56px; }
 :root.compact .talk-face { width: 56px; height: 56px; }
 :root.compact .talk-ask-title { font-size: 19px; }
 :root.compact .talk-need { font-size: 17px; }
 :root.compact .talk-btn { font-size: 18px; padding: 5px 8px; }
+:root.compact .talk-option { font-size: 18px; }
+:root.compact .talk-key { width: 22px; height: 22px; font-size: 15px; }
 
 /* A short screen (a phone on its side): all of it smaller, to fit */
 @media (max-height: 460px) {
@@ -104,5 +150,12 @@
   .talk-needs { margin: 3px 0; }
   .talk-reward { font-size: 15px; margin-bottom: 4px; }
   .talk-btn, :root.compact .talk-btn { font-size: 16px; padding: 4px 8px; }
+  /* what you can say first, the request you have taken on under it */
+  .talk-body { display: flex; flex-direction: column; }
+  .talk-ask { order: 1; margin-top: 6px; }
+  .talk-needs { flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
+  .talk-options { gap: 4px; margin-top: 6px; }
+  .talk-option, :root.compact .talk-option { font-size: 16px; padding: 3px 8px 3px 6px; }
+  .talk-key, :root.compact .talk-key { width: 20px; height: 20px; font-size: 13px; }
   .talk-actions { margin-top: 6px; }
 }

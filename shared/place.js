@@ -15,12 +15,13 @@
 //   welcome(p, resumed)   the WELCOME message
 //   act(p, msg)           a message that isn't STATE, CHAT or PING
 //   tickPlace(now)        every tick, before the roster and snapshots go out
-//   playerExtra(p)        their part of the roster, past id, name, color, away
+//   playerExtra(p)        their part of the roster, past id, name, color, look, away
 //   greet(p) / farewell(p)   what everyone hears when someone comes or goes
 import {
   PROTOCOL_VERSION, TICK_RATE, MAX_PLAYERS, MAX_NAME, MAX_CHAT, HOLD_MS, PLAYER_COLORS, CLOSE, CLOSE_TEXT,
 } from './constants.js';
 import { C, S, STATEF, cleanText, finite } from './protocol.js';
+import { cleanLook, sameLook } from './looks.js';
 
 const CHAT_BURST = 5; // messages in a row...
 const CHAT_EVERY = 2; // ...then one per this many seconds
@@ -61,7 +62,7 @@ export class Place {
   }
 
   rosterList() {
-    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, ...this.playerExtra(p), away: !p.conn }));
+    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, look: p.look, ...this.playerExtra(p), away: !p.conn }));
   }
 
   // The first message on a connection. Returns the player it now speaks for,
@@ -88,6 +89,7 @@ export class Place {
         mine.conn = conn;
         mine.heldUntil = 0;
         Object.assign(mine, extra);
+        this.dress(mine, msg); // (in what they wear now)
         this.rosterDirty = true;
         this.welcome(mine, true);
         this.say(`${mine.name} is back.`);
@@ -107,7 +109,7 @@ export class Place {
     const worn = new Set([...this.players.values()].map((p) => p.color));
     const color = PLAYER_COLORS.includes(msg.color) ? msg.color : PLAYER_COLORS.find((c) => !worn.has(c)) ?? PLAYER_COLORS[0];
 
-    const p = this.seat({ id: this.nextId++, conn, key, name, color, ...extra });
+    const p = this.seat({ id: this.nextId++, conn, key, name, color, look: msg.look, ...extra });
     this.welcome(p, false);
     this.greet(p);
     this.log(`${this.code}: ${name} joined (${this.players.size}/${this.maxPlayers})`);
@@ -115,10 +117,10 @@ export class Place {
   }
 
   // A new player in a seat (or, from a save, an away one whose seat is held)
-  seat({ id, conn = null, key, name, color, heldUntil = 0, ...extra }) {
+  seat({ id, conn = null, key, name, color, look, heldUntil = 0, ...extra }) {
     const at = this.spawnFor(id);
     const p = {
-      id, conn, key, name, color,
+      id, conn, key, name, color, look: cleanLook(look),
       x: at.x, y: at.y, z: at.z, yaw: Math.PI, f: STATEF.GROUND,
       heldUntil, // away: when their seat is let go
       chatTokens: CHAT_BURST, chatAt: Date.now(),
@@ -153,6 +155,16 @@ export class Place {
     if (!this.players.size) this.emptySince = Date.now();
   }
 
+  // New clothes: { color, look } (shared/looks.js), seen by everyone with the next roster
+  dress(p, { color, look }) {
+    const next = cleanLook(look);
+    const shirt = PLAYER_COLORS.includes(color) ? color : p.color;
+    if (shirt === p.color && sameLook(next, p.look)) return;
+    p.color = shirt;
+    p.look = next;
+    this.rosterDirty = true;
+  }
+
   // ---------- Messages ----------
   message(p, msg) {
     switch (msg?.t) {
@@ -181,6 +193,9 @@ export class Place {
         this.broadcast({ t: S.CHAT, from: p.id, name: p.name, color: p.color, text });
         break;
       }
+      case C.DRESS:
+        this.dress(p, msg);
+        break;
       case C.PING:
         this.send(p, { t: S.PONG, c: msg.c });
         break;
