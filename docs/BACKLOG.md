@@ -46,8 +46,11 @@ Open pull requests, each from the backlog below:
 ### The neighbours
 - [ ] Gifts: something each of them loves, once a day, for a heart
 - [ ] More neighbours, each with a trade of their own (a carpenter for the workbench's upgrades? a blacksmith for tools?)
-- [ ] Things at five hearts: a letter, a recipe, a visit to your farm
-- [ ] A festival in the valley once a season, every neighbour there
+- [ ] Things at five hearts: a letter, a recipe, a visit to your farm (at 2 and 4 hearts they now share a moment: `shared/talk.js`)
+- [ ] A festival in the valley once a season, every neighbour there (Mabel's feast, Rosa's fair and the bunting are for it)
+- [ ] Errands once all seven requests are done, so there is always something to ask them
+- [ ] Neighbours that walk the roads to each other's doors, and say so when you meet them
+- [ ] Their homes in the seasons: a wreath, pumpkins on the porch, a snowman
 
 ### Tech
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or
@@ -67,6 +70,12 @@ Open pull requests, each from the backlog below:
 ## Done
 The big pieces so far, newest first:
 
+- The neighbours' homes: a room of their own each, lived-in yards (a
+  lighthouse, a porch, a terrace...), and what you do for them shows where
+  they live (#99)
+- Choosing what to say to the neighbours: numbered answers, a chat menu,
+  moments they remember; seven requests each (a message that goes round the
+  valley, a pick of reward), and signs over their heads (#99)
 - A better farmer model, and a wardrobe to dress them: hats, hair, faces,
   tops, bottoms, aprons, shoes and scarves, kept with the account and seen
   by everyone; a wardrobe in the house too (#98)

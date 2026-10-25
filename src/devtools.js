@@ -18,8 +18,8 @@ import { devToolsOn } from '../shared/constants.js';
 // plaza(), skills(xp) (to each skill; Infinity: the top); clock(hour) (on to
 // the next time it is that hour), later(hours); info(): [[label, value]].
 // The valley: places(): [[id, name]] to go to, goTo(id); neighbours():
-// [[id, name]], finish(id) (their request now, done), forget() (nobody met);
-// forage() (something wild, now).
+// [[id, name]], finish(id) (their request now, done), hearts() (all five, with
+// all of them), forget() (nobody met); forage() (something wild, now).
 const STORE = 'tp.dev';
 const TABS = ['World', 'Items', 'Player', 'Farm', 'Valley', 'Info'];
 const HOLD_MS = 1500; // holding the coin counter this long opens it on a touch screen
@@ -158,7 +158,8 @@ export function createDevTools(api) {
     for (const [id, name] of api.places()) btn(go, name, () => api.goTo(id));
     const who = section(p, 'Requests', 'The neighbour\'s request now, done (what it gives, given; nothing taken)');
     for (const [id, name] of api.neighbours()) btn(who, name, () => api.finish(id));
-    btn(who, 'Forget them all', () => api.forget(), 'Nobody met, nothing asked, no shops open');
+    btn(who, 'Five hearts with them all', () => api.hearts(), 'Met, and as fond of you as can be: what they tell you at 2 and 4 hearts is open to you');
+    btn(who, 'Forget them all', () => api.forget(), 'Nobody met, nothing asked, no shops open, nothing they have told you');
     const wild = section(p, 'Forage', 'On your farm played alone');
     btn(wild, 'Something wild, now', () => api.forage(), 'In a biome out in the valley, as now and then it turns up');
   }

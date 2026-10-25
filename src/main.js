@@ -291,9 +291,12 @@ const skills = createSkills({
     inventory.notify(detail);
   },
 });
+// What a skill's work counts as, for the neighbours' requests (shared/npcs.js)
+const DEED_OF = { farming: 'harvest', woodcutting: 'chop', mining: 'mine' };
 // XP in skill for what was got, and now and then (the skill's bonus) one more of item
 function skilled(skill, xp, item) {
   skills.gain(skill, xp);
+  if (DEED_OF[skill]) npcs.did(DEED_OF[skill]);
   if (item && skills.extra(skill) && inventory.canAdd(item, 1)) inventory.add(item, 1);
 }
 
@@ -1309,6 +1312,11 @@ createDevTools({
     const done = npcs.finish(id);
     saveGame();
     return done ? `${NPCS[id].name}: "${done.title}" done` : `${NPCS[id].name} has nothing left to ask`;
+  },
+  hearts() {
+    for (const id of NPC_IDS) npcs.befriend(id);
+    saveGame();
+    return 'Five hearts with all four';
   },
   forget() {
     npcs.reset();
@@ -2924,10 +2932,10 @@ const shop = createShop({
 // door goes in (their room is out past the sea, as the house's is), and E at
 // the door inside comes back out. Where you stand with them is yours, saved
 // with your backpack.
-const npcs = createNpcs({ parent: worlds.home.root, inventory });
+const npcs = createNpcs({ parent: worlds.home.root, inventory, ctx: () => missionCtx() });
 const missionCtx = () => ({
   have: (item) => inventory.count(item),
-  built: (piece) => (place === 'home' ? buildings.findAll(piece).length : 0),
+  built: (piece) => (place === 'home' && !(farmVisit && !farmVisit.mine) ? buildings.findAll(piece).length : 0), // (not what stands on a friend's farm we are visiting)
 });
 const dialog = createDialog({
   npcs,
@@ -3294,9 +3302,10 @@ const known = (dish) => DISHES[dish]?.learn === 'start' || learned.has(dish);
 const cooking = createCooking({
   inventory,
   known,
-  onCampfire: (key, dish, n, took) => loadMachine(key, dish, n, took),
+  onCampfire: (key, dish, n, took) => loadMachine(key, dish, n, took) && npcs.did('cook'), // (Mabel likes to hear of it: shared/npcs.js)
   onKitchen: (dish, n) => {
     inventory.add(dish, n);
+    npcs.did('cook');
     houseRoom.cooked();
     puffs.puff(new THREE.Vector3().copy(houseRoom.potSpot()), { rise: true });
   },
@@ -3361,13 +3370,14 @@ function useMachine(key) {
 
 // Into the machine on tile key (what it takes is out of the backpack already:
 // took, else what the machine takes; dish: what goes on the campfire, n of it,
-// or the fish into an aquarium)
+// or the fish into an aquarium). False if it couldn't (it is all given back)
 function loadMachine(key, dish, n = 1, took) {
   const was = machines.get(key);
   const state = loadFor(buildings.get(key), farmHours(), dish, n, was);
   if (!state) {
     if (isFish(dish)) inventory.add(dish, 1, { quiet: true }); // (the aquarium is full after all)
-    return giveItems(took); // (it can't: back it goes)
+    giveItems(took); // (it can't: back it goes)
+    return false;
   }
   anim.squash = 0.15;
   steamAt(key);
@@ -3380,6 +3390,7 @@ function loadMachine(key, dish, n = 1, took) {
   }
   if (state.item === TANK) inventory.notify(`In swims the ${ITEMS[dish].name.toLowerCase()}`);
   else inventory.notify(`${n > 1 ? `${n} × ` : ''}${ITEMS[state.item].name.toLowerCase()} in ${timeLeft(state.at - farmHours())}`);
+  return true;
 }
 
 // A curl of steam off the machine on tile key (the campfire's dishes)
