@@ -1573,6 +1573,7 @@ const player = {
   velocity: new THREE.Vector3(0, 0, 0),
   onGround: false,
 };
+const lastGoodSpot = new THREE.Vector3().copy(player.position); // where the farmer last was, if a number ever goes bad (update)
 
 // Ground level (top of the base ground box) is y = 0, so the player's
 // resting height when standing on bare ground (GROUND_STAND_Y, shared/level.js)
@@ -1614,6 +1615,10 @@ function updateCamera(dt) {
   camTarget.x += (player.position.x - camTarget.x) * kXZ;
   camTarget.z += (player.position.z - camTarget.z) * kXZ;
   camTarget.y += (camGroundY - camTarget.y) * damp(CAM_FOLLOW_Y, dt);
+  if (![camTarget.x, camTarget.y, camTarget.z].every(Number.isFinite)) { // (nor following into nowhere: back on the farmer)
+    camGroundY = feetY;
+    camTarget.set(player.position.x, feetY, player.position.z);
+  }
 
   camZoom += (zoomGoal() - camZoom) * damp(CAM_ZOOM_EASE, dt);
   if (!Number.isFinite(camZoom)) camZoom = zoomGoal(); // never leave the camera nowhere
@@ -2417,7 +2422,8 @@ function steer(dt) {
     walk.hopped = true;
     walk.stuck = 0;
   }
-  const k = Math.min(1, d / (MOVE_SPEED * dt)) / d;
+  // (right on the spot but not there, e.g. standing on top of the rock tapped, too high to reach it: nowhere to go, and dividing by 0 would lose the farmer)
+  const k = d > 1e-6 ? Math.min(1, d / (MOVE_SPEED * dt)) / d : 0;
   return { x: dx * k, z: dz * k };
 }
 
@@ -4602,6 +4608,17 @@ function update(dt) {
     player.position.set(world.spawn.x, GROUND_STAND_Y + 1, world.spawn.z);
     player.velocity.set(0, 0, 0);
   }
+  // Lost (a position or speed that isn't a number: the camera follows it into
+  // nowhere and only the sky shows, for good) -> back where they last were
+  const p = player.position;
+  const v = player.velocity;
+  if (![p.x, p.y, p.z, v.x, v.y, v.z].every(Number.isFinite)) {
+    player.position.copy(lastGoodSpot);
+    player.velocity.set(0, 0, 0);
+    knock.set(0, 0, 0);
+    stopWalking();
+    snapCamera();
+  } else lastGoodSpot.copy(player.position);
 
   playerMesh.position.copy(player.position);
   puffs.update(dt);
