@@ -79,10 +79,12 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
   const closeBtn = button('inv-close', windowEl, '×', () => setOpen(false));
   closeBtn.title = 'Close (E / Esc)';
 
-  const sayEl = el('div', 'shop-say', windowEl);
+  // (all but the tab and the close button: it scrolls in a frame too short for it)
+  const bodyEl = el('div', 'shop-body', windowEl);
+  const sayEl = el('div', 'shop-say', bodyEl);
 
   // Today's request: what, what it pays, and Hand over
-  const askEl = el('div', 'shop-ask', windowEl);
+  const askEl = el('div', 'shop-ask', bodyEl);
   askEl.hidden = !requests;
   const askIcon = el('img', 'inv-icon', askEl);
   askIcon.alt = '';
@@ -94,8 +96,8 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     render();
   });
 
-  el('div', 'shop-heading', windowEl, 'For sale');
-  const stockEl = el('div', 'shop-stock', windowEl);
+  el('div', 'shop-heading', bodyEl, 'For sale');
+  const stockEl = el('div', 'shop-stock', bodyEl);
   let stockViews = [];
   // (the shelves of whose shop it is, afresh each time it opens)
   function fillStock() {
@@ -122,8 +124,8 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     return { id, row, locked };
   }
 
-  el('div', 'shop-heading', windowEl, 'Sell from your backpack');
-  const gridEl = el('div', 'inv-grid', windowEl);
+  el('div', 'shop-heading', bodyEl, 'Sell from your backpack');
+  const gridEl = el('div', 'inv-grid', bodyEl);
   const slotViews = Array.from({ length: SLOT_COUNT }, (_, i) => {
     if (i === COLS) el('div', 'inv-divider', gridEl);
     const root = el('div', 'inv-slot', gridEl);
@@ -135,7 +137,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     return { root, img, count };
   });
 
-  const footerEl = el('div', 'inv-footer', windowEl);
+  const footerEl = el('div', 'inv-footer', bodyEl);
   const fundsEl = el('div', 'shop-funds', footerEl);
   coinImg(fundsEl);
   const fundsText = el('span', '', fundsEl);

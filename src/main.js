@@ -27,7 +27,7 @@ import { createArcade } from './arcade.js';
 import { createMachines } from './machines.js';
 import { createCooking, boostFrom, boostOf, boostText, BOOST_NAMES } from './cooking.js';
 import { createFarmer, damp, HOE_SWING_TIME, lightFarmers } from './character.js';
-import { Remotes } from './remotes.js';
+import { Remotes, makeNameTag } from './remotes.js';
 import { Connection } from './net/connection.js';
 import { showCodeInAddress } from './net/lobby.js';
 import { FarmSync } from './net/farm.js';
@@ -1745,6 +1745,7 @@ function updateCamera(dt) {
 function lookFrom(split) {
   if (place === 'title') return followSun(MENU_CAM.look, 0);
   if (split && place !== 'lobby') npcs.showSigns(npcs.signs(), player.position); // (the neighbours' signs: what they have for this farmer)
+  for (const seat of seats) if (seat.nameTag) seat.nameTag.visible = seat !== me; // (the others' names: not your own)
   // Pushed back with the camera, so zooming out shows more island, not more fog
   // (underground, in a boss's dungeon, closer: the dark all round)
   scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, CAVE_FOG[0], underground) * Math.max(1, camZoom);
@@ -2651,7 +2652,7 @@ function standingAt(x, z) {
   const near = (p, r = 0.85) => p && Math.abs(p.x - x) < r && Math.abs(p.z - z) < r;
   if (near(player.position, 0.75)) return 'you';
   if ([...remotes.players.keys()].some((id) => near(remotes.positionOf(id)))) return 'someone';
-  if (seats.some((seat) => seat !== me && near(seat.player.position))) return 'someone'; // (another farmer at the screen)
+  if (farmersHere().some((seat) => seat !== me && near(seat.player.position))) return 'someone'; // (another farmer at the screen)
   return animals.list().some((animal) => animal.root.visible && near(animal.pos)) ? 'someone' : '';
 }
 
@@ -2919,7 +2920,7 @@ const newHud = (seat) => new Hud({
     onTrade: (id) => askTrade(id),
   } : {
     onTravel: () => inventory.notify(`Only ${seatName(first)} can head online from here`),
-    onMenu: () => seat.panel.openMenu(),
+    onMenu: () => seat.panel.openMenu(seatName(seat)),
     isMenuOpen: () => seat.panel.isOpen(),
     onMenuEscape: () => seat.panel.escape(),
     onHome: () => {},
@@ -3261,7 +3262,7 @@ function forageSpot() {
   return null;
 }
 // (picked up by whichever farmer at the screen walks into it: i, their seat)
-const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, forageSpot, onPickUp: (item, count, i = 0) => within(seats[i] ?? first, () => inventory.add(item, count)), isItem: (id) => !!ITEMS[id] });
+const farmFinds = createFarmFinds({ scene, freeSpot: freeFarmSpot, forageSpot, onPickUp: (item, count, i = 0) => within(farmersHere()[i] ?? first, () => inventory.add(item, count)), isItem: (id) => !!ITEMS[id] });
 
 // Put down what the backpack's window carries (inventory.js onDrop), at our
 // feet: in a lobby, or on a farm with helpers, its room has it, for anyone to
@@ -4756,6 +4757,7 @@ async function openFarm() {
 function leavePage() {
   saveGame();
   farmSync.flush({ leaving: true });
+  for (const seat of seats) seat.sync?.flush({ leaving: true }); // (the farmers who joined at the screen too)
 }
 
 setInterval(saveGame, 5000);
@@ -4909,6 +4911,9 @@ function makeSeat(seat) {
   });
 }
 
+// The seats whose farmers are out on the farm (not one still saying who they are, hidden)
+const farmersHere = () => seats.filter((seat) => seat === first || seat.profile);
+
 // The farmers played here before, who aren't at the screen now (nor the first seat's own)
 const playerChoices = () => rememberedPlayers().filter((p) => p.id !== farmSync.id() && !seats.some((seat) => seat.profile?.id === p.id));
 
@@ -4978,13 +4983,28 @@ function endCoop(why) {
   stopJoin();
 }
 
-// The name over each part of a split screen
+// Whose each part of a split screen is (a name in its corner), and the name
+// over each farmer (seen in everyone's view but their own: lookFrom)
 function showTags() {
+  const split = seats.length > 1;
   for (const seat of seats) {
+    const color = seat === first ? myColor() : seat.profile?.color ?? 0xffffff;
     if (!seat.tag) seat.tag = el('div', 'seat-tag', seat.root);
     seat.tag.textContent = '';
-    el('i', 'ui-dot', seat.tag).style.background = hexColor(seat === first ? myColor() : seat.profile?.color ?? 0xffffff);
+    el('i', 'ui-dot', seat.tag).style.background = hexColor(color);
     seat.tag.append(seatName(seat));
+    const name = split && (seat === first || seat.profile) ? `${seatName(seat)}:${color}` : '';
+    if (seat.nameTag?.userData.name === name) continue;
+    if (seat.nameTag) {
+      seat.playerMesh.remove(seat.nameTag);
+      seat.nameTag.material.map.dispose();
+      seat.nameTag.material.dispose();
+      seat.nameTag = null;
+    }
+    if (!name) continue;
+    seat.nameTag = makeNameTag(seatName(seat), color);
+    seat.nameTag.userData.name = name;
+    seat.playerMesh.add(seat.nameTag);
   }
 }
 
@@ -5199,13 +5219,13 @@ function updateWorld(dt) {
   world.updateTrees(dt);
   if (place !== 'lobby') {
     merchant.update(dt, t, nearestFarmer(merchant.root.position));
-    npcs.update(dt, t, seats.map((seat) => seat.player.position), dayNight.hour(), npcs.signs());
+    npcs.update(dt, t, farmersHere().map((seat) => seat.player.position), dayNight.hour(), npcs.signs());
     npcHomes.animate(t);
     chestModel.update(dt, seats.some((seat) => seat.chestWindow.isOpen()));
   }
 
   const playing = seats.some((seat) => within(seat, () => !inputBlocked())); // (anyone, not behind a menu)
-  farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: playing, at: seats.map((seat) => seat.player.position) });
+  farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: playing, at: farmersHere().map((seat) => seat.player.position) });
   regrowFarm();
   rollFarmGiants();
   bossWorld.update(dt, t);
@@ -5249,13 +5269,13 @@ function updateWorld(dt) {
   machines.update(farmHours(), t, dt);
   houseRoom.setNight(dayNight.night());
   npcHomes.setNight(dayNight.night());
-  houseRoom.update(t, seats.map((seat) => seat.player.position));
+  houseRoom.update(t, farmersHere().map((seat) => seat.player.position));
   seasons.frame(dt, { home: place !== 'lobby', focus: indoors() || cave.k > 0.5 ? null : player.position });
   lightFarmers(hemi.color, 0.13 * hemi.intensity); // (their edges catch the sky's light)
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
-      players: seats.map((seat) => ({
+      players: farmersHere().map((seat) => ({
         pos: seat.player.position,
         moving: seat.moving,
         onGround: seat.player.onGround,
@@ -5266,7 +5286,7 @@ function updateWorld(dt) {
 }
 
 // The farmer at the screen nearest `at` (where they are)
-const nearestFarmer = (at) => seats.map((seat) => seat.player.position).reduce((a, b) => (Math.hypot(b.x - at.x, b.z - at.z) < Math.hypot(a.x - at.x, a.z - at.z) ? b : a));
+const nearestFarmer = (at) => farmersHere().map((seat) => seat.player.position).reduce((a, b) => (Math.hypot(b.x - at.x, b.z - at.z) < Math.hypot(a.x - at.x, a.z - at.z) ? b : a));
 
 // What E does here at home, for the prompt
 function homePrompt() {
@@ -5360,7 +5380,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, seats, addSeat, dropSeat, seatFarmer, startJoin, within, layout };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, startJoin, within, layout };
 }
 
 loadGame();
