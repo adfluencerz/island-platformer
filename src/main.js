@@ -26,7 +26,7 @@ import { createWorkbench } from './workbench.js';
 import { createArcade } from './arcade.js';
 import { createMachines } from './machines.js';
 import { createCooking, boostFrom, boostOf, boostText, BOOST_NAMES } from './cooking.js';
-import { createFarmer, damp, HOE_SWING_TIME } from './character.js';
+import { createFarmer, damp, HOE_SWING_TIME, lightFarmers } from './character.js';
 import { Remotes } from './remotes.js';
 import { Connection } from './net/connection.js';
 import { showCodeInAddress } from './net/lobby.js';
@@ -41,6 +41,7 @@ import { TouchControls, isTouch } from './ui/touch.js';
 import { GamepadInput } from './gamepad.js';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
+import { DEFAULT_LOOK } from '../shared/looks.js';
 import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, GLIDE, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
 import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
@@ -1571,8 +1572,8 @@ const player = {
 
 // ---------- Character model ----------
 // The farmer (character.js). Collision still uses the simple box in `player`;
-// the model is purely visual. Everyone else in the game wears the same model
-// in their own shirt color (remotes.js).
+// the model is purely visual. Everyone else in the game wears the same model,
+// in their own clothes and shirt color (remotes.js).
 const farmer = createFarmer({ height: player.height });
 const playerMesh = farmer.root; // positioned at player.position (collision center)
 const hoeGroup = farmer.hoe;
@@ -1693,6 +1694,7 @@ function useAction() {
   if (chest.inReach(player.position)) return chest.open();
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return workbench.open();
   if (buildings.nearest('arcade', player.position, BENCH_REACH)) return arcade.open();
+  if (houseRoom.wardrobeInReach(player.position)) return openWardrobe();
   if (houseRoom.kitchenInReach(player.position) || houseRoom.shelfInReach(player.position)) return cooking.openKitchen();
   const machine = machines.nearest(player.position);
   if (machine) return useMachine(machine);
@@ -2198,6 +2200,7 @@ function tappedThing() {
     }
     things.set(houseRoom.door, { kind: 'exit', ...houseRoom.entry() });
     things.set(houseRoom.kitchen, { kind: 'kitchen', ...houseRoom.kitchenSpot() });
+    things.set(houseRoom.wardrobe, { kind: 'wardrobe', ...houseRoom.wardrobeSpot() });
     things.set(merchant.root, stall);
     things.set(world.root.getObjectByName('stall'), stall);
     // the neighbours (to talk to), their homes (to go in) and their rooms' doors (to come out)
@@ -2266,6 +2269,7 @@ function arrived(d) {
     case 'arcade': return !!buildings.nearest('arcade', player.position, BENCH_REACH);
     case 'machine': return machines.nearest(player.position) === walk.key;
     case 'kitchen': return houseRoom.kitchenInReach(player.position);
+    case 'wardrobe': return houseRoom.wardrobeInReach(player.position);
     default: return d < ARRIVE;
   }
 }
@@ -2283,6 +2287,7 @@ function arrive() {
   else if (kind === 'arcade') arcade.open();
   else if (kind === 'machine') useMachine(key);
   else if (kind === 'kitchen') cooking.openKitchen();
+  else if (kind === 'wardrobe') openWardrobe();
   else if (kind === 'stall') shop.open();
   else if (kind === 'npc') dialog.open(walk_id);
   else if (kind === 'npcdoor') goIntoHome(walk_id);
@@ -3479,7 +3484,7 @@ const splash = new Splash({
     saveGame();
     await farmSync.register(username, password, color, currentSave());
     presence.start();
-    myShirt(); // (and the farm with helpers, if it has some, waits for us at home)
+    dressMe(); // (and the farm with helpers, if it has some, waits for us at home)
   },
   // (the account's farm: the page reloads to play it)
   onLogin: async ({ username, password }) => {
@@ -3495,9 +3500,13 @@ const splash = new Splash({
     forgetLocalFarm();
     location.reload();
   },
-  onColor: async (color) => {
-    await farmSync.setColor(color);
-    myShirt();
+  onTryOn: (look, color) => dress(color, look),
+  onDress: async (look, color) => {
+    const account = await farmSync.setLook(look, color);
+    // (everyone where we are sees the new clothes: the room reads them off the account)
+    net?.dress(account.color, account.look);
+    farmNet?.dress(account.color, account.look);
+    return account;
   },
   onFriends: () => farmSync.friends(),
   onAddFriend: (username) => farmSync.addFriend(username),
@@ -3532,11 +3541,24 @@ const presence = new PresenceLink({
   },
 });
 
-// Our shirt: the account's color (src/net/farm.js), at home; in a lobby or on a
-// farm with helpers its room says what we wear (it goes by ours too)
+// What we wear: the account's shirt color and clothes (src/net/farm.js), at
+// home; in a lobby or on a farm with helpers its room says (it goes by the
+// account's too)
 const myColor = () => farmSync.account()?.color ?? PLAYER_COLORS[0];
-function myShirt() {
-  if (place === 'home' && !farmNet) farmer.setShirt(myColor());
+const myLook = () => farmSync.account()?.look ?? DEFAULT_LOOK;
+function dress(color, look) {
+  farmer.setShirt(color);
+  farmer.setLook(look);
+}
+function dressMe() {
+  if (place === 'home' && !farmNet) dress(myColor(), myLook());
+}
+
+// The wardrobe in the house: the menu's Your farmer page (what we wear is kept with the account)
+function openWardrobe() {
+  if (!farmSync.account()) return inventory.notify('Log in to change clothes: they are kept with your account');
+  keys.clear();
+  splash.show({ page: 'farmer', direct: true });
 }
 
 // This browser's copy of the farm goes (logging in to another, or out):
@@ -3570,7 +3592,7 @@ function goHome() {
   enterWorld('home');
   splash.hide();
   if (farmVisit) return; // (on our own farm with its helpers already)
-  farmer.setShirt(myColor());
+  dress(myColor(), myLook());
   if (!farmOnScreen) {
     showFarm(homeFarm);
     farmOnScreen = true;
@@ -3603,7 +3625,7 @@ async function joinFarm(id) {
     }
   }
   farmJoining = 0;
-  const conn = (farmNet = new Connection({ name: splash.name(), color: myColor(), farm: id, auth: farmSync.auth() }));
+  const conn = (farmNet = new Connection({ name: splash.name(), color: myColor(), look: myLook(), farm: id, auth: farmSync.auth() }));
   const on = (type, fn) => conn.on(type, (m) => farmNet === conn && fn(m));
 
   on(S.FARM, (m) => {
@@ -3623,7 +3645,7 @@ async function joinFarm(id) {
     enterWorld('home');
     farmVisit = { id: m.farm.id, name: m.farm.name, owner: m.farm.owner, mine: m.mine, visitor: !!m.visitor, alone: true, helpers: m.farm.helpers ?? 0 };
     myId = m.id;
-    farmer.setShirt(m.color);
+    dress(m.color, m.look);
     showRoomFarm(m);
     bosses.welcome(m.bosses, m.dungeons);
     farmOnScreen = m.mine;
@@ -4145,7 +4167,7 @@ function partyOver(m) {
 function joinLobby({ name, code }) {
   net?.leave();
   splash.setStatus('Walking over…');
-  const conn = (net = new Connection({ name, color: myColor(), code, auth: farmSync.auth() }));
+  const conn = (net = new Connection({ name, color: myColor(), look: myLook(), code, auth: farmSync.auth() }));
   // (a handler for a connection we have since left does nothing)
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 
@@ -4170,7 +4192,7 @@ function joinLobby({ name, code }) {
     fishBoard.show(m.board ?? []);
     arenaId = 0;
     myId = m.id;
-    farmer.setShirt(m.color);
+    dress(m.color, m.look);
     putDown(m.pos);
     setSpots(m.spots);
     // the trees that are down right now (the rest stand, even on an island we were on before)
@@ -4467,7 +4489,7 @@ async function openFarm() {
   if (theirs && useSave(theirs)) saveGame();
   splash.accountChanged(); // (the server knows whether we have an account now)
   presence.start();
-  myShirt();
+  dressMe();
   if (!splash.hidden) splash.showHelping(); // (the farms we help on: the server knows who we are now)
   // a farm with helpers, already home (the page was quick): onto its room
   if (place === 'home' && farmSync.shared() && farmSync.ready && !farmNet && !farmJoining) joinFarm(farmSync.id());
@@ -4674,6 +4696,7 @@ function update(dt) {
   npcHomes.setNight(dayNight.night());
   houseRoom.update(t, player.position);
   seasons.frame(dt, { home: place !== 'lobby', focus: indoors() || cave.k > 0.5 ? null : player.position });
+  lightFarmers(hemi.color, 0.13 * hemi.intensity); // (their edges catch the sky's light)
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
@@ -4698,6 +4721,7 @@ function homePrompt() {
   if (fish) return fish;
   if (buildings.nearest('workbench', player.position, BENCH_REACH)) return 'E  Use the workbench';
   if (buildings.nearest('arcade', player.position, BENCH_REACH)) return 'E  Play at the arcade';
+  if (houseRoom.wardrobeInReach(player.position)) return 'E  Change clothes';
   if (houseRoom.kitchenInReach(player.position)) return 'E  Cook in the kitchen';
   if (houseRoom.shelfInReach(player.position)) return 'E  Read your recipe book';
   const machine = machines.nearest(player.position);

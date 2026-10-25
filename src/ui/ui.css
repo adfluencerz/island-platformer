@@ -394,3 +394,34 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   padding: 0;
 }
 .ui-swatch.on { border-color: #4a2e14; box-shadow: 0 0 0 3px #fff6dc inset; transform: scale(1.1); }
+
+/* ---------- The wardrobe (Your farmer: wardrobe.js) ---------- */
+/* the farmer on a little stage, lit from the middle */
+.ui-stage {
+  position: relative;
+  border-radius: 4px;
+  background: radial-gradient(ellipse at 50% 55%, #fff1d2 0%, #ffd9a0 55%, var(--inv-slot-bg) 100%);
+  box-shadow: inset 2px 2px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
+}
+.ui-stage-canvas { display: block; width: 100%; height: 230px; touch-action: none; cursor: grab; opacity: 0; transition: opacity 0.3s; }
+.ui-stage-canvas.ready { opacity: 1; }
+.ui-stage-canvas:active { cursor: grabbing; }
+.ui-stage-hint { position: absolute; right: 8px; bottom: 4px; font-size: 16px; color: var(--ui-soft); pointer-events: none; }
+.ui-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.ui-tabs .ui-btn { flex: 1 1 auto; padding-left: 8px; padding-right: 8px; }
+.ui-wardrobe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-radius: 4px;
+  background: var(--inv-slot-bg);
+  min-height: 150px;
+}
+.ui-wardrobe-label { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.ui-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ui-chips .ui-btn { flex: 0 1 auto; }
+.ui-wardrobe .ui-swatch { width: 30px; height: 30px; }
+@media (max-height: 640px) {
+  .ui-stage-canvas { height: 170px; }
+}

@@ -77,6 +77,9 @@ Open pull requests, each from the backlog below:
 ## Done
 The big pieces so far, newest first:
 
+- A better farmer model, and a wardrobe to dress them: hats, hair, faces,
+  tops, bottoms, aprons, shoes and scarves, kept with the account and seen
+  by everyone; a wardrobe in the house too
 - The farm grows into a valley five times its size, with biomes and forage,
   and four neighbours (Rosa, Basil, Finn, Mabel) with homes, a day of their
   own, shops and requests; the merchant keeps the basics

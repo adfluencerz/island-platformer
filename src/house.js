@@ -8,7 +8,8 @@ import { TILE_SIZE } from './world.js';
 // farmed, saved and shared like the rest of the farm (main.js). Its floor is
 // boards, with a field of earth in the left half to till and plant (crops
 // grow there as they do outside); the right half is for living in: a bed, a
-// table, a fireplace, a rug, a shelf of books (the recipe book is among them)
+// table, a fireplace, a rug, a shelf of books (the recipe book is among them),
+// a wardrobe to change clothes at (the menu's Your farmer page, ui/wardrobe.js)
 // and a kitchen, a stove and a counter, to cook at (src/cooking.js). The front wall is kept low so the
 // camera sees in; the door in the middle of it goes back out.
 //
@@ -38,6 +39,9 @@ const MATS = {
   rugEdge: mat(0xe0b23a),
   book: [mat(0x9c3a2e), mat(0x3f6e9c), mat(0x5d8a3a), mat(0xd9a441)],
   window: mat(0xbfe3ff, { emissive: 0xffb84a, emissiveIntensity: 0 }),
+  mirror: mat(0xcfe6f0, { roughness: 0.1, metalness: 0.6 }),
+  straw: mat(0xe8c66a),
+  brass: mat(0xd9a441, { roughness: 0.4, metalness: 0.5 }),
   lantern: mat(0xffe7a3, { emissive: 0xffc35a, emissiveIntensity: 0 }),
   fire: new THREE.MeshBasicMaterial({ color: 0xff8a2a }),
   iron: mat(0x4a4f58, { roughness: 0.5, metalness: 0.4 }),
@@ -202,6 +206,34 @@ export function createHouseRoom(world) {
     }
   }
 
+  // a wardrobe against the right wall, between the bed and the shelf: two
+  // doors (a mirror on one), little brass knobs, and a straw hat left on top
+  const wardrobe = new THREE.Group();
+  wardrobe.name = 'wardrobe';
+  root.add(wardrobe);
+  const wPart = (material, x, y, z, w, h, d) => {
+    const mesh = part(box, material, x, y, z, w, h, d);
+    root.remove(mesh);
+    wardrobe.add(mesh);
+    return mesh;
+  };
+  const wardZ = back + 4.6;
+  const wardX = right - 0.42;
+  wPart(MATS.wood, wardX, 1.12, wardZ, 0.7, 2.0, 1.4);
+  wPart(MATS.woodDark, wardX, 2.17, wardZ, 0.8, 0.1, 1.5); // the top's lip
+  for (const z of [-0.6, 0.6]) for (const x of [-0.26, 0.26]) wPart(MATS.woodDark, wardX + x, 0.06, wardZ + z, 0.1, 0.12, 0.1); // its feet
+  wPart(MATS.woodDark, wardX - 0.36, 1.12, wardZ, 0.02, 1.9, 0.03); // the gap between the doors
+  for (const s of [-1, 1]) {
+    wPart(MATS.woodDark, wardX - 0.355, 1.12, wardZ + s * 0.34, 0.02, 1.74, 0.56); // a door's panel
+    wPart(MATS.brass, wardX - 0.38, 1.15, wardZ + s * 0.08, 0.04, 0.07, 0.07).castShadow = false; // its knob
+  }
+  wPart(MATS.mirror, wardX - 0.37, 1.3, wardZ + 0.34, 0.01, 1.1, 0.4).castShadow = false;
+  wPart(MATS.straw, wardX, 2.26, wardZ - 0.25, 0.5, 0.03, 0.5); // a hat: brim and crown
+  wPart(MATS.straw, wardX, 2.34, wardZ - 0.25, 0.28, 0.14, 0.28);
+  wPart(MATS.rug, wardX, 2.29, wardZ - 0.25, 0.3, 0.04, 0.3);
+  solid({ x: wardX, y: 1.1, z: wardZ, w: 0.8, h: 2.2, d: 1.5 });
+  const wardrobeAt = { x: wardX - 1.1, z: wardZ };
+
   // the kitchen, against the back wall between the field and the fire: a
   // black iron stove (a pot on it, its pipe up the wall, the fire glowing
   // through the little window in its door) and a counter with a chopping
@@ -268,6 +300,10 @@ export function createHouseRoom(world) {
       rattle = 0.6;
     },
     potSpot: () => ({ ...pot }),
+    // the wardrobe (to tap), where to stand at it, and is pos close enough to change clothes?
+    wardrobe,
+    wardrobeSpot: () => ({ ...wardrobeAt }),
+    wardrobeInReach: (pos) => pos.y < 2.2 && pos.x > right - 2.2 && Math.abs(pos.z - wardZ) < 1.2,
     // night: 0 by day, 1 at night
     setNight(night) {
       MATS.lantern.emissiveIntensity = night * 1.6;

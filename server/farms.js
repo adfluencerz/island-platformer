@@ -29,8 +29,9 @@
 //
 // A farmer can have an account: a username (one of a kind on the server, and
 // their name in lobbies) and a password, kept on their farm (farm.account,
-// the password as a scrypt hash), and the color of their farmer's shirt
-// (farm.color). Logging in with them gives the device a token for that farm,
+// the password as a scrypt hash), the color of their farmer's shirt
+// (farm.color) and what else they wear (farm.look, shared/looks.js; none: the
+// default's). Logging in with them gives the device a token for that farm,
 // the way a pairing code does. Wrong passwords lock the account a while, as
 // wrong PINs do. There is no getting a forgotten password back.
 //
@@ -49,6 +50,7 @@ import { Store } from './store.js';
 import { MAX_FARM_NAME, MAX_NAME, PLAYER_COLORS } from '../shared/constants.js';
 import { farmTitle } from './farmroom.js';
 import { cleanText, farmNameKey, pinProblem, usernameKey, usernameProblem, passwordProblem } from '../shared/protocol.js';
+import { cleanLook } from '../shared/looks.js';
 
 export const MAX_SAVE = 64 * 1024; // bytes of JSON (a farm's save is a few KB)
 const ID_RE = /^[a-f0-9]{16}$/;
@@ -397,16 +399,17 @@ export class Farms {
   }
 }
 
-// What a page is told of the account on a farm: { username, color } (none: {})
-const accountOf = (farm) => (farm.account ? { username: farm.account.name, color: farm.color } : {});
+// What a page is told of the account on a farm: { username, color, look } (none: {})
+const accountOf = (farm) => (farm.account ? { username: farm.account.name, color: farm.color, look: cleanLook(farm.look) } : {});
 const okColor = (color) => PLAYER_COLORS.includes(color);
 
 // ---------- Accounts ----------
 Object.assign(Farms.prototype, {
   // A new account: on this device's farm (one without an account yet), or,
-  // with none, on a new farm made from the page's save. -> { id, token,
-  // rev, username, color } (token, rev: a new farm's)
-  async register({ username, password, color, save } = {}, farm, session, address) {
+  // with none, on a new farm made from the page's save (look: what they wear,
+  // if they picked it already). -> { id, token, rev, username, color, look }
+  // (token, rev: a new farm's)
+  async register({ username, password, color, look, save } = {}, farm, session, address) {
     username = cleanText(username, MAX_NAME + 1);
     const problem = usernameProblem(username) || passwordProblem(password) || (!okColor(color) && 'Pick a shirt color.');
     if (problem) return { error: problem, status: 400 };
@@ -426,6 +429,7 @@ Object.assign(Farms.prototype, {
     }
     farm.account = { name: username, key, salt, hash: hashed, fails: 0, locks: 0, lockedUntil: 0 };
     farm.color = color;
+    farm.look = cleanLook(look);
     farm.ownerName = username;
     this.accounts.set(key, farm.id);
     if (!this.write(farm)) return { error: 'The server could not keep your account.', status: 500 };
@@ -435,10 +439,10 @@ Object.assign(Farms.prototype, {
       const other = this.get(id);
       if (other) this.seenHelper(other, farm.id, username);
     }
-    return { id: farm.id, token: made?.token, rev: made?.rev, username, color };
+    return { id: farm.id, token: made?.token, rev: made?.rev, ...accountOf(farm) };
   },
 
-  // Log in: a token of this device's own for the account's farm. -> { id, token, username, color }
+  // Log in: a token of this device's own for the account's farm. -> { id, token, username, color, look }
   async login({ username, password } = {}, address) {
     if (address && !this.allowLogin(address)) return { error: 'Too many tries. Wait a little and try again.', status: 429 };
     const key = usernameKey(username);
@@ -474,6 +478,17 @@ Object.assign(Farms.prototype, {
     if (!farm.account) return { error: 'Make an account first.', status: 400 };
     if (!okColor(color)) return { error: 'That is not one of the colors.', status: 400 };
     farm.color = color;
+    if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
+    return accountOf(farm);
+  },
+
+  // New clothes from the wardrobe: { look } and, if it changed, the shirt's { color }
+  setLook(farm, { color, look } = {}) {
+    if (!farm.account) return { error: 'Make an account first.', status: 400 };
+    if (color !== undefined && !okColor(color)) return { error: 'That is not one of the colors.', status: 400 };
+    if (!look || typeof look !== 'object' || Array.isArray(look)) return { error: 'Pick something to wear.', status: 400 };
+    if (color !== undefined) farm.color = color;
+    farm.look = cleanLook(look);
     if (!this.write(farm)) return { error: 'The server could not keep that.', status: 500 };
     return accountOf(farm);
   },

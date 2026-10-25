@@ -19,10 +19,11 @@
 //   POST /api/farms/invite     { code } -> { id, name }: the farm an invite code is for
 //   POST /api/farms/me/help    { code, name } -> { id, name }: this farm's farmer helps on that one now
 //   POST /api/farms/me/helping -> { farms: [{ id, name, here }] }: the farms they help on (here: farmers on it now)
-//   POST /api/account/register { username, password, color, save } -> { id, token, rev, username, color }:
+//   POST /api/account/register { username, password, color, look, save } -> { id, token, rev, username, color, look }:
 //                              an account on this device's farm (sent with its token), or on a new farm from save
-//   POST /api/account/login    { username, password } -> { id, token, username, color }: this device's own token
-//   PUT  /api/account/color    { color } -> { username, color }: a new shirt color
+//   POST /api/account/login    { username, password } -> { id, token, username, color, look }: this device's own token
+//   PUT  /api/account/color    { color } -> { username, color, look }: a new shirt color
+//   PUT  /api/account/look     { look, color? } -> { username, color, look }: new clothes (shared/looks.js)
 //   POST /api/friends          -> { friends: [{ id, name, color, online, where, lastOnline }], asks: [{ id, name }] }
 //   POST /api/friends/add      { username } -> { name, friends }: ask them (friends: they had asked us, so now we are)
 //   POST /api/friends/answer   { id, yes } -> { name, friends }
@@ -51,7 +52,7 @@ import { FarmRooms } from './farmroom.js';
 import { Presence } from './presence.js';
 import { Leaderboards } from './leaderboards.js';
 import { CLOSE, CLOSE_TEXT } from '../shared/constants.js';
-import { PS, usernameKey } from '../shared/protocol.js';
+import { C, PS, usernameKey } from '../shared/protocol.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || undefined; // 127.0.0.1 behind a proxy (deploy/), every address otherwise
@@ -183,7 +184,7 @@ async function farmApi(req, res, path) {
     'PUT /api/farms/me/recovery', 'POST /api/farms/recover',
     'POST /api/farms/me/helpers', 'POST /api/farms/me/helpers/invite', 'POST /api/farms/me/helpers/remove',
     'POST /api/farms/invite', 'POST /api/farms/me/help', 'POST /api/farms/me/helping',
-    'POST /api/account/register', 'POST /api/account/login', 'PUT /api/account/color',
+    'POST /api/account/register', 'POST /api/account/login', 'PUT /api/account/color', 'PUT /api/account/look',
     'POST /api/friends', 'POST /api/friends/add', 'POST /api/friends/answer', 'POST /api/friends/remove',
   ];
   if (!routes.includes(route)) return json(res, 404, { error: 'not found' });
@@ -214,6 +215,7 @@ async function farmApi(req, res, path) {
     else if (route === 'PUT /api/farms/me') out = farms.put(farm, session, body?.save, { live: farmRooms.has(farm.id), roomRev: body?.roomRev });
     else if (route === 'PUT /api/farms/me/recovery') out = await farms.setRecovery(farm, body ?? {});
     else if (route === 'PUT /api/account/color') out = farms.setColor(farm, body?.color);
+    else if (route === 'PUT /api/account/look') out = farms.setLook(farm, body ?? {});
     else if (route === 'POST /api/friends') {
       const friends = farms.friendsOf(farm).map((f) => ({ ...f, online: presence.isOnline(f.id), where: presence.whereIs(f.id) }));
       out = { friends, asks: farms.asksOf(farm) };
@@ -279,6 +281,7 @@ function attach(ws, room) {
     close: (code, reason) => ws.close(code, reason),
   };
   let player = null;
+  let account = null; // the farm whose account they play as (its name, shirt and clothes count)
   let count = 0;
   let windowStart = Date.now();
   // a socket that never says who it is does not get to hold on
@@ -299,15 +302,20 @@ function attach(ws, room) {
     }
     if (!player) {
       // who they are: the account on this browser's farm (its token, as for
-      // the farm API) has the name and shirt color. A lobby is for logged in
-      // farmers only; on a farm the room asks who they are itself.
+      // the farm API) has the name, shirt color and clothes. A lobby is for
+      // logged in farmers only; on a farm the room asks who they are itself.
       const farm = farms.auth(`Bearer ${typeof msg?.auth === 'string' ? msg.auth : ''}`);
-      if (farm?.account) msg = { ...msg, name: farm.account.name, color: farm.color };
-      else if (!room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
+      if (farm?.account) {
+        account = farm.id;
+        msg = { ...msg, name: farm.account.name, color: farm.color, look: farm.look };
+      } else if (!room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
       // (in a lobby: their account, for the leaderboards)
       player = room.join(conn, msg, room.farmId ? undefined : { farm: farm.id, account: farm.account.name });
       if (player) clearTimeout(joinTimer);
     } else if (player.conn === conn) {
+      // new clothes: an account's, as it has them now (PUT /api/account/look)
+      const farm = msg?.t === C.DRESS && account && farms.get(account);
+      if (farm?.account) msg = { t: C.DRESS, color: farm.color, look: farm.look };
       room.message(player, msg);
     }
   });

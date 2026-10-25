@@ -29,7 +29,8 @@ export const NPCS = {
     title: 'Meadow Ranch',
     trade: 'Animals',
     where: 'west, over the meadow',
-    look: { shirt: 0xc0392b, overalls: 0x6b4a2b, hat: 0xe2b860, band: 0x7a2a1a, hair: 0x7a3f1c, ponytail: true },
+    shirt: 0xc0392b,
+    look: { hat: 'straw', hatColor: 0x7a2a1a, hair: 'ponytail', hairColor: 0x7a3f1c, bottomsColor: 0x6b4a2b },
     portrait: { hat: '#e2b860', band: '#7a2a1a', hair: '#7a3f1c', shirt: '#c0392b' },
     // [hour she gets up, opens the shop, goes out in the yard, goes to bed]
     hours: [5, 8, 17, 21],
@@ -109,7 +110,8 @@ export const NPCS = {
     title: 'Basil\'s Seeds',
     trade: 'Seeds',
     where: 'east, past the fields',
-    look: { shirt: 0xe8dcc0, overalls: 0x5a4632, hatStyle: 'cap', hat: 0x6b5a3a, beard: 0xe8e4dc, apron: 0x4f7a3a },
+    shirt: 0xe8dcc0,
+    look: { hat: 'flatcap', hatColor: 0x6b5a3a, hairColor: 0xe8e4dc, whiskers: 'beard', bottomsColor: 0x5a4632, apron: 'apron', apronColor: 0x4f7a3a },
     portrait: { hat: '#6b5a3a', beard: '#e8e4dc', shirt: '#4f7a3a' },
     hours: [6, 9, 17, 21],
     shop: {
@@ -190,7 +192,8 @@ export const NPCS = {
     title: 'Finn\'s Tackle',
     trade: 'Fishing gear',
     where: 'south, on the dunes',
-    look: { shirt: 0x2f4f7a, overalls: 0x3a3a3a, hatStyle: 'souwester', hat: 0xf2c230, beard: 0x9a9a9a },
+    shirt: 0x2f4f7a,
+    look: { hat: 'souwester', hatColor: 0xf2c230, hairColor: 0x9a9a9a, whiskers: 'beard', top: 'sweater', bottomsColor: 0x3a3a3a, shoes: 'wellies', shoesColor: 0x2a2420 },
     portrait: { hat: '#f2c230', beard: '#9a9a9a', shirt: '#2f4f7a' },
     hours: [4, 7, 16, 20],
     shop: {
@@ -270,7 +273,8 @@ export const NPCS = {
     title: 'Mabel\'s Bakery',
     trade: 'Recipes',
     where: 'north-east, at the forest\'s edge',
-    look: { shirt: 0xe88aa8, overalls: 0x8a5a7a, hatStyle: 'scarf', band: 0xf4f0e8, hair: 0xb8662a, bun: true, apron: 0xfffaf0 },
+    shirt: 0xe88aa8,
+    look: { hat: 'bandana', hatColor: 0xf4f0e8, hair: 'bun', hairColor: 0xb8662a, bottomsColor: 0x8a5a7a, apron: 'apron', apronColor: 0xfffaf0 },
     portrait: { scarf: '#f4f0e8', hair: '#b8662a', shirt: '#e88aa8' },
     hours: [5, 7, 17, 22],
     shop: {

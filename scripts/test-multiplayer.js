@@ -48,6 +48,7 @@ import { LUCKY, LUCKY_JOKERS } from '../shared/balance.js';
 import { arenaFor, checkArena, HOP, LOBBY_GAMES } from '../shared/arenas.js';
 import { MINIGAMES } from '../shared/balance.js';
 import { WEATHER, spellOn, weatherAt, rainSince } from '../shared/weather.js';
+import { DEFAULT_LOOK, LOOK_PARTS, cleanLook, randomLook } from '../shared/looks.js';
 
 // spot kinds only later generations grow (2 and up)
 const LATER_KINDS = new Set(['heather', 'cattail', 'bluebell', 'sunflower', 'pumpkin', 'fern', 'seashell', ...SKY_KINDS, 'strawberry']);
@@ -438,6 +439,48 @@ await test('names are made unique and colors differ', () => {
   assert.equal(a.p.name, 'Bob');
   assert.equal(b.p.name, 'Bob#2');
   assert.notEqual(a.p.color, b.p.color);
+});
+
+await test('a look is every part one of its choices: the default\'s, a random one, or what came in, cleaned', () => {
+  for (const [part, def] of Object.entries(LOOK_PARTS)) {
+    assert.ok(def.styles ? def.styles.some(([id]) => id === DEFAULT_LOOK[part]) : def.colors.includes(DEFAULT_LOOK[part]), `the default ${part} is one of its choices`);
+  }
+  assert.deepEqual(cleanLook(DEFAULT_LOOK), DEFAULT_LOOK);
+  assert.deepEqual(cleanLook(null), DEFAULT_LOOK);
+  assert.deepEqual(cleanLook('straw'), DEFAULT_LOOK);
+  assert.deepEqual(cleanLook({ hat: 'cap', hatColor: 0x2f6fb5, hair: 'mohawk', skin: '#fff', junk: 1 }), { ...DEFAULT_LOOK, hat: 'cap', hatColor: 0x2f6fb5 });
+  const rand = mulberry32(7);
+  const hats = new Set();
+  for (let i = 0; i < 300; i++) {
+    const look = randomLook(rand, { ...DEFAULT_LOOK, skin: 0x6e4529 });
+    assert.deepEqual(cleanLook(look), look);
+    assert.equal(look.skin, 0x6e4529, 'the skin is kept');
+    hats.add(look.hat);
+  }
+  assert.equal(hats.size, LOOK_PARTS.hat.styles.length, 'every hat turns up');
+});
+
+await test('what a farmer wears: cleaned on the way in, in the roster, changed with DRESS, kept with the lobby', () => {
+  const room = new Room({ code: 'TEST02' });
+  const a = room.join(fakeConn(), { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'kA', look: { hat: 'beanie', hatColor: 0x7b4fa0, hair: 'mohawk' } });
+  assert.deepEqual(a.look, { ...DEFAULT_LOOK, hat: 'beanie', hatColor: 0x7b4fa0 }, 'what is not one of the choices is the default\'s');
+  const b = join(room, 'Bo');
+  assert.deepEqual(b.p.look, DEFAULT_LOOK);
+  room.update();
+  assert.deepEqual(b.conn.last(S.ROSTER).list.find((p) => p.id === a.id).look, a.look);
+  room.message(a, { t: C.DRESS, color: PLAYER_COLORS[4], look: { ...a.look, top: 'plaid' } });
+  room.update();
+  const seen = b.conn.last(S.ROSTER).list.find((p) => p.id === a.id);
+  assert.deepEqual([seen.look.top, seen.color], ['plaid', PLAYER_COLORS[4]]);
+  const rosters = b.conn.all(S.ROSTER).length;
+  room.message(a, { t: C.DRESS, color: 0x123456, look: seen.look }); // (not a shirt color, and the same clothes)
+  room.update();
+  assert.equal(b.conn.all(S.ROSTER).length, rosters, 'nothing new, no roster');
+  assert.equal(a.color, PLAYER_COLORS[4]);
+  const back = Room.fromSave(JSON.parse(JSON.stringify(room.toSave())));
+  assert.deepEqual(back.players.get(a.id).look, a.look, 'a held seat keeps its clothes');
+  const again = back.join(fakeConn(), { t: C.JOIN, v: PROTOCOL_VERSION, name: 'Ann', key: 'kA', color: PLAYER_COLORS[4], look: { ...a.look, hat: 'none' } });
+  assert.deepEqual([again.id, again.look.hat], [a.id, 'none'], 'back in the seat, in what they wear now');
 });
 
 await test('every spot starts with something on it, and the newcomer sees them all', () => {
@@ -2051,8 +2094,17 @@ await test('an account: made with a username, password and shirt color, logged i
     assert.equal(back.id, made.id);
     assert.equal(back.color, PLAYER_COLORS[2]);
     assert.equal(farms.auth(bearer(back)).save.backpack.gold, 7);
-    assert.deepEqual(farms.setColor(farms.auth(bearer(back)), PLAYER_COLORS[5]), { username: 'Niels', color: PLAYER_COLORS[5] });
+    assert.deepEqual(farms.setColor(farms.auth(bearer(back)), PLAYER_COLORS[5]), { username: 'Niels', color: PLAYER_COLORS[5], look: DEFAULT_LOOK });
     assert.equal(farms.open(farms.auth(bearer(back)), 'p4').color, PLAYER_COLORS[5]);
+    // new clothes from the wardrobe (and the shirt's color with them), cleaned; nonsense turned down
+    const dressed = farms.setLook(farms.auth(bearer(back)), { look: { hat: 'cowboy', hair: 'mohawk' }, color: PLAYER_COLORS[1] });
+    assert.deepEqual(dressed, { username: 'Niels', color: PLAYER_COLORS[1], look: { ...DEFAULT_LOOK, hat: 'cowboy' } });
+    assert.equal(farms.setLook(farms.auth(bearer(back)), { look: 'cowboy' }).status, 400);
+    assert.equal(farms.setLook(farms.auth(bearer(back)), { look: {}, color: 0x123456 }).status, 400);
+    assert.equal(farms.setLook(farms.auth(bearer(farms.create(aSave(), 'p6'))), { look: {} }).status, 400, 'only with an account');
+    assert.deepEqual(farms.open(farms.auth(bearer(back)), 'p4').look, dressed.look);
+    assert.deepEqual((await new Farms({ dir, log: () => {} }).login({ username: 'niels', password: 'turnips4' })).look, dressed.look, 'kept on disk');
+    assert.deepEqual((await farms.register({ username: 'Clem', password: 'radishes', color: PLAYER_COLORS[0], look: { top: 'tee' }, save: aSave() }, null, 'p5')).look, { ...DEFAULT_LOOK, top: 'tee' });
     for (let i = 0; i < 5; i++) assert.equal((await farms.login({ username: 'Niels', password: 'wrong-one' })).status, 403);
     assert.equal((await farms.login({ username: 'Niels', password: 'turnips4' })).status, 429, 'locked a while');
   } finally {
@@ -3519,6 +3571,31 @@ try {
     const w = await fern.next(S.WELCOME);
     assert.deepEqual([w.name, w.color], ['Fern', PLAYER_COLORS[6]]);
     fern.ws.close(1000);
+  });
+
+  await test('what a farmer wears goes by their account: in the welcome, the roster, and after new clothes (DRESS)', async () => {
+    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
+    const ivy = await signUp('Ivy', PLAYER_COLORS[1]);
+    const dress = (body) => fetch(`${base}/api/account/look`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-farm-session': 'page-ivyivyiv', authorization: `Bearer ${ivy}` },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+    assert.equal((await dress({ look: { hat: 'beanie', hair: 'bob' } })).look.hat, 'beanie');
+    const a = client(code, 'k-ivy', { auth: ivy });
+    assert.deepEqual((await a.next(S.WELCOME)).look, { ...DEFAULT_LOOK, hat: 'beanie', hair: 'bob' });
+    const b = client(code, 'k-watcher');
+    await b.next(S.ROSTER, (m) => m.list.some((p) => p.name === 'Ivy' && p.look.hat === 'beanie'));
+    // what the page says it wears doesn't count, the account's clothes do
+    a.send({ t: C.DRESS, color: PLAYER_COLORS[0], look: { hat: 'cowboy' } });
+    const now = await dress({ look: { hat: 'flowers', hatColor: 0xff8fb8, hair: 'bob' }, color: PLAYER_COLORS[2] });
+    assert.deepEqual([now.look.hat, now.color], ['flowers', PLAYER_COLORS[2]]);
+    a.send({ t: C.DRESS });
+    const seen = (await b.next(S.ROSTER, (m) => m.list.some((p) => p.name === 'Ivy' && p.look.hat === 'flowers'))).list.find((p) => p.name === 'Ivy');
+    assert.deepEqual([seen.look.hatColor, seen.color], [0xff8fb8, PLAYER_COLORS[2]]);
+    assert.ok(!b.inbox.some((m) => m.t === S.ROSTER && m.list.some((p) => p.look.hat === 'cowboy')), 'the page\'s own say never showed');
+    a.ws.close(1000);
+    b.ws.close(1000);
   });
 
   await test('farms over HTTP: make, open, save, pair; another device\'s page is turned down', async () => {

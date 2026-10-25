@@ -72,7 +72,7 @@ export function createNpcs({ parent, inventory }) {
   // ---------- The people ----------
   const people = {};
   for (const id of NPC_IDS) {
-    const model = createFarmer(NPCS[id].look);
+    const model = createFarmer({ shirt: NPCS[id].shirt, look: NPCS[id].look }); // (shared/looks.js, in colors of their own)
     model.hoe.visible = false;
     model.root.userData.noSnow = true; // (src/seasons.js)
     model.root.name = `npc-${id}`;

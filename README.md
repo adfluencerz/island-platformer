@@ -3,7 +3,7 @@
 A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](https://vitejs.dev/): tend your own little farm on an island, then drop into online lobbies to gather berries, mushrooms and rare finds with other farmers.
 
 ## What's included
-- A stylized farmer with walk, jump, landing and tool-swing animations, a hoe, an axe and a pickaxe, and a camera that follows from an angled overhead view
+- A stylized farmer you dress as you like (a wardrobe of hats, hairstyles, faces, tops, bottoms, aprons, shoes and scarves), with walk, jump, landing, blinking and tool-swing animations, a hoe, an axe and a pickaxe, and a camera that follows from an angled overhead view
 - A tiled island (grass, dirt paths, stone plaza, sand shore) surrounded by water, with trees, bushes, rocks, wind-swayed grass and flowers, and grass-topped platforms to jump between; trees fade out when they block the view of the player
 - A valley round the farm, five times its size: a forest with a fern glen and a bluebell glade, a flower meadow, a heather heath, a lake with a reed marsh, a sunflower field, a pumpkin patch, a strawberry bank and shell dunes, each with wild things to find, and roads out to four neighbours (below)
 - Four neighbours, each in a home of their own with a room inside, a day of their own, and a shop: Rosa sells animals, Basil seeds, Finn fishing tackle and Mabel recipes. Each shop opens once you have done its keeper a good turn, and each has more to ask of you after (`shared/npcs.js`)
@@ -51,7 +51,7 @@ Without the game server you can still play on your farm (`npm run dev:client` ru
 - `M` — sound and music on or off (the menu has a switch for each)
 - `L` — the menu, on **Play online** (from home)
 - `Enter` — chat (in a lobby)
-- `Esc` — the menu: the same one as the title screen, with **Resume** (and **Go home** when away), and pages for **Play online**, **Friends** (farms you help on, your helpers) and **Controls**. `Esc` on a page goes back.
+- `Esc` — the menu: the same one as the title screen, with **Resume** (and **Go home** when away), and pages for **Play online**, **Friends** (farms you help on, your helpers), **Your farmer** (the wardrobe) and **Controls**. `Esc` on a page goes back.
 - `T` (hold) — fast-forward time (30×, at home only: in a lobby the time of day is shared)
 - Click the ground — walk there (in build mode: build there)
 - Mouse wheel — zoom in and out (over the hotbar it picks an item)
@@ -72,6 +72,8 @@ Open the address Vite prints for your network (`npm run dev`) on the phone. The 
 - A farm played before the server kept farms is taken up as it is the first time the page reaches the server.
 
 Without the game server (`npm run dev:client`) the farm stays in the browser until the page next reaches it. A save the page can't read is kept aside as `tp.save.broken`, an older one is kept as `tp.save.v<N>` when it's brought up to date, and a save from a newer version of the game is left alone (nothing is saved until you reload with that version).
+
+**Your farmer** is dressed in the menu's **Your farmer** page (or at the wardrobe in your house: `E` there, or tap it). Pick a hat (a straw hat, a sun hat, a cap, a flat cap, a beanie, a cowboy hat, a sou'wester, a bandana or a flower crown, each in a color of its own), a hairstyle (a ponytail, braids, a bun...) and its color, skin, freckles, glasses or shades, a mustache or a beard, a top (a shirt, a T-shirt, a flannel, stripes or a sweater) in your shirt color, overalls, short overalls, trousers or a skirt, an apron over them, boots, wellies or sneakers, and a neckerchief or a scarf. The merchant and the neighbours dress from the same wardrobe, in colors of their own. The farmer turns on a little stage while you choose (drag to turn them yourself) and wears it in the game straight away; **Surprise me** picks an outfit at random. What you wear is kept with your account, so it is the same on every device, and other farmers see it in lobbies and on farms the moment you change. Your shirt's color is your color online too: on your name tag, in chat and in the player list (`LOOK_PARTS` in `shared/looks.js`, `src/ui/wardrobe.js`).
 
 **The merchant** keeps a stall just east of the plaza on your farm. Walk up to the counter and press `E` to trade: buy the basics, turnip, carrot and flax seeds, a watering can and bait (click: one, `Shift`+click: five; `MERCHANT_STOCK` in `shared/balance.js`), and sell your crops, forage, gems and spare seeds from your backpack (click: the whole stack, right click: one). Tools and the old key aren't for sale. Prices are `price` (buy) and `sell` on each item in `src/items.js`; the item tooltips show what the merchant pays. Everything else is sold by the neighbours, below.
 
@@ -143,7 +145,7 @@ The animals and eggs are saved with the farm (`src/animals.js`).
 - A **campfire** (6 wood, 6 stone), to cook on, flickering and lighting the ground round it at night.
 - **Bunting** (2 wood, 1 cloth), a string of little flags between two poles, and a **market awning** (4 wood, 2 cloth), a counter under a striped roof: built with the cloth from the loom.
 - A **farm chest** (8 wood, 2 stone), one to a farm: somewhere to keep things. What your backpack is short of comes out of it when you build, and when you make things or buy upgrades at the workbench (on a farm with helpers, only for you).
-- A **house** (500 wood, 200 stone), one to a farm and one more for each helper, 5 tiles across and 4 deep, built from the middle of its front where the door is. `E` at the door (or a tap on the house) goes inside (every house on the farm opens into the same room): a room of 200 tiles (20 by 10) with a bed, a table, a fireplace, a shelf of books and a kitchen to cook in, and a field of earth (8 by 6) to till and plant like the farm's. `E` at the door inside goes back out. Its windows light up at night (`HOUSE_ROOM` in `shared/level.js`, `src/house.js`).
+- A **house** (500 wood, 200 stone), one to a farm and one more for each helper, 5 tiles across and 4 deep, built from the middle of its front where the door is. `E` at the door (or a tap on the house) goes inside (every house on the farm opens into the same room): a room of 200 tiles (20 by 10) with a bed, a table, a fireplace, a shelf of books, a wardrobe to change clothes at and a kitchen to cook in, and a field of earth (8 by 6) to till and plant like the farm's. `E` at the door inside goes back out. Its windows light up at night (`HOUSE_ROOM` in `shared/level.js`, `src/house.js`).
 - **Take down** (in the Build tab) takes a piece away and gives back what it cost.
 - Nothing goes on tilled soil, in the animals' pens, by the stall's counter, where farmers arrive on the plaza, in the lake, on a neighbour's place, or on someone standing there. What's built is saved with the farm, and on a farm with helpers everyone can build (each pays from their own backpack) and the farm's room keeps it, like the soil (`PIECES` in `shared/level.js`, `src/build.js`).
 
@@ -221,6 +223,7 @@ Every lobby's island is grown from a **seed**, a short phrase like `dewy-glade-3
 - Each client moves its own farmer and reports its position 20 times a second. Who gets a spot is settled by the lobby: it only counts if something is still there and the lobby last saw you next to it.
 - The server places every tree and rock (`shared/wilds.js`): a lobby works out where its island's trees and rocks stand, and the other places each can grow back in, and sends them to every page when it joins, so everyone has the same ones in the same places and the lobby knows each by its number. Nothing is placed outside the island or in the air: each stands on dry land all round, at ground level, clear of the pond, the terraces, the toadstool caps, the sky isles and the stone circle (`npm test` checks every generation). The farm's are the same on every farm, kept in `shared/homewilds.js` (`npm run wilds` writes it again; the test says when it is out of date). The page says which tree it felled and where it stands; the lobby checks that is where that tree is, that you are next to it, that it is still up and that you aren't felling trees faster than an axe can, and gives wood by the tree's own size (`TREE_BALANCE` in `shared/balance.js` has the swings, wood and regrow times). Rocks work the same way (`ROCK`). Anything knocked loose in a bop lands on the ground under the farmer (a terrace or a toadstool cap if they were over one), never in the air, and nothing drops over the sea.
 - Other players are drawn from the lobby's 20 Hz snapshots, 100 ms in the past and interpolated between them, so they move smoothly through network jitter (`src/remotes.js`).
+- What a farmer wears (their look, `shared/looks.js`: every part one of a few choices, so the server can check it) is kept with their account (`farm.look`, `PUT /api/account/look`). A place reads it off the account when they join, and again when their page says they changed (`DRESS`), so a page can't wear what its account doesn't; the roster carries everyone's look. The farmer (`src/character.js`) is built from simple shapes and drawn in cloth with a little pattern to it (a check, stripes, a knit, denim, woven straw), with a soft light on its edges that follows the time of day; the pieces of each part that moves on its own are merged into one mesh per material, so a farmer is a couple of dozen draw calls whatever they wear.
 - Messages are small JSON objects; `shared/protocol.js` lists them all.
 - The home farm needs no server: `npm run dev:client` (Vite alone) is enough to farm. With one, the server keeps a copy of each farm in `data/farms/<id>.json` (`server/farms.js`, `src/net/farm.js`). A farm is known by its id, and each device has a token of its own for it (the server keeps only their hashes, and the PIN only as a scrypt hash); the save is the page's, kept as it's sent. The farm-name index is gathered from the farm files when the server starts. Accounts, later, can point at a farm id, so farms stay where they are.
 - A farm with helpers runs as a room on the server (`server/farmroom.js`) whenever anyone is on it, its owner or a helper, and is put away 30 seconds after the last one leaves. A helper is known by their own farm's id (their device's token for it proves it), so it needs no accounts either. The room has the soil, the crops, the chest and the clock: pages ask (till, plant, harvest) and draw what it says, as in a lobby. It writes the farm back into the owner's save (`data/farms/<id>.json`, the chest beside it) every few seconds, in the page's own save format, so the owner's page can always play it alone. A page's save carries the farm only when the page had the farm as the room last left it (`roomRev`), so a page that played offline can't write over what the helpers did. The animals stay the owner's page's to run: it sends their state to the room, and everyone else's page draws them from that. Lobbies and farm rooms share their players, seats, chat and snapshots (`shared/place.js`).
@@ -239,7 +242,7 @@ island-platformer/
 │   ├── main.js          # scene, player physics, farming, lobby spots, tap to walk, saving, travel, game loop
 │   ├── world.js         # builds an island from a map: tiles, colliders, foliage, trees, rocks
 │   ├── maps.js          # the maps: your farm's island, and a lobby's wild island from its seed
-│   ├── character.js     # the farmer model and its animations (you, everyone else, the merchant)
+│   ├── character.js     # the farmer model, dressed in their look, and its animations (you, everyone else, the merchant)
 │   ├── items.js         # the item catalog: names, prices, pixel-art sprites
 │   ├── inventory.js     # the backpack and toolbar
 │   ├── crops.js         # what each seed grows into, and the growing plants
@@ -264,11 +267,12 @@ island-platformer/
 │   │   ├── connection.js  # WebSocket to a lobby
 │   │   ├── lobby.js       # the lobbies' HTTP API, invite links
 │   │   └── farm.js        # the farm's copy on the server, pairing codes
-│   └── ui/              # title screen (splash.js), in-game HUD (hud.js), touch controls (touch.js), styles
+│   └── ui/              # title screen (splash.js), the wardrobe (wardrobe.js), in-game HUD (hud.js), touch controls (touch.js), styles
 ├── shared/              # runs on both the server and the client
 │   ├── place.js         # what every online place has: players, seats, chat, snapshots
 │   ├── room.js          # one lobby: resource spots, trees
 │   ├── protocol.js      # message types
+│   ├── looks.js         # what a farmer can wear: the choices, the default, checking a look
 │   ├── constants.js     # tick rate, limits
 │   ├── balance.js       # every balancing number: regrow times, prices, costs, loot, recipes
 │   ├── farmland.js      # the farm's valley: its ground, biomes, roads, the neighbours' homes

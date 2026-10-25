@@ -198,6 +198,7 @@ export class Room extends Place {
       id: p.id,
       name: p.name,
       color: p.color,
+      look: p.look,
       code: this.code,
       seed: this.seed,
       room: { name: this.name, inviteOnly: this.inviteOnly, maxPlayers: this.maxPlayers, game: this.game },
@@ -601,7 +602,7 @@ export class Room extends Place {
       rockSites: [...this.rockSites],
       giants: this.giants.toSave(),
       board: this.board,
-      seats: [...this.players.values()].map(({ id, key, name, color, finds, rares, wood, stone }) => ({ id, key, name, color, finds, rares, wood, stone })),
+      seats: [...this.players.values()].map(({ id, key, name, color, look, finds, rares, wood, stone }) => ({ id, key, name, color, look, finds, rares, wood, stone })),
     };
   }
 
@@ -642,7 +643,7 @@ export class Room extends Place {
       if (!Number.isInteger(s.id) || s.id < 1 || room.players.has(s.id) || typeof s.key !== 'string' || !s.key) continue;
       const color = PLAYER_COLORS.includes(s.color) ? s.color : PLAYER_COLORS[0];
       room.seat({
-        id: s.id, key: s.key.slice(0, 64), name: cleanText(s.name, MAX_NAME) || 'Farmer', color,
+        id: s.id, key: s.key.slice(0, 64), name: cleanText(s.name, MAX_NAME) || 'Farmer', color, look: s.look,
         finds: n(s.finds), rares: n(s.rares), wood: n(s.wood), stone: n(s.stone), heldUntil: holdUntil,
       });
     }

@@ -3,9 +3,10 @@
 // (src/main.js) and sends it along every PUSH_EVERY and when it is left; the
 // server's copy is the one a page starts from.
 //
-// This browser's farm is { id, token, rev, name, username, color } in
+// This browser's farm is { id, token, rev, name, username, color, look } in
 // localStorage (tp.farm): rev is the server's revision of the farm this
-// browser last saw; username and color, its account's (none: no account yet).
+// browser last saw; username, color and look (what the farmer wears,
+// shared/looks.js), its account's (none: no account yet).
 // A browser gets its farm by making an account (register: on a new farm made
 // from the save this browser has, so a farm played before comes along) or by
 // logging in (login: the account's farm, which the page then reloads to play).
@@ -28,6 +29,7 @@
 // The server keeps the farm it has when the two don't match.
 //
 // Without the game server (npm run dev:client) the farm just stays in this browser.
+import { cleanLook } from '../../shared/looks.js';
 
 const FARM_STORE = 'tp.farm';
 const PUSH_EVERY = 15_000;
@@ -83,10 +85,10 @@ export class FarmSync {
     try {
       if (this.farm) {
         try {
-          const { save, rev, roomRev = 0, helpers = 0, name, username = null, color = null } = await call('POST', '/api/farms/me/open', { farm: this.farm });
+          const { save, rev, roomRev = 0, helpers = 0, name, username = null, color = null, look = null } = await call('POST', '/api/farms/me/open', { farm: this.farm });
           const elsewhere = rev !== this.farm.rev;
           const tended = roomRev !== (this.farm.roomRev ?? 0);
-          Object.assign(this.farm, { rev, roomRev, helpers, name, username, color });
+          Object.assign(this.farm, { rev, roomRev, helpers, name, username, color, look });
           keep(this.farm);
           this.ready = true;
           if (elsewhere || tended) {
@@ -138,9 +140,9 @@ export class FarmSync {
   }
 
   // ---------- The account ----------
-  // { username, color }, or null with none (or no farm on the server yet)
+  // { username, color, look }, or null with none (or no farm on the server yet)
   account() {
-    return this.farm?.username ? { username: this.farm.username, color: this.farm.color } : null;
+    return this.farm?.username ? { username: this.farm.username, color: this.farm.color, look: cleanLook(this.farm.look) } : null;
   }
 
   // Make an account: on this browser's farm, or on a new one made from local (the save)
@@ -153,7 +155,7 @@ export class FarmSync {
       this.farm = { id: out.id, token: out.token, rev: out.rev, roomRev: 0, helpers: 0, name: '' };
       this.ready = true;
     }
-    Object.assign(this.farm, { username: out.username, color: out.color });
+    Object.assign(this.farm, { username: out.username, color: out.color, look: out.look });
     keep(this.farm);
     return this.account();
   }
@@ -163,9 +165,10 @@ export class FarmSync {
     await this.adopt(call('POST', '/api/account/login', { body: { username, password } }));
   }
 
-  async setColor(color) {
-    const out = await this.me('/api/account/color', { color }, 'PUT');
-    this.farm.color = out.color;
+  // New clothes (and the shirt's color with them)
+  async setLook(look, color) {
+    const out = await this.me('/api/account/look', { look, color }, 'PUT');
+    Object.assign(this.farm, { color: out.color, look: out.look });
     keep(this.farm);
     return this.account();
   }
@@ -312,7 +315,7 @@ export class FarmSync {
     }
     this.ready = false;
     this.pending = null;
-    this.farm = { id: got.id, token: got.token, rev: null, name: got.name ?? '', username: got.username, color: got.color };
+    this.farm = { id: got.id, token: got.token, rev: null, name: got.name ?? '', username: got.username, color: got.color, look: got.look };
     keep(this.farm);
   }
 }
