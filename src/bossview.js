@@ -19,7 +19,7 @@ const boxGeo = new THREE.BoxGeometry(1, 1, 1);
 const seedGeo = new THREE.IcosahedronGeometry(0.5, 0);
 const waveGeo = new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2);
 const shadowGeo = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
-const seedMat = mat(0x8a5a32);
+const seedMat = mat(0xf2e2b0, { emissive: 0xc8a050, emissiveIntensity: 0.55 }); // (pale, with a glow of their own: seen on a dark floor, down in the boss's hall)
 // a little bee, of a swarm: buzzing round where its swarm is
 const BEE = { yellow: mat(0xffd23f), black: mat(0x2a1a10), wing: new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, roughness: 0.3 }) };
 function littleBee(parent) {
@@ -41,6 +41,8 @@ function littleFly(parent) {
 }
 const SWARM_BEES = 6;
 const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
+const markGeo = new THREE.RingGeometry(0.86, 1, 32).rotateX(-Math.PI / 2);
+const ON_FLOOR = 0.1; // (what is drawn on the floor: over the boards, flagstones and wax cells of the boss's hall)
 
 function part(parent, geo, material, [x, y, z], [sx, sy, sz], rotation) {
   const mesh = new THREE.Mesh(geo, material);
@@ -615,8 +617,13 @@ export function createBossView(parent, id) {
   const snore = glyph('z', '#dfe8ff');
   p.root.add(snore);
   const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-  shadow.position.y = 0.03;
+  shadow.position.y = ON_FLOOR;
   group.add(shadow);
+  // and a pale ring round where it is while it is up in the air (its shadow
+  // is hard to see on the dark floor of its hall: where it will come down)
+  const mark = new THREE.Mesh(markGeo, new THREE.MeshBasicMaterial({ color: 0xf3e6c0, transparent: true, opacity: 0, depthWrite: false }));
+  mark.scale.setScalar(1.3);
+  group.add(mark);
 
   const waves = []; // { fx, age, mesh }
   const seeds = []; // { fx, age, meshes }
@@ -636,7 +643,7 @@ export function createBossView(parent, id) {
       if (fx.e === 'wave') {
         const color = fx.roar ? p.croak ?? 0xffb35a : fx.gust ? 0xdcecff : 0xf3e6c0; // (a roar, or the toad's croak; a gust; a landing)
         const mesh = new THREE.Mesh(waveGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
-        mesh.position.set(fx.x, 0.05, fx.z);
+        mesh.position.set(fx.x, ON_FLOOR + 0.02, fx.z);
         parent.add(mesh);
         waves.push({ fx, age: 0, mesh });
       } else if (fx.e === 'seeds') {
@@ -668,8 +675,11 @@ export function createBossView(parent, id) {
       if (b) {
         p.root.position.set(b.x, b.y, b.z);
         p.root.rotation.y = b.yaw;
-        shadow.position.set(b.x, 0.03, b.z);
+        shadow.position.set(b.x, ON_FLOOR, b.z);
         shadow.scale.setScalar(Math.max(0.4, 1.1 - b.y * 0.12));
+        mark.position.set(b.x, ON_FLOOR + 0.01, b.z);
+        mark.material.opacity = Math.min(0.7, b.y * 0.35);
+        mark.visible = b.y > 0.05;
         const asleep = b.phase === 'sleep';
         const friendly = b.phase === 'friendly';
         const dizzy = (b.phase === 'fight' && b.move === 'dizzy') || (friendly && b.mt < 2.5);
