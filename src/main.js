@@ -1312,6 +1312,11 @@ createDevTools({
     saveGame();
     return done ? `${NPCS[id].name}: "${done.title}" done` : `${NPCS[id].name} has nothing left to ask`;
   },
+  hearts() {
+    for (const id of NPC_IDS) npcs.befriend(id);
+    saveGame();
+    return 'Five hearts with all four';
+  },
   forget() {
     npcs.reset();
     saveGame();

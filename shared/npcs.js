@@ -499,7 +499,7 @@ export const NPCS = {
         needs: [{ item: 'farm_feast', count: 1 }],
         gives: {
           choose: [
-            { label: 'Mabel\'s recipe box (3 cards)', items: [['recipe_card', 3]] },
+            { label: 'A recipe box from Mabel (3 cards)', items: [['recipe_card', 3]] },
             { label: '1600 gold', gold: 1600 },
           ],
         },
@@ -613,7 +613,7 @@ export function rewardText(mission, itemName, speech = false) {
   else if (g.opens) parts.push(speech ? `a look at my ${g.opens.toLowerCase()} shelf` : `the ${g.opens.toLowerCase()} shelf`);
   if (g.mends === 'dock') parts.push('the dock mended');
   if (g.choose) {
-    const picks = g.choose.map((c) => c.label.toLowerCase());
+    const picks = g.choose.map((c) => c.label[0].toLowerCase() + c.label.slice(1)); // ("A cow" -> "a cow")
     parts.push(`your pick of ${picks.length > 1 ? `${picks.slice(0, -1).join(', ')} or ${picks.at(-1)}` : picks[0]}`);
   }
   return speech && parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join(', ');

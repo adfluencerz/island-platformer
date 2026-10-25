@@ -47,7 +47,7 @@ export function renderQuests(root, npcs, ctx) {
     }
     // what else is on between you
     for (const o of hub) if (o.kind === 'deliver') el('div', 'quest-text', body, `You have a message for ${npc.name}, from ${NPCS[o.from].name}.`);
-    if (hub.some((o) => o.kind === 'moment')) el('div', 'quest-text', body, `✦ ${npc.name} has something on their mind.`);
+    if (hub.some((o) => o.kind === 'moment')) el('div', 'quest-text', body, `✦ There is something ${npc.name} would like to share.`);
     if (state.done.length) el('div', 'quest-done', body, `Done: ${state.done.map((m) => MISSIONS[m].title).join(', ')}`);
   }
 }
