@@ -8,7 +8,6 @@ import {
 } from '../shared/bosses.js';
 import { DungeonRun, MAIN, FOE_R, CHEST_REACH, LAYOUTS, isSide, dungeonAt, roomAt, roomEntry, dungeonStart, dungeonExit, chestAt, dungeonFromWire, foeHits } from '../shared/dungeons.js';
 import { ITEMS } from './items.js';
-import { createArenas } from './arena.js';
 import { createDungeons, THEMES as DUNGEON_LOOKS } from './dungeon.js';
 import { createBossView, dizzyStars } from './bossview.js';
 import { createMount } from './mounts.js';
@@ -18,9 +17,9 @@ import { TILE_SIZE } from './world.js';
 // ---------- The bosses, on the page ----------
 // A boss's portal on the farm (built from a full set of its key pieces: the
 // Build tab) leads to its dungeon (src/dungeon.js, shared/dungeons.js), out
-// past the sea on the farm's world, and through that to its arena
-// (src/arena.js); a portal by the dungeon's way in, and one in the arena,
-// lead home. In the dungeon, E with a sword or the mallet in hand bops the
+// past the sea on the farm's world, and through that to its arena (the
+// dungeon's last room, the boss's hall: src/dungeon.js too); a portal by the
+// dungeon's way in, and one in the arena, lead home. In the dungeon, E with a sword or the mallet in hand bops the
 // nearest foe in the room, and the bow shoots at one further off; the gate
 // on opens once the room's foes are all down (and the doors to its side
 // rooms), and the last one onto the bridge into the arena. In a side room,
@@ -60,7 +59,6 @@ const _seed = {};
 
 export function createBosses(ctx) {
   const { player, farmer, inventory, hud } = ctx;
-  const arenas = createArenas(ctx.world);
   // boss -> { s: as the room (or our own fight) last had it, at: when, shown: where it is drawn, view }
   const bosses = new Map(BOSS_IDS.map((id) => [id, { s: null, at: 0, shown: null, view: createBossView(ctx.world.root, id) }]));
   const alone = new Map(); // boss -> its BossFight, on a farm played alone
@@ -563,8 +561,8 @@ export function createBosses(ctx) {
       return s?.phase === 'wake' || s?.phase === 'fight';
     },
 
-    // How far underground we are (0 to 1: in a dungeon, the sky and the sea
-    // go dark), and the light down there
+    // How far underground we are (0 to 1: in a dungeon or its boss's hall,
+    // the sky and the sea go dark), and the light down there
     underground: () => cave,
 
     // Are we in an arena, or a dungeon on the way to one? (nothing else is done there)
@@ -594,9 +592,10 @@ export function createBosses(ctx) {
       }
       if (inArena && inArena !== lastArena) intoArena(inArena);
       lastArena = inArena;
-      // down in a dungeon: the dark comes in (and goes, out in the arena or home)
-      cave.k += ((way ? 1 : 0) - cave.k) * Math.min(1, dt * 3);
-      if (way) cave.light = DUNGEON_LOOKS[way].cave;
+      // down in a dungeon, or its boss's hall: the dark comes in (and goes, back home)
+      const down = way ?? inArena;
+      cave.k += ((down ? 1 : 0) - cave.k) * Math.min(1, dt * 3);
+      if (down) cave.light = DUNGEON_LOOKS[down].cave;
       // into a room with foes up: what to do
       const room = way ? roomAt(way, x, z) : -1;
       const roomKey = way && room >= 0 ? `${way}:${room}` : null;
@@ -661,7 +660,6 @@ export function createBosses(ctx) {
       }
       stars.group.visible = t < dizzyUntil;
       if (stars.group.visible) stars.spin(t);
-      arenas.update(t);
       // riding: off it, to use anything else
       if (riding && ITEMS[inventory.selectedId()]?.mount !== riding) getOff();
       if (t >= payAt) {

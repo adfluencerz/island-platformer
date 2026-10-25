@@ -1,6 +1,7 @@
 // Boss fights (BOSSES and BOSS_FIGHT in shared/balance.js). Each boss lives
-// in an arena of its own, a round meadow out past the sea on the farm's world
-// (like the house's room: shared/level.js HOUSE_ROOM), so the friends on a
+// in an arena of its own, a round hall at the end of its dungeon, out past
+// the sea on the farm's world (like the house's room: shared/level.js
+// HOUSE_ROOM; src/dungeon.js builds it), so the friends on a
 // farm walk in together and see each other there. Its portal, built on the
 // farm from a full set of its key pieces, leads to its dungeon
 // (shared/dungeons.js), and through that to the arena; a way home in the
@@ -21,7 +22,7 @@ import { BOSSES, BOSS_FIGHT, WEAPONS } from './balance.js';
 import { GROUND_STAND_Y } from './level.js';
 
 export const BOSS_IDS = Object.keys(BOSSES);
-export const ARENA_R = 12; // the arena's meadow, from its middle (a hedge runs round it)
+export const ARENA_R = 12; // the arena's floor, from its middle (its walls run round it)
 const ARENA_SPOTS = [[-200, 0], [-200, 100], [-200, -100], [0, -200], [0, 200]]; // (out past the sea, one to a boss, away from the house's room, far enough out not to be seen from the farm, and room for each one's dungeon in front of it)
 export const ARENAS = Object.fromEntries(BOSS_IDS.map((id, i) => [id, { x: ARENA_SPOTS[i][0], z: ARENA_SPOTS[i][1] }]));
 export const BODY_R = 1; // how wide a boss is, from its middle
