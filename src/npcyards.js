@@ -116,7 +116,7 @@ function graze(a, anims, seedX, seedZ, kind) {
 // porch, a chimney with smoke and a weathervane, and a paddock beside it with a
 // cow, sheep and hens grazing; a coop, a well, laundry on the line
 function rosaHome(g, home, { addCollider, anims, glows, story }) {
-  const { trimMat, wallH } = house(g, home, { ridge: 'z', wall: 0xa8392f, trim: 0xf2efe6, roof: 0x4a3b36, door: 0x7a2a1a, rise: 1.8 }, addCollider);
+  const { trimMat } = house(g, home, { ridge: 'z', wall: 0xa8392f, trim: 0xf2efe6, roof: 0x4a3b36, door: 0x7a2a1a, rise: 1.8 }, addCollider);
   const front = home.d / 2 + 0.03;
   // the hayloft door up in the gable, crossed with white
   const z = home.d / 2 + 0.05;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { animalModel } from './animals.js';
-import { box, ball, cyl, cone, mat, part, live, model, beam, onWall, soilMat, canvasTexture, signTexture, boardTexture, frame, clock, curtains, jar, books, plant, mug, plate, candle, bunting, smoke, rosette, glowSprite, woodMat, darkWoodMat, stoneMat, ironMat, glassMat, hayMat, leafMat, lanternMat, fireMat, darkMat } from './homekit.js';
+import { box, ball, cyl, cone, mat, part, live, model, beam, onWall, soilMat, canvasTexture, signTexture, boardTexture, frame, clock, curtains, jar, books, plant, mug, plate, candle, bunting, rosette, glowSprite, woodMat, darkWoodMat, ironMat, glassMat, hayMat, leafMat, lanternMat, fireMat, darkMat } from './homekit.js';
 
 // ---------- What is inside the neighbours' homes ----------
 // The room src/npchomes.js builds for each neighbour (a counter with shelves
@@ -302,7 +302,7 @@ const painting = (kind, w = 128, h = 96) => canvasTexture(w, h, PAINT[kind]);
 // Rosa's: a farmhouse kitchen. Stone fireplace with the clock over it, and
 // Clementine the hen in a basket by it; a spinning wheel; her rosettes; a quilt
 // rack. What her requests and what you like in her show up where she lives.
-function rosaRoom(g, s, { addCollider, anims, glows, clocks, story }) {
+function rosaRoom(g, s, { addCollider, anims, clocks, story }) {
   const { left, right, back, front, midX, counterZ } = s;
   const when = (test, at) => story.group(g, test, at);
   const wb = s.wall('back', 0, 0);
@@ -462,7 +462,7 @@ function rosaRoom(g, s, { addCollider, anims, glows, clocks, story }) {
 // Basil's: a potting-shed cottage. Seeds in drawers and on shelves, plants
 // everywhere, an armchair under Marigold's portrait, a windowsill that grows
 // what you told him to plant.
-function basilRoom(g, s, { addCollider, anims, glows, clocks, story }) {
+function basilRoom(g, s, { addCollider, glows, clocks, story }) {
   const { left, right, back, front, midX, midZ, counterZ } = s;
   const when = (test, at) => story.group(g, test, at);
   const wb = s.wall('back', 0, 0);
@@ -654,7 +654,7 @@ function hammock(g, x, z0, z1) {
 // Finn's: a fisherman's hut. A hammock to sleep in, a chart on the wall, a barrel
 // stove, a parrot on the counter; and what you have done for him on the shelves.
 function finnRoom(g, s, { addCollider, anims, glows, clocks, story }) {
-  const { left, right, back, front, midX, midZ, counterZ } = s;
+  const { left, right, back, front, midX, counterZ } = s;
   const when = (test, at) => story.group(g, test, at);
   const wb = s.wall('back', 0, 0);
 
@@ -803,7 +803,7 @@ function finnRoom(g, s, { addCollider, anims, glows, clocks, story }) {
 // Mabel's: the bakery's kitchen. A floured work table, her oven and its
 // woodpile, a chalkboard of today's bakes, bunting, copper pots, and Biscuit the
 // kitten asleep on a cushion; and what you have baked and brought her.
-function mabelRoom(g, s, { addCollider, anims, glows, clocks, story }) {
+function mabelRoom(g, s, { addCollider, anims, clocks, story }) {
   const { left, right, back, front, midX, midZ, counterZ } = s;
   const when = (test, at) => story.group(g, test, at);
   const wb = s.wall('back', 0, 0);
