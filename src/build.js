@@ -14,7 +14,8 @@ import { createItemMesh } from './itemmesh.js';
 // troughs, stone benches, sundials, wheelbarrows, torches, log fences,
 // mailboxes, birdhouses, flagpoles, stone cairns, clotheslines, rope fences,
 // boulders, log benches, compost bins, milk churns, dovecotes, campfires, bunting and market awnings, the workbench and what it makes for the farm (the machines among it: a cheese press, a mayonnaise machine and a loom), the arcade, the sky isles' relics on their pedestals (turning slowly, aglow at night), and the farm's chest (PIECES in shared/level.js), one to a tile. Lamp posts light up at night (setNight). This draws them on a world (the farm's), joins each fence and wall
-// up with the fences and walls beside it, and gives the solid ones colliders
+// up with the fences and walls beside it and each path with the paths round
+// it, and gives the solid ones colliders
 // in the world's platforms. main.js has build mode: where pieces may go,
 // paying for them, and keeping them (in the farm's save, or its room).
 
@@ -48,6 +49,9 @@ const MATS = {
   moss: mat(0x6f9a3e),
   mossDark: mat(0x527a30),
   gravel: mat(0xa89f8c),
+  gravelDark: mat(0x857b69),
+  flagstone: mat(0xaba596),
+  grout: mat(0x6b6253),
   water: mat(0x3d7fa8, { roughness: 0.3 }),
   plaster: mat(0xf0e2c4),
   roofTile: mat(0xa8492f),
@@ -355,10 +359,280 @@ function workbench(g, solids, level) {
   solids.push({ x: 0, y: top / 2, z: 0, w: 0.96, h: top, d: 0.62 });
 }
 
+// ---------- Paths ----------
+// A path is PATH_HALF either side of the middle of its tile, and runs on to
+// the tile's edge toward each path beside it (of any kind: they all join up),
+// and out into the corner too where the paths round it make a square. Each
+// kind lays its stones, cobbles or planks on a grid of CELLs, so they run on
+// into the next tile's as one path. at(dx, dz): the path beside the tile
+// that way (its id), the corners too, or nothing.
+const PATH_HALF = 0.375;
+const CELL = 0.125; // (8 to a tile: the path is 6 across, with 1 more each side toward the next tile)
+const SIDES = [[1, 0], [0, 1], [-1, 0], [0, -1]]; // east, south, west and north: round the tile, seen from above
+const CORNERS = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+const AROUND = [...SIDES, ...CORNERS];
+const cellMid = (i) => -0.5 + (i + 0.5) * CELL;
+// whether cell (i, j) of a tile's 8 by 8 is path
+function pathCell(at, i, j) {
+  const ex = i === 0 ? -1 : i === 7 ? 1 : 0;
+  const ez = j === 0 ? -1 : j === 7 ? 1 : 0;
+  return !!(ex && ez ? at(ex, 0) && at(0, ez) && at(ex, ez) : ex ? at(ex, 0) : ez ? at(0, ez) : true);
+}
+// whether (x, z) on the tile is at least m inside the path (with its
+// outside corners rounded off by `round`)
+function inPath(at, x, z, m, round = 0) {
+  const lim = PATH_HALF - m;
+  const sx = Math.sign(x) || 1;
+  const sz = Math.sign(z) || 1;
+  const inX = Math.abs(x) <= lim;
+  const inZ = Math.abs(z) <= lim;
+  if (inX && inZ) {
+    const c = PATH_HALF - round;
+    return !!(at(sx, 0) || at(0, sz)) || Math.abs(x) <= c || Math.abs(z) <= c || Math.hypot(Math.abs(x) - c, Math.abs(z) - c) <= round - m;
+  }
+  return !!((inZ && at(sx, 0)) || (inX && at(0, sz)) || (at(sx, 0) && at(0, sz) && at(sx, sz)));
+}
+
+// The ground a path is laid on, `half` either side of the middle: a flat
+// shape, its outside corners rounded off by `round` and its inside ones by
+// `fillet` (a few dozen different ones, made once each)
+const pathShapes = new Map();
+function pathGround(at, half, round, fillet) {
+  const key = [half, round, fillet, ...AROUND.map(([dx, dz]) => (at(dx, dz) ? 1 : 0))].join();
+  if (pathShapes.has(key)) return pathShapes.get(key);
+  const pts = [];
+  // a quarter circle round (cx, cz), from direction a to direction b
+  const arc = (cx, cz, r, [ax, az], [bx, bz]) => {
+    if (!r) return void pts.push([cx, cz]);
+    for (let i = 0; i <= 4; i++) {
+      const t = (i / 8) * Math.PI;
+      pts.push([cx + r * (Math.cos(t) * ax + Math.sin(t) * bx), cz + r * (Math.cos(t) * az + Math.sin(t) * bz)]);
+    }
+  };
+  // round the tile a corner at a time: the corner between side a and side b
+  SIDES.forEach(([bx, bz], i) => {
+    const [ax, az] = SIDES[(i + 3) % 4];
+    if (!at(ax, az) && !at(bx, bz)) arc((half - round) * (ax + bx), (half - round) * (az + bz), round, [ax, az], [bx, bz]);
+    else if (!at(ax, az)) pts.push([half * ax + 0.5 * bx, half * az + 0.5 * bz]);
+    else if (!at(bx, bz)) pts.push([0.5 * ax + half * bx, 0.5 * az + half * bz]);
+    else if (!at(ax + bx, az + bz)) {
+      pts.push([0.5 * ax + half * bx, 0.5 * az + half * bz]);
+      arc((half + fillet) * (ax + bx), (half + fillet) * (az + bz), fillet, [-bx, -bz], [-ax, -az]);
+      pts.push([half * ax + 0.5 * bx, half * az + 0.5 * bz]);
+    } else pts.push([0.5 * (ax + bx), 0.5 * (az + bz)]);
+  });
+  const geo = new THREE.ShapeGeometry(new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)))).rotateX(-Math.PI / 2);
+  pathShapes.set(key, geo);
+  return geo;
+}
+
+// Where a path's edging goes (a kerb, a beam): strips w wide just outside
+// its edges, [x0, z0, x1, z1, along x]. The ones along x run on round the
+// outside corners and the others stop short of the inside ones, so none overlap.
+function pathEdges(at, w) {
+  const h = PATH_HALF;
+  const strips = [];
+  for (const [dx, dz] of SIDES) {
+    if (at(dx, dz)) continue;
+    if (dz) strips.push([at(-1, 0) ? -0.5 : -h - w, dz * h, at(1, 0) ? 0.5 : h + w, dz * (h + w), true]);
+    else strips.push([dx * h, at(0, -1) ? -0.5 : -h, dx * (h + w), at(0, 1) ? 0.5 : h, false]);
+  }
+  for (const [sx, sz] of CORNERS) {
+    if (!at(sx, 0) || !at(0, sz) || at(sx, sz)) continue;
+    strips.push([sx * h, sz * h, sx * 0.5, sz * (h + w), true]);
+    strips.push([sx * h, sz * (h + w), sx * (h + w), sz * 0.5, false]);
+  }
+  return strips.map(([x0, z0, x1, z1, alongX]) => [Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), alongX]);
+}
+
+// Flagstones' lengths in a row across the middle of a tile, in CELLs
+const FLAG_ROWS = [[2, 2, 2], [3, 3], [2, 4], [4, 2], [3, 1, 2], [2, 1, 3], [1, 3, 2]];
+
+// A path's model: near, the paths round it ([dx, dz, id])
+function pathModel(id, gx, gz, near) {
+  const at = (dx, dz) => near.find(([x, z]) => x === dx && z === dz)?.[2];
+  const h = PATH_HALF;
+  // its parts, [shape, material, where]: made one mesh to each material (mergeParts)
+  const parts = [];
+  const lay = (geo, material, x, y, z, sx, sy, sz, turn = 0) => parts.push([geo, material, new THREE.Matrix4().compose(partAt.set(x, y, z), partTurn.setFromAxisAngle(UP, turn), partSize.set(sx, sy, sz))]);
+  const flat = (geo, material, y) => parts.push([geo, material, new THREE.Matrix4().makeTranslation(0, y, 0)]);
+  // steady numbers from the tile, one after another
+  let n = 0;
+  const rnd = () => hash(gx * 1031 + n * 7919, gz * 2053 - ++n * 104729);
+  if (id === 'wood_path') {
+    // a boardwalk over dark ground, a beam along its edges and a post at its
+    // outside corners. Its planks lie across the way it goes: north to south
+    // (for going east-west) unless it only goes north-south, and the ends
+    // out to the paths beside it lie their own way
+    flat(pathGround(at, h, 0, 0), MATS.soil, 0.018);
+    const planks = (x0, z0, x1, z1, alongX) => {
+      for (let i = 0; i < 8; i++) {
+        const c = cellMid(i);
+        if (alongX ? c < z0 || c > z1 : c < x0 || c > x1) continue;
+        const r = alongX ? hash(gx * 8 + Math.round(x0 * 8) + 9001, gz * 8 + i) : hash(gx * 8 + i, gz * 8 + Math.round(z0 * 8));
+        const len = (alongX ? x1 - x0 : z1 - z0) - 0.016 - r * 0.012;
+        const mid = (alongX ? x0 + x1 : z0 + z1) / 2 + (r - 0.5) * 0.008;
+        const top = 0.058 + r * 0.006;
+        lay(box, [MATS.plankA, MATS.plankB, MATS.rail][Math.floor(r * 3)], alongX ? mid : c, top - 0.02, alongX ? c : mid, alongX ? len : 0.105, 0.04, alongX ? 0.105 : len);
+      }
+    };
+    planks(-h, -h, h, h, !at(1, 0) && !at(-1, 0) && !!(at(0, 1) || at(0, -1)));
+    for (const [dx, dz] of SIDES) {
+      if (!at(dx, dz)) continue;
+      if (dx) planks(Math.min(dx * h, dx * 0.5), -h, Math.max(dx * h, dx * 0.5), h, false);
+      else planks(-h, Math.min(dz * h, dz * 0.5), h, Math.max(dz * h, dz * 0.5), true);
+    }
+    for (const [sx, sz] of CORNERS) {
+      if (pathCell(at, sx > 0 ? 7 : 0, sz > 0 ? 7 : 0)) planks(Math.min(sx * h, sx * 0.5), Math.min(sz * h, sz * 0.5), Math.max(sx * h, sx * 0.5), Math.max(sz * h, sz * 0.5), false);
+    }
+    for (const [x0, z0, x1, z1] of pathEdges(at, 0.06)) lay(box, MATS.bark, (x0 + x1) / 2, 0.035, (z0 + z1) / 2, x1 - x0, 0.07, z1 - z0);
+    for (const [sx, sz] of CORNERS) {
+      if (!at(sx, 0) && !at(0, sz)) lay(box, MATS.post, sx * (h + 0.03), 0.06, sz * (h + 0.03), 0.09, 0.12, 0.09);
+    }
+  } else if (id === 'stone_path') {
+    // flagstones in rows, of a few lengths, with dark ground between them.
+    // The ones on a tile's edge are halves of stones shared with the next
+    // tile: each tile draws its half, both alike (worked out from the whole
+    // stone's place)
+    flat(pathGround(at, h + 0.03, 0.08, 0.05), MATS.grout, 0.018);
+    const gap = 0.022;
+    for (const [j0, j1] of [[0, 0], [1, 2], [3, 4], [5, 6], [7, 7]]) {
+      const wz = gz * 8 + (j0 ? j0 : -1);
+      const runs = [[0, 0]];
+      let i = 1;
+      for (const len of FLAG_ROWS[Math.floor(hash(gx * 7 + 3, wz) * FLAG_ROWS.length)]) {
+        runs.push([i, i + len - 1]);
+        i += len;
+      }
+      runs.push([7, 7]);
+      for (const [i0, i1] of runs) {
+        if (!pathCell(at, i0, j0)) continue;
+        const wx = gx * 8 + (i0 ? i0 : -1);
+        const r = hash(wx, wz);
+        const x0 = -0.5 + i0 * CELL + (i0 > 0 ? gap / 2 : 0);
+        const x1 = -0.5 + (i1 + 1) * CELL - (i1 < 7 ? gap / 2 : 0);
+        const z0 = -0.5 + j0 * CELL + (j0 > 0 ? gap / 2 : 0);
+        const z1 = -0.5 + (j1 + 1) * CELL - (j1 < 7 ? gap / 2 : 0);
+        const top = 0.04 + r * 0.012;
+        // (a whole one sits a little askew)
+        const whole = i0 > 0 && i1 < 7 && j0 > 0 && j1 < 7;
+        lay(box, [MATS.stone, MATS.stoneLight, MATS.flagstone][Math.floor(hash(wz + 77, wx) * 3)], (x0 + x1) / 2, top - 0.015, (z0 + z1) / 2, x1 - x0, 0.03, z1 - z0, whole ? (r - 0.5) * 0.06 : 0);
+      }
+    }
+  } else if (id === 'cobble_path') {
+    // small cobbles packed close, one to a cell, each a little different, on
+    // dark grit, with a kerb of long stones along the edges
+    flat(pathGround(at, h + 0.02, 0, 0), MATS.stoneDark, 0.018);
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        if (!pathCell(at, i, j)) continue;
+        const r = hash(gx * 8 + i, gz * 8 + j);
+        const r2 = hash(gz * 8 + j + 51, gx * 8 + i);
+        const k = 0.1 + r2 * 0.022;
+        lay(flag, r < 0.4 ? MATS.stone : r < 0.8 ? MATS.stoneLight : MATS.flagstone, cellMid(i) + (r2 - 0.5) * 0.016, 0.036 + r * 0.008, cellMid(j) + (r - 0.5) * 0.016, k, 0.045, k, r * 6);
+      }
+    }
+    for (const [x0, z0, x1, z1, alongX] of pathEdges(at, 0.07)) {
+      const len = alongX ? x1 - x0 : z1 - z0;
+      const count = Math.max(1, Math.round(len / 0.25));
+      for (let s = 0; s < count; s++) {
+        const a = (alongX ? x0 : z0) + (len * s) / count + 0.006;
+        const b = (alongX ? x0 : z0) + (len * (s + 1)) / count - 0.006;
+        const [x, z] = alongX ? [(a + b) / 2, (z0 + z1) / 2] : [(x0 + x1) / 2, (a + b) / 2];
+        const r = hash(Math.round((gx + x) * 16), Math.round((gz + z) * 16));
+        const kh = 0.064 + r * 0.014;
+        lay(box, r < 0.5 ? MATS.stoneLight : MATS.stone, x, kh / 2, z, alongX ? b - a : x1 - x0, kh, alongX ? z1 - z0 : b - a);
+      }
+    }
+  } else if (id === 'gravel_path') {
+    // raked gravel with a darker edge, round at the corners, and pebbles
+    // scattered over it
+    flat(pathGround(at, h + 0.035, 0.16, 0.06), MATS.gravelDark, 0.016);
+    flat(pathGround(at, h, 0.14, 0.09), MATS.gravel, 0.022);
+    for (let i = 0; i < 30; i++) {
+      const x = rnd() - 0.5;
+      const z = rnd() - 0.5;
+      const k = 0.035 + rnd() * 0.05;
+      const shade = rnd();
+      if (!inPath(at, x, z, k / 2, 0.14)) continue;
+      lay(ball, shade < 0.4 ? MATS.stone : shade < 0.7 ? MATS.stoneLight : shade < 0.85 ? MATS.stoneDark : MATS.gravelDark, x, 0.026, z, k, k * 0.5, k);
+    }
+  } else if (id === 'stepping_stones') {
+    // round flat stones a stride apart, on toward each path beside it: one in
+    // the middle of the tile, one on the edge between it and more stepping
+    // stones (drawn by the tile west or north of it), and one near the edge
+    // before another kind of path. On its own, three across the tile.
+    let stones = [[0, 0, 0.36]];
+    if (!SIDES.some(([dx, dz]) => at(dx, dz))) {
+      const flip = hash(gx, gz) < 0.5 ? 1 : -1;
+      stones = [[-0.26 * flip, -0.24, 0.36], [0.06 * flip, 0.04, 0.4], [0.28 * flip, 0.3, 0.32]];
+    }
+    for (const [dx, dz] of SIDES) {
+      const next = at(dx, dz);
+      if (next === 'stepping_stones' ? dx > 0 || dz > 0 : next) stones.push(next === 'stepping_stones' ? [dx * 0.5, dz * 0.5, 0.34] : [dx * 0.38, dz * 0.38, 0.3]);
+    }
+    for (const [x, z, k] of stones) {
+      // (from where it is, so a stone on the edge is the same from either side)
+      const r = hash(Math.round((gx + x) * 8), Math.round((gz + z) * 8));
+      const r2 = hash(Math.round((gz + z) * 8) + 13, Math.round((gx + x) * 8));
+      const s = k * (0.92 + r * 0.16);
+      const px = x + (r2 - 0.5) * 0.07;
+      const pz = z + (r - 0.5) * 0.07;
+      lay(log, r2 < 0.5 ? MATS.stoneLight : MATS.stone, px, 0.034, pz, s, 0.05, s * (0.84 + r2 * 0.14), r * 6);
+      lay(log, MATS.stoneDark, px, 0.016, pz, s + 0.04, 0.02, s * (0.84 + r2 * 0.14) + 0.04, r * 6);
+    }
+  }
+  return mergeParts(parts);
+}
+
+// One mesh to each material, from a piece's many small parts ([shape,
+// material, where]): a path's dozens of stones, drawn one by one, would slow
+// a long path down. Its shapes are its own (`own`), to dispose of when it's
+// taken away.
+const partAt = new THREE.Vector3();
+const partTurn = new THREE.Quaternion();
+const partSize = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+const partNormals = new THREE.Matrix3();
+function mergeParts(parts) {
+  const byMat = new Map();
+  for (const p of parts) {
+    if (!byMat.has(p[1])) byMat.set(p[1], []);
+    byMat.get(p[1]).push(p);
+  }
+  const merged = new THREE.Group();
+  for (const [material, list] of byMat) {
+    const count = list.reduce((sum, [geo]) => sum + (geo.index ?? geo.attributes.position).count, 0);
+    const pos = new Float32Array(count * 3);
+    const nor = new Float32Array(count * 3);
+    let o = 0;
+    for (const [geo, , where] of list) {
+      const { position, normal } = geo.attributes;
+      partNormals.getNormalMatrix(where);
+      for (let i = 0; i < (geo.index ?? position).count; i++, o += 3) {
+        const k = geo.index ? geo.index.getX(i) : i;
+        partAt.fromBufferAttribute(position, k).applyMatrix4(where).toArray(pos, o);
+        partAt.fromBufferAttribute(normal, k).applyMatrix3(partNormals).normalize().toArray(nor, o);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    geo.userData.own = true;
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.receiveShadow = true;
+    merged.add(mesh);
+  }
+  return merged;
+}
+const disposeOwn = (group) => group.traverse((obj) => obj.isMesh && obj.geometry.userData.own && obj.geometry.dispose());
+
 // A piece's model, at the middle of its tile. joined: the directions
-// ([dx, dz]) its fence or wall runs on to a neighbour. Returns the group and
-// its colliders' boxes ({ x, y, z, w, h, d }, relative to the tile).
+// ([dx, dz]) its fence or wall runs on to a neighbour, or for a path, the
+// paths round it ([dx, dz, id]). Returns the group and its colliders' boxes
+// ({ x, y, z, w, h, d }, relative to the tile).
 function model(id, gx, gz, joined) {
+  if (PIECES[id].path) return { group: pathModel(id, gx, gz, joined), solids: [] };
   const g = new THREE.Group();
   const solids = [];
   if (id === 'wood_fence') {
@@ -439,66 +713,6 @@ function model(id, gx, gz, joined) {
       [0.2, 0.38].forEach((o, i) => stake(dx * o, dz * o, 0.24, WALL_H - 0.32 + ((r * 10 + i * 3 + dx + dz * 2) % 3) * 0.06));
       part(g, box, MATS.rail, dx * 0.25 - (dz ? 0.14 : 0), WALL_H * 0.62, dz * 0.25 - (dx ? 0.14 : 0), dx ? 0.5 : 0.06, 0.1, dz ? 0.5 : 0.06);
       solids.push({ x: dx * 0.25, y: WALL_H / 2, z: dz * 0.25, w: dx ? 0.5 : 0.3, h: WALL_H, d: dz ? 0.5 : 0.3 });
-    }
-  } else if (id === 'wood_path') {
-    // three planks, along whichever way suits the tile, with a gap between
-    const across = hash(gx, gz) < 0.5;
-    [-0.31, 0, 0.31].forEach((o, i) => {
-      const plank = part(g, box, i % 2 ? MATS.plankB : MATS.plankA, across ? o : 0, 0.035, across ? 0 : o, across ? 0.28 : 0.94, 0.05, across ? 0.94 : 0.28);
-      plank.castShadow = false;
-    });
-  } else if (id === 'stone_path') {
-    // a few flat stones, laid a little differently on every tile
-    const r = hash(gx, gz);
-    const stones = [[-0.22, -0.22, 0.42], [0.24, -0.2, 0.38], [-0.2, 0.24, 0.38], [0.22, 0.23, 0.44]];
-    stones.forEach(([x, z, s], i) => {
-      const k = s * (0.95 + ((r * (i + 3) * 7) % 0.2));
-      const stone = part(g, flag, i % 2 ? MATS.stone : MATS.stoneLight, x, 0.03, z, k, 0.05, k);
-      stone.rotation.y = r * 6 + i;
-      stone.castShadow = false;
-    });
-  } else if (id === 'cobble_path') {
-    // small round cobbles packed close in rows, each a little different, on
-    // a bed of darker grit
-    const r = hash(gx, gz);
-    part(g, box, MATS.stoneDark, 0, 0.015, 0, 0.94, 0.02, 0.94).castShadow = false;
-    for (let row = 0; row < 5; row++) {
-      for (let col = 0; col < 5; col++) {
-        const j = (r * 97 + row * 0.37 + col * 0.61) % 1;
-        const x = (col - 2) * 0.185 + (row % 2 ? 0.045 : -0.045);
-        if (Math.abs(x) > 0.42) continue;
-        const k = 0.15 + j * 0.03;
-        const cobble = part(g, flag, j < 0.5 ? MATS.stone : MATS.stoneLight, x, 0.035 + j * 0.01, (row - 2) * 0.185, k, 0.045, k);
-        cobble.rotation.y = j * 6;
-        cobble.castShadow = false;
-      }
-    }
-  } else if (id === 'stepping_stones') {
-    // three round flat stones across the grass, a stride apart, set a
-    // little differently on every tile
-    const r = hash(gx, gz);
-    const flip = r < 0.5 ? 1 : -1;
-    [[-0.26, -0.24, 0.36], [0.06, 0.04, 0.4], [0.28, 0.3, 0.32]].forEach(([x, z, k], i) => {
-      const s = k * (0.92 + ((r * (i + 5) * 11) % 0.16));
-      const stone = part(g, flag, i % 2 ? MATS.stoneLight : MATS.stone, x * flip, 0.03, z, s, 0.05, s * 0.86);
-      stone.rotation.y = r * 6 + i * 1.3;
-      stone.castShadow = false;
-      const rim = part(g, flag, MATS.stoneDark, x * flip, 0.012, z, s + 0.04, 0.02, s * 0.86 + 0.04);
-      rim.rotation.y = stone.rotation.y;
-      rim.castShadow = false;
-    });
-  } else if (id === 'gravel_path') {
-    // a bed of raked gravel, with pebbles scattered over it a little
-    // differently on every tile
-    const r = hash(gx, gz);
-    part(g, box, MATS.gravel, 0, 0.015, 0, 0.96, 0.02, 0.96).castShadow = false;
-    for (let i = 0; i < 12; i++) {
-      const j = (r * 131 + i * 0.618) % 1;
-      const a = i * 2.4 + r * 6;
-      const d = 0.08 + ((j * 7) % 1) * 0.34;
-      const k = 0.05 + j * 0.05;
-      const pebble = part(g, ball, i % 3 ? MATS.stone : i % 2 ? MATS.stoneLight : MATS.stoneDark, Math.cos(a) * d, 0.03, Math.sin(a) * d, k, k * 0.6, k);
-      pebble.castShadow = false;
     }
   } else if (id === 'wood_arbor') {
     // an arbor over the way through: a pair of posts either side, along the
@@ -1629,10 +1843,17 @@ export function createBuildings(world) {
   });
 
   const joins = (gx, gz) => PIECES[pieces.get(keyOf(gx, gz))?.id]?.joins;
-  const joinedAt = (gx, gz) => DIRS.filter(([dx, dz]) => joins(gx + dx, gz + dz));
+  const paved = (gx, gz) => PIECES[pieces.get(keyOf(gx, gz))?.id]?.path;
+  // the pieces a piece of kind id on (gx, gz) joins up with: a fence's or
+  // wall's, the fences and walls beside it ([dx, dz]); a path's, the paths
+  // round it ([dx, dz, id])
+  const joinedAt = (id, gx, gz) => PIECES[id].joins ? DIRS.filter(([dx, dz]) => joins(gx + dx, gz + dz))
+    : PIECES[id].path ? AROUND.filter(([dx, dz]) => paved(gx + dx, gz + dz)).map(([dx, dz]) => [dx, dz, pieces.get(keyOf(gx + dx, gz + dz)).id])
+    : [];
 
   function undraw(piece) {
     world.root.remove(piece.group);
+    disposeOwn(piece.group);
     glows.delete(piece.key);
     relics.delete(piece.key);
     swirls.delete(piece.key);
@@ -1646,7 +1867,7 @@ export function createBuildings(world) {
     if (!piece) return;
     if (piece.group) undraw(piece);
     const [gx, gz] = gridOf(key);
-    const { group, solids } = model(piece.id, gx, gz, PIECES[piece.id].joins ? joinedAt(gx, gz) : []);
+    const { group, solids } = model(piece.id, gx, gz, joinedAt(piece.id, gx, gz));
     const x = gx * TILE_SIZE;
     const z = gz * TILE_SIZE;
     group.position.set(x, 0, z);
@@ -1678,10 +1899,24 @@ export function createBuildings(world) {
     });
   }
 
-  // fences and walls around a tile, joined up afresh
-  function redrawAround(key) {
+  // what a piece of kind id on tile key joins up with, joined up afresh (it
+  // was built, or taken down)
+  function redrawAround(key, id) {
     const [gx, gz] = gridOf(key);
-    for (const [dx, dz] of DIRS) if (joins(gx + dx, gz + dz)) draw(keyOf(gx + dx, gz + dz));
+    if (PIECES[id].joins) for (const [dx, dz] of DIRS) if (joins(gx + dx, gz + dz)) draw(keyOf(gx + dx, gz + dz));
+    if (PIECES[id].path) for (const [dx, dz] of AROUND) if (paved(gx + dx, gz + dz)) draw(keyOf(gx + dx, gz + dz));
+  }
+
+  // a piece on tile key, not drawn yet (false: something is built there
+  // already, or no such piece)
+  function put(key, id) {
+    if (!PIECES[id]) return false;
+    const tiles = pieceTiles(id, key);
+    if (tiles.some((k) => covered.has(k))) return false;
+    pieces.set(key, { id, group: null, colliders: [] });
+    for (const k of tiles) covered.set(k, key);
+    for (const k of tiles) world.clearFoliageOnTile(k);
+    return true;
   }
 
   // ---------- The see-through piece build mode shows where it would go ----------
@@ -1712,15 +1947,17 @@ export function createBuildings(world) {
 
     // false: something is built there already, or no such piece
     place(key, id) {
-      if (!PIECES[id]) return false;
-      const tiles = pieceTiles(id, key);
-      if (tiles.some((k) => covered.has(k))) return false;
-      pieces.set(key, { id, group: null, colliders: [] });
-      for (const k of tiles) covered.set(k, key);
+      if (!put(key, id)) return false;
       draw(key);
-      if (PIECES[id].joins) redrawAround(key);
-      for (const k of tiles) world.clearFoliageOnTile(k);
+      redrawAround(key, id);
       return true;
+    },
+
+    // a farm's pieces ([key, id]), all at once: each drawn the once, joined
+    // up with the rest
+    placeAll(list) {
+      const placed = list.filter(([key, id]) => put(key, id));
+      for (const [key] of placed) draw(key);
     },
 
     // the piece that was there (or null)
@@ -1735,7 +1972,7 @@ export function createBuildings(world) {
         covered.delete(k);
         world.restoreFoliage(k);
       }
-      if (PIECES[piece.id].joins) redrawAround(key);
+      redrawAround(key, piece.id);
       return piece.id;
     },
 
@@ -1813,12 +2050,13 @@ export function createBuildings(world) {
           world.root.remove(ghost.group);
           // (the chest's shapes are its own, not shared like the pieces')
           if (ghost.id === 'farm_chest') ghost.group.traverse((obj) => obj.isMesh && obj !== ghostEdge && obj.geometry.dispose());
+          else disposeOwn(ghost.group);
         }
         const group = id === 'remove' || !PIECES[id]
           ? new THREE.Group()
           : id === 'farm_chest'
             ? chestModel().root
-            : model(id, gx, gz, PIECES[id].joins ? joinedAt(gx, gz) : []).group;
+            : model(id, gx, gz, joinedAt(id, gx, gz)).group;
         group.traverse((obj) => {
           if (!obj.isMesh) return;
           obj.material = ghostMat;
