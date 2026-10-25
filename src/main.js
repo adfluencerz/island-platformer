@@ -2202,6 +2202,7 @@ canvas.addEventListener('pointerleave', () => (hoverAt = null));
 
 const _base = new THREE.Vector3();
 function updateHover() {
+  if (me !== first) return; // (the mouse is the first seat's)
   hoverTile.visible = hoverRing.visible = false;
   if (!hoverAt || held || building || place === 'title' || inputBlocked() || !onMyScreen(hoverAt.x, hoverAt.y)) return;
   aimAt(hoverAt.x, hoverAt.y);
@@ -2905,7 +2906,7 @@ function waterFrom(x0, z0, yaw) {
   return null;
 }
 // The HUD (src/ui/hud.js): each seat's, in its part of the screen. The first
-// seat's has the game's menu (splash.js); another's, its own (seatMenu).
+// seat's has the game's menu (splash.js); another's, its own (src/ui/seatpanel.js).
 const newHud = (seat) => new Hud({
   ...forSeat(seat, seat === first ? {
     onTravel: () => splash.show({ page: 'online' }),
@@ -4934,8 +4935,11 @@ async function seatFarmer(seat, profile) {
   if (seats.some((other) => other.profile?.id === profile.id)) throw new Error(`${profile.name} is playing already`);
   const sync = new PlayerSync(profile, { onLost: (why) => within(seat, () => inventory.notify(why)) });
   const save = await sync.open();
-  if (save?.v > SAVE_VERSION) throw new Error(`${profile.name}'s farmer was saved by a newer version of the game: reload the page to play them`);
-  if (!seats.includes(seat)) return; // (they got up meanwhile)
+  if (save?.v > SAVE_VERSION || !seats.includes(seat)) {
+    sync.close(); // (nothing of theirs is saved from here)
+    if (seats.includes(seat)) throw new Error(`${profile.name}'s farmer was saved by a newer version of the game: reload the page to play them`);
+    return; // (they got up meanwhile)
+  }
   Object.assign(seat, { profile, sync, ownFarm: save?.farm ?? null });
   within(seat, () => {
     if (save?.v >= 1) useCharacter(save);
@@ -4968,6 +4972,9 @@ function dropSeat(seat, why = '') {
   });
   seats.splice(seats.indexOf(seat), 1);
   scene.remove(seat.playerMesh, seat.marker, seat.tileCursor);
+  seat.nameTag?.material.map.dispose();
+  seat.nameTag?.material.dispose();
+  clearInterval(seat.hud.tipTimer); // (its HUD's hints, going round)
   if (dayNight.glow.parent === seat.playerMesh) first.playerMesh.add(dayNight.glow);
   seat.root.remove();
   if (seats.length === 1) first.padIndex = null; // (alone again: any controller is the first farmer's)

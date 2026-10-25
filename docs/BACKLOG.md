@@ -12,7 +12,8 @@ Last updated: 2026-10-25
 ## In progress
 Open pull requests, each from the backlog below:
 
-- Nothing right now.
+- Split screen: up to four farmers at one screen on your farm, each on a
+  controller of their own, with their own account's farmer (or a guest)
 
 ---
 
@@ -51,6 +52,16 @@ Open pull requests, each from the backlog below:
 - [ ] Errands once all seven requests are done, so there is always something to ask them
 - [ ] Neighbours that walk the roads to each other's doors, and say so when you meet them
 - [ ] Their homes in the seasons: a wreath, pumpkins on the porch, a snowman
+
+### Together at one screen
+- [ ] An on-screen keyboard, for logging in with a controller alone (now
+      the keyboard types a farmer's username and password)
+- [ ] A split screen on a farm with online helpers (each farmer at the
+      screen on a connection of their own to its room), and in lobbies
+- [ ] A guest changing clothes at the wardrobe (an account's are changed
+      in its own game)
+- [ ] One view for everyone while they stand close together, splitting as
+      they wander apart
 
 ### Tech
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or

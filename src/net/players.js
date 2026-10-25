@@ -147,9 +147,10 @@ export class PlayerSync {
     }
   }
 
-  // They get up from the screen: saved one last time, and no more
-  async close(save) {
-    this.push(save);
+  // They get up from the screen: saved one last time (save: none, if they
+  // never got as far as playing), and no more
+  async close(save = null) {
+    if (save) this.push(save);
     clearInterval(this.timer);
     await this.flush({ leaving: true });
     this.ready = false;
