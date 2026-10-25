@@ -722,6 +722,20 @@ await test('the farm is a valley five times the old farm: the old farm in the mi
   assert.equal(farmBlocked(40, 40), '', 'the valley is the farmer\'s to farm');
 });
 
+await test('the neighbours dress from the wardrobe: a shirt, and every part of their look one of its styles', () => {
+  for (const id of NPC_IDS) {
+    const { shirt, look } = NPCS[id];
+    assert.ok(Number.isInteger(shirt), `${id} has a shirt color`);
+    for (const [part, value] of Object.entries(look)) {
+      const def = LOOK_PARTS[part];
+      assert.ok(def, `${id}: there is no ${part} to wear`);
+      // (styles are the wardrobe's own; colors may be a neighbour's own)
+      if (def.styles) assert.ok(def.styles.some(([style]) => style === value), `${id}: ${part} '${value}' is not one of its styles`);
+      else assert.ok(Number.isInteger(value), `${id}: ${part} is a color`);
+    }
+  }
+});
+
 await test('the neighbours: what they ask and give is all there is, their shops sell everything the merchant used to, the first request opens the shop', () => {
   assert.deepEqual(Object.keys(NPCS), NPC_IDS);
   const sold = new Set(MERCHANT_STOCK);

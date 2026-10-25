@@ -122,7 +122,7 @@ export function renderMap(root, you) {
   for (const id of NPC_IDS) {
     const home = NPC_HOMES[id];
     const [x, y] = at(home.x, home.z);
-    house(x, y, `#${NPCS[id].look.shirt.toString(16).padStart(6, '0')}`);
+    house(x, y, `#${NPCS[id].shirt.toString(16).padStart(6, '0')}`);
     label(`${NPCS[id].name}: ${NPCS[id].trade.toLowerCase()}`, x, y + 20);
   }
   const [sx, sy] = at(STALL.x, STALL.z);

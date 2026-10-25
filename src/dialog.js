@@ -4,6 +4,7 @@ import { PIECES } from '../shared/level.js';
 import { NPCS, rewardText } from '../shared/npcs.js';
 import { textOf, followUps } from '../shared/talk.js';
 import { FRIENDSHIP } from '../shared/balance.js';
+import { DEFAULT_LOOK } from '../shared/looks.js';
 import { el, button } from './ui/dom.js';
 
 // ---------- Talking to a neighbour ----------
@@ -27,12 +28,14 @@ const pick = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
 // ---------- Their faces ----------
 // 16x16 pixel art, as the items are (items.js spriteURL), drawn from how
-// each dresses (shared/npcs.js `look`): a face, their hair, beard and hat,
-// their shirt at the bottom, and an outline round it all
-const SKIN = '#ffcc99';
+// each dresses (shared/npcs.js `shirt` and `look`, shared/looks.js): a face,
+// their hair, beard and hat, their shirt at the bottom (an apron over it), and
+// an outline round it all
+const STRAW = 0xe8c66a;
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 function portraitOf(id) {
-  const look = NPCS[id].look;
+  const look = { ...DEFAULT_LOOK, ...NPCS[id].look };
+  const beard = look.whiskers === 'beard';
   const g = Array.from({ length: 16 }, () => Array(16).fill('.'));
   const fill = (x0, y0, x1, y1, ch) => {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = ch;
@@ -41,15 +44,15 @@ function portraitOf(id) {
   fill(6, 11, 9, 12, 's'); // neck
   fill(4, 5, 11, 11, 's');
   fill(3, 6, 12, 10, 's');
-  if (look.apron != null) fill(5, 13, 10, 15, 'a');
-  if (look.hair != null) {
+  if (look.apron === 'apron') fill(5, 13, 10, 15, 'a');
+  if (look.hair !== 'bald') {
     fill(3, 4, 12, 5, 'r');
     fill(3, 6, 3, 9, 'r');
     fill(12, 6, 12, 9, 'r');
-    if (look.ponytail) fill(13, 7, 14, 12, 'r');
-    if (look.bun) fill(6, 1, 9, 3, 'r');
+    if (look.hair === 'ponytail') fill(13, 7, 14, 12, 'r');
+    if (look.hair === 'bun') fill(6, 1, 9, 3, 'r');
   }
-  if (look.beard != null) {
+  if (beard) {
     fill(4, 10, 11, 11, 'd');
     fill(5, 12, 10, 12, 'd');
     fill(3, 8, 3, 10, 'd');
@@ -59,14 +62,14 @@ function portraitOf(id) {
   g[8][10] = 'e';
   g[9][4] = 'c';
   g[9][11] = 'c';
-  g[10][7] = look.beard != null ? 'D' : 'm';
-  g[10][8] = look.beard != null ? 'D' : 'm';
-  const style = look.hatStyle ?? 'straw';
+  g[10][7] = beard ? 'D' : 'm';
+  g[10][8] = beard ? 'D' : 'm';
+  const style = look.hat;
   if (style === 'straw') {
     fill(5, 1, 10, 3, 'h');
     fill(5, 3, 10, 3, 'b');
     fill(1, 4, 14, 4, 'h');
-  } else if (style === 'cap') {
+  } else if (style === 'cap' || style === 'flatcap') {
     fill(4, 2, 11, 4, 'h');
     fill(3, 5, 9, 5, 'h');
   } else if (style === 'souwester') {
@@ -75,7 +78,7 @@ function portraitOf(id) {
     fill(2, 5, 13, 5, 'h');
     fill(2, 6, 3, 7, 'h');
     fill(12, 6, 13, 7, 'h');
-  } else if (style === 'scarf') {
+  } else if (style === 'bandana') {
     fill(4, 2, 11, 4, 'b');
     fill(3, 4, 12, 5, 'b');
     fill(13, 4, 14, 6, 'b');
@@ -91,9 +94,9 @@ function portraitOf(id) {
   return {
     sprite: out.map((row) => row.join('')),
     palette: {
-      o: '#3d1a04', s: SKIN, e: '#1a1a1a', c: '#ff9f8a', m: '#c0504a', t: hex(look.shirt),
-      a: hex(look.apron ?? 0xffffff), r: hex(look.hair ?? 0x5a3a22), d: hex(look.beard ?? 0x5a3a22), D: '#7a7a72',
-      h: hex(look.hat ?? 0xe8c66a), b: hex(look.band ?? 0xc0392b),
+      o: '#3d1a04', s: hex(look.skin), e: '#1a1a1a', c: '#ff9f8a', m: '#c0504a', t: hex(NPCS[id].shirt),
+      a: hex(look.apronColor), r: hex(look.hairColor), d: hex(look.hairColor), D: '#7a7a72',
+      h: hex(style === 'straw' ? STRAW : look.hatColor), b: hex(look.hatColor), // (a straw hat's band; a bandana)
     },
   };
 }
