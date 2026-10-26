@@ -54,8 +54,8 @@ Open pull requests, each from the backlog below:
 - [ ] Their homes in the seasons: a wreath, pumpkins on the porch, a snowman
 
 ### Together at one screen
-- [ ] A split screen on a farm with online helpers (each farmer at the
-      screen on a connection of their own to its room), and in lobbies
+- [ ] A split screen in lobbies (a farm with online helpers has one: each
+      farmer at the screen is on its room with a connection of their own)
 - [ ] A guest changing clothes at the wardrobe (an account's are changed
       in its own game)
 - [ ] One view for everyone while they stand close together, splitting as

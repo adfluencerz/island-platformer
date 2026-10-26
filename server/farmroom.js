@@ -100,8 +100,10 @@ const cropAge = (c, hours) =>
   ((hours - c.plantedAt) + (c.wateredAt !== undefined ? Math.max(0, hours - c.wateredAt) * (WATERED_GROWTH - 1) : 0)) * SECONDS_PER_HOUR;
 
 export class FarmRoom extends Place {
-  // farm: the farm (server/farms.js). admit(auth, name): who the joiner is,
-  // { id, owner }, or null for someone who isn't the owner or a helper.
+  // farm: the farm (server/farms.js). admit(auth, name, local): who the joiner is,
+  // { id, owner, local? }, or null for someone who isn't the owner or a helper.
+  // (local: a farmer at the owner's own screen, split screen: their own
+  // player in the room, with the owner's say, src/main.js seats)
   // helpers(): how many helpers the farm has now (each lets it have one more house)
   constructor({ farm, admit, helpers = () => 0, log = () => {} }) {
     const far = Math.max(FARM_HALF, HOUSE_ROOM.x0 + HOUSE_ROOM.w, ...Object.values(ARENAS).map(({ x, z }) => Math.max(Math.abs(x), Math.abs(z)) + ARENA_R),
@@ -187,16 +189,40 @@ export class FarmRoom extends Place {
 
   // ---------- Who is here ----------
   join(conn, msg) {
-    const who = this.admit(msg?.auth, msg?.name);
+    const who = this.admit(msg?.auth, msg?.name, msg?.local === true);
     if (!who || who.busy) {
       const why = who?.busy ? CLOSE.AT_HOME : CLOSE.NOT_HELPER;
       conn.close(why, CLOSE_TEXT[why]);
       return null;
     }
-    const p = super.join(conn, msg, { farmId: who.id, owner: who.owner, visitor: !!who.visitor });
+    const p = super.join(conn, msg, { farmId: who.id, owner: who.owner, visitor: !!who.visitor, local: !!who.local });
     if (p && !p.visitor) this.workedOn = true; // (the farmer or a helper: the farm is played here, and kept)
-    if (p?.owner) this.ownerName = p.name;
+    if (p?.owner && !p.local) this.ownerName = p.name;
     return p;
+  }
+
+  // A farmer at the owner's screen goes with their connection (a reload is
+  // the whole screen going: nobody holds a seat for them), and with the owner
+  leave(p, opts) {
+    super.leave(p, p.local ? { ...opts, hold: false } : opts);
+  }
+
+  remove(p) {
+    super.remove(p);
+    if (!p.owner || p.local) return;
+    for (const q of [...this.players.values()]) {
+      if (!q.local) continue;
+      q.conn?.close(CLOSE.SCREEN_OFF, CLOSE_TEXT[CLOSE.SCREEN_OFF]);
+      q.conn = null;
+      super.remove(q);
+    }
+  }
+
+  // How many screens are on the farm (the farmers at one are one)
+  screens() {
+    let n = 0;
+    for (const p of this.players.values()) if (p.conn && !p.local) n++;
+    return n;
   }
 
   spawnFor(id) {
@@ -204,11 +230,11 @@ export class FarmRoom extends Place {
   }
 
   playerExtra(p) {
-    return { owner: p.owner, ...(p.visitor && { visitor: true }) };
+    return { owner: p.owner, ...(p.visitor && { visitor: true }), ...(p.local && { local: true }) };
   }
 
   greet(p) {
-    this.say(p.owner ? `${p.name} is home.` : p.visitor ? `${p.name} came to look round.` : `${p.name} came to help.`);
+    this.say(p.local ? `${p.name} joined at the screen.` : p.owner ? `${p.name} is home.` : p.visitor ? `${p.name} came to look round.` : `${p.name} came to help.`);
   }
 
   welcome(p, resumed) {
@@ -568,7 +594,7 @@ export class FarmRoom extends Place {
       case C.CLOCK: {
         // The owner, alone on the farm, fast-forwarding (T): only ever forward, and not past a week
         const now = this.hours();
-        if (!p.owner || this.connected() > 1 || !finite(msg.hours) || msg.hours < now - 0.05 || msg.hours > now + 24 * 7) return;
+        if (!p.owner || p.local || this.screens() > 1 || !finite(msg.hours) || msg.hours < now - 0.05 || msg.hours > now + 24 * 7) return;
         this.clockBase = msg.hours;
         this.clockAt = Date.now();
         this.changed = true;
@@ -576,7 +602,7 @@ export class FarmRoom extends Place {
       }
       case C.ANIMALS: {
         const state = msg.state;
-        if (!p.owner || !state || typeof state !== 'object' || Array.isArray(state)) return;
+        if (!p.owner || p.local || !state || typeof state !== 'object' || Array.isArray(state)) return;
         if (JSON.stringify(state).length > MAX_ANIMALS) return;
         const { savedAt, hours, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, ...animals } = state; // (only the animals' part)
         this.animals = animals;
@@ -830,7 +856,7 @@ export class FarmRooms {
     if (!farm) return null;
     const room = new FarmRoom({
       farm,
-      admit: (auth, name) => this.admit(farm, auth, name),
+      admit: (auth, name, local) => this.admit(farm, auth, name, local),
       helpers: () => this.farms.get(id)?.helpers?.length ?? 0,
       log: this.log,
     });
@@ -848,9 +874,10 @@ export class FarmRooms {
   // (ownerHome). A room only friends have been in never writes the farm:
   // they change nothing on it. (One turned away: the room they opened goes
   // again, empty, so the farmer's page goes on saving the farm.)
-  admit(farm, auth, name) {
+  admit(farm, auth, name, local = false) {
     const theirs = typeof auth === 'string' ? this.farms.auth(`Bearer ${auth}`) : null;
     if (theirs?.id === farm.id) {
+      if (local) return { id: farm.id, owner: true, local: true }; // (not the owner's own name: theirs)
       this.farms.seenOwner(farm, name);
       return { id: farm.id, owner: true };
     }

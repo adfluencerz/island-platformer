@@ -305,16 +305,18 @@ function attach(ws, room) {
       // the farm API) has the name, shirt color and clothes. A lobby is for
       // logged in farmers only; on a farm the room asks who they are itself.
       const farm = farms.auth(`Bearer ${typeof msg?.auth === 'string' ? msg.auth : ''}`);
-      if (farm?.account) {
+      // (a farmer at the owner's screen, a split screen, has a name, shirt and clothes of their own, not the owner's)
+      const atScreen = msg?.local === true && !!room.farmId && farm?.id === room.farmId;
+      if (farm?.account && !atScreen) {
         account = farm.id;
         msg = { ...msg, name: farm.account.name, color: farm.color, look: farm.look };
-      } else if (!room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
+      } else if (!farm?.account && !room.farmId) return ws.close(CLOSE.NO_ACCOUNT, CLOSE_TEXT[CLOSE.NO_ACCOUNT]);
       // (in a lobby: their account, for the leaderboards)
       player = room.join(conn, msg, room.farmId ? undefined : { farm: farm.id, account: farm.account.name });
       if (player) clearTimeout(joinTimer);
     } else if (player.conn === conn) {
       // new clothes: an account's, as it has them now (PUT /api/account/look)
-      const farm = msg?.t === C.DRESS && account && farms.get(account);
+      const farm = msg?.t === C.DRESS && account && farms.get(account); // (not a farmer at the owner's screen: their own clothes)
       if (farm?.account) msg = { t: C.DRESS, color: farm.color, look: farm.look };
       room.message(player, msg);
     }

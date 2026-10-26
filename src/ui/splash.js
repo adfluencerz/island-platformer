@@ -463,11 +463,12 @@ export class Splash {
     if (title) text.append('Grow a little farm, then hop online to forage with other farmers.');
     else if (place === 'lobby') text.append('In ', el('b', '', null, session.room.name), '. Everyone else keeps playing.');
     else if (visit && !visit.mine) text.append('Helping on ', el('b', '', null, visit.name), '.');
+    else if (visit && (this.players?.() ?? 1) > 1) text.append(`On your farm, ${this.players()} farmers at this screen. It keeps going for everyone on it.`);
     else if (visit) text.append('On your farm. It keeps going for everyone on it.');
     else if ((this.players?.() ?? 1) > 1) text.append(`On your farm, ${this.players()} farmers at this screen. It keeps going while they play.`);
     else text.append('On your farm. Time waits while the menu is open.');
     this.mainBtn.textContent = title ? 'Go to my farm' : 'Resume';
-    this.addBtn.hidden = title || place !== 'home' || !!visit;
+    this.addBtn.hidden = title || place !== 'home' || !!(visit && !visit.mine); // (our own farm, with its helpers or not; not a friend's)
     this.homeBtn.hidden = title || !(place === 'lobby' || (visit && !visit.mine));
   }
 

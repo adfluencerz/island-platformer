@@ -331,7 +331,7 @@ export class Hud {
       el('i', 'ui-dot', row).style.background = hexColor(p.color);
       el('span', 'ui-player-name', row, p.name);
       if (p.away) el('span', 'ui-muted', row, 'away');
-      else if (this.place === 'farm') el('span', 'ui-found', row, p.owner ? 'the farmer' : p.visitor ? 'looking round' : 'helping');
+      else if (this.place === 'farm') el('span', 'ui-found', row, p.local ? 'at the screen' : p.owner ? 'the farmer' : p.visitor ? 'looking round' : 'helping');
       else if (p.game) el('span', 'ui-found', row, 'at a party game');
       else el('span', 'ui-found', row, `${p.finds} found${p.rares ? ` · ${p.rares} rare` : ''}${p.wood ? ` · ${p.wood} wood` : ''}${p.stone ? ` · ${p.stone} stone` : ''}`);
       if (this.place === 'lobby' && p.id !== this.myId && !p.away && !p.game) {
