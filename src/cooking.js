@@ -55,11 +55,11 @@ export function takeOf(inventory, id, n, took = {}) {
 // onCampfire(key, dish, n, took): cook n of it on the campfire on tile key
 // (took: what came out of the backpack). onKitchen(dish, n): cook n of it in
 // the kitchen. onOpenChange(open): the game pauses input.
-export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenChange }) {
+export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenChange, parent = document.body, active = () => true }) {
   let open = false;
   let fire = null; // the campfire's tile key, or null: the kitchen
 
-  const menuEl = el('div', 'inv-menu bench-menu', document.body);
+  const menuEl = el('div', 'inv-menu bench-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame bench-window', menuEl);
   const tabEl = el('div', 'inv-tab inv-frame', windowEl);
@@ -147,7 +147,7 @@ export function createCooking({ inventory, known, onCampfire, onKitchen, onOpenC
 
   // Capture phase, like the workbench's: while it is open it has the keyboard
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     if ((e.code === 'Escape' || e.code === 'KeyE') && !e.repeat) setOpen(false);
   }, true);

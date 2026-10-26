@@ -3,6 +3,15 @@
   width: max-content;
   margin-top: 30px; /* room for the tab */
 }
+/* (it scrolls on a screen, or a part of a split screen, too short for it) */
+.shop-body {
+  max-height: calc(100vh - 90px);
+  max-height: calc(100dvh - 90px);
+  max-height: calc(100cqh - 90px);
+  overflow-y: auto;
+  margin-right: -8px;
+  padding-right: 8px;
+}
 
 /* What the merchant just said */
 .shop-say {

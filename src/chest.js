@@ -3,7 +3,7 @@ import './chest.css';
 import { ITEMS, spriteURL } from './items.js';
 import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
 import { foliageMat } from './world.js';
-import { el, button } from './ui/dom.js';
+import { el, button, placeTip } from './ui/dom.js';
 import { FARM_CHEST } from '../shared/level.js';
 
 // ---------- The farm's chest ----------
@@ -78,20 +78,42 @@ export function chestModel({ wood = woodMat, top = lidMat, band = bandMat } = {}
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
 // onPut(item, count): into the chest (already out of the backpack).
 // onTake(item, count): ask for it out of the chest (the owner).
-export function createChest({ inventory, onOpenChange, onPut, onTake }) {
+// The chest standing on the farm: one, whoever opens it (each farmer at a
+// split screen has a window of their own: createChest's model)
+export function createChestModel() {
   const { root, lid } = chestModel();
   root.position.set(FARM_CHEST.x, 0, FARM_CHEST.z);
   root.visible = false;
+  let lidOpen = 0;
+  return {
+    root,
+    show: (on) => (root.visible = on),
+    shown: () => root.visible,
+    moveTo: (x, z) => root.position.set(x, 0, z),
+    at: () => root.position,
+    inReach: (pos) => root.visible && pos.y < 2.2 && Math.hypot(pos.x - root.position.x, pos.z - root.position.z) < REACH,
+    // the lid lifts while it is open (open: someone has it open)
+    update(dt, open) {
+      lidOpen += ((open ? 1 : 0) - lidOpen) * Math.min(1, dt * 10);
+      lid.rotation.x = -lidOpen * 1.1;
+    },
+    // where it stands, for a collider: { x, y, z, w, h, d }
+    box: () => ({ x: root.position.x, y: 0.4, z: root.position.z, w: CHEST_W, h: 0.8, d: 0.7 }),
+  };
+}
+
+// model: the chest on the farm (createChestModel), when it is another window's too
+export function createChest({ inventory, onOpenChange, onPut, onTake, parent = document.body, active = () => true, model = createChestModel() }) {
+  const { root } = model;
   let open = false;
   let mine = false;
   let owner = '';
   let shared = true; // (false: a farm without helpers, the farmer's own chest)
   let items = {}; // item -> count, as the room says
-  let lidOpen = 0;
   let byKind = loadByKind();
 
   // ---------- The window ----------
-  const menuEl = el('div', 'inv-menu chest-menu', document.body);
+  const menuEl = el('div', 'inv-menu chest-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame chest-window', menuEl);
   el('div', 'inv-tab inv-frame', windowEl, 'Farm chest');
@@ -128,7 +150,7 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
   const mouseHint = el('span', 'mouse-only', hintEl);
   const touchHint = el('span', 'touch-only', hintEl);
 
-  const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
+  const tooltipEl = el('div', 'inv-tooltip inv-frame', parent);
   tooltipEl.hidden = true;
 
   const keeps = (id) => ITEMS[id]?.category !== 'Tool'; // (your tools stay with you)
@@ -189,10 +211,7 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
       <div class="inv-tt-name">${def.name}</div>
       <div class="inv-tt-cat" style="color:${CATEGORIES[def.category]}">${def.category}</div>
       <div class="inv-tt-meta">${note}</div>`;
-    const r = tooltipEl.getBoundingClientRect();
-    const left = x + 20 + r.width > window.innerWidth ? x - r.width - 12 : x + 20;
-    const top = y + 20 + r.height > window.innerHeight ? y - r.height - 12 : y + 20;
-    tooltipEl.style.transform = `translate(${Math.max(4, left)}px, ${Math.max(4, top)}px)`;
+    placeTip(tooltipEl, x, y);
   }
 
   function put(i, count) {
@@ -244,7 +263,7 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
 
   // Capture phase, like the shop's: while the chest is open it has the keyboard
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     if ((e.code === 'Escape' || e.code === 'KeyE') && !e.repeat) setOpen(false);
   }, true);
@@ -265,10 +284,10 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
     isOpen: () => open,
     // on a farm with helpers (or not: then it isn't there)
     show(on) {
-      root.visible = on;
+      model.show(on);
       if (!on) setOpen(false);
     },
-    shown: () => root.visible,
+    shown: model.shown,
     // mine: our own farm (we take things out). ownerName: whose it is, for the
     // words. withHelpers: false on a farm without helpers
     setOwner(isMine, ownerName = '', withHelpers = true) {
@@ -278,22 +297,15 @@ export function createChest({ inventory, onOpenChange, onPut, onTake }) {
       if (open) render();
     },
     // where it stands (x, z: the middle of it)
-    moveTo(x, z) {
-      root.position.set(x, 0, z);
-    },
-    at: () => root.position,
+    moveTo: model.moveTo,
+    at: model.at,
     setItems(next) {
       items = { ...next };
       if (open) render();
     },
     refresh: () => open && render(), // (the backpack changed)
-    inReach: (pos) => root.visible && pos.y < 2.2 && Math.hypot(pos.x - root.position.x, pos.z - root.position.z) < REACH,
-    // the lid lifts while it is open
-    update(dt) {
-      lidOpen += ((open ? 1 : 0) - lidOpen) * Math.min(1, dt * 10);
-      lid.rotation.x = -lidOpen * 1.1;
-    },
-    // where it stands, for a collider: { x, y, z, w, h, d }
-    box: () => ({ x: root.position.x, y: 0.4, z: root.position.z, w: CHEST_W, h: 0.8, d: 0.7 }),
+    inReach: model.inReach,
+    update: (dt) => model.update(dt, open),
+    box: model.box,
   };
 }

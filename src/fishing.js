@@ -286,5 +286,11 @@ export function createFishing({ scene, farmer, player, inventory, hud, touch, wa
       tackle.hide();
       farmer.anim.line = null;
     },
+
+    // The farmer is gone (a split screen's farmer, getting up): the tackle too
+    dispose() {
+      end();
+      tackle.dispose();
+    },
   };
 }

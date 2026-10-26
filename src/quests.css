@@ -1,5 +1,5 @@
 /* The bag's Quests and Map tabs (src/quests.js): .inv-skills gives the width */
-.inv-quests, .inv-map { max-height: min(66vh, 600px); overflow-y: auto; }
+.inv-quests, .inv-map { max-height: min(66vh, 600px); max-height: min(66dvh, 600px); max-height: min(66cqh, 600px); overflow-y: auto; }
 .quests-intro { font-size: 20px; opacity: 0.85; margin: 2px 0 8px; }
 .quest-card {
   display: flex;

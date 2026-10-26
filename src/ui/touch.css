@@ -26,10 +26,15 @@
 /* Upright: a toolbar of 6 × 2 big slots, with the stick and the buttons above it */
 @media (orientation: portrait) {
   :root.touch {
-    --inv-slot: min(48px, calc((100vw - 56px) / 6));
+    --inv-slot: min(48px, calc((100cqw - 56px) / 6));
     --hotbar-h: calc(var(--inv-slot) * 2 + 23px);
     --controls-b: calc(var(--hotbar-b) + var(--hotbar-h) + 14px);
     --stick: 120px;
+  }
+}
+@supports not (width: 1cqw) { /* (older browsers, without container units: the whole screen's, as before split screens) */
+  @media (orientation: portrait) {
+    :root.touch { --inv-slot: min(48px, calc((100vw - 56px) / 6)); }
   }
 }
 /* The root's touch-action stops at each scroll container (a menu, a list,
@@ -194,7 +199,7 @@ body.in-menu .tc { display: none; }
   left: calc(var(--safe-l) + 10px);
   width: auto;
   /* (clear of the clock, which daynight.js measures, and of the gold under it, about 145px) */
-  --beside: calc(100vw - var(--safe-l) - var(--safe-r) - max(var(--clock-w, 180px), 150px) - 28px);
+  --beside: calc(100cqw - var(--safe-l) - var(--safe-r) - max(var(--clock-w, 180px), 150px) - 28px);
   max-width: var(--beside);
   min-width: min(170px, var(--beside));
   box-sizing: border-box;
@@ -203,7 +208,11 @@ body.in-menu .tc { display: none; }
   font-size: 19px;
   max-height: calc(100vh - var(--safe-t) - 150px);
   max-height: calc(100dvh - var(--safe-t) - 150px);
+  max-height: calc(100cqh - var(--safe-t) - 150px);
   overflow-y: auto;
+}
+@supports not (width: 1cqw) { /* (older browsers, without container units: the whole screen's, as before split screens) */
+  :root.compact .ui-players { --beside: calc(100vw - var(--safe-l) - var(--safe-r) - max(var(--clock-w, 180px), 150px) - 28px); }
 }
 :root.compact .ui-players .ui-btn-small { font-size: 18px; padding: 6px 10px; }
 :root.compact .ui-players-body > .ui-muted { display: none; }
@@ -237,8 +246,8 @@ body.in-menu .tc { display: none; }
 /* ...stopping short of the Bag, Build and Chat buttons (a column of 50px buttons on the right; in landscape, a row of three) */
 :root.touch .ui-build { right: calc(var(--safe-r) + 70px); }
 
-:root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; text-align: center; }
-:root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); }
+:root.compact .ui-conn { top: calc(var(--safe-t) + 120px); font-size: 19px; max-width: 80vw; max-width: 80cqw; text-align: center; }
+:root.compact .ui-big { font-size: clamp(40px, 12vw, 80px); font-size: clamp(40px, 12cqw, 80px); }
 
 /* A lobby's party game (party.css): under the clock and the gold, across the
    screen but for the Bag and Chat buttons (a column on the right); lying down,
@@ -306,7 +315,7 @@ body.in-menu .tc { display: none; }
 :root.compact .shop-hint { text-align: left; }
 
 /* ---------- Touch: the HUD around the controls ---------- */
-:root.touch .ui-players { max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); max-height: calc(100dvh - var(--safe-t) - var(--controls-b) - 360px); } /* (clear of the chat) */
+:root.touch .ui-players { max-height: calc(100vh - var(--safe-t) - var(--controls-b) - 360px); max-height: calc(100dvh - var(--safe-t) - var(--controls-b) - 360px); max-height: calc(100cqh - var(--safe-t) - var(--controls-b) - 360px); } /* (clear of the chat) */
 
 /* What there is to do here: over the Use button */
 :root.touch .ui-prompt {
@@ -332,6 +341,7 @@ body.in-menu .tc { display: none; }
   right: auto;
   bottom: calc(var(--controls-b) + 196px);
   width: min(320px, calc(100vw - var(--safe-l) - var(--safe-r) - 20px));
+  width: min(320px, calc(100cqw - var(--safe-l) - var(--safe-r) - 20px));
 }
 :root.touch .ui-chat-line { font-size: 18px; }
 :root.touch .ui-chat-log { max-height: 140px; }
@@ -351,9 +361,9 @@ body.in-menu .tc { display: none; }
 
 /* Lying down: the panels at the top are short on room */
 @media (orientation: landscape) {
-  :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); max-height: calc(100dvh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
+  :root.touch .ui-players { max-width: 280px; max-height: calc(100vh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); max-height: calc(100dvh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); max-height: calc(100cqh - var(--safe-t) - var(--hotbar-h) - var(--hotbar-b) - 24px); }
   :root.touch .ui-prompt { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--hotbar-b) + var(--hotbar-h) + 12px); }
-  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 96px); top: calc(var(--safe-t) + 182px); bottom: auto; width: min(300px, 36vw); } /* (under the buttons, clear of Jump) */
+  :root.touch .ui-chat { left: auto; right: calc(var(--safe-r) + 96px); top: calc(var(--safe-t) + 182px); bottom: auto; width: min(300px, 36vw); width: min(300px, 36cqw); } /* (under the buttons, clear of Jump) */
   :root.touch .ui-chat-log { max-height: 96px; }
   :root.touch .inv-toasts { bottom: calc(var(--controls-b) + var(--stick) + 10px); }
   :root.touch .inv-menu { padding-top: calc(var(--safe-t) + 46px); }

@@ -8,9 +8,9 @@ import './invite.css';
 
 export class InvitePopups {
   // onAnswer(party, yes)
-  constructor({ onAnswer }) {
+  constructor({ onAnswer, parent = document.body }) {
     this.onAnswer = onAnswer;
-    this.root = el('div', 'ui-invites', document.body);
+    this.root = el('div', 'ui-invites', parent);
     this.cards = new Map(); // party -> { card, text, buttons, timer, from, late }
   }
 

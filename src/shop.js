@@ -2,7 +2,7 @@ import './shop.css';
 import { ITEMS, spriteURL } from './items.js';
 import { COLS, SLOT_COUNT, CATEGORIES } from './inventory.js';
 import { MERCHANT_STOCK } from '../shared/balance.js';
-import { el, button } from './ui/dom.js';
+import { el, button, placeTip } from './ui/dom.js';
 
 // ---------- A shop ----------
 // Opened with E at the merchant's stall on the home farm (merchant.js), or
@@ -66,23 +66,25 @@ const coinImg = (parent) => {
 // inventory: from createInventory. onOpenChange(open): the game pauses input.
 // requests: the merchant's request of the day (src/requests.js), or none.
 // known(id): a recipe already in the book (not to be bought again).
-export function createShop({ inventory, onOpenChange, requests = null, known = () => false }) {
+export function createShop({ inventory, onOpenChange, requests = null, known = () => false, parent = document.body, active = () => true }) {
   let open = false;
   let shop = MERCHANT; // whose shop it is: { title, shelves: [{ title, items, locked, lockText }], lines, request, discount }
   const lines = (kind) => shop.lines[kind] ?? LINES[kind];
   const priceOf = (id) => Math.max(1, Math.round(ITEMS[id].price * (1 - (shop.discount ?? 0))));
 
-  const menuEl = el('div', 'inv-menu shop-menu', document.body);
+  const menuEl = el('div', 'inv-menu shop-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame shop-window', menuEl);
   const tabEl = el('div', 'inv-tab inv-frame', windowEl, 'Merchant');
   const closeBtn = button('inv-close', windowEl, '×', () => setOpen(false));
   closeBtn.title = 'Close (E / Esc)';
 
-  const sayEl = el('div', 'shop-say', windowEl);
+  // (all but the tab and the close button: it scrolls in a frame too short for it)
+  const bodyEl = el('div', 'shop-body', windowEl);
+  const sayEl = el('div', 'shop-say', bodyEl);
 
   // Today's request: what, what it pays, and Hand over
-  const askEl = el('div', 'shop-ask', windowEl);
+  const askEl = el('div', 'shop-ask', bodyEl);
   askEl.hidden = !requests;
   const askIcon = el('img', 'inv-icon', askEl);
   askIcon.alt = '';
@@ -94,8 +96,8 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     render();
   });
 
-  el('div', 'shop-heading', windowEl, 'For sale');
-  const stockEl = el('div', 'shop-stock', windowEl);
+  el('div', 'shop-heading', bodyEl, 'For sale');
+  const stockEl = el('div', 'shop-stock', bodyEl);
   let stockViews = [];
   // (the shelves of whose shop it is, afresh each time it opens)
   function fillStock() {
@@ -122,8 +124,8 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     return { id, row, locked };
   }
 
-  el('div', 'shop-heading', windowEl, 'Sell from your backpack');
-  const gridEl = el('div', 'inv-grid', windowEl);
+  el('div', 'shop-heading', bodyEl, 'Sell from your backpack');
+  const gridEl = el('div', 'inv-grid', bodyEl);
   const slotViews = Array.from({ length: SLOT_COUNT }, (_, i) => {
     if (i === COLS) el('div', 'inv-divider', gridEl);
     const root = el('div', 'inv-slot', gridEl);
@@ -135,7 +137,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     return { root, img, count };
   });
 
-  const footerEl = el('div', 'inv-footer', windowEl);
+  const footerEl = el('div', 'inv-footer', bodyEl);
   const fundsEl = el('div', 'shop-funds', footerEl);
   coinImg(fundsEl);
   const fundsText = el('span', '', fundsEl);
@@ -143,7 +145,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
   el('span', 'mouse-only', hintEl, 'Click to buy one (Shift: five) · Click your items: sell the stack · Right click: sell one');
   el('span', 'touch-only', hintEl, 'Tap to buy one · Tap your items: sell the stack');
 
-  const tooltipEl = el('div', 'inv-tooltip inv-frame', document.body);
+  const tooltipEl = el('div', 'inv-tooltip inv-frame', parent);
   tooltipEl.hidden = true;
 
   // ---------- Rendering ----------
@@ -215,10 +217,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
     tooltipEl.hidden = !html;
     if (!html) return;
     tooltipEl.innerHTML = html;
-    const r = tooltipEl.getBoundingClientRect();
-    const left = x + 20 + r.width > window.innerWidth ? x - r.width - 12 : x + 20;
-    const top = y + 20 + r.height > window.innerHeight ? y - r.height - 12 : y + 20;
-    tooltipEl.style.transform = `translate(${Math.max(4, left)}px, ${Math.max(4, top)}px)`;
+    placeTip(tooltipEl, x, y);
   }
 
   const tooltipHTML = (def, offer) => `
@@ -278,7 +277,7 @@ export function createShop({ inventory, onOpenChange, requests = null, known = (
   // Capture phase, registered after the HUD's: while the shop is open it has
   // the keyboard, and nothing behind it (backpack, toolbar, the farmer) sees keys
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     if ((e.code === 'Escape' || e.code === 'KeyE') && !e.repeat) setOpen(false);
   }, true);

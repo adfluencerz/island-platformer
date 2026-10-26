@@ -150,6 +150,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let note = ''; // after the day (setNote: the farm's season)
   let cloud = 0; // how overcast it is, 0 to 1, and lightning's flash (setWeather: src/weather.js)
   let flash = 0;
+  let flashOut = 0; // (lightning's flash out in the open: a split screen's views under a roof see none, view())
   let under = 0; // how far underground we are, 0 to 1, and the light down there (setUnderground: a boss's dungeon)
   const caveLight = new THREE.Color(0xffffff);
 
@@ -188,7 +189,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   const _grey = new THREE.Color();
   const FLASH = new THREE.Color(0xe6ecff);
 
-  function apply() {
+  // clock: the clock's panel too (not for a split screen's other views: view())
+  function apply(clock = true) {
     const s = sample(hour);
     if (cloud > 0) for (const p of COLOR_PROPS) overcast(s[p]);
     if (flash > 0) s.sky.lerp(FLASH, flash * 0.7);
@@ -219,6 +221,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
     const night = nightAmount(hour);
     glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
+    if (!clock) return night;
 
     // Clock panel: dial sky color and the sun/moon riding the arc
     const skyHex = `#${s.sky.getHexString()}`;
@@ -262,6 +265,14 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       const night = apply();
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
     },
+    /** A split screen's farmer's own view (src/main.js): the light as far underground as they are (amount, color), the fireflies round them (focus), and no lightning seen under a roof (sheltered). */
+    view(focus, amount, color = 0xffffff, sheltered = false) {
+      under = amount;
+      caveLight.setHex(color);
+      flash = sheltered ? 0 : flashOut;
+      const night = apply(false);
+      fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
+    },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {
       day = 1 + Math.floor(hours / 24);
@@ -283,10 +294,11 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       under = amount;
       caveLight.setHex(color);
     },
-    /** How overcast it is (0 to 1) and lightning's flash (0 to 1): from the next update. */
-    setWeather(overcastBy, flashBy) {
+    /** How overcast it is (0 to 1) and lightning's flash (0 to 1; sheltered: none seen): from the next update. */
+    setWeather(overcastBy, flashBy, sheltered = false) {
       cloud = overcastBy;
-      flash = flashBy;
+      flashOut = flashBy;
+      flash = sheltered ? 0 : flashBy;
     },
   };
 }

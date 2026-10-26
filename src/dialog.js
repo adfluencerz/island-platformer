@@ -125,14 +125,14 @@ export const heartText = (n) => '♥'.repeat(n) + '♡'.repeat(FRIENDSHIP.hearts
 // checked against ({ have(item), built(piece) }). onShop(id): open their
 // shop. onOpenChange(open): the game pauses input. notify(text): a word in
 // the corner. onDone(result): a mission was handed over.
-export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notify, onDone }) {
+export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notify, onDone, parent = document.body, active = () => true }) {
   let open = false;
   let who = null;
   let options = []; // what you can say now: [{ text, hot, isNew, run }]
   let said = new Set(); // (what you have asked in this topic: not offered again)
   let inHub = true; // (on the first list: the request you have taken on is shown there only)
 
-  const menuEl = el('div', 'inv-menu talk-menu', document.body);
+  const menuEl = el('div', 'inv-menu talk-menu', parent);
   menuEl.hidden = true;
   const windowEl = el('div', 'inv-window inv-frame talk-window', menuEl);
   const tabEl = el('div', 'inv-tab inv-frame', windowEl);
@@ -348,7 +348,7 @@ export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notif
   // ---------- Open / close ----------
   // Capture phase: while it is open it has the keyboard (as the shop does)
   window.addEventListener('keydown', (e) => {
-    if (!open) return;
+    if (!open || !active()) return;
     e.stopPropagation();
     if (e.repeat) return;
     if (e.code === 'Escape' || e.code === 'KeyE') return setOpen(false);

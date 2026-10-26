@@ -44,6 +44,8 @@ export function createWeather({ scene, dayNight, count = 900 }) {
   let flash = 0; // lightning, 1 as it strikes
   let nextFlash = 3; // seconds till the next, in a storm
   let thunderIn = -1; // seconds till its thunder
+  let falling = 0; // drops (or flakes) coming down now, out of doors
+  let snowing = false;
 
   const wrap = (v) => ((((v + AREA / 2) % AREA) + AREA) % AREA) - AREA / 2;
   const fallen = (i, speed) => (base[i * 3 + 1] + (elapsed * speed) / (TOP + BELOW)) % 1; // (0 at the top, 1 at the bottom)
@@ -78,6 +80,14 @@ export function createWeather({ scene, dayNight, count = 900 }) {
     snowGeo.attributes.position.needsUpdate = true;
   }
 
+  function place(focus, indoors = false) {
+    const n = indoors ? 0 : falling;
+    rain.visible = n > 0 && !snowing;
+    snow.visible = n > 0 && snowing;
+    if (rain.visible) drawRain(n, focus);
+    if (snow.visible) drawSnow(n, focus);
+  }
+
   return {
     wind,
     // Every frame: the farm's weather at `hours` (its game hours; null in a
@@ -104,15 +114,17 @@ export function createWeather({ scene, dayNight, count = 900 }) {
         }
       }
       if (thunderIn >= 0 && (thunderIn -= dt) < 0) sound.play('thunder');
-      dayNight.setWeather(amount * (storm ? 1 : 0.7), indoors ? 0 : flash * (0.75 + 0.25 * Math.sin(elapsed * 60)));
+      dayNight.setWeather(amount * (storm ? 1 : 0.7), flash * (0.75 + 0.25 * Math.sin(elapsed * 60)), indoors);
       sound.rain(indoors ? amount * 0.25 : amount);
 
-      const n = indoors ? 0 : Math.round(count * amount);
-      rain.visible = n > 0 && !snowy;
-      snow.visible = n > 0 && snowy;
-      if (rain.visible) drawRain(n, focus);
-      if (snow.visible) drawSnow(n, focus);
+      falling = Math.round(count * amount);
+      snowing = snowy;
+      place(focus, indoors);
       return now && (snowy ? (storm ? 'Snowstorm' : 'Snow') : storm ? 'Storm' : 'Rain');
     },
+    // What comes down round focus (indoors: none): a split screen's farmers
+    // each have it round them, in their own view (src/main.js)
+    place,
+
   };
 }

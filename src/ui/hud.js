@@ -148,15 +148,18 @@ export class Hud {
   // onPrompt(text): the prompt changed ('' : nothing to do here).
   // onStopBuilding(): out of build mode (Done, or Esc while building; main.js has the right click).
   // onTrade(id): ask farmer id in the lobby to trade (src/ui/trade.js).
-  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding, onTrade }) {
-    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding, onTrade });
+  // parent: where it goes (its farmer's part of a split screen, src/main.js).
+  // active(): the keys pressed now are its farmer's. usesPad(): its farmer
+  // plays with a controller now (the prompts say X, not E).
+  constructor({ onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding, onTrade, parent = document.body, active = () => true, usesPad = padInUse }) {
+    Object.assign(this, { onTravel, onHome, onChat, onMenu, isMenuOpen, onMenuEscape, isBlocked, onPrompt, onStopBuilding, onTrade, active, usesPad });
     this.place = null; // 'home' | 'lobby' | 'farm' (a farm with helpers) | null (the title screen)
     this.visit = null; // on a farm with helpers: { name, mine }
     this.farmName = '';
     this.session = null;
     this.myId = 0;
 
-    const root = (this.root = el('div', 'ui-hud', document.body));
+    const root = (this.root = el('div', 'ui-hud', parent));
     root.hidden = true;
 
     // ---- the place panel ----
@@ -348,7 +351,7 @@ export class Hud {
 
   // text: 'E  Pick berries' (on a touch screen, the Use button is the E)
   setPrompt(text) {
-    if (padInUse()) text = text.replace(/^E {2}/, 'X  '); // (a controller's Use)
+    if (this.usesPad()) text = text.replace(/^E {2}/, 'X  '); // (a controller's Use)
     else if (isTouch()) text = text.replace(/^E {2}/, '');
     if (this.prompt.textContent === text) return;
     this.prompt.textContent = text;
@@ -430,7 +433,7 @@ export class Hud {
   }
 
   onKey(e) {
-    if (!this.place) return;
+    if (!this.place || !this.active()) return;
     if (this.isTyping()) {
       if (e.code === 'Escape') {
         e.stopPropagation();

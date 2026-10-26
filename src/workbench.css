@@ -1,6 +1,7 @@
 /* The workbench: built from the backpack's pieces (inventory.css), like the chest */
 .bench-window {
   width: min(560px, calc(100vw - 24px));
+  width: min(560px, calc(100cqw - 24px));
   margin-top: 30px; /* room for the tab */
 }
 .bench-note { margin: 2px 0 10px; font-size: 21px; opacity: 0.85; }
@@ -9,6 +10,8 @@
   flex-direction: column;
   gap: 6px;
   max-height: min(520px, calc(100vh - 220px));
+  max-height: min(520px, calc(100dvh - 220px));
+  max-height: min(520px, calc(100cqh - 220px));
   overflow-y: auto;
 }
 .bench-row {

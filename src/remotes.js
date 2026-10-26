@@ -60,7 +60,8 @@ class Samples {
   }
 }
 
-function makeNameTag(name, color) {
+// (and src/main.js's, over each farmer at a split screen)
+export function makeNameTag(name, color) {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 64;

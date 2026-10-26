@@ -33,7 +33,7 @@ import { cleanLook } from '../../shared/looks.js';
 
 const FARM_STORE = 'tp.farm';
 const PUSH_EVERY = 15_000;
-const NO_SERVER = 'Could not reach the game server.';
+export const NO_SERVER = 'Could not reach the game server.';
 
 // this page, to the server: who holds the farm
 const session = crypto.randomUUID?.() ?? `${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -53,7 +53,8 @@ function keep(farm) {
   } catch {}
 }
 
-async function call(method, path, { body = {}, farm = null, leaving = false } = {}) {
+// (and src/net/players.js's: a farmer who joined at a split screen)
+export async function call(method, path, { body = {}, farm = null, leaving = false } = {}) {
   const headers = { 'content-type': 'application/json', 'x-farm-session': session };
   if (farm) headers.authorization = `Bearer ${farm.id}.${farm.token}`;
   // (keepalive: the page may be gone before the answer comes)

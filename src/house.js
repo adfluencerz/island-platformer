@@ -311,9 +311,9 @@ export function createHouseRoom(world) {
       MATS.window.emissiveIntensity = night * 0.5;
       light.intensity = night * 6;
     },
-    // t: seconds; pos: the farmer
+    // t: seconds; pos: the farmer (or each farmer at the screen)
     update(t, pos) {
-      const behind = pos.z < door.position.z && pos.z > door.position.z - 2.5 && Math.abs(pos.x - door.position.x) < 1.5;
+      const behind = [pos].flat().some((p) => p.z < door.position.z && p.z > door.position.z - 2.5 && Math.abs(p.x - door.position.x) < 1.5);
       doorFade += ((behind ? 0.3 : 1) - doorFade) * 0.15;
       for (const m of doorMats.values()) {
         m.opacity = doorFade;

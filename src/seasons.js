@@ -239,6 +239,19 @@ export function createSeasons(map) {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
 
+  // The season's light, over the day's (daynight.js sets that first)
+  function light() {
+    const { now, next, blend } = state;
+    const { sun, hemi, scene } = lit;
+    sun.color.multiply(mix(now.light.sun, next.light.sun, blend, tint));
+    hemi.color.multiply(mix(now.light.sky, next.light.sky, blend, tint));
+    hemi.groundColor.multiplyScalar(1 + uSnow.value * 0.7); // (light off the snow)
+    mix(now.light.haze, next.light.haze, blend, tint);
+    scene.background.multiply(tint);
+    scene.fog.color.multiply(tint);
+  }
+  let shown = false; // (on the farm, lit: frame())
+
   return {
     // Once the farm is built: root, its world's root (snow on what is in it);
     // trees: its trees (world.js: autumn's leaves lie under them); sun, hemi,
@@ -307,29 +320,32 @@ export function createSeasons(map) {
     // lobby), none of them
     frame(dt, { home, focus }) {
       elapsed += dt;
-      const on = home && !!state && !!lit;
-      uSnow.value = on ? blendOf('snow') : 0;
+      shown = home && !!state && !!lit;
+      uSnow.value = shown ? blendOf('snow') : 0;
       if (!lit) return;
-      if (falling) falling.mesh.visible = on && !!focus;
-      if (!on) return;
+      if (falling) falling.mesh.visible = shown && !!focus;
+      if (!shown) return;
       // (new things to lie on: what was built)
       if ((scanIn -= dt) <= 0) {
         scanIn = RESCAN;
         snowOn(lit.root);
       }
-      // the light
-      const { now, next, blend } = state;
-      const { sun, hemi, scene } = lit;
-      sun.color.multiply(mix(now.light.sun, next.light.sun, blend, tint));
-      hemi.color.multiply(mix(now.light.sky, next.light.sky, blend, tint));
-      hemi.groundColor.multiplyScalar(1 + uSnow.value * 0.7); // (light off the snow)
-      mix(now.light.haze, next.light.haze, blend, tint);
-      scene.background.multiply(tint);
-      scene.fog.color.multiply(tint);
+      light();
       // autumn's leaves on the ground (more of them as it goes on), gone under the snow
+      const { now, next, blend } = state;
       const autumn = now.name === 'Autumn' ? Math.min(1, (state.into + 1) / 4) : next.name === 'Autumn' ? blend * 0.25 : 0;
       showDrifts(autumn * (1 - uSnow.value));
       if (focus) drift(focus);
+    },
+
+    // A split screen's farmers each see their own (src/main.js): the
+    // season's light over the day's again (after daynight.js lit it for
+    // them), and what drifts in the air round focus (null: none, in the house)
+    relight: () => shown && light(),
+    place(focus) {
+      if (!falling) return;
+      falling.mesh.visible = shown && !!focus;
+      if (falling.mesh.visible) drift(focus);
     },
   };
 }

@@ -4,6 +4,8 @@
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 8px;
   max-height: min(60vh, 520px);
+  max-height: min(60dvh, 520px);
+  max-height: min(60cqh, 520px);
   overflow-y: auto;
   padding-right: 4px;
 }

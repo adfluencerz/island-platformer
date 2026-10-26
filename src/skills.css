@@ -1,5 +1,5 @@
 /* ---------- The Skills tab (src/skills.js), in the bag's colors (inventory.css) ---------- */
-.inv-skills { width: min(calc(12 * var(--inv-slot) + 33px), calc(100vw - 76px)); }
+.inv-skills { width: min(calc(12 * var(--inv-slot) + 33px), calc(100vw - 76px)); width: min(calc(12 * var(--inv-slot) + 33px), calc(100cqw - 76px)); }
 .inv-skills[hidden] { display: none; }
 .sk-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 10px; }
 .sk-overall { font-size: 28px; line-height: 1; }
@@ -10,6 +10,8 @@
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 8px;
   max-height: min(60vh, 520px);
+  max-height: min(60dvh, 520px);
+  max-height: min(60cqh, 520px);
   overflow-y: auto;
 }
 .sk-card {
