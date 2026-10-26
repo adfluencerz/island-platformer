@@ -37,11 +37,11 @@ import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { Guide } from './ui/guide.js';
-import { TouchControls, isTouch } from './ui/touch.js';
+import { TouchControls, isTouch, fitPart } from './ui/touch.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
 import { SeatPanel } from './ui/seatpanel.js';
-import { PlayerSync, remembered as rememberedPlayers, logIn as logInPlayer, newGuest, forget as forgetPlayer } from './net/players.js';
+import { PlayerSync, remembered as rememberedPlayers, logIn as logInPlayer, newGuest, forget as forgetPlayer, flushClosing } from './net/players.js';
 import './seats.css';
 import './ui/ui.css';
 import { TICK_DT, PLAYER_COLORS, SOIL_BARE_HOURS, PROTOCOL_VERSION } from '../shared/constants.js';
@@ -413,7 +413,7 @@ const holding = () => ITEMS[inventory.selectedId()]?.tool ?? null;
 const swingsWith = (base) => Math.max(1, (ITEMS[inventory.selectedId()]?.hits ?? base) - boostOf(meal, 'swings')); // (fewer after a hearty meal)
 // The more a tree we felled or a rock we broke (m: FELLED or MINED) gives
 // with the tool in hand, a golden one (not a giant: that is shared out)
-const extraFrom = (tool, m) => (m.by === myId && !m.shares && holding() === tool ? ITEMS[inventory.selectedId()].extra ?? 0 : 0);
+const extraFrom = (tool, m) => (m.by === seatId() && !m.shares && holding() === tool ? ITEMS[inventory.selectedId()].extra ?? 0 : 0);
 
 // ---------- The merchant ----------
 // Behind the stall on the farm (merchant.js): E at the counter opens the shop
@@ -1115,11 +1115,18 @@ const wildsWorld = () => (place === 'lobby' ? worlds.wild : world);
 
 // FELLED, from a lobby or a farm's room
 function treeFelled(m) {
+  // it falls away from whoever felled it
+  wildsWorld().fellTree(m.id, m.by === seatId() ? player.position : remotes.positionOf(m.by));
+  if (m.by === seatId()) sound.play('fell');
+  woodFrom(m);
+  // (the others at the screen: done swinging at it, and their share of a giant)
+  for (const seat of seats) if (seat !== me) within(seat, () => woodFrom({ ...m, by: null }));
+}
+
+// A farmer's own of a felled tree: their wood
+function woodFrom(m) {
   chop.pending.delete(m.id);
   if (chop.id === m.id) Object.assign(chop, { id: -1, hits: 0 });
-  // it falls away from whoever felled it
-  wildsWorld().fellTree(m.id, m.by === myId ? player.position : remotes.positionOf(m.by));
-  if (m.by === myId) sound.play('fell');
   const got = myShare(m) + extraFrom('axe', m);
   if (got) inventory.add('wood', got);
   if (m.shares) giantDown('tree', m.id, got, 'wood');
@@ -1128,7 +1135,7 @@ function treeFelled(m) {
 
 // On a farm played alone: the tree is ours to fell
 function chopAlone(tree) {
-  treeFelled({ id: tree.id, by: myId, count: woodFor(tree.scale) });
+  treeFelled({ id: tree.id, by: seatId(), count: woodFor(tree.scale) });
   farmFelled.set(tree.id, comeBackAt(TREE.regrow));
 }
 
@@ -1220,13 +1227,19 @@ function resetMining() {
 
 // MINED, from a lobby or a farm's room
 function rockMined(m) {
+  wildsWorld().breakRock(m.id);
+  stoneFrom(m);
+  for (const seat of seats) if (seat !== me) within(seat, () => stoneFrom({ ...m, by: null })); // (as treeFelled)
+}
+
+// A farmer's own of a broken rock: their stone (and steel)
+function stoneFrom(m) {
   mine.pending.delete(m.id);
   if (mine.id === m.id) Object.assign(mine, { id: -1, hits: 0 });
-  wildsWorld().breakRock(m.id);
   const got = myShare(m) + extraFrom('pickaxe', m);
   if (got) inventory.add('stone', got);
   // (now and then a lump of steel in it too: for the one who broke it up, or each who helped with a giant)
-  const steel = m.shares ? (got ? ROCK.giant : 0) : m.by === myId ? m.steel ?? 0 : 0;
+  const steel = m.shares ? (got ? ROCK.giant : 0) : m.by === seatId() ? m.steel ?? 0 : 0;
   if (steel) inventory.add('steel', steel);
   if (m.shares) giantDown('rock', m.id, got, steel ? `stone, +${steel} steel` : 'stone');
   else if (steel) hud.flash(`+${steel} steel!`);
@@ -1235,7 +1248,7 @@ function rockMined(m) {
 
 // On a farm played alone: the rock is ours to break
 function mineAlone(rock) {
-  rockMined({ id: rock.id, by: myId, count: stoneFor(rock.scale), steel: steelFor(rock.scale) });
+  rockMined({ id: rock.id, by: seatId(), count: stoneFor(rock.scale), steel: steelFor(rock.scale) });
   farmMined.set(rock.id, comeBackAt(ROCK.regrow));
 }
 
@@ -1258,8 +1271,15 @@ function giantPrompt(kind, thing) {
   return `${kind === 'tree' ? 'Chop' : 'Mine'} the giant  ${Math.ceil(hp)}/${giantMax(kind)}`;
 }
 
+// Who we are in what is shared out: the page's id (the lobby's or the farm
+// room's) for the first farmer; one of each farmer's own at a split screen
+// (never another's, even one who got up: seat.uid)
+function seatId() {
+  return me === first ? myId : me.uid;
+}
+
 // Our share of a FELLED or MINED: all of it, if we did it alone
-const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === myId)?.[1] ?? 0 : m.by === myId ? m.count : 0);
+const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === seatId())?.[1] ?? 0 : m.by === seatId() ? m.count : 0);
 
 // A swing of ours landed on a giant
 function hitGiant(kind, thing) {
@@ -1268,11 +1288,11 @@ function hitGiant(kind, thing) {
   const conn = place === 'lobby' ? net : farmNet;
   if (conn) return conn.send({ t: C.HIT, kind, id: thing.id, x: r(thing.x), z: r(thing.z), size: r(thing.scale), tool });
   // (a farm played alone)
-  const hit = farmGiants.hit(kind, thing.id, myId, tool, thing.scale);
+  const hit = farmGiants.hit(kind, thing.id, seatId(), tool, thing.scale);
   if (!hit) return;
   giantBars.show(kind, thing.id, hit.hp, giantMax(kind), world.giantTop(kind, thing.id), clock.elapsedTime);
   if (!hit.shares) return;
-  const m = { id: thing.id, by: myId, count: hit.loot, shares: hit.shares };
+  const m = { id: thing.id, by: seatId(), count: hit.loot, shares: hit.shares };
   if (kind === 'tree') {
     treeFelled(m);
     farmFelled.set(thing.id, comeBackAt(TREE.regrow));
@@ -1754,7 +1774,7 @@ function lookFrom(split) {
   if (split) {
     const cave = bosses.underground();
     const inside = indoors() || cave.k > 0.5;
-    dayNight.view(player.position, cave.k, cave.light);
+    dayNight.view(player.position, cave.k, cave.light, inside);
     if (place !== 'lobby') seasons.relight();
     weather.place(player.position, inside);
     seasons.place(inside ? null : player.position);
@@ -1791,7 +1811,8 @@ function updateMenuCamera(t) {
 keys = first.keys = new Set(); // (each seat's own: what its farmer holds down)
 // (a seat's menu, and the first seat's, the game's menu: splash.js; the title screen holds everyone up)
 const menuOpen = () => inventory.isOpen() || shop.isOpen() || dialog.isOpen() || chest.isOpen() || workbench.isOpen() || arcade.isOpen() || cooking.isOpen() || trade.isOpen() || !!me.panel?.isOpen();
-const inputBlocked = () => (me === first ? !splash.hidden : place === 'title') || menuOpen() || hud.isTyping() || partyFrozen();
+const inMenus = () => (me === first ? !splash.hidden : place === 'title') || menuOpen() || hud.isTyping(); // (the farmer's own keys aren't theirs: a controller moves its highlight)
+const inputBlocked = () => inMenus() || partyFrozen();
 window.addEventListener('keydown', (e) => {
   if (inputBlocked() || e.target.closest?.('input, textarea, select')) return; // (or a box being typed in: a farmer's login, at a split screen)
   keys.add(e.code);
@@ -2857,12 +2878,12 @@ const NO_TOUCH = { direction: () => ({ x: 0, z: 0 }), setReady() {}, setBite() {
 // (gamepad.js). Each seat reads its own (pickPad).
 const newPad = (seat) => new GamepadInput({
   ...forSeat(seat, {
-    inMenu: () => inputBlocked() && !partyFrozen(),
+    inMenu: () => inMenus(),
     onCycle: (dir) => inventory.cycle(dir),
     onZoom: (factor) => zoomBy(factor),
     onConnect: () => seat === first && seats.length === 1 && inventory.notify('Controller ready: A jump, X use, Y backpack, Menu for the menu'),
   }),
-  pick: (pads) => pickPad(seat, pads),
+  choosePad: (pads) => pickPad(seat, pads),
   root: seat.root,
   keyboard: seat === first,
 });
@@ -3071,9 +3092,9 @@ const newBosses = (seat) => ({
     farmer: seat.farmer,
     inventory: seat.inventory,
     hud: seat.hud,
+    present: () => seat === first || !!seat.profile,
     ...forSeat(seat, {
-      // (in the fights: the farm's room's id for us, or played alone, the seat's)
-      id: () => (seat === first ? myId : seat.index),
+      id: () => seatId(), // (a fight or a dungeon's chests remember it)
       weapon: () => weaponInHand(),
       // (a bow's arrow at the boss)
       shoot: (to) => arrows.shoot(arrowFrom.set(player.position.x + Math.sin(anim.facing) * 0.5, player.position.y + 0.25, player.position.z + Math.cos(anim.facing) * 0.5), to),
@@ -3098,7 +3119,7 @@ bosses = first.bosses = newBosses(first);
 // asks for something each game day (requests.js), handed over at the stall.
 const newShop = (seat) => createShop({
   inventory: seat.inventory,
-  requests: createRequests({ day: () => dayNight.day(), inventory: seat.inventory }),
+  requests: createRequests({ day: () => dayNight.day(), inventory: seat.inventory, store: seat === first ? undefined : () => `tp.request.${seat.profile?.id}` }),
   ...forSeat(seat, {
     parent: seat.root,
     active: () => me === seat,
@@ -3872,6 +3893,7 @@ async function joinFarm(id) {
   const on = (type, fn) => conn.on(type, (m) => farmNet === conn && fn(m));
 
   on(S.FARM, (m) => {
+    endCoop('Off online: everyone else at the screen got up, their farmers saved');
     const from = place;
     if (net) {
       net.leave(); // (a lobby we were on the way to)
@@ -4417,6 +4439,7 @@ function joinLobby({ name, code }) {
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 
   on(S.WELCOME, (m) => {
+    endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (one who joined on the way, say)
     if (place !== 'lobby') lastFarm = farmVisit && !farmVisit.mine ? farmVisit.id : null; // (to go back to after the game)
     if (farmVisit || farmNet) leaveFarm(); // (off a farm with helpers)
     if (place !== 'lobby') {
@@ -4759,6 +4782,7 @@ function leavePage() {
   saveGame();
   farmSync.flush({ leaving: true });
   for (const seat of seats) seat.sync?.flush({ leaving: true }); // (the farmers who joined at the screen too)
+  flushClosing(); // (and who got up just now)
 }
 
 setInterval(saveGame, 5000);
@@ -4782,12 +4806,13 @@ const JOIN_WAIT = 30_000; // ms the menu's Add a player waits for a controller
 const JOIN_BUTTONS = [0, 9]; // A, and Start (Menu): its press joins
 let joining = null; // waiting for a new farmer's controller: { until } (performance.now())
 const padsDown = []; // which controllers had a join button down, last frame (by index)
+let seatsEver = 0; // (each farmer who joins: an id of their own, seat.uid)
 const joinEl = el('div', 'seats-join', seatsEl);
 joinEl.hidden = true;
 
 // Why no one else can join now ('': they can)
 function coopProblem() {
-  if (place !== 'home' || farmVisit || farmNet || !farmOnScreen) return 'Farmers join at the screen on your own farm';
+  if (place !== 'home' || farmVisit || farmNet || net || farmJoining || !farmOnScreen) return 'Farmers join at the screen on your own farm'; // (not on the way online either)
   if (farmSync.shared()) return 'Your farm is played with its online helpers: a split screen is for a farm played here';
   if (seats.length >= MAX_SEATS) return `${MAX_SEATS} farmers at one screen is as many as fit`;
   return '';
@@ -4797,7 +4822,7 @@ function coopProblem() {
 function startJoin() {
   const problem = coopProblem();
   if (problem) return problem;
-  if (padInUse() && first.pad.index !== null) first.padIndex = first.pad.index; // (the controller the first farmer plays with stays theirs)
+  if (padInUse() && navigator.getGamepads?.()[first.pad.index]?.connected) first.padIndex = first.pad.index; // (the controller the first farmer plays with stays theirs)
   joining = { until: performance.now() + JOIN_WAIT };
   showJoinHint();
   return '';
@@ -4818,7 +4843,16 @@ function watchJoin() {
     const down = JOIN_BUTTONS.some((b) => p.buttons[b]?.pressed);
     const fresh = down && !padsDown[p.index];
     padsDown[p.index] = down;
-    if (!fresh || seats.some((seat) => seat.padIndex === p.index) || (!joining && !p.buttons[9]?.pressed)) continue;
+    if (!fresh || seats.some((seat) => seat.padIndex === p.index)) continue;
+    // (a farmer whose controller went, and is back as another: theirs again;
+    // the first farmer's, but not while a new one is waited for)
+    const lost = seats.find((seat) => seat.padIndex !== null && !pads[seat.padIndex]?.connected && !(seat === first && joining));
+    if (lost) {
+      lost.padIndex = p.index;
+      lost.pad.ignoreHeld();
+      continue;
+    }
+    if (!joining && !p.buttons[9]?.pressed) continue;
     if (joining || (seats.length > 1 && !coopProblem())) {
       stopJoin();
       return addSeat(p.index);
@@ -4829,7 +4863,7 @@ function watchJoin() {
 // What the screen says of joining: waiting for a controller, or, three at
 // it, how a fourth joins (in the empty part)
 function showJoinHint() {
-  const n = seats.length + 1;
+  const n = freeIndex() + 1;
   joinEl.hidden = !joining && seats.length !== 3;
   joinEl.classList.toggle('waiting', !!joining);
   joinEl.textContent = '';
@@ -4842,15 +4876,21 @@ function showJoinHint() {
   }
 }
 
+// (a new seat's: the first free one)
+function freeIndex() {
+  return [1, 2, 3].find((i) => !seats.some((seat) => seat.index === i));
+}
+
 // A new seat, on controller padIndex: its farmer waits (hidden) till they
 // have said who they are
 function addSeat(padIndex) {
-  const index = [1, 2, 3].find((i) => !seats.some((seat) => seat.index === i));
-  const seat = newSeat(index);
+  const seat = newSeat(freeIndex());
+  seat.uid = ++seatsEver;
   seat.padIndex = padIndex;
   seat.root.classList.add('choosing');
   seatsEl.append(seat.root);
   makeSeat(seat);
+  seat.pad.ignoreHeld(); // (the press it joined with: not one on its window)
   seats.push(seat);
   seats.sort((a, b) => a.index - b.index);
   layout();
@@ -4905,7 +4945,11 @@ function makeSeat(seat) {
     parent: seat.root,
     n: seat.index + 1,
     onPick: (profile) => seatFarmer(seat, profile),
-    onLogin: async ({ username, password }) => seatFarmer(seat, await logInPlayer(username, password)),
+    onLogin: async ({ username, password }) => {
+      // (the first farmer's own account: turned down before this browser gets another token for it)
+      if (username.toLowerCase() === farmSync.account()?.username.toLowerCase()) throw new Error(`That is ${seatName(first)}'s own farmer, playing already`);
+      return seatFarmer(seat, await logInPlayer(username, password));
+    },
     onGuest: ({ name, color }) => seatFarmer(seat, newGuest(name, color)),
     onForget: (profile) => forgetPlayer(profile.id),
     onLeave: () => dropSeat(seat),
@@ -4932,19 +4976,35 @@ function seatName(seat) {
 // Throws with why not.
 async function seatFarmer(seat, profile) {
   if (profile.kind === 'account' && profile.farm.id === farmSync.id()) throw new Error(`That is ${seatName(first)}'s own farmer, playing already`);
-  if (seats.some((other) => other.profile?.id === profile.id)) throw new Error(`${profile.name} is playing already`);
+  // (one farmer in one seat: two at once would each save over the other's)
+  if (seats.some((other) => other.profile?.id === profile.id || (other !== seat && other.fetching === profile.id))) throw new Error(`${profile.name} is playing already`);
+  if (seat.fetching) throw new Error('One farmer at a time: still fetching the last one');
+  seat.fetching = profile.id;
   const sync = new PlayerSync(profile, { onLost: (why) => within(seat, () => inventory.notify(why)) });
-  const save = await sync.open();
+  let save;
+  try {
+    save = await sync.open();
+  } finally {
+    seat.fetching = null;
+  }
   if (save?.v > SAVE_VERSION || !seats.includes(seat)) {
     sync.close(); // (nothing of theirs is saved from here)
     if (seats.includes(seat)) throw new Error(`${profile.name}'s farmer was saved by a newer version of the game: reload the page to play them`);
     return; // (they got up meanwhile)
   }
-  Object.assign(seat, { profile, sync, ownFarm: save?.farm ?? null });
+  try {
+    within(seat, () => {
+      if (save?.v >= 1) useCharacter(save);
+      else for (const [item, count] of STARTER_KIT) gift(item, count); // (a new guest)
+      dress(profile.color ?? PLAYER_COLORS[seat.index], profile.look ?? DEFAULT_LOOK);
+    });
+  } catch (e) {
+    console.error(e);
+    sync.close(); // (their save as it is: not this one, half loaded)
+    throw new Error(`${profile.name}'s farmer couldn't be loaded here`);
+  }
+  Object.assign(seat, { profile, sync, ownFarm: save?.farm ?? null }); // (from here on, saved back to them)
   within(seat, () => {
-    if (save?.v >= 1) useCharacter(save);
-    else for (const [item, count] of STARTER_KIT) gift(item, count); // (a new guest)
-    dress(profile.color ?? PLAYER_COLORS[seat.index], profile.look ?? DEFAULT_LOOK);
     playerMesh.visible = true;
     putDown(besideFirst(seat));
     inventory.notify(`Welcome to the farm, ${profile.name}!`);
@@ -4977,7 +5037,6 @@ function dropSeat(seat, why = '') {
   clearInterval(seat.hud.tipTimer); // (its HUD's hints, going round)
   if (dayNight.glow.parent === seat.playerMesh) first.playerMesh.add(dayNight.glow);
   seat.root.remove();
-  if (seats.length === 1) first.padIndex = null; // (alone again: any controller is the first farmer's)
   layout();
   showMends();
   if (seat.profile) first.inventory.notify(why || `${seat.profile.name} got up from the screen: their farmer is saved`);
@@ -5016,11 +5075,12 @@ function showTags() {
 }
 
 // The controller a seat reads: its own (padIndex); the first seat's, playing
-// alone, the first connected (as it always was)
+// alone without one of its own (or with it gone), the first connected (as it always was)
 function pickPad(seat, pads) {
-  if (seat.padIndex !== null) return pads[seat.padIndex]?.connected ? pads[seat.padIndex] : null;
+  const own = seat.padIndex !== null && pads[seat.padIndex];
+  if (own?.connected) return own;
   if (seat !== first || seats.length > 1 || joining) return null;
-  return pads.find((p) => p?.connected) ?? null;
+  return pads.find((p) => p?.connected) ?? null; // (alone, without one of their own: any)
 }
 
 // Each seat's part of the screen: all of it, alone; two side by side (one
@@ -5038,13 +5098,17 @@ function layout() {
     const [l, t, r, b] = [x0 + (x0 > 0), y0 + (y0 > 0), x1 - (x1 < w), y1 - (y1 < h)];
     return { x: l, y: t, w: r - l, h: b - t };
   };
+  // (three or four: each in their own quarter, by their seat, so no one's moves when another gets up)
+  const cellOf = (seat, i) => (n > 2 ? seat.index : i);
+  const part = px(cells[0]);
+  fitPart(n > 1 ? part : null); // (small parts: laid out as a small screen is, html.compact)
   seats.forEach((seat, i) => {
-    seat.rect = px(cells[i]);
+    seat.rect = px(cells[cellOf(seat, i)]);
     Object.assign(seat.root.style, { left: `${seat.rect.x}px`, top: `${seat.rect.y}px`, width: `${seat.rect.w}px`, height: `${seat.rect.h}px` });
     seat.root.classList.toggle('by-clock', seat.rect.y === 0 && seat.rect.x + seat.rect.w === w); // (the clock is over its top right: daynight.js)
     within(seat, fitCamera);
   });
-  const spare = n === 3 && px(cells[3]);
+  const spare = n === 3 && px(cells[[0, 1, 2, 3].find((c) => !seats.some((seat, i) => cellOf(seat, i) === c))]);
   Object.assign(joinEl.style, spare ? { left: `${spare.x}px`, top: `${spare.y}px`, width: `${spare.w}px`, height: `${spare.h}px` } : { left: '', top: '', width: '', height: '' });
   seatsEl.classList.toggle('split', n > 1);
   renderer.setSize(w, h);
@@ -5059,13 +5123,14 @@ playerMesh.add(dayNight.glow); // night-time glow follows the player (in a split
 // Each frame: each seat's farmer, then the world they are all in
 function update(dt) {
   watchJoin();
-  for (const seat of seats) within(seat, () => updateSeat(dt));
+  for (const seat of [...seats]) if (seats.includes(seat)) within(seat, () => updateSeat(dt)); // (one may get up meanwhile: their menu's button)
   updateWorld(dt);
 }
 
 // A seat's farmer, each frame: its input, its moving about, what it is doing
 function updateSeat(dt) {
   pad.poll(dt); // (its buttons press their keys, before the keys are read)
+  if (!seats.includes(me)) return; // (they got up from the screen with it, from their menu: saved as they were)
   if (inputBlocked()) keys.clear();
 
   // Horizontal input -> world-space movement (camera-relative, simplified to world axes)
@@ -5160,7 +5225,6 @@ function updateSeat(dt) {
   } else lastGoodSpot.copy(player.position);
 
   playerMesh.position.copy(player.position);
-  puffs.update(dt);
   const lent = inContest() && holding() !== 'rod' && !weaponInHand(); // (a rod lent for a fishing contest, in place of a tool in hand; a sword still bops)
   hoeGroup.visible = !lent && holding() === 'hoe'; // only hold a tool while it's selected
   farmer.axe.visible = !lent && holding() === 'axe';
@@ -5221,6 +5285,7 @@ function updateSeat(dt) {
 function updateWorld(dt) {
   const t = clock.elapsedTime;
   ripples.update(dt);
+  puffs.update(dt);
   arrows.update(dt);
   fishShadows.update(dt, fishing.bobber());
   world.updateTrees(dt);

@@ -130,9 +130,9 @@ export function createFarmFinds({ scene, freeSpot, forageSpot = () => null, onPi
       mesh.rotation.y += dt * 1.5;
       const near = farmers.map((at) => Math.hypot(find.x - at.x, mesh.position.y - at.y, find.z - at.z) < REACH);
       if (find.own && !find.away) find.away = !near.some(Boolean); // (dropped: not back into the backpack till we have stepped off it)
-      const i = near.indexOf(true);
-      if (i < 0 || (find.own && !find.away) || performance.now() < find.retryAt) continue;
-      if (onPickUp(find.item, find.count, i)) remove(find);
+      if (!near.some(Boolean) || (find.own && !find.away) || performance.now() < find.retryAt) continue;
+      // (the first one in reach with room for it: a full backpack doesn't keep it from the others)
+      if (near.some((close, i) => close && onPickUp(find.item, find.count, i))) remove(find);
       else find.retryAt = performance.now() + 1000;
     }
   }

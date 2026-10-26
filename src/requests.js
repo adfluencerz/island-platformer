@@ -6,7 +6,8 @@ import { mulberry32, hashSeed } from '../shared/worldgen.js';
 // Each game day the merchant at the stall asks for some of one thing (the
 // same for everyone that day: it is rolled from the day), and pays well for
 // it: REQUESTS in shared/balance.js. Handed over at the stall (src/shop.js);
-// once a day. Which day's request was done is kept in this browser.
+// once a day, by each farmer. Which day's request was done is kept in this
+// browser (the farmers who join at a split screen: each their own, src/main.js).
 const STORE = 'tp.request';
 
 // The request for game day `day`: { day, item, count, gold, bonus }
@@ -20,17 +21,21 @@ export function requestFor(day) {
 }
 
 // day(): the game day now. inventory: the backpack (count, remove, earn, add).
-export function createRequests({ day, inventory }) {
-  let doneDay = null;
-  try {
-    doneDay = JSON.parse(localStorage.getItem(STORE))?.done ?? null;
-  } catch {}
+// store(): where it is kept (whose it is: the farmer's at the screen now).
+export function createRequests({ day, inventory, store = () => STORE }) {
+  const doneDay = () => {
+    try {
+      return JSON.parse(localStorage.getItem(store()))?.done ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   return {
     // Today's request, and whether it is done
     today() {
       const d = day();
-      return { ...requestFor(d), done: doneDay === d };
+      return { ...requestFor(d), done: doneDay() === d };
     },
     // Hand today's over: true if it was (enough in the backpack, not done yet)
     handOver() {
@@ -39,9 +44,8 @@ export function createRequests({ day, inventory }) {
       inventory.remove(r.item, r.count);
       inventory.earn(r.gold);
       if (r.bonus) inventory.add('golden_seeds', 1);
-      doneDay = r.day;
       try {
-        localStorage.setItem(STORE, JSON.stringify({ done: doneDay }));
+        localStorage.setItem(store(), JSON.stringify({ done: r.day }));
       } catch {}
       return true;
     },

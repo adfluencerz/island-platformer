@@ -10,7 +10,8 @@
 // They show on touch screens only: html.touch, set as soon as the page knows
 // it is on one (a phone or tablet, a phone's browser, or the first touch on a
 // laptop's screen). Any small screen, touch or not, also gets html.compact: a
-// smaller HUD with the place panel folded up. touch.css has both layouts.
+// smaller HUD with the place panel folded up (so does a split screen whose
+// farmers' parts are small: fitPart). touch.css has both layouts.
 // Tapping the world itself (walk there, farm a tile, gather) is in main.js.
 import './touch.css';
 import { el } from './dom.js';
@@ -18,7 +19,8 @@ import { el } from './dom.js';
 const html = document.documentElement;
 export const isTouch = () => html.classList.contains('touch');
 const small = matchMedia('(max-width: 700px), (max-height: 500px)');
-const fit = () => html.classList.toggle('compact', isTouch() || small.matches);
+let part = null; // each farmer's part of a split screen, { w, h } (null: the whole screen is one's)
+const fit = () => html.classList.toggle('compact', isTouch() || small.matches || (!!part && (part.w <= 700 || part.h <= 500)));
 const touchOn = () => {
   html.classList.add('touch');
   fit();
@@ -28,6 +30,12 @@ if (phone || matchMedia('(pointer: coarse)').matches) touchOn();
 addEventListener('pointerdown', (e) => e.pointerType === 'touch' && !isTouch() && touchOn(), { capture: true, passive: true });
 small.addEventListener('change', fit);
 fit();
+
+// A split screen's parts are this size (src/main.js layout; null: no split)
+export function fitPart(size) {
+  part = size;
+  fit();
+}
 
 // Safari on iOS ignores user-scalable=no: two fingers anywhere (the game's own
 // pinch zooms the camera) zoomed the whole page instead, and left it stuck

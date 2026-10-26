@@ -4,6 +4,7 @@
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
+  width: min(380px, calc(100vw - 32px));
   width: min(380px, calc(100cqw - 32px));
   display: flex;
   flex-direction: column;

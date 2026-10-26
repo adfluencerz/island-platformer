@@ -1,11 +1,14 @@
 /* Talking to a neighbour (src/dialog.js): built from the backpack's and the shop's pieces */
 .talk-window {
+  width: min(560px, calc(100vw - 24px));
   width: min(560px, calc(100cqw - 24px));
   margin-top: 30px; /* room for the tab */
 }
 
 /* (all but Shop and Bye: it scrolls on a screen too short for it) */
 .talk-body {
+  max-height: calc(100vh - 150px);
+  max-height: calc(100dvh - 150px);
   max-height: calc(100cqh - 150px);
   overflow-y: auto;
   /* room for the bubble to bump into, without moving anything */
@@ -157,4 +160,28 @@
   .talk-option, :root.compact .talk-option { font-size: 16px; padding: 3px 8px 3px 6px; }
   .talk-key, :root.compact .talk-key { width: 20px; height: 20px; font-size: 13px; }
   .talk-actions { margin-top: 6px; }
+}
+@supports not (container-type: size) { /* (older browsers: the whole screen's, as before split screens) */
+  @media (max-height: 460px) {
+    .talk-window { margin-top: 26px; padding: 14px 14px 10px; }
+    .talk-body { max-height: calc(100vh - 112px); }
+    .talk-face, :root.compact .talk-face { width: 44px; height: 44px; }
+    .talk-say, :root.compact .talk-say { min-height: 44px; padding: 5px 10px; font-size: 17px; }
+    .talk-hearts { margin: 2px 0 4px 2px; font-size: 15px; }
+    .talk-ask { padding: 5px 8px; }
+    .talk-ask-title, :root.compact .talk-ask-title { font-size: 17px; }
+    .talk-need, :root.compact .talk-need { font-size: 16px; }
+    .talk-need .inv-icon { width: 22px; height: 22px; }
+    .talk-needs { margin: 3px 0; }
+    .talk-reward { font-size: 15px; margin-bottom: 4px; }
+    .talk-btn, :root.compact .talk-btn { font-size: 16px; padding: 4px 8px; }
+    /* what you can say first, the request you have taken on under it */
+    .talk-body { display: flex; flex-direction: column; }
+    .talk-ask { order: 1; margin-top: 6px; }
+    .talk-needs { flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
+    .talk-options { gap: 4px; margin-top: 6px; }
+    .talk-option, :root.compact .talk-option { font-size: 16px; padding: 3px 8px 3px 6px; }
+    .talk-key, :root.compact .talk-key { width: 20px; height: 20px; font-size: 13px; }
+    .talk-actions { margin-top: 6px; }
+  }
 }

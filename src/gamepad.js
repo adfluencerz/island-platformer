@@ -57,7 +57,7 @@ for (const type of ['keydown', 'mousedown', 'touchstart']) addEventListener(type
 
 // A farmer at a split screen of their own (src/main.js seats) plays with a
 // controller of their own: each one's GamepadInput reads the controller
-// main.js picks for it (pick), and moves its highlight about the menus and
+// main.js picks for it (choosePad), and moves its highlight about the menus and
 // windows in its farmer's part of the screen (root) only.
 
 // (from the page, as a real key's comes, not at the window: so the listeners
@@ -91,12 +91,12 @@ export class GamepadInput {
   // inMenu(): a menu, a window or the chat line has the keys (not the farmer).
   // onCycle(dir): the toolbar's next item (1) or the one before (-1).
   // onZoom(factor): the camera nearer (< 1) or further. onConnect(name).
-  // pick(pads): the controller to read, of navigator.getGamepads() (default:
+  // choosePad(pads): the controller to read, of navigator.getGamepads() (default:
   // the first connected). root: where its menus and windows are. keyboard:
   // its farmer has the keyboard and the mouse too (the first one does), so
   // which was used last says what the prompts show.
-  constructor({ inMenu, onCycle, onZoom, onConnect, pick = (pads) => pads.find((p) => p?.connected) ?? null, root = document, keyboard = true }) {
-    Object.assign(this, { inMenu, onCycle, onZoom, onConnect, pick, root, keyboard });
+  constructor({ inMenu, onCycle, onZoom, onConnect, choosePad = (pads) => pads.find((p) => p?.connected) ?? null, root = document, keyboard = true }) {
+    Object.assign(this, { inMenu, onCycle, onZoom, onConnect, choosePad, root, keyboard });
     this.index = null; // the controller last read with something pressed on it (its index)
     this.was = []; // the buttons down last frame
     this.held = new Map(); // key code -> the buttons holding it down
@@ -105,6 +105,12 @@ export class GamepadInput {
     this.overlay = false; // playing, with the highlight on the buttons on the screen
     this.nav = { dir: null, next: 0 }; // the way the highlight is being pushed, and when it moves on
     addEventListener('gamepadconnected', (e) => this.onConnect?.(e.gamepad.id));
+  }
+
+  // What is held down now isn't pressed till it is let go (the press its
+  // farmer joined with, src/main.js, is not one on the window that opens)
+  ignoreHeld() {
+    this.was = Array(32).fill(true);
   }
 
   // The last thing pressed was on a controller (the keyboard's farmer); a
@@ -119,7 +125,7 @@ export class GamepadInput {
   }
 
   poll(dt) {
-    const pad = this.pick([...(navigator.getGamepads?.() ?? [])]);
+    const pad = this.choosePad([...(navigator.getGamepads?.() ?? [])]);
     if (!pad) {
       this.letGo();
       this.walk.x = this.walk.y = 0;
@@ -289,7 +295,9 @@ export class GamepadInput {
   // A click (button 0) or a right click (2) on it, where it is
   activate(node, button) {
     if (!node) return;
-    if (node.matches('input:not([type=checkbox]):not([type=radio]), select, textarea')) return node.focus(); // (typing: on a keyboard)
+    // (typing: on a keyboard; a farmer without it, on the box's own keys,
+    // src/ui/seatpanel.js, which a click opens: the keyboard stays the first farmer's)
+    if (node.matches('input:not([type=checkbox]):not([type=radio]), select, textarea')) return this.keyboard ? node.focus() : node.click();
     const { x, y } = middle(node);
     const at = { bubbles: true, cancelable: true, clientX: x, clientY: y, button, buttons: button ? 2 : 1 };
     node.dispatchEvent(new MouseEvent('mousedown', at));
@@ -300,8 +308,9 @@ export class GamepadInput {
     if (!shown(node)) this.blur();
   }
 
-  // B: the page's Back, or Esc
+  // B: the page's Back, or Esc (keys to type with open: Esc, which closes them first)
   back(layer) {
+    if (layer.querySelector('.seat-keys')) return this.tap('Escape');
     const backBtn = [...layer.querySelectorAll('.ui-page:not([hidden]) .ui-page-head .ui-btn')].find((b) => shown(b) && b.textContent.includes('Back'));
     if (backBtn) {
       backBtn.click();

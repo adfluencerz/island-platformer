@@ -723,13 +723,18 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
     render();
   });
 
-  window.addEventListener('pointermove', (e) => {
-    if (!active()) return;
+  // The stack in hand goes along with the pointer, and a slot of ours under it
+  // says what is in it: the mouse's (its farmer's), or a controller's
+  // highlight (src/gamepad.js: on the slot as a mouse would be)
+  function follow(e) {
     const f = frameOf(heldEl);
     heldEl.style.transform = `translate(${e.clientX - f.x}px, ${e.clientY - f.y}px)`;
     const slot = e.target.closest?.('[data-index]');
-    showTooltip(slot && !held ? slots[Number(slot.dataset.index)] : null, e.clientX, e.clientY);
-  });
+    const ours = slot && (hotbarEl.contains(slot) || menuEl.contains(slot)); // (not another farmer's, at a split screen)
+    showTooltip(ours && !held ? slots[Number(slot.dataset.index)] : null, e.clientX, e.clientY);
+  }
+  window.addEventListener('pointermove', (e) => active() && follow(e));
+  menuEl.addEventListener('mousemove', (e) => !e.isTrusted && follow(e)); // (in the backpack: playing, it would stay up once the highlight goes)
 
   render();
 

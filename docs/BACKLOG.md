@@ -60,6 +60,10 @@ Open pull requests, each from the backlog below:
       in its own game)
 - [ ] One view for everyone while they stand close together, splitting as
       they wander apart
+- [ ] A dungeon's chests drawn as each farmer's own in their view (now as
+      the first farmer in there has them; each one's prompt is their own)
+- [ ] A farmer who gets up lets go of what they had: their windows' key
+      listeners and their farmer's meshes stay till the page goes
 
 ### Tech
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or

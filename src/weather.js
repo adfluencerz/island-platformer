@@ -114,7 +114,7 @@ export function createWeather({ scene, dayNight, count = 900 }) {
         }
       }
       if (thunderIn >= 0 && (thunderIn -= dt) < 0) sound.play('thunder');
-      dayNight.setWeather(amount * (storm ? 1 : 0.7), indoors ? 0 : flash * (0.75 + 0.25 * Math.sin(elapsed * 60)));
+      dayNight.setWeather(amount * (storm ? 1 : 0.7), flash * (0.75 + 0.25 * Math.sin(elapsed * 60)), indoors);
       sound.rain(indoors ? amount * 0.25 : amount);
 
       falling = Math.round(count * amount);

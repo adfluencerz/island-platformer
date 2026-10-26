@@ -78,4 +78,6 @@
 .seat-keys-row { display: flex; justify-content: center; gap: 4px; }
 .seat-key { min-width: 30px; padding: 3px 6px; font-size: 20px; }
 .seat-key-wide { min-width: 64px; }
+.seat-key-space { flex: 1; max-width: 160px; }
+.seat-panel .ui-input.typing { outline: 3px solid var(--inv-wood-light); } /* (the box the keys type into: it has no focus of its own) */
 .seat-key.on { box-shadow: inset 0 0 0 3px #3d1a04; }

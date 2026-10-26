@@ -22,7 +22,8 @@ import { randomLook } from '../../shared/looks.js';
 const STORE = 'tp.players';
 const GUEST_STORE = (id) => `tp.player.${id}`;
 const PUSH_EVERY = 15_000;
-const MOST = 12; // remembered at once (the last used first)
+const MOST = 12; // accounts remembered at once (the last used first: a guest is kept till forgotten)
+const closing = new Set(); // (the farmers getting up, whose last save is on its way)
 
 function load() {
   try {
@@ -33,9 +34,13 @@ function load() {
   }
 }
 
+// (past MOST, the accounts played longest ago go: logging in brings them back.
+// A guest is only kept here, so stays till forgotten)
 function keep(list) {
+  const kept = [...list];
+  for (let i = kept.length - 1; i >= 0 && kept.length > MOST; i--) if (kept[i].kind === 'account') kept.splice(i, 1);
   try {
-    localStorage.setItem(STORE, JSON.stringify(list.slice(0, MOST)));
+    localStorage.setItem(STORE, JSON.stringify(kept));
   } catch {}
 }
 
@@ -59,7 +64,12 @@ export function forget(id) {
 }
 
 // Log in to an account: its farmer, remembered here. Throws with why not.
+// (One remembered here already: as it is, as picked from the list. Logging
+// in again would give this browser another token, pushing one of their
+// devices out: server/farms.js MAX_DEVICES.)
 export async function logIn(username, password) {
+  const known = load().find((p) => p.kind === 'account' && p.name.toLowerCase() === username.toLowerCase());
+  if (known) return known;
   const out = await call('POST', '/api/account/login', { body: { username, password } }).catch((e) => {
     throw e.status ? e : new Error(NO_SERVER);
   });
@@ -87,6 +97,7 @@ export class PlayerSync {
     this.pending = null;
     this.ready = false;
     this.timer = 0;
+    this.sending = null; // (the save on its way: one at a time, so an older one never lands after a newer)
   }
 
   async open() {
@@ -130,12 +141,13 @@ export class PlayerSync {
   }
 
   async flush({ leaving = false } = {}) {
-    if (!this.ready || !this.pending) return;
+    if (!this.ready || !this.pending || (this.sending && !leaving)) return;
     const save = this.pending;
     this.pending = null;
+    // (roomRev -1: their farm stays as the server has it, server/farms.js)
+    const sent = (this.sending = call('PUT', '/api/farms/me', { body: { save, roomRev: -1 }, farm: this.profile.farm, leaving }));
     try {
-      // (roomRev -1: their farm stays as the server has it, server/farms.js)
-      await call('PUT', '/api/farms/me', { body: { save, roomRev: -1 }, farm: this.profile.farm, leaving });
+      await sent;
     } catch (e) {
       if (e.status === 409 || e.status === 401) {
         this.ready = false;
@@ -144,6 +156,8 @@ export class PlayerSync {
       } else {
         this.pending ??= save; // (try again next time)
       }
+    } finally {
+      if (this.sending === sent) this.sending = null;
     }
   }
 
@@ -152,7 +166,16 @@ export class PlayerSync {
   async close(save = null) {
     if (save) this.push(save);
     clearInterval(this.timer);
+    closing.add(this);
+    await this.sending?.catch(() => {}); // (one already on its way lands first: it is older)
     await this.flush({ leaving: true });
+    closing.delete(this);
     this.ready = false;
   }
+}
+
+// The page is going: the last saves of farmers getting up go now, without
+// waiting for one before them
+export function flushClosing() {
+  for (const sync of closing) sync.flush({ leaving: true });
 }

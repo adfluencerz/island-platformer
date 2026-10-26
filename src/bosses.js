@@ -57,7 +57,8 @@ import { TILE_SIZE } from './world.js';
 // fights: the farm's room's, or their seat's playing alone), weapon() (the
 // weapon in hand), putDown(pos), knock(dx, dz, speed), arrival(),
 // shoot(to) (an arrow of theirs), farmIsOurs() (their own farm, its animals
-// theirs to drive), addShiny(kind), save()
+// theirs to drive), addShiny(kind), save(), present() (out on the farm: not
+// still saying who they are)
 
 const PORTAL_REACH = 1.3;
 const EXIT_REACH = 1.5;
@@ -184,8 +185,10 @@ export function createBosses(ctx) {
     stars.group.visible = false;
     farmer.root.add(stars.group);
 
-    const here = () => (ctx.atHome() ? arenaAt(player.position.x, player.position.z) : null);
-    const inDungeon = () => (ctx.atHome() ? dungeonAt(player.position.x, player.position.z) : null);
+    // (a farmer still saying who they are, at a split screen, is in none of it yet)
+    const present = () => sctx.present?.() ?? true;
+    const here = () => (ctx.atHome() && present() ? arenaAt(player.position.x, player.position.z) : null);
+    const inDungeon = () => (ctx.atHome() && present() ? dungeonAt(player.position.x, player.position.z) : null);
     const me = () => sctx.id() ?? 0;
 
     // the portal on the farm whose front we are at: its boss, or null

@@ -4,13 +4,14 @@
 // controller): back to the game, or getting up from the screen. A controller
 // moves about it as it does the game's menu (src/gamepad.js: it is a
 // .ui-splash in their part of the screen). A box is typed in on the keyboard,
-// or with the controller on the keys that open under it (A on the box).
+// or with the controller on the keys that open under it (A on the box: the
+// keyboard stays the first farmer's meanwhile).
 import { MAX_NAME, PLAYER_COLORS } from '../../shared/constants.js';
 import { PASSWORD_LENGTH } from '../../shared/protocol.js';
 import { el, button, hexColor } from './dom.js';
 
 // The on-screen keys, row by row (Shift: the letters as capitals)
-const KEY_ROWS = ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm', '-_.@!?'];
+const KEY_ROWS = ['1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm', '-_.@!?#$%&*+=/'];
 
 export class SeatPanel {
   // n: which farmer at the screen (2, 3 or 4). onPick(profile): play a
@@ -35,7 +36,7 @@ export class SeatPanel {
 
     // ---- logging in ----
     const login = this.page('login', 'Log in', 'form');
-    el('div', 'ui-muted', login, 'Your account\'s farm stays yours: you help out here with what you carry. Type on the keyboard, or A on a box for keys to type with the controller.');
+    el('div', 'ui-muted', login, 'Your account\'s farm stays yours: you help out here with what you carry. Click a box to type on the keyboard, or A on it for keys to type with the controller.');
     this.userInput = this.field(login, 'Username', { maxLength: MAX_NAME, autocomplete: 'off' });
     this.passInput = this.field(login, 'Password', { type: 'password', maxLength: PASSWORD_LENGTH[1], autocomplete: 'off' });
     this.loginBtn = button('ui-btn ui-btn-big', login, 'Log in', null);
@@ -92,21 +93,29 @@ export class SeatPanel {
     }
     const last = el('div', 'seat-keys-row', this.keys);
     this.shiftBtn = button('ui-btn ui-btn-small seat-key seat-key-wide', last, 'Shift', () => this.setShift(!this.shift));
+    button('ui-btn ui-btn-small seat-key seat-key-space', last, 'Space', () => this.type(' '));
     button('ui-btn ui-btn-small seat-key seat-key-wide', last, '⌫', () => this.type(null)).title = 'Rub out the last one';
     button('ui-btn ui-btn-small seat-key seat-key-wide', last, 'Done', () => this.closeKeys());
-    // (a box chosen, with A on a controller or a click: the keys open under it)
-    for (const input of this.root.querySelectorAll('input')) input.addEventListener('focus', () => this.openKeys(input));
+    // (a box chosen, with A on a controller or a click: the keys open under it.
+    // A controller's A doesn't give it the keyboard, which stays the first farmer's: src/gamepad.js)
+    for (const input of this.root.querySelectorAll('input')) {
+      input.addEventListener('focus', () => this.openKeys(input));
+      input.addEventListener('click', () => this.openKeys(input));
+    }
   }
 
   // ---------- The on-screen keys ----------
   openKeys(input) {
     if (this.target === input) return;
+    this.target?.classList.remove('typing');
     this.target = input;
+    input.classList.add('typing');
     input.closest('label').after(this.keys);
     this.setShift(false);
   }
 
   closeKeys() {
+    this.target?.classList.remove('typing');
     this.target = null;
     this.keys.remove();
   }
