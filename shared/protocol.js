@@ -7,7 +7,7 @@ import { PIN_LENGTH, MAX_NAME } from './constants.js';
 
 // client -> lobby
 export const C = {
-  JOIN: 'join', // { v, name, key, back, color, look, auth }: the first message on a socket (auth: "<farm id>.<token>" of this browser's farm, its account's name, color and look are the ones that count; name, color, look: as the page has them; look: shared/looks.js)
+  JOIN: 'join', // { v, name, key, back, color, look, auth, local }: the first message on a socket (local: on a farm, a farmer at the owner's own screen, a split screen: auth is the owner's, and they are a player of their own, with the name, color and look given, the owner's say, and gone when the owner's connection is; auth: "<farm id>.<token>" of this browser's farm, its account's name, color and look are the ones that count; name, color, look: as the page has them; look: shared/looks.js)
   STATE: 'state', // { x, y, z, yaw, f }: where the player is, ~TICK_RATE times a second (f: STATEF bits)
   TAKE: 'take', // { id, key? }: gathered (or walked into) what is on spot id (key: true, an old key opens a sky_vault, and is used up)
   CHOP: 'chop', // { id, x, z, size }: the last swing at tree id, which the page has standing at x, z (size: its scale; the room goes by its own, shared/wilds.js)
@@ -52,7 +52,7 @@ export const C = {
 // lobby -> client
 export const S = {
   WELCOME: 'welcome', // { id, name, color, look, code, seed, room, spots, wilds, felled, mined, drops, roster, pos, clock, giants, game, board, boardAt, resumed } (board: as for BOARD; boardAt: where it stands, { x, z, yaw }, shared/fishing.js boardFor) (game: as for GAME) (seed: the island's, shared/worldgen.js; wilds: where its trees and rocks stand, shared/wilds.js wildsToWire; felled: the ids of trees that are down; mined: of rocks that are broken; treeSites, rockSites: [[id, how often it grew back]] (shared/level.js nextSite); drops: [[id, item, count, x, y, z, from, wait], ...] (as for DROP); giants: Giants toSave(), shared/giants.js)
-  ROSTER: 'roster', // { list: [{ id, name, color, look, finds, rares, wood, stone, game, away }] } (game: the party game id they are off in, 0: in the lobby)
+  ROSTER: 'roster', // { list: [{ id, name, color, look, finds, rares, wood, stone, game, away }] } (on a farm: also owner, visitor (a friend looking round), local (a farmer at the owner's screen)) (game: the party game id they are off in, 0: in the lobby)
   SNAP: 'snap', // { tick, p: [[id, x, y, z, yaw, f], ...] }
   SPOT: 'spot', // { id, item, count }: something grew back on spot id
   TAKEN: 'taken', // { id, by, item, count, items? }: spot id was emptied by player `by` (items: a sky isle chest's [[item, count], ...]; its item is 'chest')

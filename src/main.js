@@ -572,7 +572,7 @@ function harvestAt(x, z) {
   if (farmNet) {
     crop.pending = true;
     crop.view.group.visible = false;
-    farmNet.send({ t: C.HARVEST, key });
+    roomLine()?.send({ t: C.HARVEST, key });
     return true;
   }
   const { produce, gives = 1, again } = CROPS[crop.cropId];
@@ -611,7 +611,7 @@ function uproot(key) {
   if (!farmNet) return removeCrop(key);
   crop.pending = true;
   crop.view.group.visible = false;
-  farmNet.send({ t: C.UPROOT, key });
+  roomLine()?.send({ t: C.UPROOT, key });
 }
 
 // Bare ground: untilled, nothing growing (going out to a lobby, or before the
@@ -689,7 +689,7 @@ function landOnPlant(box) {
   }
   crop.landings = (crop.landings ?? 0) + 1;
   if (wilts && crop.landings >= wilts) {
-    farmNet?.send({ t: C.HARVEST, key });
+    roomLine()?.send({ t: C.HARVEST, key });
     pickAgain(key);
     sound.play('wilt');
     inventory.notify(`The ${CROPS[crop.cropId].name} wilted: it grows back in a while`);
@@ -1092,7 +1092,7 @@ function updateChopping() {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
-        const conn = place === 'lobby' ? net : farmNet;
+        const conn = place === 'lobby' ? net : roomLine();
         if (conn) conn.send({ t: C.CHOP, id: tree.id, x: r(tree.x), z: r(tree.z), size: r(tree.scale) });
         else chopAlone(tree);
       }
@@ -1116,11 +1116,11 @@ const wildsWorld = () => (place === 'lobby' ? worlds.wild : world);
 // FELLED, from a lobby or a farm's room
 function treeFelled(m) {
   // it falls away from whoever felled it
-  wildsWorld().fellTree(m.id, m.by === seatId() ? player.position : remotes.positionOf(m.by));
-  if (m.by === seatId()) sound.play('fell');
-  woodFrom(m);
-  // (the others at the screen: done swinging at it, and their share of a giant)
-  for (const seat of seats) if (seat !== me) within(seat, () => woodFrom({ ...m, by: null }));
+  const by = seatBy(m.by);
+  wildsWorld().fellTree(m.id, by ? by.player.position : remotes.positionOf(m.by));
+  if (by) sound.play('fell');
+  // (each farmer at the screen: done swinging at it, and what they have of it)
+  for (const seat of seats) within(seat, () => woodFrom(m));
 }
 
 // A farmer's own of a felled tree: their wood
@@ -1208,7 +1208,7 @@ function updateMining() {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
-        const conn = place === 'lobby' ? net : farmNet;
+        const conn = place === 'lobby' ? net : roomLine();
         if (conn) conn.send({ t: C.MINE, id: rock.id, x: r(rock.x), z: r(rock.z), size: r(rock.scale) });
         else mineAlone(rock);
       }
@@ -1228,8 +1228,7 @@ function resetMining() {
 // MINED, from a lobby or a farm's room
 function rockMined(m) {
   wildsWorld().breakRock(m.id);
-  stoneFrom(m);
-  for (const seat of seats) if (seat !== me) within(seat, () => stoneFrom({ ...m, by: null })); // (as treeFelled)
+  for (const seat of seats) within(seat, () => stoneFrom(m)); // (as treeFelled)
 }
 
 // A farmer's own of a broken rock: their stone (and steel)
@@ -1271,12 +1270,14 @@ function giantPrompt(kind, thing) {
   return `${kind === 'tree' ? 'Chop' : 'Mine'} the giant  ${Math.ceil(hp)}/${giantMax(kind)}`;
 }
 
-// Who we are in what is shared out: the page's id (the lobby's or the farm
-// room's) for the first farmer; one of each farmer's own at a split screen
-// (never another's, even one who got up: seat.uid)
-function seatId() {
-  return me === first ? myId : me.uid;
-}
+// Who a farmer at this screen is in what is said and shared out: the page's
+// id (the lobby's or the farm room's) for the first farmer; for the others at
+// a split screen, the id their own line to a farm's room gave them, else one
+// of their own (never another's, even one who got up: seat.uid)
+const idOf = (seat) => (seat === first ? myId : seat.netId ?? seat.uid);
+const seatId = () => idOf(me);
+// The farmer at this screen the room means by `id` (if it is one of them)
+const seatBy = (id) => seats.find((seat) => idOf(seat) === id);
 
 // Our share of a FELLED or MINED: all of it, if we did it alone
 const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === seatId())?.[1] ?? 0 : m.by === seatId() ? m.count : 0);
@@ -1285,7 +1286,7 @@ const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === seatId())?.[
 function hitGiant(kind, thing) {
   const r = (v) => Math.round(v * 100) / 100;
   const tool = inventory.selectedId();
-  const conn = place === 'lobby' ? net : farmNet;
+  const conn = place === 'lobby' ? net : roomLine();
   if (conn) return conn.send({ t: C.HIT, kind, id: thing.id, x: r(thing.x), z: r(thing.z), size: r(thing.scale), tool });
   // (a farm played alone)
   const hit = farmGiants.hit(kind, thing.id, seatId(), tool, thing.scale);
@@ -1311,8 +1312,8 @@ function giantNews(m) {
     here.makeGiant(m.kind, m.id);
     return;
   }
-  // (our own swing shook it already)
-  if (m.by !== myId) {
+  // (our own swing shook it already: a farmer at this screen's)
+  if (!seatBy(m.by)) {
     if (m.kind === 'tree') here.shakeTree(m.id, remotes.positionOf(m.by));
     else here.shakeRock(m.id);
   }
@@ -1349,7 +1350,7 @@ function devGiant(kind) {
     if (thing.state === 'up' && d < bestD) [best, bestD] = [thing, d];
   }
   if (!best) return `No ${kind} standing here`;
-  const conn = place === 'lobby' ? net : farmNet;
+  const conn = place === 'lobby' ? net : roomLine();
   if (conn) {
     conn.send({ t: C.DEV_GIANT, kind, id: best.id });
     return `A giant ${kind}, coming up`;
@@ -1643,9 +1644,10 @@ function addDrop([id, item, count, x, y, z, from = 0, wait = 0]) {
   group.add(gem);
   group.visible = !arenaId; // (on the lobby's island: out of sight while we are in an arena)
   scene.add(group);
-  // (knocked out of us, or dropped by us: not ours to take straight back, and
-  // not till we have stepped off it, either)
-  drops.set(id, { id, item, count, x, y, z, group, pending: false, retryAt: from === myId ? performance.now() + wait : 0, away: from !== myId });
+  // (knocked out of us, or dropped by us, or by a farmer at this screen: not
+  // theirs to take straight back, and not till they have stepped off it, either)
+  const ours = !!from && !!seatBy(from);
+  drops.set(id, { id, item, count, x, y, z, group, from, pending: false, retryAt: ours ? performance.now() + wait : 0, away: !ours });
 }
 
 function removeDrop(id) {
@@ -1665,8 +1667,14 @@ function onDrops(on) {
   on(S.DROP, (m) => addDrop([m.id, m.item, m.count, m.x, m.y, m.z, m.from, m.wait]));
   on(S.PICKED, (m) => {
     removeDrop(m.id);
-    if (m.by === myId) inventory.add(m.item, m.count);
+    const by = seatBy(m.by);
+    if (by) within(by, () => inventory.add(m.item, m.count));
   });
+  onOwnDrops(on);
+}
+
+// ...and what it says to a farmer alone of theirs
+function onOwnDrops(on) {
   on(S.THROW_DENY, (m) => {
     if (!ITEMS[m.item] || !(m.count > 0)) return;
     inventory.notify(inventory.add(m.item, m.count) ? 'That couldn\'t be dropped here: it is back in your backpack' : 'That couldn\'t be dropped here, and your backpack is full');
@@ -1679,15 +1687,19 @@ function onDrops(on) {
 
 function updateDrops(dt, t) {
   for (const drop of drops.values()) {
-    const gem = drop.group.children[0];
-    gem.position.y = Math.sin(t * 3 + drop.id) * 0.1;
-    gem.rotation.y += dt * 2;
-    drop.group.visible = !drop.pending;
+    if (me === first) {
+      // (once a frame, whoever is at the screen)
+      const gem = drop.group.children[0];
+      gem.position.y = Math.sin(t * 3 + drop.id) * 0.1;
+      gem.rotation.y += dt * 2;
+      drop.group.visible = !drop.pending;
+    }
     const near = Math.hypot(drop.x - player.position.x, drop.y - player.position.y, drop.z - player.position.z) < TOUCH_RADIUS + 0.4;
-    if (!drop.away) drop.away = !near;
-    if (!near || !drop.away || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor) continue; // (a visitor leaves it be)
+    const theirs = !!drop.from && drop.from === seatId(); // (the farmer it came out of, not yet off it)
+    if (theirs && !drop.away) drop.away = !near;
+    if (!near || (theirs && !drop.away) || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor) continue; // (a visitor leaves it be)
     drop.pending = true;
-    (place === 'lobby' ? net : farmNet)?.send({ t: C.PICKUP, id: drop.id });
+    (place === 'lobby' ? net : roomLine())?.send({ t: C.PICKUP, id: drop.id });
   }
 }
 
@@ -1951,7 +1963,7 @@ function farmHere(x, z) {
     for (const [tx, tz] of hoeTiles(x, z)) {
       if (tillTileAt(tx, tz) && farmNet) {
         pendingTills.add(tileKeyFor(tx, tz));
-        farmNet.send({ t: C.TILL, key: tileKeyFor(tx, tz) });
+        roomLine()?.send({ t: C.TILL, key: tileKeyFor(tx, tz) });
       }
     }
     startHoeSwing();
@@ -1965,7 +1977,7 @@ function farmHere(x, z) {
       if (farmNet) {
         const key = tileKeyFor(x, z);
         crops.get(key).pending = true; // (till the room says so; if it says no, the seed comes back)
-        farmNet.send({ t: C.PLANT, key, crop: ITEMS[held].plants });
+        roomLine()?.send({ t: C.PLANT, key, crop: ITEMS[held].plants });
       }
     } else if (!farmTiles.has(tileKeyFor(x, z))) {
       inventory.notify('Seeds go on tilled soil');
@@ -1996,7 +2008,7 @@ function waterHere(x, z) {
     markWatered(key);
     const at = farmTiles.get(key).position;
     ripples.splash(at.x, at.y + 0.05, at.z, 5);
-    farmNet?.send({ t: C.WATER, key });
+    roomLine()?.send({ t: C.WATER, key });
   }
 }
 
@@ -2749,7 +2761,7 @@ function buildAt(key, { quiet = false } = {}) {
   if (building === 'remove') {
     if (farmNet) {
       pendingUnbuilds.add(buildings.anchor(key)); // (a house: by the tile it was built on, whichever of its tiles this is)
-      farmNet.send({ t: C.UNBUILD, key }); // (the room says which piece that was)
+      roomLine()?.send({ t: C.UNBUILD, key }); // (the room says which piece that was)
     } else {
       const at = buildings.anchor(key);
       giveBack(buildings.remove(key));
@@ -2778,7 +2790,7 @@ function buildAt(key, { quiet = false } = {}) {
   if (farmNet) {
     // (the room takes the chest's share, and says what is left in it)
     pendingBuilds.set(key, carried);
-    farmNet.send({ t: C.BUILD, key, piece: building, ...(Object.keys(fromChest).length && { chest: fromChest }) });
+    roomLine()?.send({ t: C.BUILD, key, piece: building, ...(Object.keys(fromChest).length && { chest: fromChest }) });
   }
   return true;
 }
@@ -2856,6 +2868,11 @@ function updateBuilding() {
 let place = 'title'; // 'title' | 'home' | 'lobby'
 let net = null; // the Connection while in (or on the way to) a lobby
 let farmNet = null; // the Connection to a farm's room (ours with its helpers, or a friend's), on it or on the way
+// ...the page's own. A farmer at a split screen has a line of their own to our farm's room (seat.room)
+// The line to the farm's room for the farmer the code works for now
+function roomLine() {
+  return (me === first ? farmNet : me.room) ?? null;
+}
 let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone, helpers }
 let farmJoining = 0; // (each joinFarm's number: a newer one wins)
 const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
@@ -2866,7 +2883,6 @@ let partyGame = null; // the lobby's party game as it last said (shared/minigame
 let arenaId = 0; // the party game whose arena we are in (0: on the lobby's island)
 let lastFarm = null; // the friend's farm we were on before the lobby (its id; null: our own), to go back to after its game
 let lobbyRoster = []; // (as the lobby last sent it: remotes shows those where we are)
-let sendTimer = 0;
 let farmOnScreen = false; // the home farm's soil and crops are in the scene
 // (a lobby's day starts mid-morning, in good light: LOBBY_DAWN, shared/giants.js)
 
@@ -2935,7 +2951,7 @@ const newHud = (seat) => new Hud({
     isMenuOpen: () => !splash.hidden,
     onMenuEscape: () => splash.escape(),
     onHome: () => goHome(),
-    onChat: (text) => (place === 'lobby' ? net : farmNet)?.send({ t: C.CHAT, text }),
+    onChat: (text) => (place === 'lobby' ? net : roomLine())?.send({ t: C.CHAT, text }),
     isBlocked: () => menuOpen() || !splash.hidden,
     onPrompt: (text) => touch.setReady(!!text),
     onStopBuilding: () => stopBuilding(),
@@ -3069,7 +3085,7 @@ const bossWorld = createBosses({
   world: worlds.home,
   giantBars,
   buildings,
-  net: () => farmNet,
+  net: () => roomLine(),
   atHome: () => place === 'home',
   day: () => dayNight.day(),
   // (another farmer's arrow)
@@ -3302,7 +3318,7 @@ function dropFromBackpack(id, count) {
     return true;
   }
   if (place === 'home' && farmVisit && farmNet) {
-    farmNet.send({ t: C.THROW, item: id, count });
+    roomLine()?.send({ t: C.THROW, item: id, count });
     return true;
   }
   if (place === 'home' && !farmVisit && farmOnScreen) {
@@ -3320,6 +3336,8 @@ let roomChest = {}; // what the room's chest has, as it last said
 // The chest on the farm is one; each seat has a window onto it (`chest`:
 // what is in it, whose it is and whether it is there are everyone's)
 const chestModel = createChestModel();
+// (whose it is and what is in it, as last said: a window made later, for a farmer who joins, starts from it)
+const chestSaid = { owner: null, items: null };
 function newChest(seat) {
   const view = createChest({
     inventory: seat.inventory,
@@ -3329,7 +3347,7 @@ function newChest(seat) {
       active: () => me === seat,
       onOpenChange: (open) => (open ? keys.clear() : saveGame()),
       onPut: (item, count) => {
-        if (farmVisit) return farmNet?.send({ t: C.CHEST_PUT, item, count });
+        if (farmVisit) return roomLine()?.send({ t: C.CHEST_PUT, item, count });
         if (!chestHasRoom(ownChest, item, count)) {
           inventory.add(item, count, { quiet: true }); // (back where it came from)
           return inventory.notify('The chest is full');
@@ -3338,7 +3356,7 @@ function newChest(seat) {
         chest.setItems(ownChest);
       },
       onTake: (item, count) => {
-        if (farmVisit) return farmNet?.send({ t: C.CHEST_TAKE, item, count });
+        if (farmVisit) return roomLine()?.send({ t: C.CHEST_TAKE, item, count });
         const n = Math.min(count, ownChest[item] ?? 0);
         if (!n || !inventory.add(item, n)) return;
         ownChest[item] -= n;
@@ -3349,8 +3367,16 @@ function newChest(seat) {
     }),
   });
   seat.chestWindow = view;
+  if (chestSaid.owner) view.setOwner(...chestSaid.owner);
+  if (chestSaid.items) view.setItems(chestSaid.items);
   const everyone = (what) => (...args) => seats.forEach((s) => s.chestWindow[what](...args));
-  return { ...view, show: everyone('show'), setOwner: everyone('setOwner'), setItems: everyone('setItems'), refresh: everyone('refresh') };
+  return {
+    ...view,
+    show: everyone('show'),
+    setOwner: (...args) => (chestSaid.owner = args) && everyone('setOwner')(...args),
+    setItems: (items) => (chestSaid.items = items) && everyone('setItems')(items),
+    refresh: everyone('refresh'),
+  };
 }
 chest = first.chest = newChest(first);
 worlds.home.root.add(chestModel.root);
@@ -3423,7 +3449,7 @@ function pourOwnChest(theirs) {
   for (const [item, count] of Object.entries(ownChest)) {
     if (!chestHasRoom(room, item, count)) continue;
     room[item] = (room[item] ?? 0) + count;
-    farmNet.send({ t: C.CHEST_PUT, item, count });
+    roomLine()?.send({ t: C.CHEST_PUT, item, count });
     delete ownChest[item];
   }
 }
@@ -3469,7 +3495,7 @@ function spendFromChest(items) {
     };
     const timer = setTimeout(() => done(false), SPEND_WAIT);
     spending.set(id, done);
-    farmNet.send({ t: C.CHEST_SPEND, id, items });
+    roomLine()?.send({ t: C.CHEST_SPEND, id, items });
   });
 }
 
@@ -3633,7 +3659,7 @@ function loadMachine(key, dish, n = 1, took) {
   if (farmNet) {
     pendingLoads.set(key, state.item === TANK ? { [dish]: 1 } : took ?? state.takes);
     machines.set(key, { ...state, pending: true, was }); // (was: what it goes back to, if the room says no)
-    farmNet.send({ t: C.LOAD, key, ...(dish && { dish }), ...(n > 1 && { n }) });
+    roomLine()?.send({ t: C.LOAD, key, ...(dish && { dish }), ...(n > 1 && { n }) });
   } else {
     machines.set(key, took ? { ...state, takes: took } : state); // (the very fish that went in)
   }
@@ -3657,7 +3683,7 @@ function collectMachine(key, state) {
   steamAt(key);
   if (farmNet) {
     machines.set(key, { ...state, pending: true });
-    return farmNet.send({ t: C.COLLECT, key, ...(state.item === TANK && { item: out.got }) });
+    return roomLine()?.send({ t: C.COLLECT, key, ...(state.item === TANK && { item: out.got }) });
   }
   inventory.add(out.got, out.n);
   machines.set(key, out.state); // (a beehive starts on the next jar)
@@ -3698,7 +3724,7 @@ function eat(dish = inventory.selectedId(), fromSlot = true) {
   anim.squash = 0.15;
   sound.play('eat');
   inventory.notify(`Mmm, ${ITEMS[dish].name.toLowerCase()}! ${boostText(dish)}`);
-  if (DISHES[dish].shared && farmNet) farmNet.send({ t: C.FEAST, dish });
+  if (DISHES[dish].shared && farmNet) roomLine()?.send({ t: C.FEAST, dish });
 }
 
 function updateMeal(dt) {
@@ -3872,7 +3898,7 @@ function goHome() {
 // Onto a farm's room: ours (its helpers may be on it) or a friend's
 async function joinFarm(id) {
   const mine = id === farmSync.id();
-  endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (a farm's room is for the farmer of this page alone)
+  if (!mine) endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (a friend's farm is for the farmer of this page alone: our own, with its helpers, has the screen's farmers on it too)
   if (farmVisit) leaveFarm();
   farmNet?.leave();
   farmNet = null;
@@ -3893,7 +3919,7 @@ async function joinFarm(id) {
   const on = (type, fn) => conn.on(type, (m) => farmNet === conn && fn(m));
 
   on(S.FARM, (m) => {
-    endCoop('Off online: everyone else at the screen got up, their farmers saved');
+    if (!m.mine) endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (a friend's farm: for the farmer of this page alone)
     const from = place;
     if (net) {
       net.leave(); // (a lobby we were on the way to)
@@ -3929,6 +3955,7 @@ async function joinFarm(id) {
     hud.setRoster(m.roster);
     touch.setPlace('farm');
     if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
+    connectSeats(); // (our own farm: the farmers at this screen are on it with us)
   });
   on(S.ROSTER, (m) => {
     hud.setRoster(m.list);
@@ -3967,25 +3994,37 @@ async function joinFarm(id) {
     buildings.remove(m.key);
     machines.set(m.key, null);
     placeChest();
-    if (m.by === myId) {
-      giveBack(m.piece);
-      giveItems(m.back); // (what was in a machine)
+    const by = seatBy(m.by);
+    if (by) {
+      within(by, () => {
+        giveBack(m.piece);
+        giveItems(m.back); // (what was in a machine)
+      });
     }
   });
   on(S.MACHINE, (m) => {
-    if (m.by === myId) pendingLoads.delete(m.key);
+    const by = seatBy(m.by);
+    if (by) within(by, () => pendingLoads.delete(m.key));
     const [item, at, takes, n] = Array.isArray(m.state) ? m.state : [];
     machines.set(m.key, item && (ITEMS[item] || item === TANK) ? { item, at, takes: takes ?? {}, ...(n > 1 && { n }) } : null);
-    if (m.by !== myId) steamAt(m.key);
+    if (!by) steamAt(m.key);
     // (collected: ours, into the backpack; no room after all, into the chest)
     const got = Number.isInteger(m.n) && m.n > 0 ? m.n : 1;
-    if (m.got && m.by === myId && !inventory.add(m.got, got)) farmNet.send({ t: C.CHEST_PUT, item: m.got, count: got });
+    if (m.got && by) within(by, () => !inventory.add(m.got, got) && roomLine()?.send({ t: C.CHEST_PUT, item: m.got, count: got }));
   });
   on(S.FEAST, (m) => {
-    if (m.by === myId || !DISHES[m.dish]?.shared) return;
-    meal = { dish: m.dish, ...boostFrom(m.dish) };
-    hud.flash('A feast!');
-    inventory.notify(`${remotes.players.get(m.by)?.name || 'A friend'} shared a ${ITEMS[m.dish].name.toLowerCase()}! ${boostText(m.dish)}`);
+    if (!DISHES[m.dish]?.shared) return;
+    // (everyone but who shared it, at this screen too)
+    const sharer = seatBy(m.by);
+    const who = sharer ? seatName(sharer) : remotes.players.get(m.by)?.name || 'A friend';
+    for (const seat of seats) {
+      if (idOf(seat) === m.by) continue;
+      within(seat, () => {
+        meal = { dish: m.dish, ...boostFrom(m.dish) };
+        hud.flash('A feast!');
+        inventory.notify(`${who} shared a ${ITEMS[m.dish].name.toLowerCase()}! ${boostText(m.dish)}`);
+      });
+    }
   });
   on(S.WATERED, (m) => {
     const crop = crops.get(m.key);
@@ -3998,10 +4037,71 @@ async function joinFarm(id) {
     const crop = crops.get(m.key);
     if (crop && CROPS[crop.cropId].again) pickAgain(m.key);
     else removeCrop(m.key);
-    if (m.by !== myId || !m.item) return; // (no item: a lily leaf wilted)
-    inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
-    skilled('farming', SKILLS.xp.harvest[crop?.cropId] ?? 0, m.item); // (a bonus one comes to the backpack)
+    const by = seatBy(m.by);
+    if (!by || !m.item) return; // (no item: a lily leaf wilted)
+    within(by, () => {
+      inventory.notify(`${ITEMS[m.item]?.name ?? 'That'} went in the farm's chest`);
+      skilled('farming', SKILLS.xp.harvest[crop?.cropId] ?? 0, m.item); // (a bonus one comes to the backpack)
+    });
   });
+  on(S.FELLED, (m) => {
+    farmFelled.set(m.id, m.at); // (so the page knows, should it play on alone)
+    treeFelled(m);
+  });
+  on(S.REGROWN, (m) => {
+    farmFelled.delete(m.id);
+    setSite(farmTreeSites, m.id, m.n);
+    world.regrowTree(m.id, { n: m.n ?? 0 });
+  });
+  on(S.MINED, (m) => {
+    farmMined.set(m.id, m.at);
+    rockMined(m);
+  });
+  on(S.RESURFACED, (m) => {
+    farmMined.delete(m.id);
+    setSite(farmRockSites, m.id, m.n);
+    world.regrowRock(m.id, { n: m.n ?? 0 });
+  });
+  on(S.GIANT, giantNews);
+  farmPrivate(on);
+  on(S.CHEST, (m) => {
+    roomChest = m.items;
+    chest.setItems(m.items);
+  });
+  on(S.FARM_CLOCK, (m) => syncFarmClock(m.hours));
+  on(S.BOSS, bosses.onBoss);
+  on(S.BOSS_FX, bosses.onFx);
+  on(S.BOSS_WON, bosses.onWon);
+  on(S.DUNGEON, bosses.onDungeon);
+  on(S.DUNGEON_FX, bosses.onDungeonFx);
+  on(S.CHAT, (m) => hud.chat(m));
+  on('ping', (ms) => hud.setPing(ms));
+  on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
+  on('closed', ({ reason }) => {
+    const was = farmVisit;
+    farmNet = null;
+    if (!was) {
+      // (never got there: our own farm is played here, alone; a friend's, say why)
+      if (!mine) splash.setStatus(reason, true);
+      return;
+    }
+    leaveFarm();
+    if (was.mine) {
+      // On our own farm still, alone: it carries on in this page
+      hud.showHome();
+      touch.setPlace('home');
+      hud.setConnStatus(`${reason} Your farm carries on here.`);
+      setTimeout(() => hud.setConnStatus(''), 6000);
+    } else {
+      goHome();
+      splash.show({ from: 'home', message: reason });
+    }
+  });
+}
+
+// What a farm's room says to one farmer alone (not to everyone on it): each
+// farmer at a split screen has a line of their own, and these go to them
+function farmPrivate(on) {
   on(S.FARM_DENY, (m) => {
     const crop = crops.get(m.key);
     if (m.op === 'till' && pendingTills.delete(m.key)) untillTile(m.key);
@@ -4032,67 +4132,16 @@ async function joinFarm(id) {
       if (state?.pending) machines.set(m.key, { ...state, pending: false });
     }
   });
-  on(S.FELLED, (m) => {
-    farmFelled.set(m.id, m.at); // (so the page knows, should it play on alone)
-    treeFelled(m);
-  });
-  on(S.REGROWN, (m) => {
-    farmFelled.delete(m.id);
-    setSite(farmTreeSites, m.id, m.n);
-    world.regrowTree(m.id, { n: m.n ?? 0 });
-  });
   on(S.CHOP_DENY, (m) => chop.pending.delete(m.id));
-  on(S.MINED, (m) => {
-    farmMined.set(m.id, m.at);
-    rockMined(m);
-  });
-  on(S.RESURFACED, (m) => {
-    farmMined.delete(m.id);
-    setSite(farmRockSites, m.id, m.n);
-    world.regrowRock(m.id, { n: m.n ?? 0 });
-  });
   on(S.MINE_DENY, (m) => mine.pending.delete(m.id));
-  on(S.GIANT, giantNews);
-  on(S.CHEST, (m) => {
-    roomChest = m.items;
-    chest.setItems(m.items);
-  });
   on(S.CHEST_SPENT, (m) => spending.get(m.id)?.(!!m.ok));
   on(S.CHEST_GOT, (m) => {
     // (no room for it after all: back in the chest)
-    if (!inventory.add(m.item, m.count)) farmNet.send({ t: C.CHEST_PUT, item: m.item, count: m.count });
+    if (!inventory.add(m.item, m.count)) roomLine()?.send({ t: C.CHEST_PUT, item: m.item, count: m.count });
     chest.refresh();
   });
-  on(S.FARM_CLOCK, (m) => syncFarmClock(m.hours));
-  on(S.BOSS, bosses.onBoss);
-  on(S.BOSS_FX, bosses.onFx);
-  on(S.BOSS_WON, bosses.onWon);
-  on(S.DUNGEON, bosses.onDungeon);
-  on(S.DUNGEON_FX, bosses.onDungeonFx);
-  on(S.DUNGEON_LOOT, bosses.onLoot);
-  on(S.CHAT, (m) => hud.chat(m));
-  on('ping', (ms) => hud.setPing(ms));
-  on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
-  on('closed', ({ reason }) => {
-    const was = farmVisit;
-    farmNet = null;
-    if (!was) {
-      // (never got there: our own farm is played here, alone; a friend's, say why)
-      if (!mine) splash.setStatus(reason, true);
-      return;
-    }
-    leaveFarm();
-    if (was.mine) {
-      // On our own farm still, alone: it carries on in this page
-      hud.showHome();
-      touch.setPlace('home');
-      hud.setConnStatus(`${reason} Your farm carries on here.`);
-      setTimeout(() => hud.setConnStatus(''), 6000);
-    } else {
-      goHome();
-      splash.show({ from: 'home', message: reason });
-    }
-  });
+  on(S.DUNGEON_LOOT, (m) => bosses.onLoot(m));
+  onOwnDrops(on);
 }
 
 // Off the farm's room. Our own farm stays on screen (it plays on in this
@@ -4106,6 +4155,7 @@ function leaveFarm() {
   for (const done of [...spending.values()]) done(false); // (nobody left to ask)
   farmNet?.leave();
   farmNet = null;
+  disconnectSeats(); // (the farmers at this screen play on in the page, as the farm does)
   farmVisit = null;
   pendingTills.clear();
   pendingBuilds.clear();
@@ -4126,8 +4176,9 @@ function leaveFarm() {
 }
 
 function setFarmRoster(list) {
-  remotes.setRoster(list, myId);
-  if (farmVisit) farmVisit.alone = list.filter((p) => !p.away).length <= 1;
+  const others = list.filter((p) => !seatBy(p.id)); // (the farmers at this screen are drawn as ours, not as someone coming)
+  remotes.setRoster(others, myId);
+  if (farmVisit) farmVisit.alone = !others.some((p) => !p.away);
 }
 
 // game seconds a crop planted at `plantedAt` (the farm's game hours) has been growing
@@ -4565,9 +4616,10 @@ function joinLobby({ name, code }) {
 // Where we are, for the lobby (or a farm's room): what we do is checked
 // against it, and everyone else draws us there
 function sendState(dt, conn = net) {
-  sendTimer += dt;
-  if (sendTimer < TICK_DT) return;
-  sendTimer %= TICK_DT;
+  if (!conn) return;
+  conn.stateTimer = (conn.stateTimer ?? 0) + dt; // (each line's own: a farmer at a split screen has one)
+  if (conn.stateTimer < TICK_DT) return;
+  conn.stateTimer %= TICK_DT;
   const p = player.position;
   const r = (v) => Math.round(v * 100) / 100;
   conn.send({
@@ -4812,8 +4864,10 @@ joinEl.hidden = true;
 
 // Why no one else can join now ('': they can)
 function coopProblem() {
-  if (place !== 'home' || farmVisit || farmNet || net || farmJoining || !farmOnScreen) return 'Farmers join at the screen on your own farm'; // (not on the way online either)
-  if (farmSync.shared()) return 'Your farm is played with its online helpers: a split screen is for a farm played here';
+  // (our own farm, in the page, or in its room with its helpers; not on a friend's, nor on the way online)
+  const inRoom = !!farmNet && !!farmVisit?.mine;
+  if (place !== 'home' || (farmVisit && !inRoom) || (farmNet && !inRoom) || net || farmJoining || !farmOnScreen) return 'Farmers join at the screen on your own farm';
+  if (farmSync.shared() && !inRoom) return 'Your farm is played with its online helpers, on the game server: wait for it to open (is the server away?)';
   if (seats.length >= MAX_SEATS) return `${MAX_SEATS} farmers at one screen is as many as fit`;
   return '';
 }
@@ -4995,7 +5049,10 @@ async function seatFarmer(seat, profile) {
   try {
     within(seat, () => {
       if (save?.v >= 1) useCharacter(save);
-      else for (const [item, count] of STARTER_KIT) gift(item, count); // (a new guest)
+      else {
+        inventory.restore({ slots: [], gold: 0, selected: 0 }); // (a new guest: nothing from an attempt before)
+        for (const [item, count] of STARTER_KIT) gift(item, count);
+      }
       dress(profile.color ?? PLAYER_COLORS[seat.index], profile.look ?? DEFAULT_LOOK);
     });
   } catch (e) {
@@ -5003,6 +5060,14 @@ async function seatFarmer(seat, profile) {
     sync.close(); // (their save as it is: not this one, half loaded)
     throw new Error(`${profile.name}'s farmer couldn't be loaded here`);
   }
+  // (on a farm played in its room: on it with their line, before they play)
+  try {
+    await connectSeat(seat, profile);
+  } catch (e) {
+    sync.close();
+    throw e;
+  }
+  if (!seats.includes(seat)) return void sync.close(); // (they got up meanwhile)
   Object.assign(seat, { profile, sync, ownFarm: save?.farm ?? null }); // (from here on, saved back to them)
   within(seat, () => {
     playerMesh.visible = true;
@@ -5016,6 +5081,55 @@ async function seatFarmer(seat, profile) {
   saveSeat(seat);
 }
 
+// A farmer at this screen on a farm played with its helpers (in its room on
+// the server): a player on it of their own, as the page's own is, with a line
+// of their own to it. The room has them as the owner's guest: the owner's say,
+// not a helper of the farm (shared/protocol.js JOIN local). The page's own
+// line says the farm; theirs is for what they do and what is said to them.
+// Resolves once the room has them, or throws with why not.
+function connectSeat(seat, profile = seat.profile) {
+  if (seat === first || seat.room || !profile || !farmNet || !farmVisit?.mine) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const conn = (seat.room = new Connection({ name: profile.name, color: profile.color, look: profile.look, farm: farmVisit.id, auth: farmSync.auth(), seat: seat.uid }));
+    let welcomed = false;
+    const timer = setTimeout(() => !welcomed && conn.end('The farm is not answering.'), 8000);
+    const on = (type, fn) => conn.on(type, (m) => seat.room === conn && within(seat, () => fn(m)));
+    on(S.FARM, (m) => {
+      seat.netId = m.id; // (what the room calls them: its BUILT, FELLED and the rest are by this)
+      if (welcomed) return;
+      welcomed = true;
+      clearTimeout(timer);
+      resolve();
+    });
+    farmPrivate(on);
+    conn.on('closed', ({ reason }) => {
+      clearTimeout(timer);
+      if (seat.room === conn) {
+        seat.room = null;
+        seat.netId = undefined;
+      }
+      if (!welcomed) {
+        welcomed = true;
+        reject(new Error(reason));
+      } else if (seats.includes(seat)) dropSeat(seat, `${seatName(seat)} got up: ${reason}`);
+    });
+  });
+}
+
+// Every farmer at this screen with a farmer of their own: onto the room's farm
+function connectSeats() {
+  for (const seat of seats) connectSeat(seat).catch((e) => seats.includes(seat) && dropSeat(seat, `${seatName(seat)} got up: ${e.message}`));
+}
+
+// ...and, off it, off their lines
+function disconnectSeats() {
+  for (const seat of seats) {
+    seat.room?.leave();
+    seat.room = null;
+    seat.netId = undefined;
+  }
+}
+
 // A seat's farmer, saved back to them (their farm as it was: theirs stays where it is)
 function saveSeat(seat) {
   seat.sync?.push({ v: SAVE_VERSION, farm: seat.ownFarm, ...within(seat, character) });
@@ -5024,6 +5138,8 @@ function saveSeat(seat) {
 // A farmer gets up from the screen (why: what everyone is told, if they are)
 function dropSeat(seat, why = '') {
   if (seat === first || !seats.includes(seat)) return;
+  seat.room?.leave(); // (their line to the farm's room: they are not on it any more)
+  seat.room = null;
   const save = seat.profile && { v: SAVE_VERSION, farm: seat.ownFarm, ...within(seat, character) };
   within(seat, () => {
     if (building) stopBuilding();
@@ -5267,8 +5383,7 @@ function updateSeat(dt) {
     }
     if (farmVisit) {
       updateDrops(dt, t);
-      sendState(dt, farmNet);
-      remotes.update(dt, t);
+      sendState(dt, roomLine());
     }
   }
   bosses.update(dt, t); // (what the bosses and the dungeons mean for this farmer)
@@ -5296,6 +5411,7 @@ function updateWorld(dt) {
     chestModel.update(dt, seats.some((seat) => seat.chestWindow.isOpen()));
   }
 
+  if (farmVisit) remotes.update(dt, t); // (the helpers on the farm: once a frame, whoever is at the screen)
   const playing = seats.some((seat) => within(seat, () => !inputBlocked())); // (anyone, not behind a menu)
   farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: playing, at: farmersHere().map((seat) => seat.player.position) });
   regrowFarm();

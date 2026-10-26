@@ -2950,6 +2950,72 @@ await test('a farm room: a friend of the farmer comes to look round (a visitor),
   room.close();
 });
 
+await test('a farm room: farmers at the owner\'s own screen (a split screen) join as players of their own, with the owner\'s say, and go with them', () => {
+  const farms = new Farms({ log: () => {} });
+  const madeA = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3'], crops: [] }, backpack: {} }, 'pa');
+  const madeB = farms.create(aSave(2), 'pb');
+  const a = farms.auth(bearer(madeA));
+  farms.acceptHelp(farms.invite(a, 'Ann').code, farms.auth(bearer(madeB)), 'Bo');
+  const rooms = new FarmRooms({ farms, log: () => {} });
+  const room = rooms.open(a.id);
+  const auth = (made) => `${made.id}.${made.token}`;
+  const enter = (made, name, extra = {}) => {
+    const conn = fakeConn();
+    const p = room.join(conn, { t: C.JOIN, v: PROTOCOL_VERSION, name, key: name, auth: auth(made), ...extra });
+    return { conn, p };
+  };
+  const ann = enter(madeA, 'Ann');
+  const bo = enter(madeB, 'Bo');
+  // Ann's friend at her screen: a player of their own (their own name and shirt), not a helper on her list
+  const helpersBefore = JSON.stringify(farms.get(a.id).helpers);
+  const cy = enter(madeA, 'Cy', { local: true, color: 0x2ec4b6 });
+  assert.ok(cy.p?.local && cy.p.owner, 'at the owner\'s screen: the owner\'s say');
+  assert.notEqual(cy.p.id, ann.p.id);
+  assert.equal(cy.conn.last(S.FARM).mine, true);
+  assert.equal(cy.conn.last(S.FARM).id, cy.p.id);
+  assert.deepEqual([cy.p.name, cy.p.color], ['Cy', 0x2ec4b6]);
+  assert.equal(room.ownerName, 'Ann', 'the farm is still Ann\'s');
+  assert.equal(JSON.stringify(farms.get(a.id).helpers), helpersBefore, 'no helper is made of them');
+  assert.match(bo.conn.last(S.CHAT).text, /Cy joined at the screen/);
+  assert.ok(room.rosterList().some((r) => r.id === cy.p.id && r.name === 'Cy'), 'Bo sees them in the roster');
+  // a local player needs the owner's token: a helper's, or none, is just a helper (or no one)
+  const fakeCy = enter(madeB, 'Fake', { local: true });
+  assert.ok(!fakeCy.p?.local && !fakeCy.p?.owner, 'a helper can\'t bring one: just another helper');
+  room.leave(fakeCy.p, { hold: false });
+  const nobody = enter({ id: 'x', token: 'y' }, 'Zed', { local: true });
+  assert.deepEqual([nobody.p, nobody.conn.closed], [null, CLOSE.NOT_HELPER]);
+  // they farm: tilling, planting, and the chest, taken from as the owner does
+  room.message(cy.p, { t: C.STATE, x: 5, y: 0.8, z: 3, yaw: 0, f: 1 });
+  room.message(cy.p, { t: C.TILL, key: '5,3' });
+  assert.equal(bo.conn.last(S.TILLED).by, cy.p.id, 'Bo sees who');
+  room.message(cy.p, { t: C.PLANT, key: '5,3', crop: 'turnip' });
+  assert.ok(room.crops.has('5,3'));
+  room.message(cy.p, { t: C.CHEST_PUT, item: 'wood', count: 3 });
+  room.message(cy.p, { t: C.CHEST_TAKE, item: 'wood', count: 2 });
+  assert.deepEqual([cy.conn.last(S.CHEST_GOT).item, cy.conn.last(S.CHEST_GOT).count], ['wood', 2]);
+  // not the farm's animals, nor its clock: the owner's page has those
+  room.message(cy.p, { t: C.ANIMALS, state: { hens: [[9, 9, 9, 9]] } });
+  assert.notDeepEqual(room.animals.hens, [[9, 9, 9, 9]]);
+  const hours = room.hours();
+  room.message(ann.p, { t: C.CLOCK, hours: hours + 2 });
+  assert.ok(room.hours() < hours + 1, 'Ann is not alone on the farm (Bo is here)');
+  // Ann's connection blips and the screen reconnects: Cy's seat is not held for them (a new one comes)
+  room.leave(cy.p);
+  assert.ok(!room.players.has(cy.p.id), 'gone with their connection');
+  assert.ok(room.players.has(bo.p.id));
+  // Ann's own screen alone is "alone": the farmers at her screen don't count as company
+  room.leave(bo.p, { hold: false });
+  const cy2 = enter(madeA, 'Cy', { local: true, key: 'Cy2' });
+  const at = room.hours();
+  room.message(ann.p, { t: C.CLOCK, hours: at + 2 });
+  assert.ok(room.hours() >= at + 1.9, 'she fast-forwards with someone at her screen');
+  // she leaves the room: the screen's farmers go with her
+  room.leave(ann.p, { hold: false });
+  assert.equal(cy2.conn.closed, CLOSE.SCREEN_OFF);
+  assert.ok(!room.players.has(cy2.p.id));
+  room.close();
+});
+
 await test('a farm room: a beanstalk grows like any crop, and its beans are picked from up on its crown', () => {
   const farms = new Farms({ log: () => {} });
   const made = farms.create({ v: 5, farm: { savedAt: Date.now(), hours: 8, tilled: ['3,3', '4,3'], crops: [] }, backpack: {} }, 'pv');
