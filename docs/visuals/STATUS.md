@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 06 (`phases/06-painterly-light.md`)
+Current phase: 07 (`phases/07-grass.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -9,7 +9,7 @@ Current phase: 06 (`phases/06-painterly-light.md`)
 - [x] 03 Sky dome
 - [x] 04 Atmospheric fog
 - [x] 05 Post-processing
-- [ ] 06 Painterly shading, clouds overhead, cloud shadows
+- [x] 06 Painterly shading, clouds overhead, cloud shadows
 - [ ] 07 Grass v2
 - [ ] 08 Trees: instancing, dithered fade, painterly canopy
 - [ ] 09 Bushes, rocks, biome decor instanced
@@ -30,8 +30,7 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- Post is `src/gfx/post.js` (medium/high): SeatsPass -> UnrealBloomPass -> grade ShaderPass, straight to the screen; no OutputPass. The seats are drawn into the half-float target exactly as on the screen (flagged `isXRRenderTarget` with the screen's color space while they draw): tone mapped, sRGB, fog and transparents blended as there, so tiers match and the far land meets the sky. Bloom and grade work on screen values (0..1).
-- Grade uniforms: `uSaturation` 1.08, `uVignette` 0.2 (round each seat's part, `uSeats`/`uSeatCount`), `uTint` (set each frame in `post.render()`: `POST.warm` -> `POST.cool` by `uNight`, leaning `POST.skyTint` toward the horizon's hue, white underground). Bloom threshold 0.92 by day -> 0.72 at night/underground (`POST.bloom`). Live: `__game.post.grade.uniforms`, `__game.post.bloom`.
-- Night desaturation belongs in the grade: lower `uSaturation` by `uNight` in `post.render()` (low tier would not get it; or in the lights, for both).
-- For 06: lighting patches go in the materials before tone mapping as now; anything they add after `colorspace_fragment` (like the fog) must stay in output space, and the dome stays `toneMapped: false`. Bloom catches anything near white on screen: keep lit surfaces under ~0.9 or they will glow.
-- plaza-noon 968 calls (post adds 14: bloom 13, grade 1), 32 programs (scene programs in the target's variant; switching tiers live adds the other set).
+- Painterly light is a base hook, `src/gfx/light.js` (opt-outs `noWrap`, `noCloud`): it swaps three's `lights_*_pars_fragment` (diffuse wrapped by `gfxWrapNL`, specular as it was) and `lights_fragment_begin` under `GFX_LIGHT`. `uWrap` 0.45 (none by moonlight), `uToon` 0.3, `uShadowTint` (0.80, 0.86, 1.0) on the sky's light by `1 - gfxSunLit` (cast shadow x cloud x facing).
+- Cloud shadows: `gfxCloudShadow(worldXZ)` (in the pars chunk, so any lit hook can call it; grass in 07 can paste `CLOUD_GLSL` and use `LIGHT_UNIFORMS`): 2-octave value noise at `(xz - uCloudOffset) * 0.018 + (5.5, 19.5)`, returns 1 in sun, down to 0.3 (clear) / 0.65 (overcast) under cloud; the sun gets it all, the sky's light 0.6 of it. Coverage ~40 % clear, ~90 % in rain. Off on low (`uCloudShadows` 0), underground, half at night; the wardrobe stage zeroes it while it draws.
+- Shadows: `PCFShadowMap` (PCFSoft ignored `radius`), `radius` 2.5, `normalBias` 0.035; back faces (N.L < 0) fade the map out so the wrap, not the map, darkens them: no acne band, a smooth terminator. The dome's clouds now drift with the wind (`- uCloudOffset`), the same way as their shadows.
+- plaza-noon looks ~10 % darker on average (cloud patch in view); night unchanged by the wrap. Night desaturation still not done (grade, `post.render()`).
