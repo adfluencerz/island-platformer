@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 10 (`phases/10-ground.md`)
+Current phase: 11 (`phases/11-water.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -13,7 +13,7 @@ Current phase: 10 (`phases/10-ground.md`)
 - [x] 07 Grass v2
 - [x] 08 Trees: instancing, dithered fade, painterly canopy
 - [x] 09 Bushes, rocks, biome decor instanced
-- [ ] 10 Ground detail
+- [x] 10 Ground detail
 - [ ] 11 Water
 - [ ] 12 Cliff skirts
 - [ ] 13 Characters
@@ -33,8 +33,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- plaza-noon calls 815-824 -> 712-755 (budget line now 850), 1.22M tris, 41 programs; phone 656 calls; whole-farm overview 3646 -> 1387 calls, triangles unchanged.
-- Three instancers per world (`world.js`): `treeDecor` (trees and their stumps, a hidden slot each till felled), `rockDecor` (a rock's slot is rewritten by `drawRock` on every shake/crumble/surface/giant; chips stay meshes) and `stillDecor`.
-- `stillDecor` takes every mesh in `root` with `userData.decor` once `map.decorate` is done: `addDecor` sets it, maps set it on logs, driftwood, toadstool dots. The meshes stay in root, invisible; don't toggle their `visible`, write the slot (`show`).
-- `makeInstancer.adopt` now takes a lone mesh or a multi-material one; an instanced mesh with every slot hidden is not drawn, and a hidden slot sits at its thing's position (snug bounds).
-- For phase 10: decor stands on the ground at y≈0 in root space; ground detail placed by `isOpenGround` already steers clear of wild trees/rocks, not of bushes or biome plants (their spots are not tracked).
+- plaza-noon 741-757 calls (unchanged), 1.22M tris, programs 39 -> 42 (one per ground kind); phone 652 calls.
+- `src/gfx/ground.js` `groundDetail(material, kind)`: the `ground:<kind>` hook (tiles, slab, turf, earth, rough), patched at color_fragment so it runs before the seasons' grass swap (hooked earlier). The ground chunks carry `gfxKind` (u8 x4: green, stone, path, sand weights), each world's slabs `gfxMoss` (grass on -x, +x, -z, +z).
+- `src/gfx/noise.js`: `NOISE` (gfxHash, gfxHash2, gfxNoise, gfxFootprint, gfxShow: fade an octave by pixel footprint) and `VORONOI` (gfxVoronoi: edge distance, cell id), guarded so several hooks can include them; light.js's clouds use them too. Reuse these for phases 16-18.
+- Harness: full graphics now opens at 480x320 and resizes once on the farm (`scripts/lib/page.mjs`): at 960x600 the startup work outlasted the login check's 8 s timeout and shots failed, on main too.
+- lake-sunset's dark pine at lower left stands beside the sight line, not in it, so it rightly doesn't fade (blocksView); left as is.
