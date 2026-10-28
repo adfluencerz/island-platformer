@@ -33,6 +33,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 <!-- budgets {"calls": 1000, "programs": 120, "triangles": {"high": 1500000, "medium": 800000, "low": 800000}} -->
 
 ## Gates (every phase, all must pass before pushing)
+`npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
 - `npm test` and `npm run build`.
 - `npm run browser --silent -- -e 'g.step(2); return g.stats()'` with no page errors, and the same with `--full`.
 - `npm run shots` (ten PNGs, `contact.png`, `stats.json`) and `npm run shots -- --check`.
