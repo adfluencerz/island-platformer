@@ -5,6 +5,7 @@ import { giantScale } from '../shared/giants.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { use } from './gfx/uniforms.js';
+import { groundDetail } from './gfx/ground.js';
 import { knobs, onApply } from './gfx/quality.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
@@ -422,6 +423,17 @@ const GROUND_LIFT = 0.012;
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
 const slabGeo = new THREE.BoxGeometry(0.86, 0.06, 0.86);
 const slabMat = new THREE.MeshStandardMaterial({ roughness: 0.9 });
+// (painted detail on all of them: src/gfx/ground.js; a map's own ground and
+// turf get it in buildWorld)
+groundDetail(groundMat, 'tiles');
+groundDetail(turfMat, 'turf');
+groundDetail(slabMat, 'slab');
+groundDetail(earthMat, 'earth');
+groundDetail(roughMat, 'rough');
+// which of the ground's detail a kind of ground takes (its gfxKind, see
+// src/gfx/ground.js): 0 green, 1 stone, 2 path, 3 sand; -1 just the noise
+const detailOf = (type, style) =>
+  type === 'stone' ? 1 : type === 'sand' || type === 'dune' ? 3 : style.lush ? 0 : type === 'path' ? 2 : -1;
 
 // A felled tree topples away from whoever chopped it, then shrinks away and
 // leaves a stump (low enough to step onto) until it grows back.
@@ -551,6 +563,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const v = new THREE.Vector3();
   const s = new THREE.Vector3();
   const c = new THREE.Color();
+  if (map.groundMat) groundDetail(map.groundMat, 'tiles');
+  if (map.turfMat) groundDetail(map.turfMat, 'turf');
 
   // What stands in the way of decorations while the world is built (not the
   // ground, nor the trees and rocks, which move as they grow back), by
@@ -1045,7 +1059,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // Stone tiles get a slab each on top: a plaza should look paved.
   {
     const kindColors = {}; // the plain color of each kind of ground
+    const kindDetail = {}; // and which detail it takes (detailOf)
     for (const [type, style] of Object.entries(map.tileStyles)) {
+      kindDetail[type] = detailOf(type, style);
       kindColors[type] = new THREE.Color(style.color);
       if (type === 'stone') kindColors[type].offsetHSL(0, -0.03, -0.07); // the gaps between the slabs
     }
@@ -1085,15 +1101,15 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
 
     // (in squares of GROUND_CHUNK tiles, a mesh each, so the ones out of
     // view aren't drawn: the whole island is most of a view's triangles)
-    const chunks = new Map(); // "cx,cz" -> { pos, col, index }
+    const chunks = new Map(); // "cx,cz" -> { pos, col, kind, index }
     const tint = new THREE.Color();
     const slabs = [];
     for (const [key, type] of tileGrid) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
       const chunkKey = `${Math.floor((gx + H) / GROUND_CHUNK)},${Math.floor((gz + H) / GROUND_CHUNK)}`;
-      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], index: [] });
-      const { pos, col, index } = chunks.get(chunkKey);
+      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], index: [] });
+      const { pos, col, kind: kindOf, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
       for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
@@ -1106,6 +1122,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           tint.setRGB(0, 0, 0);
           let lush = 0;
           let jitter = 0;
+          const detail = [0, 0, 0, 0];
           for (let di = -1; di <= 1; di++) {
             for (let dj = -1; dj <= 1; dj++) {
               let kind = kindAt(qx + dj, qz + di);
@@ -1113,6 +1130,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
               const w = (di ? 1 : 2) * (dj ? 1 : 2) / 16;
               tint.add(c.copy(kindColors[kind]).multiplyScalar(w));
               if (map.tileStyles[kind].lush) lush += w;
+              if (kindDetail[kind] >= 0) detail[kindDetail[kind]] += w;
               jitter += map.tileStyles[kind].jitter * w;
             }
           }
@@ -1120,6 +1138,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           tint.multiplyScalar(shade * (1 - 0.4 * contactShade(x, floor, z)));
           pos.push(x, floor + GROUND_LIFT, z);
           col.push(tint.r, tint.g, tint.b);
+          for (const d of detail) kindOf.push(Math.round(d * 255));
         }
       }
       for (let i = 0; i < 4; i++) {
@@ -1130,18 +1149,25 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
       if (type === 'stone') slabs.push([gx, gz, floor]);
     }
-    for (const { pos, col, index } of chunks.values()) {
+    for (const { pos, col, kind, index } of chunks.values()) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.setAttribute('gfxKind', new THREE.Uint8BufferAttribute(kind, 4, true)); // (src/gfx/ground.js)
       geo.setIndex(index);
       const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
       ground.receiveShadow = true;
       root.add(ground);
     }
 
-    const stones = new THREE.InstancedMesh(slabGeo, slabMat, slabs.length);
+    // (each slab's sides that face grass, for its moss: -x, +x, -z, +z)
+    const lushAt = (gx, gz) => (map.tileStyles[tileGrid.get(`${gx},${gz}`)]?.lush ? 255 : 0);
+    const moss = new Uint8Array(slabs.length * 4);
+    slabs.forEach(([gx, gz], i) => moss.set([lushAt(gx - 1, gz), lushAt(gx + 1, gz), lushAt(gx, gz - 1), lushAt(gx, gz + 1)], i * 4));
+    const stoneGeo = slabGeo.clone();
+    stoneGeo.setAttribute('gfxMoss', new THREE.InstancedBufferAttribute(moss, 4, true));
+    const stones = new THREE.InstancedMesh(stoneGeo, slabMat, slabs.length);
     stones.receiveShadow = true;
     slabs.forEach(([gx, gz, floor], i) => {
       const { color, top } = tileLook.get(`${gx},${gz}`);

@@ -45,7 +45,11 @@ export function launch() {
 
 export async function openFarm(browser, { query = '', full = false, size = [480, 320], touch = false, live = false, log = () => {} } = {}) {
   const [width, height] = size;
-  const context = await browser.newContext({ viewport: { width, height }, ...(touch && { hasTouch: true, isMobile: true }), ...(existsSync(STATE) && { storageState: STATE }) });
+  // (full graphics opens small and grows once on the farm: the page's first,
+  // synchronous draw at a big size can keep the farm's login check waiting
+  // past its time, and the welcome then asks to log in)
+  const opening = full ? { width: Math.min(width, 480), height: Math.min(height, 320) } : { width, height };
+  const context = await browser.newContext({ viewport: opening, ...(touch && { hasTouch: true, isMobile: true }), ...(existsSync(STATE) && { storageState: STATE }) });
   const page = await context.newPage();
   if (touch) await page.exposeFunction('__tap', (x, y) => page.touchscreen.tap(x, y));
   // Full graphics without a GPU: a frame takes a second or more, and the title
@@ -91,6 +95,10 @@ export async function openFarm(browser, { query = '', full = false, size = [480,
   await farmButton.click();
   await page.waitForFunction(() => window.__game?.place === 'home' && window.__game.inGame);
   if (full) await page.evaluate(() => (window.__harnessSlow = false));
+  if (opening.width !== width || opening.height !== height) {
+    await page.setViewportSize({ width, height });
+    await page.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [width, height]);
+  }
   if (!live) await page.evaluate(() => window.__game.step(0.5)); // (settle, then frozen)
   log('on the farm');
   return { context, page, errors };
