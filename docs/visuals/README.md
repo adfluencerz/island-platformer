@@ -21,6 +21,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | shadow map    | off  | 1024          | 2048 |
 | post          | off  | half-res bloom | full |
 | grass density | 0.35 | 0.6           | 1.0  |
+| grass blades (of 7 a tuft) | 3 | 5     | 7    |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |

@@ -5,6 +5,7 @@ import { giantScale } from '../shared/giants.js';
 import { hook, cloneHooked } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { use } from './gfx/uniforms.js';
+import { knobs, onApply } from './gfx/quality.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
 export { mulberry32, distToSegment, distToPaths } from '../shared/worldgen.js';
@@ -33,24 +34,78 @@ export function tileKeyFor(x, z) {
 const meadowNoise = (x, z) =>
   Math.sin(x * 0.21) * Math.cos(z * 0.17) * 0.6 + Math.sin((x + z) * 0.11 + 1.3) * 0.4;
 
-// Wind sway for grass and flowers, done in the vertex shader so thousands of
-// instances cost nothing on the CPU. Sway scales with height above the base.
-// One clock for every world (uTime: src/gfx/uniforms.js; main.js runs it).
-// (noSnow: the flowers keep their color in the snow; the farm's grass is
-// given its own, src/seasons.js)
-function addWind(material, strength) {
+// The grass's wind, done in the vertex shader so thousands of instances cost
+// nothing on the CPU (hook 'grass'): gusts, as a value noise that travels
+// across the field the way the clouds drift (uCloudOffset: the breeze plus a
+// storm's uWind, five times as fast), so a wave of bending runs over the
+// meadow; a fine flutter on top; and every blade leaning away from the feet
+// of a farmer walking through it (uPlayers). The bend grows with height
+// squared (height: the tallest point of the mesh, its tip), and a bent blade
+// dips a little so it doesn't stretch. The flowers sway in the same wind.
+// Drawn from both sides, the back of a blade keeps its normal up (lit as the
+// ground is). (noSnow: the flowers keep their color in the snow; the farm's
+// grass is given its own, src/seasons.js)
+const MAX_FEET = 4; // (uPlayers: src/gfx/uniforms.js)
+const FEET_UP = 0.8; // (a farmer's position is this far above their feet: GROUND_STAND_Y, shared/level.js)
+export const GRASS_WIND_GLSL = /* glsl */ `
+  highp float gfxGrassHash(highp vec2 p) {
+    highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  float gfxGrassNoise(highp vec2 p) {
+    highp vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(gfxGrassHash(i), gfxGrassHash(i + vec2(1.0, 0.0)), u.x),
+               mix(gfxGrassHash(i + vec2(0.0, 1.0)), gfxGrassHash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }`;
+function addGrassWind(material, height) {
   material.userData.noSnow = true;
-  hook(material, `wind:${strength.toFixed(3)}`, (shader) => {
-    define(shader, 'GFX_WIND');
-    use(shader, ['uTime'], 'v');
+  hook(material, `grass:${height.toFixed(3)}`, (shader) => {
+    define(shader, 'GFX_GRASS');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers'], 'v');
+    shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL, 'GFX_GRASS');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
-      vec2 windPos = instanceMatrix[3].xz;
-      float sway = sin(uTime * 1.8 + windPos.x * 0.35 + windPos.y * 0.25) * ${strength.toFixed(3)} * position.y;
-      transformed.x += sway;
-      transformed.z += sway * 0.5;`, 'GFX_WIND');
+      #ifdef USE_INSTANCING
+        highp vec3 grassRoot = (modelMatrix * instanceMatrix[3]).xyz;
+        float grassH = clamp(transformed.y / ${height.toFixed(3)}, 0.0, 1.2); // (0 at the root, 1 at the tip; after the snow's sink)
+        vec2 grassDrift = uWind + vec2(0.6, 0.25); // (as the clouds drift: src/gfx/uniforms.js frame)
+        vec2 grassDir = normalize(grassDrift);
+        float grassStorm = clamp(length(uWind) / 6.0, 0.0, 1.0);
+        highp vec2 grassP = (grassRoot.xz - uCloudOffset * 5.0) * 0.07;
+        float grassGust = 0.65 * gfxGrassNoise(grassP) + 0.35 * gfxGrassNoise(grassP * 2.3 + 3.7);
+        grassGust = smoothstep(0.3, 0.8, grassGust);
+        float grassFine = sin(uTime * 2.2 + dot(grassRoot.xz, vec2(0.9, 0.7)) + (position.x - position.z) * 4.0);
+        vec2 grassBend = grassDir * (0.08 + 0.42 * grassGust + 0.3 * grassStorm) + vec2(grassFine, -0.6 * grassFine) * (0.06 + 0.05 * grassGust);
+        for (int i = 0; i < ${MAX_FEET}; i++) {
+          vec4 feet = uPlayers[i];
+          vec2 away = grassRoot.xz - feet.xz;
+          float d = length(away);
+          float near = feet.w * (1.0 - smoothstep(0.2, 0.9, d)) * (1.0 - smoothstep(0.3, 0.9, abs(feet.y - ${FEET_UP.toFixed(2)} - grassRoot.y)));
+          grassBend += away / max(d, 0.05) * near * 1.1;
+        }
+        float grassLen = length(grassBend);
+        grassBend *= min(1.0, 1.1 / max(grassLen, 1e-3));
+        vec3 grassOff = vec3(grassBend.x, 0.0, grassBend.y) * grassH * grassH * ${height.toFixed(3)};
+        // (into the instance's own space: its columns are a turn about y and a scale)
+        vec3 grassC0 = instanceMatrix[0].xyz;
+        vec3 grassC2 = instanceMatrix[2].xyz;
+        grassOff *= length(instanceMatrix[1].xyz); // (as tall as this one is)
+        transformed.x += dot(grassOff, grassC0) / max(dot(grassC0, grassC0), 1e-8);
+        transformed.z += dot(grassOff, grassC2) / max(dot(grassC2, grassC2), 1e-8);
+        transformed.y *= 1.0 - 0.45 * dot(grassBend, grassBend) * grassH;
+        #if defined(USE_COLOR) || defined(USE_INSTANCING_COLOR)
+          vColor.rgb *= 1.0 + 0.22 * grassGust * grassH; // (a gust's wave shows as a sheen running over the field)
+        #endif
+      #endif`, 'GFX_GRASS');
+    shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_begin', `
+      #ifdef DOUBLE_SIDED
+        normal *= faceDirection; // (back as it was: up)
+        nonPerturbedNormal = normal;
+      #endif`, 'GFX_GRASS');
   });
 }
-
 // A repeatable 0..1 value for a point: the same point always gets the same
 // value, so vertices that two meshes share agree on it
 export const hash2 = (x, z) => {
@@ -165,6 +220,8 @@ earthGeo.setAttribute('color', new THREE.Float32BufferAttribute(
     return [k, k, k];
   }).flat(), 3));
 
+// The ground's surface is drawn in squares this many tiles across
+const GROUND_CHUNK = 47;
 // The ground's surface sits this far above its floor (tilled soil is above it)
 const GROUND_LIFT = 0.012;
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
@@ -226,34 +283,61 @@ function blocksView(tree, eye, camera) {
   );
 }
 
-// Grass tufts: three thin blades, lit as if facing up so they match the ground,
-// darker at the root and lighter at the tip. Each blade is two triangles with
-// opposite winding (rather than DoubleSide, which would flip the back face's
-// normal downward and render it black).
-function makeTuftGeometry(rand) {
+// Grass tufts: up to seven blades, of which the tier draws its grassBlades
+// (src/gfx/quality.js: 3, 5 or 7; the first three spread round the tuft, the
+// rest fill in between, so fewer still look whole). Each blade is a tapering
+// strip of two segments, three triangles, splaying out and curving a little,
+// drawn from both sides (the grass hook keeps the back's normal up, so both
+// light as the ground they stand in does). Dark at the root, bright at the
+// tip. Every world's tufts are the same shape, from a fixed stream of their own.
+const TUFT_BLADES = 7;
+const TUFT_HEIGHT = 0.6; // (the tallest a blade is, before its instance's scale)
+const BLADE_INDICES = 9;
+const MORE_GRASS = 1.5; // (the extra tufts, as a share of a tile's own: see Grass and flowers)
+function makeTuftGeometry() {
+  const r = mulberry32(0x7af7);
+  const rand = (min, max) => min + r() * (max - min);
   const pos = [];
   const col = [];
-  for (let b = 0; b < 3; b++) {
-    const a = (b / 3) * Math.PI + rand(-0.3, 0.3);
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    const ox = rand(-0.06, 0.06);
-    const oz = rand(-0.06, 0.06);
-    const w = 0.05;
-    const h = rand(0.26, 0.4);
-    const lean = rand(-0.08, 0.08);
-    const left = [ox - w * ca, 0, oz - w * sa];
-    const right = [ox + w * ca, 0, oz + w * sa];
-    const tip = [ox + lean * -sa, h, oz + lean * ca];
-    pos.push(...left, ...right, ...tip, ...right, ...left, ...tip);
-    for (let side = 0; side < 2; side++) col.push(0.55, 0.65, 0.5, 0.55, 0.65, 0.5, 1.1, 1.15, 0.9);
+  const index = [];
+  for (let b = 0; b < TUFT_BLADES; b++) {
+    const around = b * 2.39996 + rand(-0.25, 0.25); // (the golden angle: each next blade in the widest gap)
+    const out = 0.04 + 0.19 * Math.sqrt((b + 0.5) / TUFT_BLADES);
+    const [rx, rz] = [Math.cos(around), Math.sin(around)];
+    const face = around + Math.PI / 2 + rand(-0.5, 0.5); // (the blade's width runs across its splay, roughly)
+    const width = rand(0.04, 0.06);
+    const [wx, wz] = [Math.cos(face) * width, Math.sin(face) * width];
+    const h = b < 3 ? rand(0.48, TUFT_HEIGHT) : rand(0.35, 0.55);
+    const lean = rand(0.05, 0.16);
+    const ox = rx * out;
+    const oz = rz * out;
+    const first = pos.length / 3;
+    pos.push(ox - wx, 0, oz - wz, ox + wx, 0, oz + wz);
+    const mx = ox + rx * lean * 0.3;
+    const mz = oz + rz * lean * 0.3;
+    pos.push(mx - wx * 0.7, h * 0.5, mz - wz * 0.7, mx + wx * 0.7, h * 0.5, mz + wz * 0.7);
+    pos.push(ox + rx * lean, h, oz + rz * lean);
+    const warm = rand(1, 1.08); // (some tips a touch yellower)
+    col.push(0.5, 0.55, 0.42, 0.5, 0.55, 0.42, 0.88, 0.9, 0.68, 0.88, 0.9, 0.68, 1.2 * warm, 1.15, 0.75);
+    index.push(first, first + 1, first + 3, first, first + 3, first + 2, first + 2, first + 3, first + 4);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(index);
   return geo;
 }
+
+// The grass of every world built, drawn as the tier says: its share of the
+// tufts (they are in a shuffled order, so fewer thin out evenly) and of each
+// tuft's blades. Again whenever the tier is changed.
+const grassMeshes = new Set();
+function grassTier(mesh, k = knobs()) {
+  mesh.count = Math.round(mesh.userData.tufts * k.grassDensity);
+  mesh.geometry.setDrawRange(0, Math.min(k.grassBlades, TUFT_BLADES) * BLADE_INDICES);
+}
+onApply((k) => grassMeshes.forEach((mesh) => grassTier(mesh, k)));
 
 const FLOWER_COLORS = [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff6b4a];
 
@@ -411,8 +495,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
 
   // Is this spot a good place for decoration? On a tile where things grow,
   // clear of platforms' footprints, the places the map keeps clear, and
-  // every place a tree or rock may stand in.
-  function isOpenGround(x, z, margin = 0) {
+  // every place a tree or rock may stand in (by margin, or wildMargin from
+  // those: less than 0 for grass right up to a trunk).
+  function isOpenGround(x, z, margin = 0, wildMargin = margin) {
     if (!map.decorTypes.has(tileAt(x, z))) return false;
     for (let cx = Math.floor((x - margin) / BOX_CELL); cx <= Math.floor((x + margin) / BOX_CELL); cx++) {
       for (let cz = Math.floor((z - margin) / BOX_CELL); cz <= Math.floor((z + margin) / BOX_CELL); cz++) {
@@ -424,7 +509,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     for (const [kx, kz, r] of map.keepClear) {
       if (Math.hypot(x - kx, z - kz) < r + margin) return false;
     }
-    return !nearWild(x, z, margin);
+    return !nearWild(x, z, wildMargin);
   }
 
   // Scatter by rejection sampling: random spots, kept only if far enough
@@ -457,7 +542,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
 
   {
     // Gather placements first so each InstancedMesh is allocated at its exact size
-    const tufts = []; // [x, z, [light min, max], [hue min, max]]
+    const tufts = []; // [x, z, foliage, lush]
     const flowers = [];
     for (const [key, type] of tileGrid) {
       const f = map.foliage[type];
@@ -468,7 +553,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       for (let n = 0; n < tuftCount; n++) {
         const x = gx + rand(-0.45, 0.45);
         const z = gz + rand(-0.45, 0.45);
-        if (isOpenGround(x, z)) tufts.push([x, z, f.light ?? [0.38, 0.5], f.hue ?? [0.24, 0.3]]);
+        if (isOpenGround(x, z)) tufts.push([x, z, f, lush]);
       }
       if (lush > f.flowerLush && rng() < f.flowerChance) {
         const x = gx + rand(-0.4, 0.4);
@@ -477,18 +562,54 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
     }
 
-    const tuftMat = map.tuftMat ?? new THREE.MeshStandardMaterial({ color: 0x6fb043, roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
-    addWind(tuftMat, 0.25);
-    const tuftMesh = new THREE.InstancedMesh(makeTuftGeometry(rand), tuftMat, tufts.length);
+    // Each tuft: [x, z, turn, scale, height, hue, lightness]. The first ones
+    // take their draws from rng as the grass always has (after the 15 the old
+    // tuft's shape took), so all that is placed after grows where it did.
+    const tuftLook = (draw, [x, z, f, lush]) => {
+      const turn = draw(0, Math.PI * 2);
+      const k = draw(0.7, 1.3);
+      const hue = draw(...(f.hue ?? [0.24, 0.3]));
+      const light = draw(...(f.light ?? [0.38, 0.5]));
+      return [x, z, turn, k, k * (f.tall ?? 1) * (0.9 + 0.2 * lush), hue, light];
+    };
+    for (let n = 0; n < 15; n++) rng();
+    const grass = tufts.map((t) => tuftLook(rand, t));
+    // ...and more again (MORE_GRASS), from a stream of their own: the
+    // meadows thick, with nothing else moved
+    const more = mulberry32(map.seed ^ 0x51a7);
+    const moreRand = (min, max) => min + more() * (max - min);
+    for (const [key, type] of tileGrid) {
+      const f = map.foliage[type];
+      if (!f) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      const lush = meadowNoise(gx, gz);
+      const count = Math.floor(moreRand(0, Math.max(f.tufts, f.tufts + lush * f.lushTufts) * MORE_GRASS)); // (thick in the lush patches, never bare between)
+      for (let n = 0; n < count; n++) {
+        const x = gx + moreRand(-0.5, 0.5);
+        const z = gz + moreRand(-0.5, 0.5);
+        if (isOpenGround(x, z, 0, -0.15)) grass.push(tuftLook(moreRand, [x, z, f, lush])); // (closer in round where a tree may stand: still clear of its trunk)
+      }
+    }
+    // shuffled, so that drawing the first share of them thins them evenly
+    for (let i = grass.length - 1; i > 0; i--) {
+      const j = Math.floor(more() * (i + 1));
+      [grass[i], grass[j]] = [grass[j], grass[i]];
+    }
+
+    const tuftMat = map.tuftMat ?? new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
+    tuftMat.side = THREE.DoubleSide;
+    addGrassWind(tuftMat, TUFT_HEIGHT);
+    const tuftMesh = new THREE.InstancedMesh(makeTuftGeometry(), tuftMat, grass.length);
     tuftMesh.receiveShadow = true;
-    tufts.forEach(([x, z, light, hue], i) => {
-      q.setFromAxisAngle(up, rand(0, Math.PI * 2));
-      const k = rand(0.7, 1.3);
-      m.compose(v.set(x, 0.02, z), q, s.set(k, k, k));
+    grass.forEach(([x, z, turn, k, tall, hue, light], i) => {
+      m.compose(v.set(x, 0.02, z), q.setFromAxisAngle(up, turn), s.set(k, tall, k));
       tuftMesh.setMatrixAt(i, m);
-      tuftMesh.setColorAt(i, c.setHSL(rand(...hue), 0.5, rand(...light)));
+      tuftMesh.setColorAt(i, c.setHSL(hue, 0.5, light));
       trackFoliage(x, z, tuftMesh, i);
     });
+    tuftMesh.userData.tufts = grass.length;
+    grassTier(tuftMesh);
+    grassMeshes.add(tuftMesh);
     root.add(tuftMesh);
 
     // Flowers: green stems plus colored heads, two InstancedMeshes sharing matrices
@@ -496,8 +617,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const headGeo = new THREE.IcosahedronGeometry(0.065, 0).translate(0, 0.31, 0);
     const stemMat = map.flowerStemMat ?? new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 }); // (the farm's: its seasons)
     const headMat = map.flowerHeadMat ?? new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true });
-    addWind(stemMat, 0.18);
-    addWind(headMat, 0.18);
+    addGrassWind(stemMat, 0.37);
+    addGrassWind(headMat, 0.37);
     const stems = new THREE.InstancedMesh(stemGeo, stemMat, flowers.length);
     const heads = new THREE.InstancedMesh(headGeo, headMat, flowers.length);
     const colors = map.flowerColors ?? FLOWER_COLORS;
@@ -680,7 +801,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   }
 
   // ---------- The ground's surface ----------
-  // One mesh for every tile, colored by what the map says the ground is at
+  // Every tile (in a few meshes), colored by what the map says the ground is at
   // each vertex rather than per tile, so a path winds along its own curve
   // instead of in grid steps, and grass meets it and the sand without hard
   // tile lines. Each tile is a 5x5 patch of vertices, a quarter tile apart;
@@ -730,14 +851,17 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       return shade;
     };
 
-    const pos = [];
-    const col = [];
-    const index = [];
+    // (in squares of GROUND_CHUNK tiles, a mesh each, so the ones out of
+    // view aren't drawn: the whole island is most of a view's triangles)
+    const chunks = new Map(); // "cx,cz" -> { pos, col, index }
     const tint = new THREE.Color();
     const slabs = [];
     for (const [key, type] of tileGrid) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
+      const chunkKey = `${Math.floor((gx + H) / GROUND_CHUNK)},${Math.floor((gz + H) / GROUND_CHUNK)}`;
+      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], index: [] });
+      const { pos, col, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
       for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
@@ -774,14 +898,16 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
       if (type === 'stone') slabs.push([gx, gz, floor]);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    geo.setIndex(index);
-    const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
-    ground.receiveShadow = true;
-    root.add(ground);
+    for (const { pos, col, index } of chunks.values()) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.setIndex(index);
+      const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
+      ground.receiveShadow = true;
+      root.add(ground);
+    }
 
     const stones = new THREE.InstancedMesh(slabGeo, slabMat, slabs.length);
     stones.receiveShadow = true;
@@ -1232,6 +1358,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     dispose() {
       root.traverse((obj) => {
         if (!obj.isMesh) return;
+        grassMeshes.delete(obj);
         obj.geometry.dispose();
         for (const mat of [obj.material].flat()) mat.dispose();
         if (obj.isInstancedMesh) obj.dispose();
