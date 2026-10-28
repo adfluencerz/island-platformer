@@ -40,6 +40,7 @@ import { Guide } from './ui/guide.js';
 import { TouchControls, fitPart } from './ui/touch.js';
 import * as quality from './gfx/quality.js';
 import { createStats } from './gfx/stats.js';
+import { toneMap } from './gfx/tonemap.js';
 import * as gfx from './gfx/uniforms.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
@@ -201,6 +202,7 @@ renderer.setPixelRatio(quality.knobs().pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = quality.knobs().shadowMap > 0;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+toneMap(renderer); // (filmic: src/gfx/tonemap.js)
 // (what it drew, a frame at a time: __game.stats() and the devtools' Info tab)
 const gfxStats = createStats(renderer);
 

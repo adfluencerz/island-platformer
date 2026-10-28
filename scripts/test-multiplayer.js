@@ -39,6 +39,7 @@ import { HOME_WILDS } from '../shared/homewilds.js';
 import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import * as THREE from 'three';
 import { NEEDLES, patch } from '../src/gfx/chunks.js';
+import { patchToneChunk } from '../src/gfx/tonemap.js';
 import { hook, hasHook, cloneHooked } from '../src/gfx/shading.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
@@ -3650,6 +3651,8 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   }
   assert.equal(patch('a\n#include <begin_vertex>\nb', 'begin_vertex', 'x;', 'GFX_X'), 'a\n#include <begin_vertex>\n#ifdef GFX_X\nx;\n#endif\nb');
   assert.throws(() => patch('nothing here', 'begin_vertex', 'x;'));
+  patchToneChunk(); // (throws if three's CustomToneMapping placeholder moved)
+  assert.ok(THREE.ShaderChunk.tonemapping_pars_fragment.includes('AgXToneMapping( color );'), 'the filmic tone mapping is in the chunk');
 
   const made = () => new THREE.MeshStandardMaterial();
   const key = (m) => m.customProgramCacheKey();
