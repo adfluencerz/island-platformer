@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { hook, hasHook } from './gfx/shading.js';
+import { patch, define } from './gfx/chunks.js';
 
 // ---------- Seasons on the farm ----------
 // The farm's year goes round in four seasons of SEASON_DAYS game days each,
@@ -108,58 +110,44 @@ export function seasonAt(day, hour) {
 // (the season's, as bright as the green it takes the place of is)
 const uSnow = { value: 0 };
 const uGrass = { value: new THREE.Color(GRASS) };
-const seasoned = new WeakSet();
 
 // A few lines in a material's shader: snow on its surfaces facing up and,
 // with grass, its greens turned (a path's brown and stone's grey stay, and
-// take less snow); sink: grass blades go down under the snow. Kept with any
-// shader changes it had already (the grass's sway: world.js addWind).
+// take less snow); sink: grass blades go down under the snow. After any hooks
+// it had already (the grass's sway: world.js addWind).
 function seasonal(material, { grass = false, sink = false } = {}) {
-  if (seasoned.has(material)) return;
-  seasoned.add(material);
-  const before = material.onBeforeCompile;
-  const beforeKey = material.customProgramCacheKey.call(material);
-  material.onBeforeCompile = (shader, renderer) => {
-    before.call(material, shader, renderer);
+  if (hasHook(material, /^season/)) return;
+  const options = [grass && 'grass', sink && 'sink'].filter(Boolean);
+  hook(material, `season${options.length ? `:${options.join(',')}` : ''}`, (shader) => {
+    define(shader, 'GFX_SEASON');
     shader.uniforms.uSnow = uSnow;
     shader.uniforms.uGrass = uGrass;
     if (sink) {
-      shader.vertexShader = 'uniform float uSnow;\n' + shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-        transformed.y *= 1.0 - 0.8 * uSnow;`
-      );
+      shader.vertexShader = 'uniform float uSnow;\n' + patch(shader.vertexShader, 'begin_vertex', 'transformed.y *= 1.0 - 0.8 * uSnow;', 'GFX_SEASON');
     }
-    shader.fragmentShader = `uniform float uSnow;\nuniform vec3 uGrass;\nconst vec3 seasonLum = vec3(0.2126, 0.7152, 0.0722);\nconst float seasonGrassLum = ${GRASS.r * 0.2126 + GRASS.g * 0.7152 + GRASS.b * 0.0722};\n` + shader.fragmentShader
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
+    shader.fragmentShader = `uniform float uSnow;\nuniform vec3 uGrass;\nconst vec3 seasonLum = vec3(0.2126, 0.7152, 0.0722);\nconst float seasonGrassLum = ${GRASS.r * 0.2126 + GRASS.g * 0.7152 + GRASS.b * 0.0722};\n` + shader.fragmentShader;
+    shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
         float seasonCover = 1.0;
         ${grass ? `
         float seasonGreen = clamp((diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * 6.0, 0.0, 1.0);
         diffuseColor.rgb = mix(diffuseColor.rgb, uGrass * (dot(diffuseColor.rgb, seasonLum) / seasonGrassLum), seasonGreen * 0.9);
-        seasonCover = mix(0.8, 1.0, seasonGreen);` : ''}`
-      )
-      .replace(
-        '#include <normal_fragment_maps>',
-        `#include <normal_fragment_maps>
+        seasonCover = mix(0.8, 1.0, seasonGreen);` : ''}`, 'GFX_SEASON');
+    shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_maps', `
         float seasonUp = inverseTransformDirection(normal, viewMatrix).y;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), uSnow * seasonCover * smoothstep(0.4, 0.85, seasonUp));`
-      );
-  };
-  material.customProgramCacheKey = () => `season${grass ? '+grass' : ''}${sink ? '+sink' : ''}|${beforeKey}`;
-  material.needsUpdate = true;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), uSnow * seasonCover * smoothstep(0.4, 0.85, seasonUp));`, 'GFX_SEASON');
+  });
 }
 
 // Snow for everything under root that stays put: what a material's shader
-// can take (lit, not see-through, not changed already) and isn't kept off
-// (SNOW_SKIP by name, or userData.noSnow: the animals, the merchant)
+// can take (lit, not see-through, not snowed on already) and isn't kept off
+// (SNOW_SKIP by name, or userData.noSnow: the animals, the merchant, the
+// water, the items, the farmers)
 function snowOn(obj) {
   if (obj.userData.noSnow || SNOW_SKIP.has(obj.name)) return; // (nor anything in it)
   if (obj.isMesh) {
     for (const m of [obj.material].flat()) {
-      if (seasoned.has(m) || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) continue;
-      if (m.transparent || m.userData.noSnow || m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) continue;
+      if (hasHook(m, /^season/) || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) continue;
+      if (m.transparent || m.userData.noSnow) continue;
       seasonal(m);
     }
   }

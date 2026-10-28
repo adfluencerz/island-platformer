@@ -37,6 +37,9 @@ import { SKY_STYLES, SKY_KINDS, onIsle, relicAt } from '../shared/skyisles.js';
 import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
+import * as THREE from 'three';
+import { NEEDLES, patch } from '../src/gfx/chunks.js';
+import { hook, hasHook, cloneHooked } from '../src/gfx/shading.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { DungeonRun, MAIN, ROOM_W, LAYOUTS, roomCount, roomRect, roomEntry, roomAt, roomOpen, dungeonAt, dungeonStart, dungeonExit, gateAt, sideDoorAt, chestAt, chestLoot, foeRooms, dungeonFromWire, foeHits } from '../shared/dungeons.js';
@@ -3635,6 +3638,45 @@ await test('poker hands are told apart and ranked, and the best five of seven fo
   assert.deepEqual(new Set(best.cards), new Set(['7h', '8h', '9h', 'Th', 'Jh']));
   const deck = shuffle(newDeck(), mulberry32(5));
   assert.equal(new Set(deck).size, 52);
+});
+
+await test('shader hooks: every needle is in the installed three, and keys compose the same way every time', () => {
+  for (const [name, { needle, stages }] of Object.entries(NEEDLES)) {
+    for (const lib of ['standard', 'lambert', 'phong']) {
+      const { vertexShader, fragmentShader } = THREE.ShaderLib[lib];
+      if (stages.includes('v')) assert.ok(vertexShader.includes(needle), `${name} in the ${lib} vertex shader`);
+      if (stages.includes('f')) assert.ok(fragmentShader.includes(needle), `${name} in the ${lib} fragment shader`);
+    }
+  }
+  assert.equal(patch('a\n#include <begin_vertex>\nb', 'begin_vertex', 'x;', 'GFX_X'), 'a\n#include <begin_vertex>\n#ifdef GFX_X\nx;\n#endif\nb');
+  assert.throws(() => patch('nothing here', 'begin_vertex', 'x;'));
+
+  const made = () => new THREE.MeshStandardMaterial();
+  const key = (m) => m.customProgramCacheKey();
+  const [a, b, plain] = [made(), made(), made()];
+  for (const m of [a, b]) hook(hook(m, 'wind:0.250', () => {}), 'season:grass,sink', () => {});
+  assert.equal(key(a), 'gfx1||wind:0.250+season:grass,sink');
+  assert.equal(key(a), key(b), 'the same hooks, the same key (one program)');
+  hook(a, 'wind:0.250', () => {}); // (again: replaced where it was)
+  assert.equal(key(a), key(b));
+  assert.equal(key(plain), 'gfx1||');
+  assert.notEqual(key(hook(made(), 'wind:0.180', () => {})), key(hook(made(), 'wind:0.250', () => {})), 'settings are in the key');
+  assert.ok(hasHook(a, /^season/) && !hasHook(plain, /^season/));
+  assert.equal(key(cloneHooked(a)), key(a), 'a hooked clone keeps its hooks');
+  plain.userData.gfx = { noCloud: true };
+  assert.equal(key(plain), 'gfx1|noCloud|');
+
+  // the base hooks then the material's, in order; GFX_WORLD's lines only where it is defined
+  const order = [];
+  hook(plain, 'one', () => order.push('one'));
+  hook(plain, 'two', () => order.push('two'));
+  const shader = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  plain.onBeforeCompile(shader);
+  assert.deepEqual(order, ['one', 'two']);
+  assert.match(shader.vertexShader, /#ifdef GFX_WORLD\n[^]*vGfxWorld = /);
+  const basic = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
+  new THREE.MeshBasicMaterial().onBeforeCompile(basic);
+  assert.equal(basic.vertexShader, THREE.ShaderLib.basic.vertexShader, 'unlit materials are left alone');
 });
 
 await test('the farm\'s seasons: a week each, spring to winter and round again, turning on a season\'s last day', () => {

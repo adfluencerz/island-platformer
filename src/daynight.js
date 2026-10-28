@@ -8,6 +8,7 @@ import './daynight.css';
 // Time is in game hours (0..24). A full day takes DAY_LENGTH_SECONDS of real
 // time, so one game hour is DAY_LENGTH_SECONDS / 24 seconds.
 import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
+import { light as shaderLight } from './gfx/uniforms.js';
 
 export { DAY_LENGTH_SECONDS };
 
@@ -220,6 +221,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
+    shaderLight({ sunDir, sun, sky: s.sky, zenith: s.hemiSky, glow: s.light, night, under, cloud }); // (the shaders' copy: src/gfx/uniforms.js)
     glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
     if (!clock) return night;
 

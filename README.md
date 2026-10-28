@@ -343,6 +343,11 @@ npm run shots                 # or: npm run shots -- --tier medium --check
 ```
 Ten fixed screenshots of the game at full graphics (`scripts/shots.mjs`), into `shots/` (not in git): the plaza in the morning and at noon, the forest, the lake at sunset, lamps at night, rain, a dungeon, a split screen, a lobby and a phone. Each comes with what the renderer drew (`shots/stats.json`: draw calls, triangles, shaders), and `shots/contact.png` has them all on one page. `--tier` draws at that graphics tier; `--check` fails when the plaza at noon is over the budgets in `docs/visuals/README.md`.
 
+```bash
+npm run gates
+```
+Runs every check a change must pass, in order (`npm test`, the build, the headless browser at low and full graphics, `npm run shots -- --check`), one line each, with the end of the output of any that fail (`scripts/gates.mjs`).
+
 ## Build for production
 ```bash
 npm run build

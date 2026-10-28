@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { ITEMS } from './items.js';
+import { hook } from './gfx/shading.js';
+import { patch, define } from './gfx/chunks.js';
 
 // ---------- Items out in the world ----------
 // An item lying about (a treasure, a drop, a find on the farm) is its own
@@ -16,12 +18,11 @@ const geometries = new Map(); // item -> BufferGeometry
 
 // A touch of each block's own color as glow, so a find still shows at dusk
 export const itemMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
-itemMaterial.onBeforeCompile = (shader) => {
-  shader.fragmentShader = shader.fragmentShader.replace(
-    '#include <emissivemap_fragment>',
-    '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * 0.22;'
-  );
-};
+itemMaterial.userData.noSnow = true; // (src/seasons.js)
+hook(itemMaterial, 'itemGlow', (shader) => {
+  define(shader, 'GFX_ITEM_GLOW');
+  shader.fragmentShader = patch(shader.fragmentShader, 'emissivemap_fragment', 'totalEmissiveRadiance += diffuseColor.rgb * 0.22;', 'GFX_ITEM_GLOW');
+});
 
 // The geometry for an item (an item this page doesn't know, from a newer server: a coin)
 export function itemGeometry(item) {

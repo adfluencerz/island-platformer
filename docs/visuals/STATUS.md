@@ -1,10 +1,10 @@
 # Visuals: status
 
-Current phase: 01 (`phases/01-shading-core.md`)
+Current phase: 02 (`phases/02-tone-mapping.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
-- [ ] 01 Shading core and hook migration
+- [x] 01 Shading core and hook migration
 - [ ] 02 Tone mapping and light rebalance
 - [ ] 03 Sky dome
 - [ ] 04 Atmospheric fog
@@ -30,7 +30,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- Medium is over its 0.8 M triangle budget at the start (≈ 831k, same scene as high): grass density (phase 07) brings it down; `--check` is run on high.
-- `renderer.info` counts a whole frame (reset at the top of `draw()`); stats after `g.step()` alone are the last drawn frame's.
-- The tier is applied in `quality.onApply` in `src/main.js` (pixel ratio, shadow map size, `sun.castShadow`, `weather.setParticles`); later knobs hook in there.
-- `--full` used to fail to log in (title frames starved the 8 s login check): `scripts/lib/page.mjs` throttles frames until on the farm.
+- Change a shader only with `hook(material, key, fn)` (`src/gfx/shading.js`): the key must encode every setting fn uses (it is the program cache key); patch at `NEEDLES` (`src/gfx/chunks.js`, checked by `npm test`) inside `#ifdef GFX_*`.
+- Shared uniforms are in `src/gfx/uniforms.js` (`use(shader, names, 'v'|'f'|'vf')`); `frame()` runs in `updateWorld`, `look()` in `lookFrom`, `light()` in `daynight.js apply()` (per view in split screen). Most are filled but no shader reads them yet.
+- Every lit material gets `vGfxWorld` when a hook does `define(shader, 'GFX_WORLD')` (ripples and foam use it). `snowOn()` now skips by `userData.noSnow`: water, items, foam, farmers and the swaying flowers carry it.
+- Shots are not pixel-stable run to run (0.3-4% of pixels move: NPCs, animals); phase 01 was judged by old/new diffs within that noise and identical mean colors. `programs` plaza-noon 22 to 24 between runs (baseline 24): what has compiled by then varies.
+- `npm run gates` runs every gate (about 2 min).

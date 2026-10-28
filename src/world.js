@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { damp } from './character.js';
 import { mulberry32 } from '../shared/worldgen.js';
 import { giantScale } from '../shared/giants.js';
+import { hook, cloneHooked } from './gfx/shading.js';
+import { patch, define } from './gfx/chunks.js';
+import { use } from './gfx/uniforms.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
 export { mulberry32, distToSegment, distToPaths } from '../shared/worldgen.js';
@@ -32,20 +35,20 @@ const meadowNoise = (x, z) =>
 
 // Wind sway for grass and flowers, done in the vertex shader so thousands of
 // instances cost nothing on the CPU. Sway scales with height above the base.
-// One clock for every world (main.js sets it).
-export const windTime = { value: 0 };
+// One clock for every world (uTime: src/gfx/uniforms.js; main.js runs it).
+// (noSnow: the flowers keep their color in the snow; the farm's grass is
+// given its own, src/seasons.js)
 function addWind(material, strength) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uWindTime = windTime;
-    shader.vertexShader = 'uniform float uWindTime;\n' + shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
+  material.userData.noSnow = true;
+  hook(material, `wind:${strength.toFixed(3)}`, (shader) => {
+    define(shader, 'GFX_WIND');
+    use(shader, ['uTime'], 'v');
+    shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       vec2 windPos = instanceMatrix[3].xz;
-      float sway = sin(uWindTime * 1.8 + windPos.x * 0.35 + windPos.y * 0.25) * ${strength.toFixed(3)} * position.y;
+      float sway = sin(uTime * 1.8 + windPos.x * 0.35 + windPos.y * 0.25) * ${strength.toFixed(3)} * position.y;
       transformed.x += sway;
-      transformed.z += sway * 0.5;`
-    );
-  };
+      transformed.z += sway * 0.5;`, 'GFX_WIND');
+  });
 }
 
 // A repeatable 0..1 value for a point: the same point always gets the same
@@ -58,30 +61,20 @@ export const hash2 = (x, z) => {
 // Ripples for still or open water, in the fragment shader: the surface normal
 // rocks to and fro (so the sun glints off it) and the color drifts a little.
 export function addRipples(material) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uWindTime = windTime;
-    shader.vertexShader = 'varying vec2 vRipplePos;\n' + shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-      vRipplePos = (modelMatrix * vec4(transformed, 1.0)).xz;`
-    );
-    shader.fragmentShader = 'uniform float uWindTime;\nvarying vec2 vRipplePos;\n' + shader.fragmentShader
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-        float rippleA = vRipplePos.x * 1.3 + uWindTime * 1.1;
-        float rippleB = vRipplePos.y * 1.7 - uWindTime * 0.9;
-        float rippleC = (vRipplePos.x - vRipplePos.y) * 2.6 + uWindTime * 1.7;
-        diffuseColor.rgb *= 0.95 + 0.07 * sin(rippleA * 0.4 + rippleB * 0.3);`
-      )
-      .replace(
-        '#include <normal_fragment_begin>',
-        `#include <normal_fragment_begin>
-        vec3 rippleNormal = normalize(vec3(cos(rippleA) * 0.07 + cos(rippleC) * 0.04, 1.0, cos(rippleB) * 0.07 - cos(rippleC) * 0.04));
-        normal = normalize((viewMatrix * vec4(rippleNormal, 0.0)).xyz);`
-      );
-  };
-  return material;
+  material.userData.noSnow = true;
+  return hook(material, 'ripples', (shader) => {
+    define(shader, 'GFX_WORLD');
+    define(shader, 'GFX_RIPPLES');
+    use(shader, ['uTime'], 'f');
+    shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
+      float rippleA = vGfxWorld.x * 1.3 + uTime * 1.1;
+      float rippleB = vGfxWorld.z * 1.7 - uTime * 0.9;
+      float rippleC = (vGfxWorld.x - vGfxWorld.z) * 2.6 + uTime * 1.7;
+      diffuseColor.rgb *= 0.95 + 0.07 * sin(rippleA * 0.4 + rippleB * 0.3);`, 'GFX_RIPPLES');
+    shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_begin', `
+      vec3 rippleNormal = normalize(vec3(cos(rippleA) * 0.07 + cos(rippleC) * 0.04, 1.0, cos(rippleB) * 0.07 - cos(rippleC) * 0.04));
+      normal = normalize((viewMatrix * vec4(rippleNormal, 0.0)).xyz);`, 'GFX_RIPPLES');
+  });
 }
 
 // The sea around every island (main.js puts it there), lighter in the
@@ -93,24 +86,19 @@ const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transpar
 const FOAM_WIDTH = 0.8;
 const FOAM_COLOR = new THREE.Color(0xffffff);
 const foamMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
-foamMat.onBeforeCompile = (shader) => {
-  shader.uniforms.uWindTime = windTime;
-  shader.vertexShader = 'varying vec2 vFoamPos;\n' + shader.vertexShader.replace(
-    '#include <begin_vertex>',
-    `#include <begin_vertex>
-    vFoamPos = (modelMatrix * vec4(transformed, 1.0)).xz;`
-  );
-  // vertex alpha: 1 at the shore, 0 at the foam's outer edge. A solid line
-  // hugs the shore and bands of foam wash in and out beyond it.
-  shader.fragmentShader = 'uniform float uWindTime;\nvarying vec2 vFoamPos;\n' + shader.fragmentShader.replace(
-    '#include <color_fragment>',
-    `#include <color_fragment>
+foamMat.userData.noSnow = true;
+// vertex alpha: 1 at the shore, 0 at the foam's outer edge. A solid line
+// hugs the shore and bands of foam wash in and out beyond it.
+hook(foamMat, 'foam', (shader) => {
+  define(shader, 'GFX_WORLD');
+  define(shader, 'GFX_FOAM');
+  use(shader, ['uTime'], 'f');
+  shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     float shore = vColor.a;
-    float drift = sin(vFoamPos.x * 0.8 + vFoamPos.y * 0.6) * 1.5;
-    float wave = sin(shore * 11.0 + uWindTime * 1.6 + drift);
-    diffuseColor.a = max(smoothstep(0.55, 0.9, shore) * 0.9, smoothstep(0.5, 0.9, wave) * shore * 0.75);`
-  );
-};
+    float drift = sin(vGfxWorld.x * 0.8 + vGfxWorld.z * 0.6) * 1.5;
+    float wave = sin(shore * 11.0 + uTime * 1.6 + drift);
+    diffuseColor.a = max(smoothstep(0.55, 0.9, shore) * 0.9, smoothstep(0.5, 0.9, wave) * shore * 0.75);`, 'GFX_FOAM');
+});
 
 // ---------- The decor kit: a few shared geometries/materials, many meshes ----------
 export const foliageMat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
@@ -597,7 +585,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     tree.traverse((obj) => {
       if (!obj.isMesh) return;
       if (!materials.has(obj.material)) {
-        const copy = obj.material.clone();
+        const copy = cloneHooked(obj.material);
         copy.userData.from = obj.material; // (what it copies: the farm's seasons color that, src/seasons.js)
         materials.set(obj.material, copy);
       }
