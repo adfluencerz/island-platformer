@@ -1,11 +1,11 @@
 # Visuals: status
 
-Current phase: 02 (`phases/02-tone-mapping.md`)
+Current phase: 03 (`phases/03-sky-dome.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
 - [x] 01 Shading core and hook migration
-- [ ] 02 Tone mapping and light rebalance
+- [x] 02 Tone mapping and light rebalance
 - [ ] 03 Sky dome
 - [ ] 04 Atmospheric fog
 - [ ] 05 Post-processing
@@ -30,8 +30,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- Change a shader only with `hook(material, key, fn)` (`src/gfx/shading.js`): the key must encode every setting fn uses (it is the program cache key); patch at `NEEDLES` (`src/gfx/chunks.js`, checked by `npm test`) inside `#ifdef GFX_*`.
-- Shared uniforms are in `src/gfx/uniforms.js` (`use(shader, names, 'v'|'f'|'vf')`); `frame()` runs in `updateWorld`, `look()` in `lookFrom`, `light()` in `daynight.js apply()` (per view in split screen). Most are filled but no shader reads them yet.
-- Every lit material gets `vGfxWorld` when a hook does `define(shader, 'GFX_WORLD')` (ripples and foam use it). `snowOn()` now skips by `userData.noSnow`: water, items, foam, farmers and the swaying flowers carry it.
-- Shots are not pixel-stable run to run (0.3-4% of pixels move: NPCs, animals); phase 01 was judged by old/new diffs within that noise and identical mean colors. `programs` plaza-noon 22 to 24 between runs (baseline 24): what has compiled by then varies.
-- `npm run gates` runs every gate (about 2 min).
+- Tone mapping is `src/gfx/tonemap.js`: three's `CustomToneMapping` = AgX at exposure 1.15, mixed half-way with the scene's own hue at AgX's brightness (plain AgX turned the grass yellow and grey); OutputPass picks up the same chunk. Name tags and fireflies are `toneMapped: false`.
+- `daynight.js` KEYS: day sun 1.45 warm (0xfff6ea), sky light 0.95 cool (0xc4d8ff), ground bounce blue (0x34487a); dusk 18.3 sun 1.9 and hemi 1.25 so sunsets glow; night moon 0.6 blue; CAVE hemiI 0.7. Not x1.3 across the board: AgX at 1.15 already came out brighter than before.
+- `scene.background` and fog color are not tone mapped (fog mixes after it, in output space). The sky dome (03) is a mesh, so it will be: give it `toneMapped: false`, or lift its colors, so it still meets the fog at the horizon in KEYS' `sky` color.
+- Night grass still reads green under the blue moon (green albedo); a night desaturation belongs in shading (06) or the grade (05), not the lights.
+- Still true from 01: change a shader only with `hook()` (`src/gfx/shading.js`, key = every setting); shared uniforms in `src/gfx/uniforms.js`; `npm run gates` runs every gate (about 2 min).

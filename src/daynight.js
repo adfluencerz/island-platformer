@@ -17,16 +17,20 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Lighting keyframes by hour; values are interpolated between neighbors and
 // wrap around midnight. `light` is the sun by day and the moon by night.
+// Set for the filmic tone mapping (src/gfx/tonemap.js, exposure 1.15): a warm
+// sun a little stronger than the sky, a cool blue sky light and a blue-violet
+// ground bounce, so lit sides are warm and shade is cool; dusk's sun and sky
+// are lifted so a sunset glows, and night is moonlit blue.
 const KEYS = [
-  { h: 0, sky: 0x0b1026, light: 0x9fb4ff, lightI: 0.5, hemiSky: 0x4060a0, hemiGround: 0x1a1a34, hemiI: 0.6 },
-  { h: 4.5, sky: 0x111a3a, light: 0x9fb4ff, lightI: 0.45, hemiSky: 0x4060a0, hemiGround: 0x1a1a34, hemiI: 0.6 },
-  { h: 6, sky: 0x8a6a9c, light: 0xffa070, lightI: 0.35, hemiSky: 0xb09ac8, hemiGround: 0x3a2f3a, hemiI: 0.75 },
-  { h: 7, sky: 0xf2b27a, light: 0xffc890, lightI: 0.95, hemiSky: 0xffe0c0, hemiGround: 0x4a3f3a, hemiI: 0.95 },
-  { h: 8.5, sky: 0x87ceeb, light: 0xffffff, lightI: 1.2, hemiSky: 0xffffff, hemiGround: 0x444466, hemiI: 1.0 },
-  { h: 17, sky: 0x87ceeb, light: 0xfff2d6, lightI: 1.15, hemiSky: 0xffffff, hemiGround: 0x444466, hemiI: 1.0 },
-  { h: 18.3, sky: 0xf0955a, light: 0xffa060, lightI: 0.95, hemiSky: 0xffd0a0, hemiGround: 0x4a3a3a, hemiI: 0.9 },
-  { h: 19, sky: 0x8a5a86, light: 0xff7a50, lightI: 0.35, hemiSky: 0x9a7aaa, hemiGround: 0x2a2030, hemiI: 0.7 },
-  { h: 20.5, sky: 0x1a2048, light: 0x9fb4ff, lightI: 0.45, hemiSky: 0x4060a0, hemiGround: 0x1a1a34, hemiI: 0.6 },
+  { h: 0, sky: 0x0b1026, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  { h: 4.5, sky: 0x111a3a, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  { h: 6, sky: 0x8a6a9c, light: 0xff9a6a, lightI: 0.5, hemiSky: 0xb09ac8, hemiGround: 0x3a3458, hemiI: 0.75 },
+  { h: 7, sky: 0xf2b27a, light: 0xffc488, lightI: 1.25, hemiSky: 0xf0dce0, hemiGround: 0x464468, hemiI: 0.9 },
+  { h: 8.5, sky: 0x87ceeb, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
+  { h: 17, sky: 0x87ceeb, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
+  { h: 18.3, sky: 0xf0955a, light: 0xffa060, lightI: 1.9, hemiSky: 0xf4b8c0, hemiGround: 0x4a4070, hemiI: 1.25 },
+  { h: 19, sky: 0x8a5a86, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
+  { h: 20.5, sky: 0x1a2048, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
 ];
 
 const COLOR_PROPS = ['sky', 'light', 'hemiSky', 'hemiGround'];
@@ -108,6 +112,7 @@ function createFireflies(count) {
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      toneMapped: false, // (their own glow, as bright as it is)
     })
   );
   points.frustumCulled = false; // positions move every frame around the player
@@ -139,7 +144,7 @@ function createFireflies(count) {
 // Underground (a boss's dungeon): black all round, the hemisphere and the sun
 // down low in the cave's color, and the warm light round the farmer up
 const CAVE_DARK = new THREE.Color(0x040306);
-const CAVE = { hemiI: 0.62, lightI: 0.32, glow: 16 };
+const CAVE = { hemiI: 0.7, lightI: 0.32, glow: 16 };
 
 export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let hour = THREE.MathUtils.euclideanModulo(startHour, 24);
