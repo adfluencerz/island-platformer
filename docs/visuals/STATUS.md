@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 07 (`phases/07-grass.md`)
+Current phase: 08 (`phases/08-trees.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -10,7 +10,7 @@ Current phase: 07 (`phases/07-grass.md`)
 - [x] 04 Atmospheric fog
 - [x] 05 Post-processing
 - [x] 06 Painterly shading, clouds overhead, cloud shadows
-- [ ] 07 Grass v2
+- [x] 07 Grass v2
 - [ ] 08 Trees: instancing, dithered fade, painterly canopy
 - [ ] 09 Bushes, rocks, biome decor instanced
 - [ ] 10 Ground detail
@@ -30,7 +30,7 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- Painterly light is a base hook, `src/gfx/light.js` (opt-outs `noWrap`, `noCloud`): it swaps three's `lights_*_pars_fragment` (diffuse wrapped by `gfxWrapNL`, specular as it was) and `lights_fragment_begin` under `GFX_LIGHT`. `uWrap` 0.45 (none by moonlight), `uToon` 0.3, `uShadowTint` (0.80, 0.86, 1.0) on the sky's light by `1 - gfxSunLit` (cast shadow x cloud x facing).
-- Cloud shadows: `gfxCloudShadow(worldXZ)` (in the pars chunk, so any lit hook can call it; grass in 07 can paste `CLOUD_GLSL` and use `LIGHT_UNIFORMS`): 2-octave value noise at `(xz - uCloudOffset) * 0.018 + (5.5, 19.5)`, returns 1 in sun, down to 0.3 (clear) / 0.65 (overcast) under cloud; the sun gets it all, the sky's light 0.6 of it. Coverage ~40 % clear, ~90 % in rain. Off on low (`uCloudShadows` 0), underground, half at night; the wardrobe stage zeroes it while it draws.
-- Shadows: `PCFShadowMap` (PCFSoft ignored `radius`), `radius` 2.5, `normalBias` 0.035; back faces (N.L < 0) fade the map out so the wrap, not the map, darkens them: no acne band, a smooth terminator. The dome's clouds now drift with the wind (`- uCloudOffset`), the same way as their shadows.
-- plaza-noon looks ~10 % darker on average (cloud patch in view); night unchanged by the wrap. Night desaturation still not done (grade, `post.render()`).
+- Grass: `makeTuftGeometry()` in `world.js`, 7 blades x 3 tris (indexed, `DoubleSide`, normals up; the hook re-flips the back's normal), drawRange = tier's `grassBlades` (3/5/7, new knob) x 9 indices; `mesh.count` = tufts x `grassDensity`, live via `grassTier()`/`onApply`. 27,888 tufts on the farm: ~586k tris high, ~251k medium, ~88k low.
+- Extra pass from `mulberry32(map.seed ^ 0x51a7)` (`MORE_GRASS` 1.5; `isOpenGround(x, z, 0, -0.15)` lets it nearer tree sites); base pass keeps its rng draws (plus 15 burnt for the old tuft shape). Biome `tall` in `BIOME_FOLIAGE`. Tuft material now 0x8cc04f.
+- Wind hook `grass:<height>` (`addGrassWind(material, height)`): gust = 2-octave value noise at `(root.xz - uCloudOffset * 5) * 0.07`, bend along `normalize(uWind + (0.6, 0.25))` (the clouds' drift), `0.08 + 0.42 gust + 0.3 storm`, fine sine, x height^2; feet push from `uPlayers` (y - 0.8), sheen `vColor *= 1 + 0.22 gust h`. Trees in 08 should sway with the same gust field (`GRASS_WIND_GLSL` is exported from `world.js`; sample at the trunk's xz) so canopies lean with the waves.
+- Ground drawn in 47-tile squares (`GROUND_CHUNK`, 9 meshes on the farm): culling put phone at ~748k (it was 832k before any grass); plaza-noon calls 969-1000 across runs (the farm drifts), right on the 1000 line: 08 should save calls.
