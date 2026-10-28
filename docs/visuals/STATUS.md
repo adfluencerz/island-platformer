@@ -1,13 +1,13 @@
 # Visuals: status
 
-Current phase: 04 (`phases/04-atmos-fog.md`)
+Current phase: 05 (`phases/05-post.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
 - [x] 01 Shading core and hook migration
 - [x] 02 Tone mapping and light rebalance
 - [x] 03 Sky dome
-- [ ] 04 Atmospheric fog
+- [x] 04 Atmospheric fog
 - [ ] 05 Post-processing
 - [ ] 06 Painterly shading, clouds overhead, cloud shadows
 - [ ] 07 Grass v2
@@ -30,8 +30,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- The sky is `src/gfx/sky.js`: a dome drawn round each camera in its vertex shader (no per-view code), not tone mapped, from the shared uniforms only; plaza-noon +1 call, +1 program.
-- The fog must meet it at `uSkyHorizon` (= `scene.fog.color` = `dayNight.sky.horizon` after the season's tint), output as is (not tone mapped): below the horizon the dome is exactly that color and eases off it through the haze band (sun glow, stars and clouds fade in over ~8°).
-- For 04's fog use `uSkyHorizon`, `uSkyZenith`, `uSkyGlow` (sun/moon light color), `uSunDir`, `uNight`, `uUnder`, `uCloudAmount`, `uFlash`, `uCamPos`, `uFogHeight`; if fog tints toward the sun, the dome's horizon must get the same tint (sky.js keeps the glow off the haze band today).
-- KEYS: `sky` is now `horizon` (still the fog's), plus `zenith`; overcast, lightning and the cave's dark reach both. Sun disc and moon fade by `uNight` (sun gone before 19:00's swap to the moon's side).
-- The 45° play camera never sees above the horizon (top ray ~15° down): clouds show on the title, the lobby and tilted views only; clouds overhead belong to 06. `npm run shots` lobby flaked once ("never got into the lobby"), passed on rerun.
+- The fog is `src/gfx/atmos.js`, a base hook on every lit material (`userData.gfx.noAtmos` opts out, own program): `fog_fragment` swapped under `GFX_ATMOS` for three's linear term (lookFrom's near/far, `CAVE_FOG`) plus an aerial haze from ~0.4 fog-near and a sea-level haze (`uFogHeight` = (SEA_LEVEL, 0.35 per unit)); off from `uUnder` 0.6 (the dungeon is three's fog alone). Unlit sprites/tags keep three's plain fog.
+- Its color is `gfxHorizon(dir)` (`HORIZON_GLSL`, the dome uses the same function), warm toward a low sun, written with `linearToOutputTexel`: like three's `fogColor` it follows the output space, so into a render target it is linear and still meets the dome.
+- For 05: three's fog runs after tone mapping and the dome is `toneMapped: false`, so neither is tone mapped; tone map or grade in post only if fog, dome and ground get it alike (or keep the scene's own tone mapping and grade after), or the far land stops meeting the sky.
+- Render order: the dome is `renderOrder -1000`, no depth test/write, drawn first round each camera; a post pass must keep it first and not read it as depth (bloom on the sun disc is fine).
+- plaza-noon unchanged: 960 calls, 24 programs (every lit material gets the hook, so no new programs).

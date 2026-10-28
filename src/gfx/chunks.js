@@ -12,6 +12,8 @@ export const NEEDLES = {
   normal_fragment_begin: { needle: '#include <normal_fragment_begin>', stages: 'f' },
   normal_fragment_maps: { needle: '#include <normal_fragment_maps>', stages: 'f' },
   emissivemap_fragment: { needle: '#include <emissivemap_fragment>', stages: 'f' },
+  fog_pars_fragment: { needle: '#include <fog_pars_fragment>', stages: 'f' },
+  fog_fragment: { needle: '#include <fog_fragment>', stages: 'f' },
 };
 
 // source with `code` after the chunk `name` (a key of NEEDLES), inside
@@ -22,6 +24,14 @@ export function patch(source, name, code, flag) {
   if (!needle || !source.includes(needle)) throw new Error(`gfx: no ${name} in this shader`);
   const body = flag ? `#ifdef ${flag}\n${code}\n#endif` : code;
   return source.replace(needle, `${needle}\n${body}`);
+}
+
+// source with the chunk `name` itself replaced by `code` where `flag` is
+// defined (and left as it was where it isn't)
+export function swap(source, name, code, flag) {
+  const { needle } = NEEDLES[name] ?? {};
+  if (!needle || !source.includes(needle)) throw new Error(`gfx: no ${name} in this shader`);
+  return source.replace(needle, `#ifdef ${flag}\n${code}\n#else\n${needle}\n#endif`);
 }
 
 // #define flag in both of the shader's stages (once)

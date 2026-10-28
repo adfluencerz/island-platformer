@@ -213,6 +213,7 @@ const FOG_NEAR = 30;
 const FOG_FAR = 90;
 const CAVE_FOG = [15, 36]; // (near and far, down in a boss's dungeon)
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
+gfx.U.uFogHeight.value.x = SEA_LEVEL; // (the low haze over the sea lies on it: src/gfx/atmos.js)
 // The sky round every view, its horizon the fog's color (src/gfx/sky.js; the
 // background is what shows before it is drawn)
 scene.add(createSky());

@@ -23,7 +23,7 @@ export const U = {
   uWind: { value: new THREE.Vector2() }, // a storm's wind, xz (units a second)
   uPlayers: { value: Array.from({ length: MAX_PLAYERS }, () => new THREE.Vector4(0, -1e4, 0, 0)) }, // the farmers here: xyz, w 1 (0: none)
   uCamPos: { value: new THREE.Vector3() }, // this view's camera, world space
-  uFogHeight: { value: 0 },
+  uFogHeight: { value: new THREE.Vector2(0, 0.35) }, // the haze's: x the sea's level, y how fast it thins going up (a unit)
   uShadowTint: { value: new THREE.Color(0.62, 0.7, 0.92) },
   uWrap: { value: 0 },
   uToon: { value: 0 },
@@ -32,7 +32,7 @@ export const U = {
 const TYPES = {
   uTime: 'float', uSunDir: 'vec3', uSunColor: 'vec3', uSkyZenith: 'vec3', uSkyHorizon: 'vec3', uSkyGlow: 'vec3',
   uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uFlash: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
-  uPlayers: `vec4[${MAX_PLAYERS}]`, uCamPos: 'vec3', uFogHeight: 'float', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float',
+  uPlayers: `vec4[${MAX_PLAYERS}]`, uCamPos: 'vec3', uFogHeight: 'vec2', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float',
 };
 
 const declaration = (name) => {
@@ -43,15 +43,13 @@ const declaration = (name) => {
 };
 
 // The shared uniforms `names` in a shader being compiled (a hook's onBeforeCompile):
-// set, and declared in the stages asked for ('v', 'f' or 'vf')
+// set, and declared in the stages asked for ('v', 'f' or 'vf'), once (two
+// hooks may both use one)
 export function use(shader, names, stages = 'vf') {
-  let head = '';
-  for (const name of names) {
-    shader.uniforms[name] = U[name];
-    head += declaration(name);
-  }
-  if (stages.includes('v')) shader.vertexShader = head + shader.vertexShader;
-  if (stages.includes('f')) shader.fragmentShader = head + shader.fragmentShader;
+  const declare = (source) => names.map(declaration).filter((line) => !source.includes(line)).join('') + source;
+  for (const name of names) shader.uniforms[name] = U[name];
+  if (stages.includes('v')) shader.vertexShader = declare(shader.vertexShader);
+  if (stages.includes('f')) shader.fragmentShader = declare(shader.fragmentShader);
 }
 
 // Once a frame: the clock (wind: a storm's, a Vector3), the clouds' drift

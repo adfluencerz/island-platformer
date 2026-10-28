@@ -38,7 +38,7 @@ import { growWilds, wildsFromWire, wildsToWire, siteOf } from '../shared/wilds.j
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import * as THREE from 'three';
-import { NEEDLES, patch } from '../src/gfx/chunks.js';
+import { NEEDLES, patch, swap } from '../src/gfx/chunks.js';
 import { patchToneChunk } from '../src/gfx/tonemap.js';
 import { hook, hasHook, cloneHooked } from '../src/gfx/shading.js';
 import { homeWildsSource } from './wilds.js';
@@ -3651,6 +3651,8 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   }
   assert.equal(patch('a\n#include <begin_vertex>\nb', 'begin_vertex', 'x;', 'GFX_X'), 'a\n#include <begin_vertex>\n#ifdef GFX_X\nx;\n#endif\nb');
   assert.throws(() => patch('nothing here', 'begin_vertex', 'x;'));
+  assert.equal(swap('a\n#include <fog_fragment>\nb', 'fog_fragment', 'x;', 'GFX_X'), 'a\n#ifdef GFX_X\nx;\n#else\n#include <fog_fragment>\n#endif\nb');
+  assert.throws(() => swap('nothing here', 'fog_fragment', 'x;', 'GFX_X'));
   patchToneChunk(); // (throws if three's CustomToneMapping placeholder moved)
   assert.ok(THREE.ShaderChunk.tonemapping_pars_fragment.includes('AgXToneMapping( color );'), 'the filmic tone mapping is in the chunk');
 
@@ -3680,6 +3682,16 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   const basic = { uniforms: {}, vertexShader: THREE.ShaderLib.basic.vertexShader, fragmentShader: '' };
   new THREE.MeshBasicMaterial().onBeforeCompile(basic);
   assert.equal(basic.vertexShader, THREE.ShaderLib.basic.vertexShader, 'unlit materials are left alone');
+  // the atmosphere's fog: every lit material's (its uniforms declared once), three's own where one opts out
+  assert.match(shader.fragmentShader, /#define GFX_ATMOS\n/);
+  assert.match(shader.fragmentShader, /#ifdef GFX_ATMOS\n[^]*gfxHorizon[^]*#else\n#include <fog_fragment>\n#endif/);
+  assert.equal(shader.fragmentShader.split('uniform vec2 uFogHeight;').length, 2);
+  const clear = new THREE.MeshStandardMaterial();
+  clear.userData.gfx = { noAtmos: true };
+  const own = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  clear.onBeforeCompile(own);
+  assert.ok(!own.fragmentShader.includes('GFX_ATMOS') && own.fragmentShader.includes('#include <fog_fragment>'), 'opted out: three\'s fog');
+  assert.notEqual(key(clear), key(new THREE.MeshStandardMaterial()), 'and a program of its own');
 });
 
 await test('the farm\'s seasons: a week each, spring to winter and round again, turning on a season\'s last day', () => {
