@@ -50,11 +50,21 @@ export async function openFarm(browser, { query = '', full = false, size = [480,
   if (touch) await page.exposeFunction('__tap', (x, y) => page.touchscreen.tap(x, y));
   // Full graphics without a GPU: a frame takes a second or more, and the title
   // screen drawing them back to back starves the page, so the farm's login
-  // check with the server times out (and the welcome asks to log in). Until
-  // on the farm, a frame a second at most.
+  // check with the server times out (and the welcome asks to log in). No
+  // frame at all until the welcome knows who we are (the first one compiles
+  // every shader, seconds of work for a software GPU, which the login check
+  // can't wait out); then, until on the farm, a frame a second at most.
   if (full) await page.addInitScript(() => {
     const raf = window.requestAnimationFrame.bind(window);
-    window.requestAnimationFrame = (f) => (window.__harnessSlow === false ? raf(f) : setTimeout(() => raf(f), 1000));
+    const held = [];
+    window.__harnessHold = true;
+    const later = (f) => setTimeout(() => raf(f), 1000);
+    const release = setInterval(() => {
+      if (window.__harnessHold) return;
+      clearInterval(release);
+      held.splice(0).forEach(later);
+    }, 100);
+    window.requestAnimationFrame = (f) => (window.__harnessSlow === false ? raf(f) : window.__harnessHold ? held.push(f) : later(f));
   });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -77,6 +87,7 @@ export async function openFarm(browser, { query = '', full = false, size = [480,
   }
 
   // ---- onto the farm ----
+  if (full) await page.evaluate(() => (window.__harnessHold = false));
   await farmButton.click();
   await page.waitForFunction(() => window.__game?.place === 'home' && window.__game.inGame);
   if (full) await page.evaluate(() => (window.__harnessSlow = false));

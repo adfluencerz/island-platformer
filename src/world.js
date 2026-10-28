@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { damp } from './character.js';
 import { mulberry32 } from '../shared/worldgen.js';
 import { giantScale } from '../shared/giants.js';
-import { hook, cloneHooked } from './gfx/shading.js';
+import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { use } from './gfx/uniforms.js';
 import { knobs, onApply } from './gfx/quality.js';
@@ -106,6 +106,159 @@ function addGrassWind(material, height) {
       #endif`, 'GFX_GRASS');
   });
 }
+// ---------- Trees' looks: a dithered fade, a soft shade, a sway ----------
+// Hook 'tree' on a tree's materials (shared by every tree: they are drawn
+// instanced, makeInstancer below). aFade, per instance: how far it is faded
+// out, 0 solid to 1 gone, by throwing away that share of its pixels in a fixed
+// screen pattern (no transparency: nothing to sort or recompile). Only an
+// InstancedMesh reads it (it must have the attribute: makeInstancer gives it);
+// the same material on a plain mesh (a bush, a stump) is never faded.
+// Each part is lit brighter on top and darker underneath (by the mesh's own
+// height: each blob or cone of a canopy has its own), smooth-shaded if soft
+// (a round canopy's normals are a ball's; a pine's cones keep their facets),
+// and sways with the grass's gusts (sampled
+// where the instance stands, GRASS_WIND_GLSL) when the tier's treeSway is on:
+// the higher up, the further it leans. (One hook for trunks and leaves alike,
+// so they share one shader.)
+const treeLooks = new Set(); // (re-hooked when the tier changes)
+let treeSway = null; // (the tier's, once asked)
+function hookTree(material, soft = true) {
+  treeSway ??= knobs().treeSway;
+  const sway = treeSway;
+  treeLooks.add(material);
+  material.flatShading = !soft;
+  return hook(material, `tree${sway ? ':sway' : ''}`, (shader) => {
+    define(shader, 'GFX_TREE');
+    if (sway) define(shader, 'GFX_SWAY');
+    if (sway) use(shader, ['uTime', 'uWind', 'uCloudOffset'], 'v');
+    shader.vertexShader = patch(shader.vertexShader, 'common', `
+      #ifdef USE_INSTANCING
+        attribute float aFade;
+      #endif
+      varying float vTreeFade;
+      varying float vCanopyShade;
+      #ifdef GFX_SWAY
+        ${GRASS_WIND_GLSL}
+      #endif`, 'GFX_TREE');
+    shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
+      vTreeFade = 0.0;
+      vCanopyShade = 1.0;
+      #ifdef USE_INSTANCING
+        vTreeFade = aFade;
+      #endif
+      vCanopyShade = mix(0.72, 1.15, smoothstep(-0.9, 0.5, position.y));
+      #if defined(GFX_SWAY) && defined(USE_INSTANCING)
+        highp vec3 swayRoot = (modelMatrix * instanceMatrix[3]).xyz;
+        float swayH = clamp((instanceMatrix * vec4(transformed, 1.0)).y, 0.0, 5.0); // (how high above the ground)
+        vec2 swayDir = normalize(uWind + vec2(0.6, 0.25)); // (as the clouds drift, and the grass bends)
+        float swayStorm = clamp(length(uWind) / 6.0, 0.0, 1.0);
+        highp vec2 swayP = (swayRoot.xz - uCloudOffset * 5.0) * 0.07;
+        float swayGust = smoothstep(0.3, 0.8, 0.65 * gfxGrassNoise(swayP) + 0.35 * gfxGrassNoise(swayP * 2.3 + 3.7));
+        float swayFine = sin(uTime * 1.6 + dot(swayRoot.xz, vec2(0.9, 0.7)));
+        vec2 swayBend = swayDir * (0.05 + 0.4 * swayGust + 0.5 * swayStorm) + vec2(swayFine, -0.6 * swayFine) * (0.04 + 0.04 * swayGust);
+        vec3 swayOff = vec3(swayBend.x, 0.0, swayBend.y) * swayH * swayH * 0.025;
+        // (into the instance's own space: its columns are turns and scales)
+        vec3 swayC0 = instanceMatrix[0].xyz;
+        vec3 swayC1 = instanceMatrix[1].xyz;
+        vec3 swayC2 = instanceMatrix[2].xyz;
+        transformed += vec3(dot(swayOff, swayC0) / max(dot(swayC0, swayC0), 1e-8),
+                            dot(swayOff, swayC1) / max(dot(swayC1, swayC1), 1e-8),
+                            dot(swayOff, swayC2) / max(dot(swayC2, swayC2), 1e-8));
+      #endif`, 'GFX_TREE');
+    shader.fragmentShader = patch(shader.fragmentShader, 'common', `
+      varying float vTreeFade;
+      varying float vCanopyShade;`, 'GFX_TREE');
+    shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
+      if (vTreeFade > 0.001) {
+        // (interleaved gradient noise: an even scatter of the pixels to drop)
+        highp float treeDither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        if (treeDither < vTreeFade) discard;
+      }
+      diffuseColor.rgb *= vCanopyShade;`, 'GFX_TREE');
+  });
+}
+onApply((k) => {
+  if (treeSway === null || k.treeSway === treeSway) return;
+  treeSway = k.treeSway;
+  for (const material of treeLooks) hookTree(material, !material.flatShading);
+});
+
+// ---------- Instanced decor ----------
+// Many things made of a few (geometry, material) pairs, each pair drawn as
+// one InstancedMesh, so a forest is a handful of draws. A thing is still a
+// Group of plain meshes (its own children, placed as it is drawn), for its
+// transform and for a raycast to hit, but the group itself is never drawn
+// (visible false): its meshes are slots in the instanced meshes, written
+// from the group's matrix when it moves. Things in different squares of the
+// ground (chunk tiles across, where they were adopted) go in different
+// instanced meshes, so what is out of view (the camera's, or the sun's for
+// shadows) isn't drawn.
+//   const decor = makeInstancer(parent, chunk)  (parent: where the groups are, too)
+//   parts = decor.adopt(group, color)    its meshes' slots (color: times the material's)
+//   decor.build()                        once all are adopted: the instanced meshes
+//   decor.show(group, parts, shown)      where the group puts them now (shown false: hidden)
+//   decor.fade(parts, f)                 how far faded out, 0 to 1 (aFade: the 'tree' hook)
+const _im = new THREE.Matrix4();
+const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+const WHITE = new THREE.Color(1, 1, 1);
+export function makeInstancer(parent, chunk = GROUND_CHUNK) {
+  const sets = new Map(); // `${material.uuid}|${geometry.uuid}|${square}` -> { material, geometry, slots, mesh }
+  const write = (part, group, shown) => {
+    const { set, index, obj } = part;
+    if (!set.mesh) return;
+    set.mesh.setMatrixAt(index, shown ? _im.multiplyMatrices(group.matrix, obj.matrix) : HIDDEN);
+    set.mesh.instanceMatrix.needsUpdate = true;
+    set.mesh.boundingSphere = null; // (worked out again when next culled)
+  };
+  return {
+    adopt(group, color = WHITE) {
+      group.visible = false;
+      const parts = [];
+      const square = `${Math.floor(group.position.x / chunk)},${Math.floor(group.position.z / chunk)}`;
+      for (const obj of group.children) {
+        if (!obj.isMesh) continue;
+        obj.updateMatrix();
+        const key = `${obj.material.uuid}|${obj.geometry.uuid}|${square}`;
+        if (!sets.has(key)) sets.set(key, { material: obj.material, geometry: obj.geometry, slots: [], mesh: null });
+        const set = sets.get(key);
+        const part = { obj, set, index: set.slots.length, color: obj.userData.tint ?? color };
+        set.slots.push(part);
+        parts.push(part);
+      }
+      return parts;
+    },
+    build() {
+      for (const set of sets.values()) {
+        const n = set.slots.length;
+        const geo = set.geometry.clone(); // (its own, for its own aFade)
+        geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(n), 1));
+        if (set.geometry === canopyGeo) {
+          canopies.add(geo);
+          canopyRange(geo, knobs());
+        }
+        const mesh = new THREE.InstancedMesh(geo, set.material, n);
+        mesh.castShadow = mesh.receiveShadow = true;
+        set.mesh = mesh;
+        set.slots.forEach((part, i) => mesh.setColorAt(i, part.color));
+        parent.add(mesh);
+      }
+    },
+    show(group, parts, shown = true) {
+      group.updateMatrix();
+      for (const part of parts) write(part, group, shown);
+    },
+    fade(parts, f) {
+      for (const { set, index } of parts) {
+        const attr = set.mesh?.geometry.attributes.aFade;
+        if (!attr) continue;
+        attr.array[index] = f;
+        attr.needsUpdate = true;
+      }
+    },
+    meshes: () => [...sets.values()].map((set) => set.mesh).filter(Boolean),
+  };
+}
+
 // A repeatable 0..1 value for a point: the same point always gets the same
 // value, so vertices that two meshes share agree on it
 export const hash2 = (x, z) => {
@@ -162,9 +315,37 @@ export const leafMats = [0x3f8a3a, 0x4f9e3c, 0x2f7a45, 0x5aa83f].map(foliageMat)
 export const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
 export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map(foliageMat);
 
-const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6).translate(0, 0.5, 0);
+const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6, 1, true).translate(0, 0.5, 0); // (no ends: in the canopy, and in the ground)
 export const coneGeo = new THREE.ConeGeometry(1, 1.4, 7);
 export const blobGeo = new THREE.IcosahedronGeometry(1, 0);
+// A round tree's canopy blob: an icosahedron, once subdivided (80
+// triangles), its corners pushed in or out a little (by where they are, so
+// the faces stay joined) and its normals a ball's, so it lights softly round.
+// After it, the same blob not subdivided (20), for the tiers whose
+// treeDetail is 0: which one is drawn is the geometry's draw range
+// (canopyRange, as the tier changes).
+const CANOPY_HI = 240; // (vertices: not indexed)
+export const canopyGeo = (() => {
+  const pos = [];
+  const normal = [];
+  const q = (v) => Math.round(v * 1000);
+  for (const detail of [1, 0]) {
+    const p = new THREE.IcosahedronGeometry(1, detail).attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const k = 1 + (mulberry32((q(x) * 73856093) ^ (q(y) * 19349663) ^ (q(z) * 83492791))() - 0.5) * 0.24;
+      pos.push(x * k, y * k, z * k);
+      normal.push(x, y, z);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  return geo;
+})();
+const canopyRange = (geo, k) => (k.treeDetail ? geo.setDrawRange(0, CANOPY_HI) : geo.setDrawRange(CANOPY_HI, Infinity));
+const canopies = new Set(); // (each world's copies of it: makeInstancer)
+onApply((k) => canopies.forEach((geo) => canopyRange(geo, k)));
 export const rockGeo = new THREE.DodecahedronGeometry(1, 0);
 
 export function addDecor(geo, material, x, y, z, sx, sy = sx, sz = sx, parent) {
@@ -664,8 +845,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   }
 
   // ---------- Trees, bushes, rocks ----------
-  // { id, group, scale, materials, fade, x, z, collider, state, ... } — fade
-  // drives see-through when blocking the player; state is 'up', 'falling',
+  // { id, group, scale, parts, fade, x, z, collider, state, ... } — group:
+  // where it is drawn (never drawn itself: its parts are slots in treeDecor's
+  // instanced meshes); fade drives see-through when blocking the player
+  // (dithered away); state is 'up', 'falling',
   // 'down' or 'growing' (see Felling trees). id: its place in this list, the
   // same for everyone on the island, which is how a lobby names a tree.
   const trees = [];
@@ -675,6 +858,13 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // A map may dress its trees and bushes in its own leaves (a season, say)
   const leaves = map.leafMats ?? leafMats;
   const needles = map.pineMats ?? pineMats;
+  // (all of them drawn instanced, in a few draws: makeInstancer; their
+  // materials shared, the 'tree' hook fading one at a time)
+  for (const m of [trunkMat, ...leaves]) if (!treeLooks.has(m)) hookTree(m);
+  for (const m of needles) if (!treeLooks.has(m)) hookTree(m, false);
+  const treeDecor = makeInstancer(root);
+  // a tree drawn where its group says (or not at all, down)
+  const drawTree = (tree) => treeDecor.show(tree.group, tree.parts, tree.state !== 'down');
   function addTree({ x, z, kind, scale, look, sites }) {
     const lr = mulberry32(look);
     const pickOwn = (arr) => arr[Math.floor(lr() * arr.length)];
@@ -693,29 +883,22 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       addDecor(coneGeo, leaf, 0, 2.0, 0, 0.8, 0.9, 0.8, tree);
       addDecor(coneGeo, leaf, 0, 2.6, 0, 0.55, 0.8, 0.55, tree);
     } else {
-      // Round tree: a cluster of leafy blobs
+      // Round tree: a cluster of soft leafy blobs
       const leaf = pickOwn(leaves);
       addDecor(trunkGeo, trunkMat, 0, 0, 0, 1.1, 1.5, 1.1, tree);
-      addDecor(blobGeo, leaf, 0, 2.1, 0, 1.0, 0.9, 1.0, tree);
-      addDecor(blobGeo, leaf, 0.55, 1.8, 0.3, 0.7, 0.65, 0.7, tree);
-      addDecor(blobGeo, leaf, -0.45, 1.85, -0.35, 0.75, 0.7, 0.75, tree);
+      addDecor(canopyGeo, leaf, 0, 2.1, 0, 1.0, 0.9, 1.0, tree);
+      addDecor(canopyGeo, leaf, 0.55, 1.8, 0.3, 0.7, 0.65, 0.7, tree);
+      addDecor(canopyGeo, leaf, -0.45, 1.85, -0.35, 0.75, 0.7, 0.75, tree);
     }
-
-    // Each tree gets its own material copies so it can fade independently
-    const materials = new Map();
-    tree.traverse((obj) => {
-      if (!obj.isMesh) return;
-      if (!materials.has(obj.material)) {
-        const copy = cloneHooked(obj.material);
-        copy.userData.from = obj.material; // (what it copies: the farm's seasons color that, src/seasons.js)
-        materials.set(obj.material, copy);
-      }
-      obj.material = materials.get(obj.material);
-    });
+    // (each tree a shade of its own: lighter or darker, a touch warmer or cooler)
+    const shade = 0.95 + hash2(x, z) * 0.17;
+    const warm = (hash2(z + 3.1, x - 7.7) - 0.5) * 0.08;
+    for (const obj of tree.children) if (obj.material !== trunkMat) obj.userData.tint = new THREE.Color(shade + warm, shade, shade - warm);
+    const parts = treeDecor.adopt(tree);
     // Trunk collider; tall enough that you can't jump up into the canopy
     const collider = addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k }, { grows: true });
     trees.push({
-      id: trees.length, kind, group: tree, scale: k, materials: [...materials.values()], fade: 1,
+      id: trees.length, kind, group: tree, scale: k, parts, fade: 1,
       x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
       state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
       big: 1, from: 0.01, // (a giant is drawn `big` times its scale; growing: from this scale)
@@ -758,6 +941,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   }
 
   for (const tree of wilds.trees) addTree(tree);
+  treeDecor.build();
+  for (const tree of trees) drawTree(tree);
   for (const rock of wilds.rocks) addRock(rock);
   for (const rock of rocks) rock.baseRadius = rock.radius;
   // (the bushes and anything else the map scatters steer clear of them: isOpenGround)
@@ -798,6 +983,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     obj.position.x = x;
     obj.position.z = z;
     thing.stump?.position.set(x, 0, z);
+    if (thing.parts) drawTree(thing);
   }
 
   // ---------- The ground's surface ----------
@@ -1025,7 +1211,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     tipAway(tree, from);
     tree.state = instant ? 'down' : 'falling';
     tree.t = 0;
-    tree.group.visible = !instant;
+    drawTree(tree);
     if (instant) moving.delete(tree);
     else moving.add(tree);
   }
@@ -1041,12 +1227,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     fitBox(tree.collider, tree.x, tree.z, 0.5 * tree.scale);
     setTrunk(tree, true);
     tree.stump.visible = false;
-    tree.group.visible = true;
     tree.group.quaternion.copy(tree.base);
     tree.group.scale.setScalar(instant ? tree.scale : 0.01);
     tree.state = instant ? 'up' : 'growing';
     tree.t = 0;
     tree.shake = 0;
+    drawTree(tree);
     if (instant) moving.delete(tree);
     else moving.add(tree);
   }
@@ -1144,6 +1330,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (instant) {
         tree.state = 'up';
         tree.group.scale.setScalar(tree.scale * tree.big);
+        drawTree(tree);
         moving.delete(tree);
       } else if (tree.state === 'up') {
         Object.assign(tree, { state: 'growing', from: was, t: 0, shake: 0 });
@@ -1179,6 +1366,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (!standing) return;
       thing.state = 'up';
       thing.group.scale.setScalar(thing.scale);
+      drawTree(thing);
       moving.delete(thing);
     } else {
       thing.from = 0;
@@ -1264,7 +1452,6 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           group.scale.setScalar(k * (1 - q * q));
           if (q >= 1) {
             tree.state = 'down';
-            group.visible = false;
             moving.delete(tree);
           }
         }
@@ -1286,6 +1473,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       } else {
         moving.delete(tree);
       }
+      drawTree(tree);
     }
   }
 
@@ -1335,18 +1523,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const k = damp(8, dt);
       for (const tree of trees) {
         const blocking = tree.state === 'up' && views.some(([at, cam]) => blocksView(tree, _eye.copy(at), cam));
+        const was = tree.fade;
         tree.fade += ((blocking ? 0.25 : 1) - tree.fade) * k;
-        const transparent = tree.fade < 0.99;
-        for (const mat of tree.materials) {
-          mat.opacity = tree.fade;
-          if (mat.transparent !== transparent) {
-            // Toggling transparency changes the shader variant (opaque materials
-            // force alpha to 1), so it must be recompiled
-            mat.transparent = transparent;
-            mat.depthWrite = !transparent;
-            mat.needsUpdate = true;
-          }
-        }
+        if (tree.fade > 0.995) tree.fade = 1;
+        if (tree.fade !== was) treeDecor.fade(tree.parts, 1 - tree.fade); // (dithered away: the 'tree' hook)
       }
     },
     update(t) {
@@ -1359,6 +1539,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       root.traverse((obj) => {
         if (!obj.isMesh) return;
         grassMeshes.delete(obj);
+        canopies.delete(obj.geometry);
         obj.geometry.dispose();
         for (const mat of [obj.material].flat()) mat.dispose();
         if (obj.isInstancedMesh) obj.dispose();
