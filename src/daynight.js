@@ -8,7 +8,7 @@ import './daynight.css';
 // Time is in game hours (0..24). A full day takes DAY_LENGTH_SECONDS of real
 // time, so one game hour is DAY_LENGTH_SECONDS / 24 seconds.
 import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
-import { light as shaderLight } from './gfx/uniforms.js';
+import { light as shaderLight, U } from './gfx/uniforms.js';
 
 export { DAY_LENGTH_SECONDS };
 
@@ -20,20 +20,22 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // Set for the filmic tone mapping (src/gfx/tonemap.js, exposure 1.15): a warm
 // sun a little stronger than the sky, a cool blue sky light and a blue-violet
 // ground bounce, so lit sides are warm and shade is cool; dusk's sun and sky
-// are lifted so a sunset glows, and night is moonlit blue.
+// are lifted so a sunset glows, and night is moonlit blue. The sky (src/gfx/sky.js)
+// runs from `zenith` overhead to `horizon`, which is the fog's color too (the
+// far land melts into it); neither is tone mapped.
 const KEYS = [
-  { h: 0, sky: 0x0b1026, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
-  { h: 4.5, sky: 0x111a3a, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
-  { h: 6, sky: 0x8a6a9c, light: 0xff9a6a, lightI: 0.5, hemiSky: 0xb09ac8, hemiGround: 0x3a3458, hemiI: 0.75 },
-  { h: 7, sky: 0xf2b27a, light: 0xffc488, lightI: 1.25, hemiSky: 0xf0dce0, hemiGround: 0x464468, hemiI: 0.9 },
-  { h: 8.5, sky: 0x87ceeb, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
-  { h: 17, sky: 0x87ceeb, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
-  { h: 18.3, sky: 0xf0955a, light: 0xffa060, lightI: 1.9, hemiSky: 0xf4b8c0, hemiGround: 0x4a4070, hemiI: 1.25 },
-  { h: 19, sky: 0x8a5a86, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
-  { h: 20.5, sky: 0x1a2048, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  { h: 0, horizon: 0x0b1026, zenith: 0x02040e, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  { h: 4.5, horizon: 0x111a3a, zenith: 0x040816, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  { h: 6, horizon: 0x8a6a9c, zenith: 0x2e3468, light: 0xff9a6a, lightI: 0.5, hemiSky: 0xb09ac8, hemiGround: 0x3a3458, hemiI: 0.75 },
+  { h: 7, horizon: 0xf2b27a, zenith: 0x6a8cc4, light: 0xffc488, lightI: 1.25, hemiSky: 0xf0dce0, hemiGround: 0x464468, hemiI: 0.9 },
+  { h: 8.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
+  { h: 17, horizon: 0x87ceeb, zenith: 0x3f88d2, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
+  { h: 18.3, horizon: 0xf0955a, zenith: 0x4c5c9e, light: 0xffa060, lightI: 1.9, hemiSky: 0xf4b8c0, hemiGround: 0x4a4070, hemiI: 1.25 },
+  { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
+  { h: 20.5, horizon: 0x1a2048, zenith: 0x060a20, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
 ];
 
-const COLOR_PROPS = ['sky', 'light', 'hemiSky', 'hemiGround'];
+const COLOR_PROPS = ['horizon', 'zenith', 'light', 'hemiSky', 'hemiGround'];
 const NUMBER_PROPS = ['lightI', 'hemiI'];
 
 // Pre-convert keyframe colors once
@@ -170,6 +172,10 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   const fireflies = createFireflies(90);
   scene.add(fireflies.points);
 
+  // The sky's colors once the day's light is set (the shaders' own: the season
+  // tints them in place, src/seasons.js)
+  const sky = { horizon: U.uSkyHorizon.value, zenith: U.uSkyZenith.value };
+
   const lerped = {};
   for (const p of COLOR_PROPS) lerped[p] = new THREE.Color();
   const sunDir = new THREE.Vector3();
@@ -199,16 +205,17 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   function apply(clock = true) {
     const s = sample(hour);
     if (cloud > 0) for (const p of COLOR_PROPS) overcast(s[p]);
-    if (flash > 0) s.sky.lerp(FLASH, flash * 0.7);
+    if (flash > 0) s.horizon.lerp(FLASH, flash * 0.7);
     // underground: no sky (black all round), a dim light of the cave's own color
     if (under > 0) {
-      s.sky.lerp(CAVE_DARK, under);
+      s.horizon.lerp(CAVE_DARK, under);
+      s.zenith.lerp(CAVE_DARK, under);
       s.hemiSky.lerp(caveLight, under);
       s.hemiGround.lerp(CAVE_DARK, under);
       s.light.lerp(caveLight, under);
     }
-    scene.background.copy(s.sky);
-    scene.fog.color.copy(s.sky);
+    scene.background.copy(s.horizon);
+    scene.fog.color.copy(s.horizon);
     hemi.color.copy(s.hemiSky);
     hemi.groundColor.copy(s.hemiGround);
     hemi.intensity = THREE.MathUtils.lerp(s.hemiI * (1 - cloud * 0.25) + flash * 2.5, CAVE.hemiI, under);
@@ -226,12 +233,12 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
-    shaderLight({ sunDir, sun, sky: s.sky, zenith: s.hemiSky, glow: s.light, night, under, cloud }); // (the shaders' copy: src/gfx/uniforms.js)
+    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash }); // (the shaders' copy: src/gfx/uniforms.js)
     glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
     if (!clock) return night;
 
     // Clock panel: dial sky color and the sun/moon riding the arc
-    const skyHex = `#${s.sky.getHexString()}`;
+    const skyHex = `#${s.horizon.getHexString()}`;
     ui.sky.style.fill = skyHex;
     ui.moonCut.style.fill = skyHex;
     const progress = isDay
@@ -258,6 +265,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
   return {
     glow,
+    /** The sky's colors as drawn (horizon: the fog's too, zenith), after apply(): the season tints them. */
+    sky,
     /** Advance the clock and update lighting. `focus` is the player position. */
     update(dt, { paused = false, fastForward = false, focus }) {
       elapsed += dt;

@@ -41,6 +41,7 @@ import { TouchControls, fitPart } from './ui/touch.js';
 import * as quality from './gfx/quality.js';
 import { createStats } from './gfx/stats.js';
 import { toneMap } from './gfx/tonemap.js';
+import { createSky } from './gfx/sky.js';
 import * as gfx from './gfx/uniforms.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
@@ -212,6 +213,9 @@ const FOG_NEAR = 30;
 const FOG_FAR = 90;
 const CAVE_FOG = [15, 36]; // (near and far, down in a boss's dungeon)
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
+// The sky round every view, its horizon the fog's color (src/gfx/sky.js; the
+// background is what shows before it is drawn)
+scene.add(createSky());
 
 // (near: half a unit, not a tenth. The camera is never that close to anything
 // it shows, and the depth buffer is five times finer for it: some phones' is
@@ -459,7 +463,7 @@ const animals = createAnimals();
 worlds.home.root.add(animals.root);
 // (the seasons, on what stays put: snow on it, leaves under the trees, and their light: seasons.js)
 merchant.root.userData.noSnow = true;
-seasons.attach({ root: worlds.home.root, trees: worlds.home.trees, sun, hemi, scene });
+seasons.attach({ root: worlds.home.root, trees: worlds.home.trees, sun, hemi, scene, sky: dayNight.sky });
 const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
 // (on a friend's farm the eggs, milk and wool are the farmer's)
 const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
