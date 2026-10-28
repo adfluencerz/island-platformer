@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 05 (`phases/05-post.md`)
+Current phase: 06 (`phases/06-painterly-light.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -8,7 +8,7 @@ Current phase: 05 (`phases/05-post.md`)
 - [x] 02 Tone mapping and light rebalance
 - [x] 03 Sky dome
 - [x] 04 Atmospheric fog
-- [ ] 05 Post-processing
+- [x] 05 Post-processing
 - [ ] 06 Painterly shading, clouds overhead, cloud shadows
 - [ ] 07 Grass v2
 - [ ] 08 Trees: instancing, dithered fade, painterly canopy
@@ -30,8 +30,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- The fog is `src/gfx/atmos.js`, a base hook on every lit material (`userData.gfx.noAtmos` opts out, own program): `fog_fragment` swapped under `GFX_ATMOS` for three's linear term (lookFrom's near/far, `CAVE_FOG`) plus an aerial haze from ~0.4 fog-near and a sea-level haze (`uFogHeight` = (SEA_LEVEL, 0.35 per unit)); off from `uUnder` 0.6 (the dungeon is three's fog alone). Unlit sprites/tags keep three's plain fog.
-- Its color is `gfxHorizon(dir)` (`HORIZON_GLSL`, the dome uses the same function), warm toward a low sun, written with `linearToOutputTexel`: like three's `fogColor` it follows the output space, so into a render target it is linear and still meets the dome.
-- For 05: three's fog runs after tone mapping and the dome is `toneMapped: false`, so neither is tone mapped; tone map or grade in post only if fog, dome and ground get it alike (or keep the scene's own tone mapping and grade after), or the far land stops meeting the sky.
-- Render order: the dome is `renderOrder -1000`, no depth test/write, drawn first round each camera; a post pass must keep it first and not read it as depth (bloom on the sun disc is fine).
-- plaza-noon unchanged: 960 calls, 24 programs (every lit material gets the hook, so no new programs).
+- Post is `src/gfx/post.js` (medium/high): SeatsPass -> UnrealBloomPass -> grade ShaderPass, straight to the screen; no OutputPass. The seats are drawn into the half-float target exactly as on the screen (flagged `isXRRenderTarget` with the screen's color space while they draw): tone mapped, sRGB, fog and transparents blended as there, so tiers match and the far land meets the sky. Bloom and grade work on screen values (0..1).
+- Grade uniforms: `uSaturation` 1.08, `uVignette` 0.2 (round each seat's part, `uSeats`/`uSeatCount`), `uTint` (set each frame in `post.render()`: `POST.warm` -> `POST.cool` by `uNight`, leaning `POST.skyTint` toward the horizon's hue, white underground). Bloom threshold 0.92 by day -> 0.72 at night/underground (`POST.bloom`). Live: `__game.post.grade.uniforms`, `__game.post.bloom`.
+- Night desaturation belongs in the grade: lower `uSaturation` by `uNight` in `post.render()` (low tier would not get it; or in the lights, for both).
+- For 06: lighting patches go in the materials before tone mapping as now; anything they add after `colorspace_fragment` (like the fog) must stay in output space, and the dome stays `toneMapped: false`. Bloom catches anything near white on screen: keep lit surfaces under ~0.9 or they will glow.
+- plaza-noon 968 calls (post adds 14: bloom 13, grade 1), 32 programs (scene programs in the target's variant; switching tiers live adds the other set).
