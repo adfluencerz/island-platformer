@@ -37,7 +37,9 @@ import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
 import { Hud } from './ui/hud.js';
 import { Guide } from './ui/guide.js';
-import { TouchControls, isTouch, fitPart } from './ui/touch.js';
+import { TouchControls, fitPart } from './ui/touch.js';
+import * as quality from './gfx/quality.js';
+import { createStats } from './gfx/stats.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
 import { SeatPanel } from './ui/seatpanel.js';
@@ -70,7 +72,8 @@ import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_D
 import { createGiantBars } from './giantbar.js';
 import { createBosses } from './bosses.js';
 import { BOSSES, SHOP, MINIGAMES, WATERED_GROWTH, FARM_FORAGE } from '../shared/balance.js';
-import { portalOf } from '../shared/bosses.js';
+import { portalOf, BOSS_IDS } from '../shared/bosses.js';
+import { dungeonStart } from '../shared/dungeons.js';
 import { createSkills } from './skills.js';
 import { SKILL_LIST } from '../shared/skills.js';
 import { createPuffs } from './puff.js';
@@ -186,16 +189,19 @@ me = first;
 // ---------- Renderer / Scene / Camera ----------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-// A phone draws fewer pixels (and a smaller shadow map, below): on its small
-// screen it looks the same, and it runs cooler and lasts longer
-const PHONE = isTouch();
-// (testing: ?lowgfx draws a quarter of the pixels and no shadows, for a
-// headless browser without a GPU; scripts/browser.mjs)
-const LOWGFX = new URLSearchParams(location.search).has('lowgfx');
-renderer.setPixelRatio(LOWGFX ? 0.5 : Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2));
+// How much is drawn is the graphics tier's (src/gfx/quality.js: the menu's
+// Graphics setting; a phone's is medium, fewer pixels and a smaller shadow
+// map: on its small screen it looks the same, and it runs cooler and lasts
+// longer). (Testing: ?lowgfx is low, a quarter of the pixels and no shadows,
+// for a headless browser without a GPU, scripts/browser.mjs; ?gfx=high...)
+// It is applied below, once the sun and the weather are made, and again
+// whenever it is changed.
+renderer.setPixelRatio(quality.knobs().pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = !LOWGFX;
+renderer.shadowMap.enabled = quality.knobs().shadowMap > 0;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// (what it drew, a frame at a time: __game.stats() and the devtools' Info tab)
+const gfxStats = createStats(renderer);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -264,8 +270,8 @@ sun.castShadow = true;
 // them sharp. The box reaches further north, up the screen, than south.
 const SUN_REACH = 26;
 const SUN_AHEAD = 8;
-const SHADOW_MAP = PHONE ? 1024 : 2048;
-sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+let shadowMap = quality.knobs().shadowMap || 2048; // (its size; set by the graphics tier, below)
+sun.shadow.mapSize.set(shadowMap, shadowMap);
 sun.shadow.camera.left = -SUN_REACH;
 sun.shadow.camera.right = SUN_REACH;
 sun.shadow.camera.top = SUN_REACH;
@@ -286,7 +292,7 @@ function reachSun(zoom) {
 }
 const _sunOffset = new THREE.Vector3();
 function followSun(focus, ahead = SUN_AHEAD) {
-  const step = ((sunReach * 2) / SHADOW_MAP) * 4;
+  const step = ((sunReach * 2) / shadowMap) * 4;
   const snap = (n) => Math.round(n / step) * step;
   _sunOffset.subVectors(sun.position, sun.target.position); // (the day/night cycle sets its direction)
   sun.target.position.set(snap(focus.x), 0, snap(focus.z - ahead));
@@ -300,7 +306,24 @@ const dayNight = createDayNight({ scene, sun, hemi, startHour: Number.isFinite(s
 // The farm's seasons (seasons.js): its colors, by its clock
 const seasons = createSeasons(HOME);
 // ...and its weather (weather.js): rain, storms, snow in winter
-const weather = createWeather({ scene, dayNight, count: LOWGFX ? 300 : 900 });
+const weather = createWeather({ scene, dayNight, count: quality.MAX_PARTICLES });
+
+// The graphics tier, now and whenever it is changed in the menu
+quality.onApply((k) => {
+  renderer.setPixelRatio(k.pixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  const shadows = k.shadowMap > 0;
+  if (shadows && k.shadowMap !== shadowMap) {
+    shadowMap = k.shadowMap;
+    sun.shadow.mapSize.set(shadowMap, shadowMap);
+    sun.shadow.map?.dispose(); // (made again at the new size, on the next frame)
+    sun.shadow.map = null;
+  }
+  renderer.shadowMap.enabled = shadows;
+  sun.castShadow = shadows; // (which also has every lit material's shader made again, with or without them)
+  weather.setParticles(k.particles);
+});
+quality.applyTier();
 
 // ---------- Worlds ----------
 // Two places to be (maps.js, built by world.js): your farm's island, and the
@@ -1462,6 +1485,13 @@ createDevTools({
     ['Things dropped', place === 'home' && !farmVisit ? farmFinds.dropped().length : drops.size],
     ['Walking speed', `${devSpeed}×`],
     ['Protocol', `v${PROTOCOL_VERSION}`],
+    ...(({ calls, triangles, programs, geometries, textures, tier, pixelRatio }) => [
+      ['Graphics', `${tier}, ${pixelRatio}× pixels`],
+      ['Draw calls', calls.toLocaleString('en')],
+      ['Triangles', triangles.toLocaleString('en')],
+      ['Shaders', programs],
+      ['Geometries, textures', `${geometries}, ${textures}`],
+    ])(gfxStats.stats()),
   ],
 });
 
@@ -5518,6 +5548,7 @@ function animate() {
 // Each seat's view, in its part of the screen (alone: all of it)
 const SPLIT_GAP = new THREE.Color(0x1d120a); // (between the views)
 function draw() {
+  gfxStats.reset(); // (the frame's count starts here: every seat's view adds to it)
   const split = seats.length > 1;
   const { innerWidth: w, innerHeight: h } = window;
   renderer.setScissorTest(split);
@@ -5560,6 +5591,36 @@ function hold(code, seconds) {
   window.dispatchEvent(new KeyboardEvent('keyup', { code }));
 }
 
+// Testing (scripts/shots.mjs): the farmer somewhere on the farm at once, the
+// camera with them: 'plaza', 'lake' (on its south shore, looking over it),
+// 'house' (in front of its door; with none built yet, the nearest
+// neighbour's), 'forest' (the thickest trees near the plaza, to the north),
+// 'dungeon' (the first boss's first room), or { x, z }. Returns where, or
+// null off the farm.
+function warp(where) {
+  if (place !== 'home') return null;
+  const house = buildings.find('house');
+  const neighbour = () => {
+    const dist = (id) => Math.hypot(npcs.outside(id).x - world.spawn.x, npcs.outside(id).z - world.spawn.z);
+    const { x, z } = npcs.outside(NPC_IDS.reduce((a, id) => (dist(id) < dist(a) ? id : a)));
+    return { x, z: z + 1.5 };
+  };
+  const forest = () => {
+    const north = world.trees.filter((t) => t.z < world.spawn.z - 6 && Math.hypot(t.x - world.spawn.x, t.z - world.spawn.z) < 45);
+    const around = (t) => north.filter((o) => Math.hypot(o.x - t.x, o.z - t.z) < 6).length;
+    const best = north.reduce((a, t) => (!a || around(t) > around(a) ? t : a), null);
+    return best ? { x: best.x, z: best.z + 5 } : arrival();
+  };
+  const at = typeof where === 'object' ? where
+    : where === 'dungeon' ? dungeonStart(BOSS_IDS[0])
+    : where === 'lake' ? { x: LAKE.x, z: LAKE.z + LAKE.r + 3 }
+    : where === 'house' ? (house ? (({ x, z }) => ({ x, z: z + 2.5 }))(houseDoorAt(house)) : neighbour())
+    : where === 'forest' ? forest()
+    : arrival();
+  putDown({ x: at.x, y: GROUND_STAND_Y, z: at.z });
+  return { x: at.x, z: at.z };
+}
+
 // Built pages: installable, and the farm opens without a connection (public/sw.js).
 // (Not under Vite's dev server, where a cached page would hide every change.)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -5568,7 +5629,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, startJoin, within, layout };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats };
 }
 
 loadGame();

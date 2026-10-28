@@ -46,6 +46,7 @@ export function createWeather({ scene, dayNight, count = 900 }) {
   let thunderIn = -1; // seconds till its thunder
   let falling = 0; // drops (or flakes) coming down now, out of doors
   let snowing = false;
+  let limit = count; // (the graphics tier's share of them: setParticles)
 
   const wrap = (v) => ((((v + AREA / 2) % AREA) + AREA) % AREA) - AREA / 2;
   const fallen = (i, speed) => (base[i * 3 + 1] + (elapsed * speed) / (TOP + BELOW)) % 1; // (0 at the top, 1 at the bottom)
@@ -117,7 +118,7 @@ export function createWeather({ scene, dayNight, count = 900 }) {
       dayNight.setWeather(amount * (storm ? 1 : 0.7), flash * (0.75 + 0.25 * Math.sin(elapsed * 60)), indoors);
       sound.rain(indoors ? amount * 0.25 : amount);
 
-      falling = Math.round(count * amount);
+      falling = Math.round(limit * amount);
       snowing = snowy;
       place(focus, indoors);
       return now && (snowy ? (storm ? 'Snowstorm' : 'Snow') : storm ? 'Storm' : 'Rain');
@@ -126,5 +127,9 @@ export function createWeather({ scene, dayNight, count = 900 }) {
     // each have it round them, in their own view (src/main.js)
     place,
 
+    // How many may fall at most (the graphics tier's: src/gfx/quality.js), up to `count`
+    setParticles(n) {
+      limit = Math.max(0, Math.min(count, Math.round(n)));
+    },
   };
 }
