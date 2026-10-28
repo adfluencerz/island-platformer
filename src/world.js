@@ -186,42 +186,50 @@ onApply((k) => {
 // ---------- Instanced decor ----------
 // Many things made of a few (geometry, material) pairs, each pair drawn as
 // one InstancedMesh, so a forest is a handful of draws. A thing is still a
-// Group of plain meshes (its own children, placed as it is drawn), for its
-// transform and for a raycast to hit, but the group itself is never drawn
-// (visible false): its meshes are slots in the instanced meshes, written
-// from the group's matrix when it moves. Things in different squares of the
-// ground (chunk tiles across, where they were adopted) go in different
-// instanced meshes, so what is out of view (the camera's, or the sun's for
-// shadows) isn't drawn.
-//   const decor = makeInstancer(parent, chunk)  (parent: where the groups are, too)
-//   parts = decor.adopt(group, color)    its meshes' slots (color: times the material's)
-//   decor.build()                        once all are adopted: the instanced meshes
-//   decor.show(group, parts, shown)      where the group puts them now (shown false: hidden)
+// Group of plain meshes (its own children, placed as it is drawn), or a
+// single mesh, for its transform and for a raycast to hit, but the thing
+// itself is never drawn (visible false): its meshes are slots in the
+// instanced meshes, written from its matrix when it moves. Things in
+// different squares of the ground (chunk tiles across, where they were
+// adopted) go in different instanced meshes, so what is out of view (the
+// camera's, or the sun's for shadows) isn't drawn; an instanced mesh with
+// every slot hidden isn't drawn at all.
+//   const decor = makeInstancer(parent, chunk)  (parent: where the things are, too)
+//   parts = decor.adopt(thing, color)    its meshes' slots (color: times the material's)
+//   decor.build()                        once all are adopted: the instanced meshes (each slot where it was then)
+//   decor.show(thing, parts, shown)      where the thing puts them now (shown false: hidden)
 //   decor.fade(parts, f)                 how far faded out, 0 to 1 (aFade: the 'tree' hook)
+// (A mesh with several materials, by its geometry's groups, is fine too.)
 const _im = new THREE.Matrix4();
-const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const WHITE = new THREE.Color(1, 1, 1);
 export function makeInstancer(parent, chunk = GROUND_CHUNK) {
-  const sets = new Map(); // `${material.uuid}|${geometry.uuid}|${square}` -> { material, geometry, slots, mesh }
-  const write = (part, group, shown) => {
+  const sets = new Map(); // `${materials' uuids}|${geometry.uuid}|${square}` -> { material, geometry, slots, mesh, shown }
+  const write = (part, thing, shown) => {
     const { set, index, obj } = part;
     if (!set.mesh) return;
-    set.mesh.setMatrixAt(index, shown ? _im.multiplyMatrices(group.matrix, obj.matrix) : HIDDEN);
+    if (shown) set.mesh.setMatrixAt(index, obj === thing ? obj.matrix : _im.multiplyMatrices(thing.matrix, obj.matrix));
+    else set.mesh.setMatrixAt(index, _im.makeScale(0, 0, 0).setPosition(thing.position)); // (where it stands: its square's bounds stay snug)
     set.mesh.instanceMatrix.needsUpdate = true;
     set.mesh.boundingSphere = null; // (worked out again when next culled)
+    if (part.shown !== shown) {
+      set.shown += shown ? 1 : -1;
+      part.shown = shown;
+      set.mesh.visible = set.shown > 0;
+    }
   };
   return {
-    adopt(group, color = WHITE) {
-      group.visible = false;
+    adopt(thing, color = WHITE) {
+      thing.visible = false;
+      thing.updateMatrix();
       const parts = [];
-      const square = `${Math.floor(group.position.x / chunk)},${Math.floor(group.position.z / chunk)}`;
-      for (const obj of group.children) {
+      const square = `${Math.floor(thing.position.x / chunk)},${Math.floor(thing.position.z / chunk)}`;
+      for (const obj of thing.isMesh ? [thing] : thing.children) {
         if (!obj.isMesh) continue;
         obj.updateMatrix();
-        const key = `${obj.material.uuid}|${obj.geometry.uuid}|${square}`;
-        if (!sets.has(key)) sets.set(key, { material: obj.material, geometry: obj.geometry, slots: [], mesh: null });
+        const key = `${[obj.material].flat().map((m) => m.uuid).join(',')}|${obj.geometry.uuid}|${square}`;
+        if (!sets.has(key)) sets.set(key, { material: obj.material, geometry: obj.geometry, slots: [], mesh: null, shown: 0, shadow: obj.castShadow });
         const set = sets.get(key);
-        const part = { obj, set, index: set.slots.length, color: obj.userData.tint ?? color };
+        const part = { obj, thing, set, index: set.slots.length, color: obj.userData.tint ?? color, shown: true };
         set.slots.push(part);
         parts.push(part);
       }
@@ -237,15 +245,20 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
           canopyRange(geo, knobs());
         }
         const mesh = new THREE.InstancedMesh(geo, set.material, n);
-        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.castShadow = set.shadow;
+        mesh.receiveShadow = true;
         set.mesh = mesh;
-        set.slots.forEach((part, i) => mesh.setColorAt(i, part.color));
+        set.shown = n;
+        set.slots.forEach((part, i) => {
+          mesh.setColorAt(i, part.color);
+          write(part, part.thing, true); // (where it was adopted)
+        });
         parent.add(mesh);
       }
     },
-    show(group, parts, shown = true) {
-      group.updateMatrix();
-      for (const part of parts) write(part, group, shown);
+    show(thing, parts, shown = true) {
+      thing.updateMatrix();
+      for (const part of parts) write(part, thing, shown);
     },
     fade(parts, f) {
       for (const { set, index } of parts) {
@@ -354,6 +367,7 @@ export function addDecor(geo, material, x, y, z, sx, sy = sx, sz = sx, parent) {
   mesh.scale.set(sx, sy, sz);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  mesh.userData.decor = true; // (still: put straight in a world's root, it is drawn instanced)
   parent.add(mesh);
   return mesh;
 }
@@ -863,8 +877,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   for (const m of [trunkMat, ...leaves]) if (!treeLooks.has(m)) hookTree(m);
   for (const m of needles) if (!treeLooks.has(m)) hookTree(m, false);
   const treeDecor = makeInstancer(root);
-  // a tree drawn where its group says (or not at all, down)
-  const drawTree = (tree) => treeDecor.show(tree.group, tree.parts, tree.state !== 'down');
+  // a tree drawn where its group says (or not at all, down), and its stump
+  // (while it is felled)
+  const drawTree = (tree) => {
+    treeDecor.show(tree.group, tree.parts, tree.state !== 'down');
+    treeDecor.show(tree.stump, tree.stumpParts, tree.stumpUp);
+  };
   function addTree({ x, z, kind, scale, look, sites }) {
     const lr = mulberry32(look);
     const pickOwn = (arr) => arr[Math.floor(lr() * arr.length)];
@@ -895,32 +913,47 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const warm = (hash2(z + 3.1, x - 7.7) - 0.5) * 0.08;
     for (const obj of tree.children) if (obj.material !== trunkMat) obj.userData.tint = new THREE.Color(shade + warm, shade, shade - warm);
     const parts = treeDecor.adopt(tree);
+    // its stump, for when it is felled (a slot of its own, hidden till then)
+    const stump = new THREE.Mesh(stumpGeo, stumpMats);
+    stump.position.set(x, 0, z);
+    stump.castShadow = stump.receiveShadow = true;
+    root.add(stump);
+    const stumpParts = treeDecor.adopt(stump);
     // Trunk collider; tall enough that you can't jump up into the canopy
     const collider = addCollider({ x, y: 3, z, w: 0.5 * k, h: 6, d: 0.5 * k }, { grows: true });
     trees.push({
       id: trees.length, kind, group: tree, scale: k, parts, fade: 1,
       x, z, collider, trunk: kind === 'pine' ? 1 : 1.1, base: tree.quaternion.clone(),
-      state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump: null,
+      state: 'up', t: 0, shake: 0, axis: new THREE.Vector3(1, 0, 0), stump, stumpParts, stumpUp: false,
       big: 1, from: 0.01, // (a giant is drawn `big` times its scale; growing: from this scale)
       sites: sites.map(([sx, sz]) => [sx, sz]), // (where it may grow back: see place())
     });
   }
 
+  // (drawn instanced with the rest of the decor, each a shade of its own as
+  // the trees are)
   function addBush(x, z) {
     const leaf = pick(leaves);
     const k = rand(0.35, 0.6);
-    addDecor(blobGeo, leaf, x, k * 0.6, z, k, k * 0.8, k, root);
-    addDecor(blobGeo, leaf, x + k * 0.7, k * 0.45, z + rand(-0.3, 0.3), k * 0.7, k * 0.6, k * 0.7, root);
-    if (rng() < 0.5) addDecor(blobGeo, leaf, x - k * 0.6, k * 0.4, z + rand(-0.3, 0.3), k * 0.6, k * 0.5, k * 0.6, root);
+    const shade = 0.95 + hash2(x, z) * 0.12;
+    const warm = (hash2(z + 3.1, x - 7.7) - 0.5) * 0.06;
+    const tint = new THREE.Color(shade + warm, shade, shade - warm);
+    addDecor(blobGeo, leaf, x, k * 0.6, z, k, k * 0.8, k, root).userData.tint = tint;
+    addDecor(blobGeo, leaf, x + k * 0.7, k * 0.45, z + rand(-0.3, 0.3), k * 0.7, k * 0.6, k * 0.7, root).userData.tint = tint;
+    if (rng() < 0.5) addDecor(blobGeo, leaf, x - k * 0.6, k * 0.4, z + rand(-0.3, 0.3), k * 0.6, k * 0.5, k * 0.6, root).userData.tint = tint;
   }
 
-  // { id, mesh, x, z, scale, radius, collider, state, ... }: radius is how far
+  // { id, mesh, parts, x, z, scale, radius, collider, state, ... }: mesh:
+  // where it is drawn (never drawn itself: its slot in rockDecor's instanced
+  // meshes, written whenever it moves: drawRock); radius is how far
   // it reaches out sideways as drawn (it is stretched, so more than its scale
   // says); state is 'up',
   // 'breaking', 'gone' or 'growing' (see Breaking rocks). id: its place in
   // this list, the same for everyone on the island, which is how a lobby
   // names a rock.
   const rocks = [];
+  const rockDecor = makeInstancer(root);
+  const drawRock = (rock) => rockDecor.show(rock.mesh, rock.parts, rock.state !== 'gone');
 
   // One of wilds.rocks (shared/wilds.js): size (big ones are boulders and
   // get a collider), look (its shape, the same on every page)
@@ -930,9 +963,13 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const k = size;
     const rock = addDecor(rockGeo, rockMats[Math.floor(lr() * rockMats.length)], x, k * 0.3, z, k * own(1, 1.5), k * own(0.5, 0.8), k, root);
     rock.rotation.set(own(0, 0.4), own(0, Math.PI * 2), own(0, 0.4));
+    rock.userData.decor = false; // (not still: its own instancer)
+    const shade = 0.96 + hash2(x + 1.7, z) * 0.08;
+    rock.userData.tint = new THREE.Color(shade, shade, shade);
+    const parts = rockDecor.adopt(rock);
     const collider = k > 0.6 ? addCollider({ x, y: k * 0.35, z, w: k * 1.4, h: k * 0.7, d: k * 1.4 }, { grows: true }) : null;
     rocks.push({
-      id: rocks.length, mesh: rock, x, z, scale: k, radius: Math.max(rock.scale.x, rock.scale.z) * 0.85,
+      id: rocks.length, mesh: rock, parts, x, z, scale: k, radius: Math.max(rock.scale.x, rock.scale.z) * 0.85,
       collider, base: rock.scale.clone(), baseY: rock.position.y,
       state: 'up', t: 0, shake: 0, chips: null,
       big: 1, from: 0, baseRadius: 0, // (as for trees; growing: from this much of its size)
@@ -944,10 +981,18 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   treeDecor.build();
   for (const tree of trees) drawTree(tree);
   for (const rock of wilds.rocks) addRock(rock);
+  rockDecor.build();
   for (const rock of rocks) rock.baseRadius = rock.radius;
   // (the bushes and anything else the map scatters steer clear of them: isOpenGround)
   Object.assign(ctx, { addBush });
   map.decorate(ctx);
+
+  // Everything still that the map and the bushes put down with addDecor (and
+  // the map's own still things, userData.decor): drawn instanced, in a few
+  // draws. (The meshes stay in root, never drawn, for their transforms.)
+  const stillDecor = makeInstancer(root);
+  for (const obj of [...root.children]) if (obj.isMesh && obj.userData.decor) stillDecor.adopt(obj);
+  stillDecor.build();
 
   // ---------- Growing back elsewhere ----------
   // A felled tree or a broken rock grows back somewhere else: each has a few
@@ -983,7 +1028,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     obj.position.x = x;
     obj.position.z = z;
     thing.stump?.position.set(x, 0, z);
-    if (thing.parts) drawTree(thing);
+    if (thing.group) drawTree(thing);
+    else drawRock(thing);
   }
 
   // ---------- The ground's surface ----------
@@ -1198,15 +1244,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   function fellTree(id, from, { instant = false } = {}) {
     const tree = trees[id];
     if (!tree || tree.state === 'falling' || tree.state === 'down') return;
-    if (!tree.stump) {
-      tree.stump = new THREE.Mesh(stumpGeo, stumpMats);
-      tree.stump.position.set(tree.x, 0, tree.z);
-      tree.stump.castShadow = tree.stump.receiveShadow = true;
-      root.add(tree.stump);
-    }
     const k = tree.scale * tree.big; // (a giant leaves a giant stump)
     tree.stump.scale.set(k * tree.trunk, k, k * tree.trunk);
-    tree.stump.visible = true;
+    tree.stumpUp = true;
     setTrunk(tree, false);
     tipAway(tree, from);
     tree.state = instant ? 'down' : 'falling';
@@ -1226,7 +1266,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     tree.from = 0.01;
     fitBox(tree.collider, tree.x, tree.z, 0.5 * tree.scale);
     setTrunk(tree, true);
-    tree.stump.visible = false;
+    tree.stumpUp = false;
     tree.group.quaternion.copy(tree.base);
     tree.group.scale.setScalar(instant ? tree.scale : 0.01);
     tree.state = instant ? 'up' : 'growing';
@@ -1264,7 +1304,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     setBoulder(rock, false);
     rock.state = instant ? 'gone' : 'breaking';
     rock.t = 0;
-    rock.mesh.visible = !instant;
+    drawRock(rock);
     if (instant) return crumbling.delete(rock);
     // chips fly off it
     if (!rock.chips) {
@@ -1295,12 +1335,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     rock.radius = rock.baseRadius;
     fitRock(rock);
     for (const chip of rock.chips ?? []) chip.mesh.visible = false;
-    rock.mesh.visible = true;
     rock.mesh.scale.copy(rock.base).multiplyScalar(instant ? 1 : 0.01);
     rock.mesh.position.y = rock.baseY;
     rock.state = instant ? 'up' : 'growing';
     rock.t = 0;
     rock.shake = 0;
+    drawRock(rock);
     if (instant) crumbling.delete(rock);
     else crumbling.add(rock);
   }
@@ -1352,6 +1392,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         Object.assign(rock, { state: 'growing', from: 1 / rock.big, t: 0, shake: 0 });
         crumbling.add(rock);
       }
+      drawRock(rock);
     }
   }
 
@@ -1378,6 +1419,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         crumbling.delete(thing);
       }
       fitRock(thing);
+      drawRock(thing);
     }
   }
 
@@ -1418,7 +1460,6 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         }
         if (p >= 1 && rock.t >= CHIP_LIFE) {
           rock.state = 'gone';
-          mesh.visible = false;
           for (const chip of rock.chips) chip.mesh.visible = false;
           crumbling.delete(rock);
         }
@@ -1432,6 +1473,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       } else {
         crumbling.delete(rock);
       }
+      drawRock(rock);
     }
   }
 
