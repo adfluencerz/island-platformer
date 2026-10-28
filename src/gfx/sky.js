@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { U } from './uniforms.js';
+import { HORIZON_GLSL } from './atmos.js';
 
 // ---------- The sky ----------
 // A dome round whichever camera draws it (its vertex shader puts it there, so
 // every seat of a split screen, the lobby and the title each have their own),
 // drawn first and behind everything: from the day's zenith overhead down to
-// its horizon, which is the fog's color, so the far land melts into it. A haze
+// its horizon, which is the fog's color (warmer toward a low sun, the same as
+// the fog's that way: src/gfx/atmos.js), so the far land melts into it. A haze
 // band along the horizon, the sun's disc and glow by day, the moon and stars at
 // night, and two layers of clouds drifting with the wind (src/gfx/uniforms.js
 // frame), more of them as the weather clouds over. Underground (a boss's
@@ -37,7 +39,7 @@ const fragmentShader = /* glsl */ `
   uniform vec2 uCloudOffset;
   uniform float uTime;
   varying vec3 vDir;
-
+${HORIZON_GLSL}
   // (hashes without sin, in highp: the same on every GPU and SwiftShader)
   highp float hash12(highp vec2 p) {
     highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -81,11 +83,12 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec3 dir = normalize(vDir);
     float y = dir.y;
-    vec3 col = uSkyHorizon;
+    vec3 horizon = gfxHorizon(dir); // (warmer toward a low sun: the fog's color that way, src/gfx/atmos.js)
+    vec3 col = horizon;
     if (y > 0.0) {
       // zenith to horizon, the horizon's haze a band along the bottom
       float up = smoothstep(0.0, 0.14, y); // (what is in the sky fades out into the haze)
-      col = mix(uSkyHorizon, uSkyZenith, pow(smoothstep(0.02, 0.75, y), 0.75));
+      col = mix(horizon, uSkyZenith, pow(smoothstep(0.02, 0.75, y), 0.75));
 
       vec3 sunDir = normalize(uSunDir);
       float mu = dot(dir, sunDir);

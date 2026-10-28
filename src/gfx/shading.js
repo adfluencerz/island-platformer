@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { patch } from './chunks.js';
+import { atmos } from './atmos.js';
 
 // ---------- One way to change a material's shader ----------
 // hook(material, key, fn): fn(shader, renderer, material) runs when the
@@ -20,8 +21,8 @@ const OPT_OUTS = ['noCloud', 'noWrap', 'noAtmos'];
 const lit = (m) => !!(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial);
 
 // Every lit material's, first: the fragment's world position as vGfxWorld,
-// for a hook that defines GFX_WORLD (instancing-aware; unhooked materials
-// compile as they did)
+// for a hook that defines GFX_WORLD (instancing-aware), then the atmosphere's
+// fog (unless the material opts out: then it compiles as it did)
 const BASE = [
   (shader) => {
     const declare = 'varying vec3 vGfxWorld;';
@@ -37,6 +38,7 @@ const BASE = [
       #endif
       vGfxWorld = (modelMatrix * gfxWorld).xyz;`, 'GFX_WORLD');
   },
+  atmos, // (the fog: the far land melts into the sky, a low haze over the sea: src/gfx/atmos.js)
 ];
 
 export function hook(material, key, fn) {
