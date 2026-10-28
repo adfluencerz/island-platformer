@@ -230,22 +230,24 @@ export function createSeasons(map) {
   // The season's light, over the day's (daynight.js sets that first)
   function light() {
     const { now, next, blend } = state;
-    const { sun, hemi, scene } = lit;
+    const { sun, hemi, scene, sky } = lit;
     sun.color.multiply(mix(now.light.sun, next.light.sun, blend, tint));
     hemi.color.multiply(mix(now.light.sky, next.light.sky, blend, tint));
     hemi.groundColor.multiplyScalar(1 + uSnow.value * 0.7); // (light off the snow)
     mix(now.light.haze, next.light.haze, blend, tint);
     scene.background.multiply(tint);
     scene.fog.color.multiply(tint);
+    if (sky) for (const c of [sky.horizon, sky.zenith]) c.multiply(tint); // (the sky dome's, so it still meets the fog)
   }
   let shown = false; // (on the farm, lit: frame())
 
   return {
     // Once the farm is built: root, its world's root (snow on what is in it);
     // trees: its trees (world.js: autumn's leaves lie under them); sun, hemi,
-    // scene: the light and the sky, for the season's
-    attach({ root, trees = [], sun, hemi, scene }) {
-      lit = { root, sun, hemi, scene };
+    // scene: the light and the sky, for the season's (sky: dayNight.sky, the
+    // sky dome's colors)
+    attach({ root, trees = [], sun, hemi, scene, sky }) {
+      lit = { root, sun, hemi, scene, sky };
       if (map.tuftMat) seasonal(map.tuftMat, { grass: true, sink: true }); // (once world.js has made it sway)
       const own = new Set([...map.leafMats, ...map.pineMats]);
       copies = trees.flatMap((t) => t.materials.filter((m) => own.has(m.userData.from)).map((m) => [m, m.userData.from]));

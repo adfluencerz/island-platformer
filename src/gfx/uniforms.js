@@ -12,12 +12,13 @@ export const U = {
   uTime: { value: 0 }, // the wind's clock (seconds, faster in a storm): the grass's sway, the water's ripples
   uSunDir: { value: new THREE.Vector3(0, 1, 0) }, // toward the sun (or the moon at night), world space
   uSunColor: { value: new THREE.Color(1, 1, 1) }, // its light, times its intensity
-  uSkyZenith: { value: new THREE.Color(0x87ceeb) },
-  uSkyHorizon: { value: new THREE.Color(0x87ceeb) },
+  uSkyZenith: { value: new THREE.Color(0x87ceeb) }, // the sky overhead
+  uSkyHorizon: { value: new THREE.Color(0x87ceeb) }, // and at the horizon: the fog's color (both after the season's tint)
   uSkyGlow: { value: new THREE.Color(1, 1, 1) }, // round the sun
   uNight: { value: 0 }, // 0 by day, 1 at night
   uUnder: { value: 0 }, // how far underground this view is, 0 to 1
   uCloudAmount: { value: 0 }, // how overcast, 0 to 1
+  uFlash: { value: 0 }, // lightning's flash, 0 to 1 (none seen under a roof)
   uCloudOffset: { value: new THREE.Vector2() }, // how far the clouds have drifted (world units)
   uWind: { value: new THREE.Vector2() }, // a storm's wind, xz (units a second)
   uPlayers: { value: Array.from({ length: MAX_PLAYERS }, () => new THREE.Vector4(0, -1e4, 0, 0)) }, // the farmers here: xyz, w 1 (0: none)
@@ -30,7 +31,7 @@ export const U = {
 
 const TYPES = {
   uTime: 'float', uSunDir: 'vec3', uSunColor: 'vec3', uSkyZenith: 'vec3', uSkyHorizon: 'vec3', uSkyGlow: 'vec3',
-  uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
+  uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uFlash: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
   uPlayers: `vec4[${MAX_PLAYERS}]`, uCamPos: 'vec3', uFogHeight: 'float', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float',
 };
 
@@ -68,8 +69,10 @@ export function look(camera) {
   camera.getWorldPosition(U.uCamPos.value);
 }
 
-// The day's light (src/daynight.js), for the view being drawn
-export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud }) {
+// The day's light (src/daynight.js), for the view being drawn (sky, zenith:
+// the sky's colors, copied before the season tints them in place:
+// dayNight.sky, src/seasons.js)
+export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, flash = 0 }) {
   U.uSunDir.value.copy(sunDir);
   U.uSunColor.value.copy(sun.color).multiplyScalar(sun.intensity);
   U.uSkyHorizon.value.copy(sky);
@@ -78,4 +81,5 @@ export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud }) {
   U.uNight.value = night;
   U.uUnder.value = under;
   U.uCloudAmount.value = cloud;
+  U.uFlash.value = flash;
 }

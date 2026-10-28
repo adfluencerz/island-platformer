@@ -459,7 +459,7 @@ const animals = createAnimals();
 worlds.home.root.add(animals.root);
 // (the seasons, on what stays put: snow on it, leaves under the trees, and their light: seasons.js)
 merchant.root.userData.noSnow = true;
-seasons.attach({ root: worlds.home.root, trees: worlds.home.trees, sun, hemi, scene });
+seasons.attach({ root: worlds.home.root, trees: worlds.home.trees, sun, hemi, scene, sky: dayNight.sky });
 const farmHours = () => (dayNight.day() - 1) * 24 + dayNight.hour(); // the farm's clock, in game hours
 // (on a friend's farm the eggs, milk and wool are the farmer's)
 const collect = (item) => place === 'home' && !visiting() && inventory.add(item);
