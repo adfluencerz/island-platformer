@@ -47,7 +47,7 @@ const meadowNoise = (x, z) =>
 // grass is given its own, src/seasons.js)
 const MAX_FEET = 4; // (uPlayers: src/gfx/uniforms.js)
 const FEET_UP = 0.8; // (a farmer's position is this far above their feet: GROUND_STAND_Y, shared/level.js)
-const GRASS_WIND_GLSL = /* glsl */ `
+export const GRASS_WIND_GLSL = /* glsl */ `
   highp float gfxGrassHash(highp vec2 p) {
     highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
