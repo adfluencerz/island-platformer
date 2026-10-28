@@ -165,6 +165,8 @@ earthGeo.setAttribute('color', new THREE.Float32BufferAttribute(
     return [k, k, k];
   }).flat(), 3));
 
+// The ground's surface is drawn in squares this many tiles across
+const GROUND_CHUNK = 47;
 // The ground's surface sits this far above its floor (tilled soil is above it)
 const GROUND_LIFT = 0.012;
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
@@ -680,7 +682,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   }
 
   // ---------- The ground's surface ----------
-  // One mesh for every tile, colored by what the map says the ground is at
+  // Every tile (in a few meshes), colored by what the map says the ground is at
   // each vertex rather than per tile, so a path winds along its own curve
   // instead of in grid steps, and grass meets it and the sand without hard
   // tile lines. Each tile is a 5x5 patch of vertices, a quarter tile apart;
@@ -730,14 +732,17 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       return shade;
     };
 
-    const pos = [];
-    const col = [];
-    const index = [];
+    // (in squares of GROUND_CHUNK tiles, a mesh each, so the ones out of
+    // view aren't drawn: the whole island is most of a view's triangles)
+    const chunks = new Map(); // "cx,cz" -> { pos, col, index }
     const tint = new THREE.Color();
     const slabs = [];
     for (const [key, type] of tileGrid) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
+      const chunkKey = `${Math.floor((gx + H) / GROUND_CHUNK)},${Math.floor((gz + H) / GROUND_CHUNK)}`;
+      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], index: [] });
+      const { pos, col, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
       for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
@@ -774,14 +779,16 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
       if (type === 'stone') slabs.push([gx, gz, floor]);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    geo.setIndex(index);
-    const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
-    ground.receiveShadow = true;
-    root.add(ground);
+    for (const { pos, col, index } of chunks.values()) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.setIndex(index);
+      const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
+      ground.receiveShadow = true;
+      root.add(ground);
+    }
 
     const stones = new THREE.InstancedMesh(slabGeo, slabMat, slabs.length);
     stones.receiveShadow = true;
