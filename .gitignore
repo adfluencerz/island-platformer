@@ -15,3 +15,6 @@ dist/
 
 # the game server's saved lobbies
 data/
+
+# screenshots from npm run shots
+shots/

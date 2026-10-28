@@ -54,6 +54,10 @@ npm run browser --silent -- --shot night.png -e 'g.dayNight.setTime(21); g.step(
   dispatch the events yourself:
   `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))`.
 - `g.draw()`: draw the scene (for a screenshot taken from inside a test).
+- `g.warp('plaza'|'lake'|'house'|'forest'|'dungeon'|{ x, z })`: the farmer
+  there at once, the camera with them; `g.stats()`: what the last `g.draw()`
+  drew (draw calls, triangles, shaders, the graphics tier). `npm run shots`
+  takes ten fixed full-graphics screenshots with them (`docs/visuals/`).
 - `g.player` (`position`, `velocity`, `onGround`), `g.inventory`, `g.shop`,
   `g.chest`, `g.animals`, `g.buildings`, `g.machines`, `g.cooking`,
   `g.fishing`, `g.dayNight`, `g.world`, `g.sound`, `g.place`, `g.net`, and
