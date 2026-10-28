@@ -40,6 +40,7 @@ import { Guide } from './ui/guide.js';
 import { TouchControls, fitPart } from './ui/touch.js';
 import * as quality from './gfx/quality.js';
 import { createStats } from './gfx/stats.js';
+import * as gfx from './gfx/uniforms.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
 import { SeatPanel } from './ui/seatpanel.js';
@@ -58,7 +59,7 @@ import { createSeasons } from './seasons.js';
 import { createWeather } from './weather.js';
 import { rainSince } from '../shared/weather.js';
 import * as sound from './sound.js';
-import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
+import { buildWorld, tileKeyFor, TILE_SIZE, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
 import { arenaFor, GAMES } from '../shared/arenas.js';
@@ -1805,6 +1806,7 @@ function updateCamera(dt) {
 // several views, which also each have their own light (down in a dungeon or
 // not), rain and leaves in the air, and the night's glow round their farmer.
 function lookFrom(split) {
+  gfx.look(camera); // (the shaders' view: src/gfx/uniforms.js)
   if (place === 'title') return followSun(MENU_CAM.look, 0);
   if (split && place !== 'lobby') npcs.showSigns(npcs.signs(), player.position); // (the neighbours' signs: what they have for this farmer)
   for (const seat of seats) if (seat.nameTag) seat.nameTag.visible = seat !== me; // (the others' names: not your own)
@@ -5448,7 +5450,7 @@ function updateWorld(dt) {
   rollFarmGiants();
   bossWorld.update(dt, t);
   giantBars.update(t);
-  windTime.value += dt * (1 + weather.wind.length() * 0.6); // (the grass sways harder in a storm's wind)
+  gfx.frame(dt, { wind: weather.wind, players: seats.map((seat) => seat.player.position) }); // (the shaders' clock: the grass sways harder in a storm's wind)
   world.updateTreeFade(dt, me.eye, camera, seats.map((seat) => [seat.eye, seat.camera]));
   if (place === 'lobby') updateSkyFade(dt, me.eye, camera); // (and sky isles over us: src/skyisles.js)
   world.update(t);
