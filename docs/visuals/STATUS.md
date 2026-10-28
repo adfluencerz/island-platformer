@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 09 (`phases/09-decor-instanced.md`)
+Current phase: 10 (`phases/10-ground.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -12,7 +12,7 @@ Current phase: 09 (`phases/09-decor-instanced.md`)
 - [x] 06 Painterly shading, clouds overhead, cloud shadows
 - [x] 07 Grass v2
 - [x] 08 Trees: instancing, dithered fade, painterly canopy
-- [ ] 09 Bushes, rocks, biome decor instanced
+- [x] 09 Bushes, rocks, biome decor instanced
 - [ ] 10 Ground detail
 - [ ] 11 Water
 - [ ] 12 Cliff skirts
@@ -33,7 +33,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- `makeInstancer(parent, chunk = GROUND_CHUNK)` in `world.js`: `adopt(group)` turns a group's direct child meshes into slots (one InstancedMesh per material x geometry x ground square, so culling still works), `build()` once all are adopted, `show(group, parts, shown)` after the group moves, `fade(parts, f)`. Groups stay in `root`, invisible, for transforms and raycasts; `obj.userData.tint` is the slot's instance color. Reuse it for bushes, rocks and decor.
-- Hook `tree[:sway]` (`hookTree(material, soft)`): `aFade` dither (only under `USE_INSTANCING`, and every instanced geometry using these materials needs an `aFade` attribute: the instancer adds it, a missing one can read as 1), top-bright/under-dark gradient by `position.y`, gust sway. `hook()` now replaces by name (the key up to ':').
-- `canopyGeo` holds an 80-tri and a 20-tri blob, picked by draw range from the new `treeDetail` knob (high 1, else 0). Pines keep flat shading; leaves and trunks are smooth.
-- plaza-noon calls 1000 -> 815-824 (budget line now 900), 1.21M tris, 38-40 programs; phone 765k tris; whole-farm overview 5018 -> 3652 calls. `scripts/lib/page.mjs` holds frames until logged in (full graphics shader compiles timed the login out).
+- plaza-noon calls 815-824 -> 712-755 (budget line now 850), 1.22M tris, 41 programs; phone 656 calls; whole-farm overview 3646 -> 1387 calls, triangles unchanged.
+- Three instancers per world (`world.js`): `treeDecor` (trees and their stumps, a hidden slot each till felled), `rockDecor` (a rock's slot is rewritten by `drawRock` on every shake/crumble/surface/giant; chips stay meshes) and `stillDecor`.
+- `stillDecor` takes every mesh in `root` with `userData.decor` once `map.decorate` is done: `addDecor` sets it, maps set it on logs, driftwood, toadstool dots. The meshes stay in root, invisible; don't toggle their `visible`, write the slot (`show`).
+- `makeInstancer.adopt` now takes a lone mesh or a multi-material one; an instanced mesh with every slot hidden is not drawn, and a hidden slot sits at its thing's position (snug bounds).
+- For phase 10: decor stands on the ground at y≈0 in root space; ground detail placed by `isOpenGround` already steers clear of wild trees/rocks, not of bushes or biome plants (their spots are not tracked).
