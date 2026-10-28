@@ -31,6 +31,7 @@ import { addHelp } from './hud.js';
 import { LOBBY_GAMES } from '../../shared/arenas.js';
 import * as sound from '../sound.js';
 import * as view from '../view.js';
+import * as quality from '../gfx/quality.js';
 import { Wardrobe } from './wardrobe.js';
 
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
@@ -115,7 +116,7 @@ export class Splash {
     });
     this.addBtn.title = 'Another farmer joins you at this screen, on a controller of their own';
     nav('Controls', 'controls');
-    // sound effects and music, on or off (M in game does both)
+    // sound effects and music, on or off (M in game does both), and the graphics
     const soundRow = el('div', 'ui-row', main);
     const toggle = (label, key, set) => {
       const b = button('ui-btn ui-btn-small ui-btn-ghost', soundRow, '', () => {
@@ -127,6 +128,15 @@ export class Splash {
       return show;
     };
     const shows = [toggle('Sound', 'effects', sound.setEffects), toggle('Music', 'music', sound.setMusic)];
+    // ...and how much is drawn: high, medium or low (src/gfx/quality.js), at once
+    const gfx = button('ui-btn ui-btn-small ui-btn-ghost', soundRow, '', () => {
+      quality.cycle();
+      showGfx();
+    });
+    gfx.title = 'Lower draws less: smoother on a slow phone or computer';
+    const showGfx = () => (gfx.textContent = `Graphics: ${quality.tier()}`);
+    shows.push(showGfx);
+    showGfx();
     this.showSound = () => shows.forEach((show) => show());
     // the camera: from above, or in first person (V in game does the same)
     const viewRow = el('div', 'ui-row', main);

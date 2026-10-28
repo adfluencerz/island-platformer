@@ -12,6 +12,8 @@
     "start": "node server/index.js",
     "test": "node scripts/test-multiplayer.js",
     "browser": "node scripts/browser.mjs",
+    "shots": "node scripts/shots.mjs",
+    "gates": "node scripts/gates.mjs",
     "island": "node scripts/island.js",
     "wilds": "node scripts/wilds.js"
   },

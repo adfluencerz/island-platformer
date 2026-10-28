@@ -1,0 +1,63 @@
+import { patch, swap, define } from './chunks.js';
+import { use } from './uniforms.js';
+
+// ---------- The air between us and the far land ----------
+// Every lit material's fog (a base hook, src/gfx/shading.js; a material opts
+// out with userData.gfx.noAtmos): three's linear fog as it was (lookFrom's
+// near and far for each seat, and the dungeon's close dark, src/main.js), and
+// on top of it, out in the open, a soft aerial haze that starts nearer, so
+// the far side of the view already pales toward the sky, and a low haze that
+// lies over the sea and thins going up (uFogHeight). Its color is the sky's
+// at the horizon in that direction: the day's horizon, warmer toward a low
+// sun, the same as the sky dome's there (src/gfx/sky.js), so the far land
+// melts into the sky. Not tone mapped, like three's fog and the dome.
+// Unlit things (name tags, signs, glow sprites) keep three's plain fog.
+
+// GLSL: the sky's color at the horizon looking along dir (world space,
+// linear): the day's, tinted toward the sun's light round a low sun
+export const HORIZON_GLSL = /* glsl */ `
+  vec3 gfxHorizon(vec3 dir) {
+    vec2 flatDir = dir.xz;
+    vec2 sunFlat = uSunDir.xz;
+    float face = dot(flatDir, sunFlat) / max(length(flatDir) * length(sunFlat), 1e-4);
+    float low = 1.0 - smoothstep(0.12, 0.6, uSunDir.y); // (sunrise and sunset)
+    float day = 1.0 - smoothstep(0.02, 0.12, uNight); // (as the sun's disc in the sky)
+    float w = pow(max(face, 0.0), 3.0) * low * day * (1.0 - uUnder) * (1.0 - 0.75 * uCloudAmount);
+    return mix(uSkyHorizon, uSkyGlow, 0.4 * w);
+  }
+`;
+
+export const ATMOS_UNIFORMS = ['uSkyHorizon', 'uSkyGlow', 'uSunDir', 'uNight', 'uUnder', 'uCloudAmount'];
+
+const FOG_GLSL = /* glsl */ `
+#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+    gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+  #else
+    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth ); // (three's, as it was)
+    vec3 gfxView = vGfxWorld - cameraPosition;
+    float gfxS = vFogDepth / max(fogNear, 1e-3); // (how far, in fog-nears: zoom and the cave's fog scale it)
+    float gfxLow = 1.0 - smoothstep(0.12, 0.6, uSunDir.y);
+    float gfxCave = smoothstep(0.0, 0.6, uUnder); // (well down in a dungeon: three's close dark fog alone)
+    float gfxOpen = (1.0 - gfxCave) * (1.0 - 0.4 * uNight);
+    // the air: the far side of the view pales a little, more round a low sun or in rain
+    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount) * smoothstep(0.4, 1.35, gfxS);
+    // the low haze over the sea, thinning going up
+    float gfxAbove = max(vGfxWorld.y - uFogHeight.x, 0.0);
+    float gfxHaze = (0.38 + 0.2 * gfxLow) * exp(-gfxAbove * uFogHeight.y) * smoothstep(0.3, 1.2, gfxS);
+    float gfxFog = 1.0 - (1.0 - fogFactor) * (1.0 - gfxAir * gfxOpen) * (1.0 - gfxHaze * gfxOpen);
+    vec3 gfxColor = linearToOutputTexel(vec4(gfxHorizon(normalize(gfxView)), 1.0)).rgb;
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(gfxColor, fogColor, gfxCave), gfxFog);
+  #endif
+#endif`;
+
+// The base hook (lit materials)
+export function atmos(shader, renderer, material) {
+  if (material?.userData?.gfx?.noAtmos) return;
+  define(shader, 'GFX_WORLD');
+  define(shader, 'GFX_ATMOS');
+  use(shader, [...ATMOS_UNIFORMS, 'uFogHeight'], 'f');
+  shader.fragmentShader = patch(shader.fragmentShader, 'fog_pars_fragment', HORIZON_GLSL, 'GFX_ATMOS');
+  shader.fragmentShader = swap(shader.fragmentShader, 'fog_fragment', FOG_GLSL, 'GFX_ATMOS');
+}

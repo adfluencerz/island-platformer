@@ -39,17 +39,18 @@ const BIOME_STYLES = {
   dune: { color: 0xd9c188, jitter: 0.03, top: [0.006, 0.02] },
   bank: { color: 0x5f9a3e, jitter: 0.04, top: [0.006, 0.024], lush: true },
 };
+// (tall: how tall its grass grows, as a share of the meadow's: src/world.js)
 const BIOME_FOLIAGE = {
-  moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34] },
-  meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8 },
-  heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78] },
-  marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26] },
-  glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44] },
-  field: { tufts: 2.8, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.3, light: [0.34, 0.44], hue: [0.14, 0.2] },
-  patch: { tufts: 2.2, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.2, light: [0.3, 0.4], hue: [0.1, 0.16] },
-  glen: { tufts: 3.2, lushTufts: 1.8, flowerLush: -2, flowerChance: 0, light: [0.22, 0.32], hue: [0.3, 0.36] },
-  dune: { tufts: 1.2, lushTufts: 0.6, flowerLush: -2, flowerChance: 0, light: [0.5, 0.6], hue: [0.12, 0.16] },
-  bank: { tufts: 1.8, lushTufts: 1, flowerLush: -2, flowerChance: 0.35, light: [0.32, 0.42], hue: [0.26, 0.32] },
+  moss: { tufts: 1.4, lushTufts: 1, flowerLush: 9, flowerChance: 0, light: [0.26, 0.34], tall: 0.6 },
+  meadow: { tufts: 3, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.8, tall: 1.15 },
+  heath: { tufts: 2.4, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.5, light: [0.36, 0.46], hue: [0.7, 0.78], tall: 0.75 },
+  marsh: { tufts: 3, lushTufts: 1.6, flowerLush: -2, flowerChance: 0.1, light: [0.28, 0.38], hue: [0.2, 0.26], tall: 1.25 },
+  glade: { tufts: 2.6, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.6, light: [0.34, 0.44], hue: [0.38, 0.44], tall: 1.0 },
+  field: { tufts: 2.8, lushTufts: 1.4, flowerLush: -2, flowerChance: 0.3, light: [0.34, 0.44], hue: [0.14, 0.2], tall: 1.1 },
+  patch: { tufts: 2.2, lushTufts: 1.2, flowerLush: -2, flowerChance: 0.2, light: [0.3, 0.4], hue: [0.1, 0.16], tall: 0.9 },
+  glen: { tufts: 3.2, lushTufts: 1.8, flowerLush: -2, flowerChance: 0, light: [0.22, 0.32], hue: [0.3, 0.36], tall: 1.1 },
+  dune: { tufts: 1.2, lushTufts: 0.6, flowerLush: -2, flowerChance: 0, light: [0.5, 0.6], hue: [0.12, 0.16], tall: 1.3 },
+  bank: { tufts: 1.8, lushTufts: 1, flowerLush: -2, flowerChance: 0.35, light: [0.32, 0.42], hue: [0.26, 0.32], tall: 1.0 },
 };
 export const HOME = {
   name: 'home',
@@ -72,7 +73,7 @@ export const HOME = {
   // its own leaves, needles, grass and ground, for the seasons to color (src/seasons.js)
   leafMats: leafMats.map((m) => m.clone()),
   pineMats: pineMats.map((m) => m.clone()),
-  tuftMat: new THREE.MeshStandardMaterial({ color: 0x6fb043, roughness: 1, vertexColors: true }),
+  tuftMat: new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }),
   groundMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
   turfMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), // (on its platforms)
   flowerStemMat: new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 }),

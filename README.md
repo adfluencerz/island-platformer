@@ -61,6 +61,8 @@ On a touch screen the game shows its own controls: a thumbstick (bottom left) to
 
 **With a controller** (an Xbox or PlayStation pad, or any the browser knows in the standard layout; plug it in and press a button): the left stick walks, **A** jumps (hold to glide), **X**, **B** or **RT** does whatever `E` does (hold to keep chopping), **Y** opens the backpack, **LB**/**RB** (or the D-pad left and right) pick the item before or after on the toolbar, the right stick zooms (or, in first person, looks round), **View** builds, **Menu** opens the menu, and holding **LT** speeds up time at home. **D-pad up** reaches the buttons on the screen, like an invitation. In the menu and every window, the D-pad (or the left stick) moves a gold highlight between the buttons and slots: **A** clicks, **X** right-clicks (one of a stack), **B** goes back or closes, **LB**/**RB** switch tabs, and the right stick scrolls. The prompts say **X** instead of `E` while you play with one. More controllers: more farmers at the screen (below, **Together at one screen**).
 
+**Graphics.** The menu's **Graphics** button (next to Sound and Music) picks how much the game draws: **high** (shadows at full size, the screen's full sharpness), **medium** (fewer pixels and a smaller shadow map, the default on a touch screen) or **low** (a quarter of the pixels, no shadows) for a slow phone or computer. It changes at once and is kept in this browser (`tp.gfx`). For testing, `?gfx=low`, `?gfx=medium` or `?gfx=high` in the address picks one for that page, and `?lowgfx` is low (`src/gfx/quality.js`).
+
 ## Playing on a phone
 Open the address Vite prints for your network (`npm run dev`) on the phone. The built game (`npm run build`, `npm start`) can also be installed as an app ("Add to Home Screen"): it opens full screen, and the farm opens without a connection (only the lobbies need the game server). The app's files are in `public/` (`manifest.webmanifest`, the icons, and `sw.js`, the service worker, which runs in built pages only so Vite's dev server always shows your changes). Browsers only install apps from `https://` or `localhost`.
 
@@ -288,6 +290,7 @@ island-platformer/
 │   │   ├── lobby.js       # the lobbies' HTTP API, invite links
 │   │   ├── farm.js        # the farm's copy on the server, pairing codes
 │   │   └── players.js     # the farmers who join at a split screen: their accounts or guests, saved back
+│   ├── gfx/             # graphics: the tiers (quality.js: the Graphics setting), what the renderer drew (stats.js)
 │   └── ui/              # title screen (splash.js), the wardrobe (wardrobe.js), in-game HUD (hud.js), touch controls (touch.js), a joined farmer's panel (seatpanel.js), styles
 ├── shared/              # runs on both the server and the client
 │   ├── place.js         # what every online place has: players, seats, chat, snapshots
@@ -313,8 +316,12 @@ island-platformer/
 ├── scripts/
 │   ├── dev.js           # npm run dev: game server + Vite
 │   ├── island.js        # npm run island: draw a seed's island in the terminal
+│   ├── browser.mjs      # npm run browser: the game in a headless Chromium, for a test
+│   ├── shots.mjs        # npm run shots: ten fixed screenshots, their stats and a contact sheet
+│   ├── lib/page.mjs     # the headless launcher both share (dev server, login, onto the farm, frozen)
 │   └── test-multiplayer.js  # npm test
 ├── docs/CONCEPTS.md     # an early brainstorm of game ideas
+├── docs/visuals/        # the visual overhaul: art direction, tiers, budgets (README.md), where it stands (STATUS.md), one doc per phase
 ├── package.json
 ```
 
@@ -331,6 +338,16 @@ Checks the islands (the classic one and hundreds of seeds: every spot reachable,
 npm run browser -- -e 'g.hold("Space", 0.3); return g.player.position' --shot shot.png
 ```
 Plays the game in a headless Chromium (`scripts/browser.mjs`): it logs a test account in, walks onto the farm and freezes it, then runs a test that moves the game on by game time (`window.__game.step`), however slowly the page draws. See `.claude/skills/browser-test/SKILL.md`.
+
+```bash
+npm run shots                 # or: npm run shots -- --tier medium --check
+```
+Ten fixed screenshots of the game at full graphics (`scripts/shots.mjs`), into `shots/` (not in git): the plaza in the morning and at noon, the forest, the lake at sunset, lamps at night, rain, a dungeon, a split screen, a lobby and a phone. Each comes with what the renderer drew (`shots/stats.json`: draw calls, triangles, shaders), and `shots/contact.png` has them all on one page. `--tier` draws at that graphics tier; `--check` fails when the plaza at noon is over the budgets in `docs/visuals/README.md`.
+
+```bash
+npm run gates
+```
+Runs every check a change must pass, in order (`npm test`, the build, the headless browser at low and full graphics, `npm run shots -- --check`), one line each, with the end of the output of any that fail (`scripts/gates.mjs`).
 
 ## Build for production
 ```bash

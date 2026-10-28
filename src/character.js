@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULT_LOOK } from '../shared/looks.js';
+import { hook } from './gfx/shading.js';
+import { patch, define } from './gfx/chunks.js';
 
 // ---------- Character model ----------
 // A little farmer built from primitives, used for the local player, for
@@ -60,19 +62,17 @@ export function lightFarmers(color, strength) {
   rim.value.copy(color).multiplyScalar(strength);
 }
 function rimShader(shader) {
+  define(shader, 'GFX_RIM');
   shader.uniforms.uFarmerRim = rim;
-  shader.fragmentShader = 'uniform vec3 uFarmerRim;\n' + shader.fragmentShader.replace(
-    '#include <emissivemap_fragment>',
-    `#include <emissivemap_fragment>
+  shader.fragmentShader = 'uniform vec3 uFarmerRim;\n' + patch(shader.fragmentShader, 'emissivemap_fragment', `
     float farmerEdge = 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0);
-    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge * farmerEdge);`
-  );
+    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge * farmerEdge);`, 'GFX_RIM');
 }
 
 const mat = (color, opts = {}) => {
   const m = new THREE.MeshStandardMaterial({ color, roughness: 0.75, ...opts });
-  m.onBeforeCompile = rimShader; // (the same function for all: one shader program)
-  return m;
+  m.userData.noSnow = true; // (snow keeps off the farmers: src/seasons.js)
+  return hook(m, 'rim', rimShader); // (the same for all: one shader program)
 };
 // too small to cast a shadow worth drawing
 const noShadow = (m) => ((m.userData.noShadow = true), m);

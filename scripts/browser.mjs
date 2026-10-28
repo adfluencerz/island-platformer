@@ -19,15 +19,11 @@
 //
 // The game server and Vite are started (and stopped after) unless `npm run
 // dev` is already up. A test account is made once and its login kept in
-// node_modules/.cache/browser-test, so later runs skip the sign up.
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { chromium } from 'playwright-core';
-
-const BASE = process.env.BROWSER_URL || 'http://localhost:5173';
-const STATE = resolve('node_modules/.cache/browser-test/state.json');
-const CHROMIUM = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
+// node_modules/.cache/browser-test, so later runs skip the sign up. (The
+// launching, logging in and freezing: scripts/lib/page.mjs, shared with
+// scripts/shots.mjs.)
+import { readFileSync } from 'node:fs';
+import { logger, startDev, launch, openFarm } from './lib/page.mjs';
 
 // ---- the command line ----
 const args = process.argv.slice(2);
@@ -44,55 +40,12 @@ while (args.length) {
   else opts.code = readFileSync(a, 'utf8');
 }
 
-const t0 = Date.now();
-const log = (...a) => console.error(`[${((Date.now() - t0) / 1000).toFixed(1)}s]`, ...a);
-
-// ---- the servers ----
-const up = async () => fetch(BASE).then((r) => r.ok, () => false);
-let dev = null;
-if (!(await up())) {
-  log('starting npm run dev');
-  dev = spawn(process.execPath, ['scripts/dev.js'], { stdio: 'ignore', detached: true });
-  for (let i = 0; i < 100 && !(await up()); i++) await new Promise((r) => setTimeout(r, 200));
-  if (!(await up())) throw new Error(`the dev server did not come up at ${BASE}`);
-}
-const stopDev = () => dev && process.kill(-dev.pid, 'SIGTERM');
-
-const browser = await chromium.launch({
-  ...(existsSync(CHROMIUM) && { executablePath: CHROMIUM }),
-  args: ['--autoplay-policy=no-user-gesture-required'],
-});
+const log = logger();
+const stopDev = await startDev(log);
+const browser = await launch();
 let exitCode = 0;
 try {
-  const [width, height] = opts.size;
-  const context = await browser.newContext({ viewport: { width, height }, ...(opts.touch && { hasTouch: true, isMobile: true }), ...(existsSync(STATE) && { storageState: STATE }) });
-  const page = await context.newPage();
-  if (opts.touch) await page.exposeFunction('__tap', (x, y) => page.touchscreen.tap(x, y));
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  const query = [!opts.full && 'lowgfx', opts.query].filter(Boolean).join('&');
-  await page.goto(`${BASE}/?${query}`);
-  const farmButton = page.getByText('Go to my farm');
-  await Promise.race([farmButton.waitFor(), page.getByPlaceholder('What farmers call you').waitFor()]);
-
-  // ---- logged in, or make the test account ----
-  if (!(await farmButton.isVisible())) {
-    log('making a test account');
-    await page.locator('.ui-btn', { hasText: 'Create account' }).first().click();
-    await page.getByPlaceholder('What farmers call you').fill(`tester${Math.floor(Math.random() * 1e6)}`);
-    await page.locator('input[type=password]').first().fill('test-farmer-pass');
-    await page.locator('.ui-btn-big', { hasText: 'Create account' }).click();
-    await farmButton.waitFor();
-    mkdirSync(dirname(STATE), { recursive: true });
-    await context.storageState({ path: STATE });
-  }
-
-  // ---- onto the farm ----
-  await farmButton.click();
-  await page.waitForFunction(() => window.__game?.place === 'home' && window.__game.inGame);
-  if (!opts.live) await page.evaluate(() => window.__game.step(0.5)); // (settle, then frozen)
-  log('on the farm');
+  const { page, errors } = await openFarm(browser, { ...opts, log });
 
   if (opts.code) {
     const result = await page.evaluate(`(async (g) => { ${opts.code}\n})(window.__game)`);
