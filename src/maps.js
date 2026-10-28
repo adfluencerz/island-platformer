@@ -264,6 +264,9 @@ const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.
 const reedMat = foliageMat(0x6b8a3a);
 const logMat = foliageMat(0x7a5432);
 const logEndMat = foliageMat(0xc49a6c);
+// (one geometry each, 1 tall or long, scaled: all of them drawn in a few draws)
+const pondReedGeo = new THREE.ConeGeometry(0.035, 1, 4);
+const logGeo = new THREE.CylinderGeometry(0.3, 0.32, 1, 9);
 
 // ---------- The biomes' set pieces ----------
 // For a lobby's island and the farm's valley alike. ctx: world.js's set
@@ -301,7 +304,7 @@ function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
     if (!inPond(x, z)) continue;
     for (let n = 0; n < 4; n++) {
       const h = rand(0.6, 1.1);
-      const reed = addDecor(new THREE.ConeGeometry(0.035, h, 4), reedMat, x + rand(-0.15, 0.15), floor + h / 2, z + rand(-0.15, 0.15), 1, 1, 1, root);
+      const reed = addDecor(pondReedGeo, reedMat, x + rand(-0.15, 0.15), floor + h / 2, z + rand(-0.15, 0.15), 1, h, 1, root);
       reed.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
     }
   }
@@ -320,9 +323,11 @@ function fallenLogs({ scatter, tileAt, isOpenGround, rand, rng, root, addCollide
   scatter(n, 7, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.6) && offTrail(x, z, 2), (x, z) => {
     const len = rand(2.2, 3.4);
     const along = rng() < 0.5; // lying east-west, else north-south
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, len, 9), [logMat, logEndMat, logEndMat]);
+    const log = new THREE.Mesh(logGeo, [logMat, logEndMat, logEndMat]);
     log.rotation.set(along ? 0 : Math.PI / 2, 0, along ? Math.PI / 2 : 0);
+    log.scale.y = len;
     log.position.set(x, 0.3, z);
+    log.userData.decor = true; // (still: drawn instanced, world.js)
     log.castShadow = true;
     log.receiveShadow = true;
     root.add(log);
@@ -425,6 +430,7 @@ function duneGrass({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail,
     log.rotation.y = rand(0, Math.PI);
     log.scale.x = len;
     log.position.set(x, 0.14, z);
+    log.userData.decor = true;
     log.castShadow = true;
     log.receiveShadow = true;
     root.add(log);
@@ -463,6 +469,7 @@ function buildWildPieces(island, ctx) {
       const dot = new THREE.Mesh(dotGeo, dotMat);
       dot.position.set(x + Math.cos(a) * d, top - (i % 3 === 0 ? 0.02 : 0.12), z + Math.sin(a) * d);
       dot.scale.set(1, 0.35, 1);
+      dot.userData.decor = true; // (still: drawn instanced, world.js)
       root.add(dot);
     }
     for (const mesh of [stalk, cap, gills]) {
