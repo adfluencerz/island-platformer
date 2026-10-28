@@ -65,6 +65,12 @@ Open pull requests, each from the backlog below:
 - [ ] A farmer who gets up lets go of what they had: their windows' key
       listeners and their farmer's meshes stay till the page goes
 
+### Visuals
+- [ ] The visual overhaul, stylized and painterly (a real sky, clouds and
+      their shadows, lush grass, soft light, bloom), phase by phase: see
+      `docs/visuals/` (README.md for the direction, tiers and budgets,
+      STATUS.md for where it stands)
+
 ### Tech
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or
       `rapier3d`) once shapes get more complex
