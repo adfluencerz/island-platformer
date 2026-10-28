@@ -1,4 +1,4 @@
-# 16+ Polish rounds (written by the worker)
+# 19+ Polish rounds (written by the worker)
 
 Goal: keep improving the look, one weakest shot at a time, until told to stop.
 

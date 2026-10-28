@@ -19,7 +19,10 @@ Current phase: 09 (`phases/09-decor-instanced.md`)
 - [ ] 13 Characters
 - [ ] 14 Ambience
 - [ ] 15 Perf and polish
-- 16+ polish rounds (`phases/16-polish-rounds.md`)
+- [ ] 16 Surface detail: built things and buildings
+- [ ] 17 Surface detail: nature
+- [ ] 18 Surface detail: characters, animals and held things
+- 19+ polish rounds (`phases/19-polish-rounds.md`)
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
