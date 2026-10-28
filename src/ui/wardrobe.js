@@ -3,6 +3,7 @@ import { createFarmer } from '../character.js';
 import { LOOK_PARTS, DEFAULT_LOOK, cleanLook, sameLook, hatColorLabel, randomLook } from '../../shared/looks.js';
 import { PLAYER_COLORS } from '../../shared/constants.js';
 import { el, button, hexColor } from './dom.js';
+import { U } from '../gfx/uniforms.js';
 
 // ---------- The wardrobe ----------
 // The menu's Your farmer page (ui/splash.js): the farmer turning slowly on a
@@ -250,7 +251,10 @@ export class Wardrobe {
     this.focus[1] += (dist - this.focus[1]) * k;
     camera.position.set(0, this.focus[0] + this.focus[1] * 0.28, this.focus[1]);
     camera.lookAt(0, this.focus[0], 0);
+    const clouds = U.uCloudShadows.value;
+    U.uCloudShadows.value = 0; // (no clouds over the stage)
     renderer.render(this.scene, camera);
+    U.uCloudShadows.value = clouds;
   }
 }
 

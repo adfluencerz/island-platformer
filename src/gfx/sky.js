@@ -116,13 +116,15 @@ ${HORIZON_GLSL}
       col += uSkyGlow * 0.12 * pow(m, 64.0) * moonW * up;
       col = mix(col, vec3(0.86, 0.9, 1.0) * mottle, moonDisc * moonW * up);
 
-      // two layers of cloud, drifting: low soft heaps and a thin high layer
-      // above them, on planes over us (stretched toward the horizon)
+      // two layers of cloud, drifting with the wind: low soft heaps and a thin
+      // high layer above them, on planes over us (stretched toward the
+      // horizon); the low ones' shadows drift over the land the same way
+      // (gfxCloudShadow, src/gfx/light.js)
       highp vec2 plane = dir.xz / (y + 0.12);
       vec2 toSun = normalize(sunDir.xz + vec2(1e-4));
       float cover = mix(0.38, 1.0, uCloudAmount);
-      vec2 low = clouds(plane * 0.7 + uCloudOffset * 0.006, toSun, cover, 0.12);
-      vec2 high = clouds(plane * vec2(0.35, 0.9) + uCloudOffset * 0.0035 + 31.0, toSun, cover * 0.75, 0.22);
+      vec2 low = clouds(plane * 0.7 - uCloudOffset * 0.006, toSun, cover, 0.12);
+      vec2 high = clouds(plane * vec2(0.35, 0.9) - uCloudOffset * 0.0035 + 31.0, toSun, cover * 0.75, 0.22);
       float fade = smoothstep(0.03, 0.3, y); // (thinning into the haze)
 
       float day = 1.0 - 0.9 * uNight;

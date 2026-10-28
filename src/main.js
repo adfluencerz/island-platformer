@@ -203,7 +203,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(quality.knobs().pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = quality.knobs().shadowMap > 0;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // (soft edges by sun.shadow.radius, which PCFSoft ignores)
 toneMap(renderer); // (filmic: src/gfx/tonemap.js)
 // (what it drew, a frame at a time: __game.stats() and the devtools' Info tab)
 const gfxStats = createStats(renderer);
@@ -290,7 +290,8 @@ sun.shadow.camera.right = SUN_REACH;
 sun.shadow.camera.top = SUN_REACH;
 sun.shadow.camera.bottom = -SUN_REACH;
 sun.shadow.camera.far = 100;
-sun.shadow.normalBias = 0.02;
+sun.shadow.normalBias = 0.035; // (the wrapped light shows faces near side-on to the sun: no acne on them)
+sun.shadow.radius = 2.5; // (soft-edged, painterly shadows)
 scene.add(sun, sun.target);
 
 // Moved in steps of a few shadow-map texels, so the shadows' edges don't crawl as it pans
@@ -334,6 +335,7 @@ quality.onApply((k) => {
   }
   renderer.shadowMap.enabled = shadows;
   post.apply(k);
+  gfx.U.uCloudShadows.value = k.cloudShadows ? 1 : 0; // (the clouds' shadows on the land: src/gfx/light.js)
   sun.castShadow = shadows; // (which also has every lit material's shader made again, with or without them)
   weather.setParticles(k.particles);
 });
