@@ -6,9 +6,10 @@ import './gamepad.css';
 // the way the keyboard does. main.js calls poll() every frame:
 //
 // Playing, the left stick walks (direction(), as the touch stick does) and
-// the right stick zooms; the buttons press the keys they stand for, a keydown
-// and a keyup on letting go, just as the touch buttons do (ui/touch.js), so
-// whatever a key does, the button does too:
+// the right stick zooms (in first person, src/view.js, it looks round); the
+// buttons press the keys they stand for, a keydown and a keyup on letting go,
+// just as the touch buttons do (ui/touch.js), so whatever a key does, the
+// button does too:
 //   A                 Space  jump (hold: higher; on the way down, glide)
 //   X, B, RT          E      use (hold: keep chopping, mining, building)
 //   Y                 I      the backpack
@@ -42,6 +43,7 @@ const DEAD_ZONE = 0.2; // of a stick's travel
 const NAV_AT = 0.55; // a stick pushed this far moves the highlight
 const REPEAT_FIRST = 0.38; // s: held, the highlight moves on after this...
 const REPEAT_EVERY = 0.11; // ...and then this often
+const LOOK_RATE = 2.6; // first person: the right stick all the way turns this many radians a second
 const ZOOM_RATE = 1.6; // the right stick all the way: e^this times nearer or further a second
 const SCROLL_RATE = 900; // px a second, the right stick all the way
 
@@ -90,13 +92,15 @@ function heading(down, left) {
 export class GamepadInput {
   // inMenu(): a menu, a window or the chat line has the keys (not the farmer).
   // onCycle(dir): the toolbar's next item (1) or the one before (-1).
-  // onZoom(factor): the camera nearer (< 1) or further. onConnect(name).
+  // onZoom(factor): the camera nearer (< 1) or further. looking(): in first
+  // person, where the right stick turns the view instead: onLook(right, down),
+  // in radians. onConnect(name).
   // choosePad(pads): the controller to read, of navigator.getGamepads() (default:
   // the first connected). root: where its menus and windows are. keyboard:
   // its farmer has the keyboard and the mouse too (the first one does), so
   // which was used last says what the prompts show.
-  constructor({ inMenu, onCycle, onZoom, onConnect, choosePad = (pads) => pads.find((p) => p?.connected) ?? null, root = document, keyboard = true }) {
-    Object.assign(this, { inMenu, onCycle, onZoom, onConnect, choosePad, root, keyboard });
+  constructor({ inMenu, onCycle, onZoom, looking, onLook, onConnect, choosePad = (pads) => pads.find((p) => p?.connected) ?? null, root = document, keyboard = true }) {
+    Object.assign(this, { inMenu, onCycle, onZoom, looking, onLook, onConnect, choosePad, root, keyboard });
     this.index = null; // the controller last read with something pressed on it (its index)
     this.was = []; // the buttons down last frame
     this.held = new Map(); // key code -> the buttons holding it down
@@ -169,7 +173,9 @@ export class GamepadInput {
     }
     this.walk.x = left.x;
     this.walk.y = left.y;
-    if (right.y) this.onZoom?.(Math.exp(right.y * ZOOM_RATE * dt));
+    if (this.looking?.()) {
+      if (right.x || right.y) this.onLook?.(right.x * LOOK_RATE * dt, right.y * LOOK_RATE * dt);
+    } else if (right.y) this.onZoom?.(Math.exp(right.y * ZOOM_RATE * dt));
     if (pressed(BTN.LB) || pressed(BTN.LEFT)) this.onCycle?.(-1);
     if (pressed(BTN.RB) || pressed(BTN.RIGHT)) this.onCycle?.(1);
     if (pressed(BTN.UP) && this.targets(null).length) {

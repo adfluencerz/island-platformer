@@ -56,6 +56,7 @@ import { createSeasons } from './seasons.js';
 import { createWeather } from './weather.js';
 import { rainSince } from '../shared/weather.js';
 import * as sound from './sound.js';
+import * as viewMode from './view.js';
 import { buildWorld, tileKeyFor, TILE_SIZE, windTime, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
@@ -100,7 +101,7 @@ let me = null; // the seat the code works for now
 let camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock;
 let glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade;
 let workbench, arcade, cooking, readyNoted, learned, pettedOn;
-let fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising;
+let fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote;
 let airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown;
 let readyCheck, meal;
 
@@ -117,6 +118,9 @@ const freshSeat = () => ({
   jumpTapped: false, // a fresh press (not the key held down repeating): a jump in the air
   jumpTappedAt: -Infinity, // when Jump was last pressed (clock.elapsedTime)
   jumpRising: false, // on the way up from a jump of our own (not a bop's)
+  lookYaw: null, // first person: the way the farmer looks (like anim.facing: 0 is +z), or null: seen from above
+  lookPitch: 0, // ...and up (+) or down (-), in radians
+  lookWrote: null, // (the facing it last gave the farmer: another is a turn from outside, a door's)
   airTime: 0, // seconds since the farmer was last on the ground
   stepTimer: 0,
   airJumps: 0, // jumps left in the air
@@ -139,7 +143,7 @@ const freshSeat = () => ({
 function become(seat) {
   if (me === seat) return;
   if (me) {
-    Object.assign(me.vals, { fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising });
+    Object.assign(me.vals, { fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote });
     Object.assign(me.vals, { airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown });
     Object.assign(me.vals, { readyCheck, meal });
   }
@@ -147,7 +151,7 @@ function become(seat) {
   ({ camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock } = seat);
   ({ glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade } = seat);
   ({ workbench, arcade, cooking, readyNoted, learned, pettedOn } = seat);
-  ({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising } = seat.vals);
+  ({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = seat.vals);
   ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = seat.vals);
   ({ readyCheck, meal } = seat.vals);
 }
@@ -179,7 +183,7 @@ function newSeat(index) {
 const first = newSeat(0); // (the page's own)
 seats.push(first);
 me = first;
-({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising } = first.vals);
+({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = first.vals);
 ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = first.vals);
 ({ readyCheck, meal } = first.vals);
 
@@ -1733,12 +1737,14 @@ makeFarmer(first);
 ({ farmer, playerMesh, hoeGroup, anim } = first);
 
 function animateCharacter(dt, moving) {
+  if (lookYaw !== null) anim.facing = lookYaw; // (first person: the farmer faces where they look, standing or walking)
   farmer.animate(dt, {
     moving,
     onGround: player.onGround,
-    targetYaw: Math.atan2(player.velocity.x, player.velocity.z),
+    targetYaw: lookYaw ?? Math.atan2(player.velocity.x, player.velocity.z),
     time: clock.elapsedTime,
   });
+  lookWrote = lookYaw === null ? null : anim.facing;
 }
 
 function startHoeSwing() {
@@ -1748,11 +1754,55 @@ function startHoeSwing() {
 camTarget.set(player.position.x, player.position.y - player.height / 2, player.position.z);
 camGroundY = camTarget.y;
 
+// First person (src/view.js): the camera is in the farmer's head, looking where
+// lookYaw and lookPitch say; looking round turns the farmer too (their facing,
+// which is what E farms in front of), and W is forward, not north.
+const EYE_HEIGHT = 1.45; // above the feet
+const LOOK_PITCH = 1.4; // radians, up or down at most
+const LENS = { fov: 60, near: 0.5 }; // (from above)
+const FIRST_LENS = { fov: 75, near: 0.2 }; // (nothing is closer than the farmer's radius to the eyes)
+function setLens(first) {
+  const { fov, near } = first ? FIRST_LENS : LENS;
+  if (camera.fov === fov && camera.near === near) return;
+  camera.fov = fov;
+  camera.near = near;
+  camera.updateProjectionMatrix();
+}
+
+// Looking in first person, or not: where the farmer looks as of now
+function syncLook() {
+  if (!viewMode.firstPerson() || place === 'title') return void (lookYaw = null);
+  if (lookYaw === null) {
+    lookPitch = 0;
+    stopWalking(); // (tapping the ground to walk is for the view from above)
+    held = null;
+  }
+  if (lookYaw === null || anim.facing !== lookWrote) lookYaw = anim.facing; // (and turned from outside: put down by a door, facing a tree to chop)
+}
+
+// Turn the view right and down by that many radians (the mouse, a finger, a stick)
+function lookBy(right, down) {
+  if (lookYaw === null || !Number.isFinite(right + down)) return;
+  lookYaw -= right;
+  lookPitch = THREE.MathUtils.clamp(lookPitch - down, -LOOK_PITCH, LOOK_PITCH);
+}
+
 function updateCamera(dt) {
   const feetY = player.position.y - player.height / 2;
   // Track the ground we last stood on; only chase the player downward if they
   // drop below it (falling off a ledge), so normal jumps don't move the view.
   if (player.onGround || feetY < camGroundY) camGroundY = feetY;
+
+  setLens(lookYaw !== null);
+  if (lookYaw !== null) {
+    // (the follow point stays on the farmer, for the way back to the view from above)
+    camTarget.set(player.position.x, feetY, player.position.z);
+    const eyeY = feetY + EYE_HEIGHT;
+    const flat = Math.cos(lookPitch);
+    camera.position.set(player.position.x, eyeY, player.position.z);
+    camera.lookAt(player.position.x + Math.sin(lookYaw) * flat, eyeY + Math.sin(lookPitch), player.position.z + Math.cos(lookYaw) * flat);
+    return;
+  }
 
   const kXZ = damp(CAM_FOLLOW_XZ, dt);
   camTarget.x += (player.position.x - camTarget.x) * kXZ;
@@ -1780,9 +1830,10 @@ function lookFrom(split) {
   for (const seat of seats) if (seat.nameTag) seat.nameTag.visible = seat !== me; // (the others' names: not your own)
   // Pushed back with the camera, so zooming out shows more island, not more fog
   // (underground, in a boss's dungeon, closer: the dark all round)
-  scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, CAVE_FOG[0], underground) * Math.max(1, camZoom);
-  scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, CAVE_FOG[1], underground) * Math.max(1, camZoom);
-  reachSun(camZoom);
+  const zoom = lookYaw !== null ? 1 : camZoom; // (in first person, there is no zooming out)
+  scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, CAVE_FOG[0], underground) * Math.max(1, zoom);
+  scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, CAVE_FOG[1], underground) * Math.max(1, zoom);
+  reachSun(zoom);
   if (split) {
     const cave = bosses.underground();
     const inside = indoors() || cave.k > 0.5;
@@ -1794,8 +1845,11 @@ function lookFrom(split) {
     water.visible = cave.k < 0.5;
     playerMesh.add(dayNight.glow);
   }
-  followSun(camTarget, SUN_AHEAD * Math.max(1, camZoom));
+  if (lookYaw === null) return followSun(camTarget, SUN_AHEAD * Math.max(1, camZoom));
+  // (first person: the shadows' box reaches half its width ahead of where we look)
+  followSun(_lookAhead.set(camera.position.x + Math.sin(lookYaw) * sunReach / 2, 0, camera.position.z + Math.cos(lookYaw) * sunReach / 2), 0);
 }
+const _lookAhead = new THREE.Vector3();
 updateCamera(0);
 
 // Jump the camera to the player at once (a teleport) instead of panning over
@@ -1808,6 +1862,8 @@ function snapCamera() {
 // While the title screen is up the camera circles the island slowly
 const MENU_CAM = { radius: 24, height: 13, speed: 0.06, look: new THREE.Vector3(0, 1.5, -5) };
 function updateMenuCamera(t) {
+  lookYaw = null;
+  setLens(false);
   const a = t * MENU_CAM.speed;
   camera.position.set(
     MENU_CAM.look.x + Math.sin(a) * MENU_CAM.radius,
@@ -1835,6 +1891,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyE' && !e.repeat) useAction();
   if (e.code === 'KeyM' && !e.repeat) inventory.notify(sound.toggle() ? 'Sound on' : 'Sound off');
+  if (e.code === 'KeyV' && !e.repeat) inventory.notify(viewMode.toggle() ? 'First person' : 'Overhead view');
 });
 
 // E: in a lobby, chop the tree in reach with the axe in hand, else gather
@@ -2237,7 +2294,7 @@ const _base = new THREE.Vector3();
 function updateHover() {
   if (me !== first) return; // (the mouse is the first seat's)
   hoverTile.visible = hoverRing.visible = false;
-  if (!hoverAt || held || building || place === 'title' || inputBlocked() || !onMyScreen(hoverAt.x, hoverAt.y)) return;
+  if (!hoverAt || held || building || lookYaw !== null || place === 'title' || inputBlocked() || !onMyScreen(hoverAt.x, hoverAt.y)) return;
   aimAt(hoverAt.x, hoverAt.y);
   const things = new Map(); // object -> [where its foot is, how wide the ring round it]
   for (const tree of world.trees) if (tree.state === 'up') things.set(tree.group, [tree.group, 0, 0.45 + tree.scale * 0.35]);
@@ -2279,7 +2336,7 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (e.pointerType !== 'mouse' || e.button === 0) presses.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
-  if (e.pointerType === 'mouse' && e.button === 0 && place !== 'title' && !building && !inputBlocked() && onMyScreen(e.clientX, e.clientY)) {
+  if (e.pointerType === 'mouse' && e.button === 0 && place !== 'title' && !building && lookYaw === null && !inputBlocked() && onMyScreen(e.clientX, e.clientY)) {
     stopWalking();
     held = { id: e.pointerId, x: e.clientX, y: e.clientY };
     canvas.setPointerCapture(e.pointerId); // (keeps steering over the HUD)
@@ -2293,11 +2350,14 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('lostpointercapture', (e) => e.pointerId === held?.id && (held = null));
 addEventListener('blur', () => (held = null));
 canvas.addEventListener('pointercancel', (e) => {
+  looks.delete(e.pointerId);
   presses.delete(e.pointerId);
   pinch.delete(e.pointerId);
 });
 canvas.addEventListener('pointerup', (e) => {
   if (e.pointerId === held?.id) held = null;
+  if (e.pointerType === 'mouse' && e.button === 0 && mouseUsing) letGoUse();
+  looks.delete(e.pointerId);
   const press = presses.get(e.pointerId);
   presses.delete(e.pointerId);
   pinch.delete(e.pointerId);
@@ -2311,8 +2371,17 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault(); // or a trackpad pinch zooms the page
   if (place === 'title' || inputBlocked() || !onMyScreen(e.clientX, e.clientY)) return;
   const lines = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  if (lookYaw !== null) { // (first person: no zooming, the toolbar instead, a notch at a time)
+    wheeled += lines;
+    if (Math.abs(wheeled) >= 50) {
+      inventory.cycle(Math.sign(wheeled));
+      wheeled = 0;
+    }
+    return;
+  }
   zoomBy(Math.exp(THREE.MathUtils.clamp(lines, -100, 100) * 0.002));
 }, { passive: false });
+let wheeled = 0;
 
 const pinch = new Map(); // pointerId -> where each finger on the canvas is now
 let pinchGap = 0;
@@ -2334,12 +2403,54 @@ canvas.addEventListener('pointermove', (e) => {
   finger.y = e.clientY;
   if (pinch.size !== 2) return;
   const gap = fingerGap();
-  if (pinchGap > 0 && gap > 0 && place !== 'title' && !inputBlocked()) zoomBy(pinchGap / gap);
+  if (pinchGap > 0 && gap > 0 && place !== 'title' && lookYaw === null && !inputBlocked()) zoomBy(pinchGap / gap);
   pinchGap = gap;
 });
 
+// Looking round in first person. The mouse is captured by a click on the game
+// (Esc gives it back, and opens the menu, as it always does); a finger on the
+// screen turns the view too, and a controller's right stick (gamepad.js).
+// With the mouse not captured (the browser said no), dragging looks round.
+const MOUSE_LOOK = 0.0025; // radians a pixel
+const TOUCH_LOOK = 0.005;
+const looks = new Map(); // pointerId -> where a finger that looks round is
+let mouseUsing = false; // a click is holding E
+const mouseLocked = () => document.pointerLockElement === canvas;
+function letGoUse() {
+  mouseUsing = false;
+  keys.delete('KeyE');
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (lookYaw === null || place === 'title' || inputBlocked() || !onMyScreen(e.clientX, e.clientY)) return;
+  if (e.pointerType === 'touch') return void looks.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (e.pointerType !== 'mouse' || e.button !== 0) return;
+  if (!mouseLocked()) return void canvas.requestPointerLock?.()?.catch?.(() => {}); // (this click only takes the mouse)
+  mouseUsing = true; // a click is E: use, and hold to keep on
+  keys.add('KeyE');
+  useAction();
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (lookYaw === null || inputBlocked()) return;
+  const clamp = (n) => THREE.MathUtils.clamp(n, -200, 200); // (some browsers jump the mouse a long way as they take it)
+  if (e.pointerType === 'mouse') {
+    if (mouseLocked() || e.buttons & 1) lookBy(clamp(e.movementX) * MOUSE_LOOK, clamp(e.movementY) * MOUSE_LOOK);
+  } else if (looks.has(e.pointerId) && pinch.size < 2) {
+    const finger = looks.get(e.pointerId);
+    lookBy((e.clientX - finger.x) * TOUCH_LOOK, (e.clientY - finger.y) * TOUCH_LOOK);
+    finger.x = e.clientX;
+    finger.y = e.clientY;
+  }
+});
+// Esc, or the mouse taken another way (another window), while looking round: the menu
+document.addEventListener('pointerlockchange', () => {
+  if (mouseLocked()) return;
+  if (mouseUsing) letGoUse();
+  if (!viewMode.firstPerson() || place === 'title' || within(first, inMenus)) return;
+  splash.show();
+});
+
 function tapAt(x, y) {
-  if (!onMyScreen(x, y)) return; // (another farmer's part of a split screen)
+  if (!onMyScreen(x, y) || lookYaw !== null) return; // (another farmer's part of a split screen; or in first person, where a finger looks round)
   aimAt(x, y);
   stopWalking();
   if (building) return tapToBuild();
@@ -2669,7 +2780,7 @@ function inBuildReach(key) {
 // The tile to build on: the one under the mouse, else the one in front
 // (taking down: the piece in front, else the path underfoot)
 function buildTarget() {
-  if (mouseAt) {
+  if (mouseAt && lookYaw === null) {
     aimAt(mouseAt.x, mouseAt.y);
     const tile = tappedGround();
     if (tile) return tileKeyFor(tile.x, tile.z);
@@ -2824,7 +2935,7 @@ function tapToBuild() {
 // Build mode aims with the mouse once it moves over the ground, and with the
 // farmer again once they walk with the keys
 canvas.addEventListener('pointermove', (e) => {
-  if (building && e.pointerType === 'mouse') mouseAt = { x: e.clientX, y: e.clientY };
+  if (building && e.pointerType === 'mouse' && lookYaw === null) mouseAt = { x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener('pointerleave', () => (mouseAt = null));
 const WALK_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -2897,6 +3008,8 @@ const newPad = (seat) => new GamepadInput({
     inMenu: () => inMenus(),
     onCycle: (dir) => inventory.cycle(dir),
     onZoom: (factor) => zoomBy(factor),
+    looking: () => lookYaw !== null,
+    onLook: (right, down) => lookBy(right, down),
     onConnect: () => seat === first && seats.length === 1 && inventory.notify('Controller ready: A jump, X use, Y backpack, Menu for the menu'),
   }),
   choosePad: (pads) => pickPad(seat, pads),
@@ -5248,6 +5361,7 @@ function updateSeat(dt) {
   pad.poll(dt); // (its buttons press their keys, before the keys are read)
   if (!seats.includes(me)) return; // (they got up from the screen with it, from their menu: saved as they were)
   if (inputBlocked()) keys.clear();
+  syncLook();
 
   // Horizontal input -> world-space movement (camera-relative, simplified to world axes)
   let moveX = 0;
@@ -5262,6 +5376,11 @@ function updateSeat(dt) {
       moveX += stick.x;
       moveZ += stick.z;
     }
+  }
+  if (lookYaw !== null && (moveX || moveZ)) {
+    // (first person: up is the way they look, not north)
+    const [fx, fz] = [Math.sin(lookYaw), Math.cos(lookYaw)];
+    [moveX, moveZ] = [-fz * moveX - fx * moveZ, fx * moveX - fz * moveZ];
   }
   if (moveX || moveZ || inputBlocked()) stopWalking(); // the stick or the keys take over from a tap
   else if (held && !building) ({ x: moveX, z: moveZ } = followMouse(dt));
@@ -5392,8 +5511,21 @@ function updateSeat(dt) {
   updateMeal(dt);
   if (place === 'title') updateMenuCamera(t);
   else updateCamera(dt);
+  showCrosshair();
   // (where its view's trees fade out of the way, between the camera and here)
   me.eye.set(player.position.x, player.position.y + 0.3, player.position.z);
+}
+
+// First person: a dot in the middle of the view; the first farmer, with the
+// mouse, also told how to take it. The mouse is given back to a menu.
+function showCrosshair() {
+  if (!me.cross) {
+    me.cross = el('div', 'view-cross', me.root);
+    me.crossHint = el('div', 'view-hint', me.cross, 'Click to look round');
+  }
+  me.cross.hidden = lookYaw === null || inMenus();
+  me.crossHint.hidden = me !== first || PHONE || padInUse() || mouseLocked();
+  if (me === first && mouseLocked() && (lookYaw === null || inMenus())) document.exitPointerLock();
 }
 
 // The world, each frame (after each seat's farmer: the first seat's own are in place)
@@ -5535,7 +5667,11 @@ function draw() {
         renderer.setScissor(x, h - y - vh, vw, vh);
       }
       lookFrom(split);
+      // (first person: not their own body in their eyes; its night light stays)
+      const body = lookYaw === null ? [] : playerMesh.children.filter((part) => part.visible && !part.isLight);
+      for (const part of body) part.visible = false;
       renderer.render(scene, camera);
+      for (const part of body) part.visible = true;
     });
   }
 }
@@ -5568,7 +5704,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, startJoin, within, layout };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, startJoin, within, layout, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
 }
 
 loadGame();

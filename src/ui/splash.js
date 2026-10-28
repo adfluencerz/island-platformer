@@ -30,6 +30,7 @@ import { el, button, copyText, hexColor } from './dom.js';
 import { addHelp } from './hud.js';
 import { LOBBY_GAMES } from '../../shared/arenas.js';
 import * as sound from '../sound.js';
+import * as view from '../view.js';
 import { Wardrobe } from './wardrobe.js';
 
 const NO_SERVER = 'Could not reach the game server. Start it with `npm run dev`; your farm works without it.';
@@ -127,6 +128,15 @@ export class Splash {
     };
     const shows = [toggle('Sound', 'effects', sound.setEffects), toggle('Music', 'music', sound.setMusic)];
     this.showSound = () => shows.forEach((show) => show());
+    // the camera: from above, or in first person (V in game does the same)
+    const viewRow = el('div', 'ui-row', main);
+    const showView = () => (viewBtn.textContent = `Camera: ${view.firstPerson() ? 'first person' : 'overhead'}`);
+    const viewBtn = button('ui-btn ui-btn-small ui-btn-ghost', viewRow, '', () => {
+      view.toggle();
+      showView();
+    });
+    this.showView = showView;
+    showView();
 
     // ---- an invitation (?lobby=CODE) ----
     this.invite = this.page('invite');
@@ -396,6 +406,7 @@ export class Splash {
     this.direct = direct && this.from === 'game' ? page : null;
     this.hidden = false;
     this.showSound(); // (M may have changed it)
+    this.showView(); // (and V)
     this.root.hidden = false;
     this.root.classList.toggle('in-game', this.from === 'game');
     document.body.classList.toggle('in-menu', this.from === 'title');

@@ -1,0 +1,36 @@
+/* First person (src/view.js): a dot in the middle of a farmer's view, and what to do to look round */
+.view-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.view-cross[hidden] { display: none; }
+.view-cross::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.45);
+  opacity: 0.85;
+}
+.view-hint {
+  position: absolute;
+  left: 0;
+  top: 22px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 14px;
+}
+.view-hint[hidden] { display: none; }
