@@ -24,15 +24,16 @@ export const U = {
   uPlayers: { value: Array.from({ length: MAX_PLAYERS }, () => new THREE.Vector4(0, -1e4, 0, 0)) }, // the farmers here: xyz, w 1 (0: none)
   uCamPos: { value: new THREE.Vector3() }, // this view's camera, world space
   uFogHeight: { value: new THREE.Vector2(0, 0.35) }, // the haze's: x the sea's level, y how fast it thins going up (a unit)
-  uShadowTint: { value: new THREE.Color(0.62, 0.7, 0.92) },
-  uWrap: { value: 0 },
-  uToon: { value: 0 },
+  uShadowTint: { value: new THREE.Color(0.8, 0.86, 1.0) }, // the sky's light where the sun is shaded: cool, not grey (src/gfx/light.js)
+  uWrap: { value: 0.45 }, // how far past side-on the sun still lights a face
+  uToon: { value: 0.3 }, // how much of a half-tone step the light's falloff has
+  uCloudShadows: { value: 1 }, // the clouds' shadows on the land, 0 to 1 (0 on the low tier)
 };
 
 const TYPES = {
   uTime: 'float', uSunDir: 'vec3', uSunColor: 'vec3', uSkyZenith: 'vec3', uSkyHorizon: 'vec3', uSkyGlow: 'vec3',
   uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uFlash: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
-  uPlayers: `vec4[${MAX_PLAYERS}]`, uCamPos: 'vec3', uFogHeight: 'vec2', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float',
+  uPlayers: `vec4[${MAX_PLAYERS}]`, uCamPos: 'vec3', uFogHeight: 'vec2', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float', uCloudShadows: 'float',
 };
 
 const declaration = (name) => {

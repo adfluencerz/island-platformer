@@ -14,6 +14,11 @@ export const NEEDLES = {
   emissivemap_fragment: { needle: '#include <emissivemap_fragment>', stages: 'f' },
   fog_pars_fragment: { needle: '#include <fog_pars_fragment>', stages: 'f' },
   fog_fragment: { needle: '#include <fog_fragment>', stages: 'f' },
+  lights_fragment_begin: { needle: '#include <lights_fragment_begin>', stages: 'f' },
+  // (one each: libs names the shaders that have it)
+  lights_physical_pars_fragment: { needle: '#include <lights_physical_pars_fragment>', stages: 'f', libs: ['standard'] },
+  lights_lambert_pars_fragment: { needle: '#include <lights_lambert_pars_fragment>', stages: 'f', libs: ['lambert'] },
+  lights_phong_pars_fragment: { needle: '#include <lights_phong_pars_fragment>', stages: 'f', libs: ['phong'] },
 };
 
 // source with `code` after the chunk `name` (a key of NEEDLES), inside

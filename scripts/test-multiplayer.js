@@ -40,6 +40,7 @@ import { seasonAt, SEASON_DAYS, SEASONS } from '../src/seasons.js';
 import * as THREE from 'three';
 import { NEEDLES, patch, swap } from '../src/gfx/chunks.js';
 import { patchToneChunk } from '../src/gfx/tonemap.js';
+import { lightChunks } from '../src/gfx/light.js';
 import { hook, hasHook, cloneHooked } from '../src/gfx/shading.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
@@ -3642,8 +3643,8 @@ await test('poker hands are told apart and ranked, and the best five of seven fo
 });
 
 await test('shader hooks: every needle is in the installed three, and keys compose the same way every time', () => {
-  for (const [name, { needle, stages }] of Object.entries(NEEDLES)) {
-    for (const lib of ['standard', 'lambert', 'phong']) {
+  for (const [name, { needle, stages, libs = ['standard', 'lambert', 'phong'] }] of Object.entries(NEEDLES)) {
+    for (const lib of libs) {
       const { vertexShader, fragmentShader } = THREE.ShaderLib[lib];
       if (stages.includes('v')) assert.ok(vertexShader.includes(needle), `${name} in the ${lib} vertex shader`);
       if (stages.includes('f')) assert.ok(fragmentShader.includes(needle), `${name} in the ${lib} fragment shader`);
@@ -3654,6 +3655,7 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   assert.equal(swap('a\n#include <fog_fragment>\nb', 'fog_fragment', 'x;', 'GFX_X'), 'a\n#ifdef GFX_X\nx;\n#else\n#include <fog_fragment>\n#endif\nb');
   assert.throws(() => swap('nothing here', 'fog_fragment', 'x;', 'GFX_X'));
   patchToneChunk(); // (throws if three's CustomToneMapping placeholder moved)
+  lightChunks(); // (throws if three moved the lighting lines the painterly light edits)
   assert.ok(THREE.ShaderChunk.tonemapping_pars_fragment.includes('AgXToneMapping( color );'), 'the filmic tone mapping is in the chunk');
 
   const made = () => new THREE.MeshStandardMaterial();
@@ -3686,6 +3688,20 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   assert.match(shader.fragmentShader, /#define GFX_ATMOS\n/);
   assert.match(shader.fragmentShader, /#ifdef GFX_ATMOS\n[^]*gfxHorizon[^]*#else\n#include <fog_fragment>\n#endif/);
   assert.equal(shader.fragmentShader.split('uniform vec2 uFogHeight;').length, 2);
+  // the painterly light: wrap, cloud shadows and the cool shade, three's own lines kept for #else
+  assert.match(shader.fragmentShader, /#define GFX_WRAP\n/);
+  assert.match(shader.fragmentShader, /#ifdef GFX_LIGHT\n[^]*gfxCloudShadow[^]*#else\n#include <lights_physical_pars_fragment>\n#endif/);
+  assert.match(shader.fragmentShader, /#ifdef GFX_LIGHT\n[^]*uShadowTint[^]*#else\n#include <lights_fragment_begin>\n#endif/);
+  for (const lib of ['lambert', 'phong']) {
+    const other = { uniforms: {}, vertexShader: THREE.ShaderLib[lib].vertexShader, fragmentShader: THREE.ShaderLib[lib].fragmentShader };
+    (lib === 'lambert' ? new THREE.MeshLambertMaterial() : new THREE.MeshPhongMaterial()).onBeforeCompile(other);
+    assert.ok(other.fragmentShader.includes('gfxWrapNL') && other.fragmentShader.includes(`#include <lights_${lib}_pars_fragment>`), `${lib}: wrapped`);
+  }
+  const flat = new THREE.MeshStandardMaterial();
+  flat.userData.gfx = { noWrap: true, noCloud: true };
+  const flatShader = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+  flat.onBeforeCompile(flatShader);
+  assert.ok(!flatShader.fragmentShader.includes('#define GFX_WRAP') && !flatShader.fragmentShader.includes('#define GFX_CLOUD'), 'opted out: no wrap, no cloud shadows');
   const clear = new THREE.MeshStandardMaterial();
   clear.userData.gfx = { noAtmos: true };
   const own = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
