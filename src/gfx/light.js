@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { swap, define } from './chunks.js';
 import { use } from './uniforms.js';
+import { NOISE } from './noise.js';
 
 // ---------- Painterly light ----------
 // Every lit material's (a base hook, src/gfx/shading.js), in two parts a
@@ -21,21 +22,11 @@ import { use } from './uniforms.js';
 export const CLOUD_SCALE = 0.018;
 const CLOUD_SKY = '0.6'; // (how much of a cloud's shade the sky's light takes: painterly, not physical)
 
-// GLSL: the cloud shadow at a world xz (1 in the sun, less under a cloud):
+// GLSL: the cloud shadow at a world xz (1 in the sun, less under a cloud), on the
+// shared value noise (src/gfx/noise.js):
 // phase 07's grass can call it with its own world position
 export const CLOUD_GLSL = /* glsl */ `
-  highp float gfxHash(highp vec2 p) {
-    highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-  float gfxNoise(highp vec2 p) {
-    highp vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(gfxHash(i), gfxHash(i + vec2(1.0, 0.0)), u.x),
-               mix(gfxHash(i + vec2(0.0, 1.0)), gfxHash(i + vec2(1.0, 1.0)), u.x), u.y);
-  }
+${NOISE}
   float gfxCloudShadow(highp vec2 xz) {
     float strength = uCloudShadows * (1.0 - uUnder) * (1.0 - 0.5 * uNight) * mix(0.7, 0.35, uCloudAmount); // (overcast: under cloud nearly everywhere, each patch less dark)
     if (strength <= 0.0) return 1.0;
