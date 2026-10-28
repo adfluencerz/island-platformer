@@ -83,7 +83,7 @@ export function makeNameTag(name, color) {
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true, toneMapped: false }));
   sprite.scale.set(2, 0.5, 1);
   sprite.position.y = NAME_TAG_Y;
   sprite.renderOrder = 10; // drawn over the scenery so names are never hidden
