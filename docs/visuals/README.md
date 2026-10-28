@@ -22,6 +22,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | post          | off  | half-res bloom | full |
 | grass density | 0.35 | 0.6           | 1.0  |
 | grass blades (of 7 a tuft) | 3 | 5     | 7    |
+| tree detail (tris a canopy blob) | 20 | 20 | 80 |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
@@ -31,7 +32,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 - Draw calls: not more than the previous phase (the baseline is in STATUS.md); ≤ 900 from phase 09 on.
 - Programs ≤ 120. Triangles ≤ 1.5 M on high, ≤ 0.8 M on medium.
 - `npm run shots -- --check` reads the line below; lower `calls` as phases bring it down, never raise it.
-<!-- budgets {"calls": 1000, "programs": 120, "triangles": {"high": 1500000, "medium": 800000, "low": 800000}} -->
+<!-- budgets {"calls": 900, "programs": 120, "triangles": {"high": 1500000, "medium": 800000, "low": 800000}} -->
 
 ## Gates (every phase, all must pass before pushing)
 `npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
