@@ -42,6 +42,7 @@ import * as quality from './gfx/quality.js';
 import { createStats } from './gfx/stats.js';
 import { toneMap } from './gfx/tonemap.js';
 import { createSky } from './gfx/sky.js';
+import { createPost } from './gfx/post.js';
 import * as gfx from './gfx/uniforms.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
@@ -206,6 +207,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 toneMap(renderer); // (filmic: src/gfx/tonemap.js)
 // (what it drew, a frame at a time: __game.stats() and the devtools' Info tab)
 const gfxStats = createStats(renderer);
+// On medium and high, the views are drawn through a post chain (bloom, a color
+// grade, anti-aliasing: src/gfx/post.js); on low, straight to the screen (draw())
+const SPLIT_GAP = new THREE.Color(0x1d120a); // (between the views of a split screen)
+const post = createPost(renderer, { seats: () => seats, view: seatView, gap: SPLIT_GAP });
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -328,6 +333,7 @@ quality.onApply((k) => {
     sun.shadow.map = null;
   }
   renderer.shadowMap.enabled = shadows;
+  post.apply(k);
   sun.castShadow = shadows; // (which also has every lit material's shader made again, with or without them)
   weather.setParticles(k.particles);
 });
@@ -5267,6 +5273,7 @@ function layout() {
   Object.assign(joinEl.style, spare ? { left: `${spare.x}px`, top: `${spare.y}px`, width: `${spare.w}px`, height: `${spare.h}px` } : { left: '', top: '', width: '', height: '' });
   seatsEl.classList.toggle('split', n > 1);
   renderer.setSize(w, h);
+  post.setSize();
   showJoinHint();
   showTags();
 }
@@ -5554,10 +5561,12 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-// Each seat's view, in its part of the screen (alone: all of it)
-const SPLIT_GAP = new THREE.Color(0x1d120a); // (between the views)
+// Each seat's view, in its part of the screen (alone: all of it): through the
+// post chain (src/gfx/post.js, which sets each seat's part of its target and
+// calls seatView), or on the low tier straight to the screen
 function draw() {
-  gfxStats.reset(); // (the frame's count starts here: every seat's view adds to it)
+  gfxStats.reset(); // (the frame's count starts here: every seat's view and every post pass adds to it)
+  if (post.on) return post.render();
   const split = seats.length > 1;
   const { innerWidth: w, innerHeight: h } = window;
   renderer.setScissorTest(split);
@@ -5568,16 +5577,21 @@ function draw() {
     renderer.clear();
   }
   for (const seat of seats) {
-    within(seat, () => {
-      const { x, y, w: vw, h: vh } = seat.rect;
-      if (split) {
-        renderer.setViewport(x, h - y - vh, vw, vh);
-        renderer.setScissor(x, h - y - vh, vw, vh);
-      }
-      lookFrom(split);
-      renderer.render(scene, camera);
-    });
+    const { x, y, w: vw, h: vh } = seat.rect;
+    if (split) {
+      renderer.setViewport(x, h - y - vh, vw, vh);
+      renderer.setScissor(x, h - y - vh, vw, vh);
+    }
+    seatView(seat, split);
   }
+}
+
+// One seat's view, into the part of the screen (or of the post chain's target) set for it
+function seatView(seat, split) {
+  within(seat, () => {
+    lookFrom(split);
+    renderer.render(scene, camera);
+  });
 }
 
 // Testing: `seconds` of game time, in steps of `dt`, as fast as they compute
@@ -5638,7 +5652,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats, post };
 }
 
 loadGame();

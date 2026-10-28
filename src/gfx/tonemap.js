@@ -7,8 +7,8 @@ import * as THREE from 'three';
 // Mixed with the same light at AgX's brightness but the scene's own hue, the
 // grass stays green and rich, and highlights still roll off.
 // It is three's CustomToneMapping, so it lives on the renderer: every tier
-// gets it, drawn straight to the screen or through a post chain's OutputPass,
-// which includes the same chunk. The day's lights (src/daynight.js KEYS) are
+// gets it as the scene is drawn, straight to the screen or into the post
+// chain's target (src/gfx/post.js, which has three tone map it there too). The day's lights (src/daynight.js KEYS) are
 // set for this exposure.
 
 export const TONE = { exposure: 1.15, keepHue: 0.5 };
