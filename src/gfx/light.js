@@ -63,6 +63,25 @@ export const RIPPLE_GLSL = /* glsl */ `
 #endif
 `;
 
+// GLSL: under the trees (src/world.js coverCanopy, uCanopyMap): how far under
+// the canopies (x, z) is, 0..1, with a high sun only (none at dusk, at night,
+// underground: the shadow map does a low sun's long shadows), and how much of
+// the sun gets through a gap in the leaves there, 0..1: soft spots, two
+// octaves of the value noise, drifting slowly with the wind and the leaves' sway
+const CANOPY_GLSL = /* glsl */ `
+  float gfxCanopyCover(highp vec2 xz) {
+    float k = smoothstep(0.45, 0.75, uSunDir.y) * (1.0 - smoothstep(0.0, 0.25, uNight)) * (1.0 - uUnder);
+    highp vec2 uv = (xz - uCanopyBox.xy) * uCanopyBox.zw;
+    if (k <= 0.0 || uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
+    return k * texture(uCanopyMap, uv).r;
+  }
+  float gfxCanopyGap(highp vec2 xz) {
+    highp vec2 p = xz * 0.62 - uCloudOffset * 0.03 + 0.12 * vec2(sin(uTime * 0.7), cos(uTime * 0.53)) + vec2(3.7, 11.3);
+    float n = 0.62 * gfxNoise(p) + 0.38 * gfxNoise(mat2(1.6, 1.2, -1.2, 1.6) * p * 1.7 + 5.3);
+    return smoothstep(0.52, 0.61, n);
+  }
+`;
+
 const WRAP_GLSL = /* glsl */ `
   float gfxWrapNL(float d) {
     #ifdef GFX_WRAP
@@ -75,7 +94,9 @@ const WRAP_GLSL = /* glsl */ `
   }
 `;
 
-export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith', ...DUSK_UNIFORMS])];
+export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith', 'uCanopyMap', 'uCanopyBox', ...DUSK_UNIFORMS])];
+const CANOPY_SKY = 'vec3(0.24, 0.4, 0.56)'; // (the sky's light under the canopies: dimmer, blue-green, not grey)
+const CANOPY_GAP = 'vec3(1.45, 1.3, 0.92)'; // (and the sun in a gap: a little warm and bright, by the shade round it)
 const DUSK_FILL = '0.55'; // (how much of the sky's light the near field loses at dusk, in the shade)
 const MORNING_FILL = '0.5'; // (and in the misty morning)
 const RAIN_FILL = '0.5'; // (and in the rain, in the shade or not: the overcast's flat light)
@@ -106,7 +127,7 @@ export function lightChunks() {
     lights_fragment_begin: [
       [
         'IncidentLight directLight;',
-        `IncidentLight directLight;\nfloat gfxSunLit = 1.0; // (how much of the sun reaches here: shadow, cloud, facing)\nfloat gfxCloud = 1.0; // (the cloud shadow here)\n${WET_GLSL}\n${NOON_GLSL}`,
+        `IncidentLight directLight;\nfloat gfxSunLit = 1.0; // (how much of the sun reaches here: shadow, cloud, facing)\nfloat gfxCloud = 1.0; // (the cloud shadow here)\nfloat gfxCover = 0.0; // (how far under the trees' canopies, and how much of a gap in them: CANOPY_GLSL)\nfloat gfxGap = 0.0;\n${WET_GLSL}\n${NOON_GLSL}`,
       ],
       [
         DIR_INFO,
@@ -118,11 +139,23 @@ export function lightChunks() {
               gfxC = gfxCloudShadow( vGfxWorld.xz );
             #endif
             directLight.color *= gfxC;
+            float gfxUnder = 1.0; // (the sun through the canopies)
+            #if defined( GFX_CANOPY ) && !defined( GFX_WATER )
+              gfxCover = gfxCanopyCover( vGfxWorld.xz );
+              #ifdef GFX_TREE
+                gfxCover *= 1.0 - step( 0.5, uTreeLeaf ); // (a trunk in the wood's shade, not the leaves over it)
+              #endif
+              if ( gfxCover > 0.002 ) {
+                gfxGap = gfxCanopyGap( vGfxWorld.xz ) * ( 1.0 - 0.45 * smoothstep( 0.7, 1.0, gfxCover ) ); // (fewer in the heart of it)
+                gfxUnder = 1.0 - gfxCover * ( 1.0 - gfxGap );
+                directLight.color *= gfxUnder * mix( vec3( 1.0 ), ${CANOPY_GAP}, gfxCover * gfxGap );
+              }
+            #endif
             #ifdef GFX_SUN_GLOW
               directLight.color *= 1.0 + vGfxSunGlow; // (a grass tip, a crown's edge catching a low sun, dew: the hook's own color, shadowed as the sun is)
             #endif
             gfxCloud = gfxC;
-            gfxSunLit = gfxC * smoothstep( -0.05, 0.35, dot( geometryNormal, directLight.direction ) );
+            gfxSunLit = gfxC * gfxUnder * smoothstep( -0.05, 0.35, dot( geometryNormal, directLight.direction ) );
           }
         #endif`,
       ],
@@ -146,6 +179,7 @@ export function lightChunks() {
         `#if defined( RE_IndirectDiffuse )
           irradiance *= 1.0 - ${CLOUD_SKY} * ( 1.0 - gfxCloud ); // (under a cloud the sky's light is dimmer too)
           irradiance *= mix( vec3( 1.0 ), uShadowTint, ( 1.0 - gfxSunLit ) * ( 1.0 - uUnder ) ); // (cool where the sun is shaded)
+          irradiance *= mix( vec3( 1.0 ), ${CANOPY_SKY}, gfxCover * ( 1.0 - 0.5 * gfxGap ) ); // (and under the canopies, less of the sky)
           #if defined( USE_FOG ) && !defined( FOG_EXP2 )
             // (at dusk, less of the sky's light near the camera, back in full by the far field: a darker,
             // richer foreground the long shadows read across, the far one paler: atmos.js)
@@ -282,10 +316,11 @@ export function light(shader, renderer, material) {
   define(shader, 'GFX_LIGHT');
   if (!opt.noWrap) define(shader, 'GFX_WRAP');
   if (!opt.noCloud) define(shader, 'GFX_CLOUD');
+  if (!opt.noCloud) define(shader, 'GFX_CANOPY');
   use(shader, LIGHT_UNIFORMS, 'f');
   let f = swap(shader.fragmentShader, 'lights_fragment_begin', own.lights_fragment_begin, 'GFX_LIGHT');
   const pars = PARS.find((name) => f.includes(`#include <${name}>`));
-  f = swap(f, pars, `${DUSK_GLSL}\n${CLOUD_GLSL}\n${RIPPLE_GLSL}\n${WRAP_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
+  f = swap(f, pars, `${DUSK_GLSL}\n${CLOUD_GLSL}\n${CANOPY_GLSL}\n${RIPPLE_GLSL}\n${WRAP_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
   f = swap(f, 'lights_fragment_end', `${THREE.ShaderChunk.lights_fragment_end}\n${GREY_GLSL}\n${SHEEN_GLSL}`, 'GFX_LIGHT');
   shader.fragmentShader = f;
 }

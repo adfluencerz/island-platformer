@@ -5,7 +5,7 @@ import { mulberry32 } from '../shared/worldgen.js';
 import { giantScale } from '../shared/giants.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
-import { use, U } from './gfx/uniforms.js';
+import { use, U, NO_COVER } from './gfx/uniforms.js';
 import { groundDetail, SHORE_REACH, BEACH_WET } from './gfx/ground.js';
 import { detail } from './gfx/detail.js';
 import { waterLook } from './gfx/water.js';
@@ -245,11 +245,15 @@ function hookTree(material, pine = false) {
           float crownUnder = smoothstep(0.1, -0.7, crownN.y);
           float crownLobe = sin(position.x * 2.7 + crownSeed * 6.28) * sin(position.z * 2.4 - position.y * 1.6 + crownSeed * 11.0);
           float crownSky = smoothstep(-0.25, 0.75, crownN.y); // (each clump's top lighter, the sky's: a crown seen against the sun too)
-          float crownK = mix(0.6, 1.48, crownTop) * mix(0.74, 1.14, crownSky) * (1.0 - 0.6 * crownCrease) * (1.0 + 0.06 * crownLobe) + 0.22 * crownUnder;
+          // (at a clear noon, under the high sun, a ball over its own shade: its lit top
+          // brighter, what faces down dark and cool, not lifted by the ground's warm light)
+          float crownNoon = gfxDay();
+          float crownK = mix(0.6, 1.48, crownTop) * mix(0.74, 1.14, crownSky) * (1.0 - 0.6 * crownCrease) * (1.0 + 0.06 * crownLobe) + 0.22 * crownUnder * (1.0 - 0.85 * crownNoon);
+          crownK *= mix(1.0, mix(0.42, 1.12, smoothstep(-0.45, 0.6, crownN.y)), crownNoon);
           crownK = mix(crownK, 0.95, 0.2 * uNight); // (at night a little flatter: the moon models it still)
           crownK *= 1.0 - 0.5 * gfxNight() * (1.0 - smoothstep(16.0, 34.0, length(cameraPosition - crownAt))); // (and the near ones darker, as the near field is)
           vec3 crownCol = mix(vec3(0.84, 0.94, 1.1), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
-          crownCol = mix(crownCol, vec3(1.04, 1.0, 0.72), 0.7 * crownUnder);
+          crownCol = mix(crownCol, mix(vec3(1.04, 1.0, 0.72), vec3(0.8, 0.94, 1.04), crownNoon), 0.7 * crownUnder);
           vCanopyShade = vec4(crownK * crownCol + crownRim * vec3(0.28, 0.38, 0.36), 0.0);
           vCrownLit = 0.5 + 0.5 * max(crownLit, 0.7 * crownN.y - 0.1); // (each clump's lit side, or its top under the sky, stepped per pixel)
         } else {
@@ -277,6 +281,7 @@ function hookTree(material, pine = false) {
                             dot(swayOff, swayC2) / max(dot(swayC2, swayC2), 1e-8));
       #endif`, 'GFX_TREE');
     shader.fragmentShader = patch(shader.fragmentShader, 'common', `
+      uniform float uTreeLeaf;
       varying float vTreeFade;
       varying vec4 vCanopyShade;
       varying float vCrownLit;
@@ -1585,6 +1590,46 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const canopyDirty = []; // [x, z, reach]: spots to shade again
   const canopyOf = (tree) => (tree.state === 'down' || tree.state === 'growing' ? null
     : [tree.x, tree.z, (tree.kind === 'pine' ? 1.6 : 1.9) * tree.scale * tree.big]);
+  // The canopies' cover, for the shaders (uCanopyMap, src/gfx/light.js: the
+  // sun under the trees, broken by dappled gaps): how far under the canopies
+  // each spot of the island is, 0..1, COVER_RES texels a tile, from the trees
+  // standing now (canopyAt), each reaching COVER_REACH times its floor shade's
+  // reach; a tree among others more (a wood), a lone one less (its own
+  // shadow is enough out on the meadow). Made again when a tree falls or grows.
+  const COVER_RES = 2;
+  const COVER_REACH = 2.1;
+  const coverN = (2 * H + 1) * COVER_RES;
+  const coverData = new Uint8Array(coverN * coverN);
+  const coverMap = new THREE.DataTexture(coverData, coverN, coverN, THREE.RedFormat);
+  coverMap.magFilter = coverMap.minFilter = THREE.LinearFilter;
+  coverMap.unpackAlignment = 1;
+  const coverBox = new THREE.Vector4(-(H + 0.5) * TILE_SIZE, -(H + 0.5) * TILE_SIZE, 1 / (coverN / COVER_RES * TILE_SIZE), 1 / (coverN / COVER_RES * TILE_SIZE));
+  const coverOpen = new Float32Array(coverN * coverN);
+  function coverCanopy() {
+    const spots = [...canopyAt.values()].filter(Boolean);
+    coverOpen.fill(1);
+    const smooth = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
+    const texel = TILE_SIZE / COVER_RES;
+    for (const [x, z, reach] of spots) {
+      let others = 0; // (how many stand round it: a wood, or a lone tree)
+      for (const [ox, oz] of spots) if (Math.abs(ox - x) < 8 && Math.abs(oz - z) < 8 && Math.hypot(ox - x, oz - z) < 8) others++;
+      const k = 0.3 + 0.7 * smooth(1.5, 4, others - 1);
+      const r = reach * COVER_REACH;
+      const i0 = Math.max(0, Math.floor((x - r - coverBox.x) / texel));
+      const i1 = Math.min(coverN - 1, Math.ceil((x + r - coverBox.x) / texel));
+      const j0 = Math.max(0, Math.floor((z - r - coverBox.y) / texel));
+      const j1 = Math.min(coverN - 1, Math.ceil((z + r - coverBox.y) / texel));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const d = Math.hypot(coverBox.x + (i + 0.5) * texel - x, coverBox.y + (j + 0.5) * texel - z) / r;
+          if (d < 1) coverOpen[j * coverN + i] *= 1 - k * (1 - smooth(0.3, 1, d));
+        }
+      }
+    }
+    for (let i = 0; i < coverData.length; i++) coverData[i] = Math.round(smooth(0, 0.65, 1 - coverOpen[i]) * 255); // (deep soon: a wood's floor in shade, not a fade)
+    coverMap.needsUpdate = true;
+  }
+
   function markCanopy(tree) {
     const now = canopyOf(tree);
     const was = canopyAt.get(tree) ?? null;
@@ -2769,6 +2814,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // ground vertex and grass tuft there, from its own color (kept the first
   // time), by the canopies over it now
   function shadeCanopy() {
+    if (canopyDirty.length) coverCanopy();
     if (!canopyDirty.length || !groundTiles.size) return;
     const CANOPY_CELL = 4;
     const UNDER_CANOPY = [0.5, 0.42, 0.24]; // (how much darker, r g b, right under one: cooler)
@@ -2896,6 +2942,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     viewFrom(at, { grassFar, canopyFar, groundFar, camera = null }) {
       const carpetFar = [Math.min(grassFar[0] * CARPET_REACH, CARPET_FAR[0]), Math.min(grassFar[1] * CARPET_REACH, CARPET_FAR[1])];
       U.uCarpetFar.value.set(...carpetFar);
+      U.uCanopyMap.value = coverMap; // (its trees' cover, for this view's sun: coverCanopy)
+      U.uCanopyBox.value.copy(coverBox);
       if (camera) carpet?.view(camera, carpetFar);
       for (const geo of surfaceChunks) {
         const start = boxDistance(geo.userData.box, at.x, at.z) > groundFar ? geo.userData.fine : 0;
@@ -2922,6 +2970,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // uploads those again the next time they are drawn.)
     dispose() {
       carpet?.dispose();
+      if (U.uCanopyMap.value === coverMap) U.uCanopyMap.value = NO_COVER;
+      coverMap.dispose();
       root.traverse((obj) => {
         if (!obj.isMesh) return;
         grassMeshes.delete(obj);

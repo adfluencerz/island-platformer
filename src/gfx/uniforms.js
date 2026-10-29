@@ -39,13 +39,20 @@ export const U = {
   uGrassSpread: { value: 1 }, // how much wider each grass tuft is (the tier's grassSpread: src/gfx/quality.js)
   uDetailGain: { value: 1 }, // how much stronger the ground's painted detail is (the tier's detailGain)
   uNightGrey: { value: 0 }, // how far the lit colors go toward grey at night (the low tier's 0.35: the others' grade does it, src/gfx/post.js)
+  uCanopyMap: { value: null }, // how far under the trees' canopies each spot of the world being viewed is, 0..1 in red (src/world.js coverCanopy; none: NO_COVER)
+  uCanopyBox: { value: new THREE.Vector4(0, 0, 0, 0) }, // where that map lies: x, z of its corner, then 1 / its width, 1 / its depth (world units)
 };
+// (no trees: one texel of no cover)
+export const NO_COVER = new THREE.DataTexture(new Uint8Array(1), 1, 1, THREE.RedFormat);
+NO_COVER.needsUpdate = true;
+U.uCanopyMap.value = NO_COVER;
 
 const TYPES = {
   uTime: 'float', uSunDir: 'vec3', uSunColor: 'vec3', uSkyZenith: 'vec3', uSkyHorizon: 'vec3', uSkyGlow: 'vec3',
   uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uFlash: 'float', uWet: 'float', uRain: 'float', uMist: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
   uPlayers: `vec4[${MAX_PUSH}]`, uCamPos: 'vec3', uFogHeight: 'vec2', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float', uCloudShadows: 'float', uNightGrey: 'float',
   uGrassSpread: 'float', uGrassDensity: 'float', uGrassFar: 'vec2', uCarpet: 'float', uCarpetFar: 'vec2', uDetailGain: 'float',
+  uCanopyMap: 'sampler2D', uCanopyBox: 'vec4',
 };
 
 const declaration = (name) => {
