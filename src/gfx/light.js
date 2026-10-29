@@ -15,6 +15,8 @@ import { NOISE } from './noise.js';
 //    underground or on the low tier (uCloudShadows 0). And where the sun is
 //    shaded (cast shadow, cloud, facing away) the sky's light is tinted cool
 //    (uShadowTint), so shadows are blue, not grey.
+// And at night, on the low tier (uNightGrey: no grade there, src/gfx/post.js),
+// the light on its colors goes a little toward grey, as by moonlight.
 // Before tone mapping, as three's lighting is.
 
 // (the dome's low clouds are at (dir.xz / y) * 0.7 - offset * 0.006: these are three times as
@@ -49,7 +51,7 @@ const WRAP_GLSL = /* glsl */ `
   }
 `;
 
-export const LIGHT_UNIFORMS = ['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight'];
+export const LIGHT_UNIFORMS = ['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey'];
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -115,6 +117,23 @@ export function lightChunks() {
   });
 }
 
+// At night on the low tier: the diffuse light, toward grey (its brightness
+// kept, as the grade does: greying the color it lights instead would let the
+// blue moon light more of it), less where it is bright (a lamp's)
+const GREY_GLSL = /* glsl */ `
+  {
+    float gfxGrey = uNightGrey * uNight * ( 1.0 - uUnder );
+    if ( gfxGrey > 0.0 ) {
+      const vec3 gfxLuma = vec3( 0.2126, 0.7152, 0.0722 );
+      float gfxD = dot( reflectedLight.directDiffuse, gfxLuma );
+      float gfxI = dot( reflectedLight.indirectDiffuse, gfxLuma );
+      gfxGrey *= 1.0 - smoothstep( 0.08, 0.4, gfxD + gfxI );
+      reflectedLight.directDiffuse = mix( reflectedLight.directDiffuse, vec3( gfxD ), gfxGrey );
+      reflectedLight.indirectDiffuse = mix( reflectedLight.indirectDiffuse, vec3( gfxI ), gfxGrey );
+    }
+  }
+`;
+
 const PARS = ['lights_physical_pars_fragment', 'lights_lambert_pars_fragment', 'lights_phong_pars_fragment'];
 
 // The base hook (lit materials)
@@ -129,5 +148,6 @@ export function light(shader, renderer, material) {
   let f = swap(shader.fragmentShader, 'lights_fragment_begin', own.lights_fragment_begin, 'GFX_LIGHT');
   const pars = PARS.find((name) => f.includes(`#include <${name}>`));
   f = swap(f, pars, `${CLOUD_GLSL}\n${WRAP_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
+  f = swap(f, 'lights_fragment_end', `${THREE.ShaderChunk.lights_fragment_end}\n${GREY_GLSL}`, 'GFX_LIGHT');
   shader.fragmentShader = f;
 }

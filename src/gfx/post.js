@@ -21,8 +21,9 @@ import { U } from './uniforms.js';
 //   - bloom (three's UnrealBloomPass) on what is near white: the sun, the
 //     glints, bright cloud tops; at night and underground its threshold falls,
 //     so the lamps, the windows and the torches glow. Half-res on medium.
-//   - grade: a touch of saturation, a soft vignette (round each seat's own
-//     view), a tint warm by day and cool at night, leaning toward the sky;
+//   - grade: a touch of saturation (less at night, in the dark), a soft
+//     vignette (round each seat's own view), a tint warm by day and cool at
+//     night, leaning toward the sky;
 //     written to the screen as it is (the target is in its color space already:
 //     no OutputPass, which would tone map and encode a second time).
 //
@@ -36,6 +37,7 @@ import { U } from './uniforms.js';
 export const POST = {
   bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.8 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
   saturation: 1.08,
+  nightSaturation: 0.62, // (at night the dark parts go grey-blue, as the eye sees by moonlight; what a lamp lights keeps its color. The low tier: src/gfx/light.js)
   vignette: 0.2,
   warm: new THREE.Color(1.02, 1.0, 0.97), // (the day's tint)
   cool: new THREE.Color(0.95, 0.98, 1.05), // (the night's)
@@ -114,6 +116,8 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
   uniforms: {
     tDiffuse: { value: null },
     uSaturation: { value: POST.saturation },
+    uNightSaturation: { value: POST.nightSaturation },
+    uNight: { value: 0 }, // (how much night there is to see: none underground)
     uVignette: { value: POST.vignette },
     uTint: { value: new THREE.Color(1, 1, 1) },
     uSeats: { value: Array.from({ length: MAX_SEATS }, () => new THREE.Vector4(0, 0, 1, 1)) }, // (each view: x, y, w, h in 0..1, from the bottom left)
@@ -129,6 +133,8 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
     uniform float uSaturation;
+    uniform float uNightSaturation;
+    uniform float uNight;
     uniform float uVignette;
     uniform vec3 uTint;
     uniform vec4 uSeats[${MAX_SEATS}];
@@ -137,7 +143,8 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     void main() {
       vec4 col = texture2D(tDiffuse, vUv);
       float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-      col.rgb = max(mix(vec3(luma), col.rgb, uSaturation), 0.0) * uTint;
+      float sat = uSaturation * mix(1.0, uNightSaturation, uNight * (1.0 - smoothstep(0.25, 0.7, luma))); // (dark: by moonlight)
+      col.rgb = max(mix(vec3(luma), col.rgb, sat), 0.0) * uTint;
       // the vignette, round the view this pixel is in
       vec4 part = uSeats[0];
       for (int i = 1; i < ${MAX_SEATS}; i++) {
@@ -231,6 +238,7 @@ export function createPost(renderer, { seats, view, gap }) {
       sky.b = Math.min(sky.b, 1.6);
       tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, POST.skyTint).lerp(WHITE, U.uUnder.value);
       grade.uniforms.uTint.value.copy(tint);
+      grade.uniforms.uNight.value = U.uNight.value * (1 - U.uUnder.value);
       seatParts();
       renderer.setScissorTest(false); // (the screen's own, for the output: a split screen drawn straight leaves it on)
       renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
