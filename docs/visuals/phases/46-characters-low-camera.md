@@ -41,6 +41,8 @@ carpet at dusk and on the low tier.
 - Before -> after (calls / triangles / programs): plaza-noon (high) 656 / 759k / 48 -> 695 / 764k / 48;
   phone (medium) 578 / 515k / 44 -> 586 / 537k / 45 (the outline's program and hull, now on medium);
   phone-forest-dusk (medium) 360 / 508k / 45 -> 364 / 518k / 46. Calls drift ±20 between runs.
+  After merging rounds 45, 47 and 48: plaza-noon 700 / 765k / 50, phone 557 / 534k / 47,
+  phone-forest-dusk 350 / 516k / 48.
 - The contact blob sits 0.06 over the feet, so it shows between the carpet's blades; where the carpet
   is thick and tall (the forest at dusk) it is mostly hidden by the blades in front, and the outline
   and the rim do the work there. A world round could darken the carpet's own blades round `uPlayers`.
