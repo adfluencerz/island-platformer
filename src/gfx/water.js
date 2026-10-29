@@ -19,7 +19,8 @@ import { NOISE } from './noise.js';
 //     on top of the tone-mapped color, so its brightest sparkles pass the
 //     bloom's threshold (src/gfx/post.js) and glow, without a white smear;
 //   - a slow mottle in the color (the sea's), or (the shallows') a soft,
-//     broken edge out at sea and turquoise deepening away from the shore.
+//     broken edge out at sea, turquoise deepening away from the shore, and
+//     toward the shore the sandy floor in ripples showing through.
 // The sea stays opaque; translucent water grows a little more solid where
 // it mirrors the sky. Cheap enough for every tier.
 
@@ -42,7 +43,16 @@ const COLOR = {
     float waterShore = vColor.a;
     float waterEdge = waterShore + (gfxNoise(vGfxWorld.xz * 0.9) - 0.5) * 0.45;
     diffuseColor.a = opacity * smoothstep(0.0, 0.7, waterEdge);
-    diffuseColor.rgb *= mix(vec3(0.62, 0.86, 0.95), vec3(1.06), smoothstep(0.2, 1.0, waterShore));`,
+    diffuseColor.rgb *= mix(vec3(0.62, 0.86, 0.95), vec3(1.06), smoothstep(0.2, 1.0, waterShore));
+    // the sandy floor showing through toward the shore, in ripples across the
+    // wind (as the beach's: src/gfx/ground.js), and a light caustic net drifting on it
+    highp vec2 waterSandP = vGfxWorld.xz;
+    float waterSandPx = gfxFootprint(waterSandP);
+    float waterRf = fract(dot(waterSandP, vec2(0.92, 0.38)) * 2.2 + gfxNoise(waterSandP * 0.45 + 2.0) * 1.6);
+    float waterRipple = smoothstep(0.0, 0.75, waterRf) * (1.0 - smoothstep(0.75, 1.0, waterRf));
+    float waterSand = smoothstep(0.25, 0.95, waterShore) * (0.45 + 0.55 * mix(0.5, waterRipple, gfxShow(2.2, waterSandPx * 0.5)));
+    float waterNet = smoothstep(0.62, 0.8, gfxNoise(waterSandP * 1.6 + vec2(uTime * 0.25, -uTime * 0.18)) + gfxNoise(waterSandP * 1.9 - vec2(uTime * 0.2, uTime * 0.23)) * 0.4) * gfxShow(1.9, waterSandPx * 0.5);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.8, 0.56) * (1.0 + 0.25 * waterNet), waterSand * 0.55);`,
   pond: `diffuseColor.rgb *= 0.94 + 0.12 * gfxNoise(vGfxWorld.xz * 0.35);`,
 };
 
