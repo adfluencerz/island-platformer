@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 22 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 23 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -26,6 +26,7 @@ Current phase: 22 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 19 Night figures
 - [x] 20 Golden hour
 - [x] 21 Forest light
+- [x] 22 Rain
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -48,7 +49,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Pines are `pineGeo` tiers (`world.js`: serrated, flatter skirt, hollow underside; 60 tris hi / 28 lo by draw range like `canopyGeo`); the tree hook's `vCanopyShade` is now a vec4 tint (rgb) plus a shadow lift (a) that `light.js` applies under `GFX_SHADOW_LIFT`, since a pine's tiers shade each other at noon.
-- The floor under standing trees is shaded on the CPU (`shadeCanopy` in `world.js`: ground vertex colors and tuft instance colors, from their kept base), re-run for what `drawTree` marks, so it follows fell/regrow/giant; cliff lips keep their own colors.
-- Cloud shadows a touch deeper in clear weather (`light.js`: `mix(0.8, 0.38, uCloudAmount)`). plaza-noon +25k triangles, calls and programs as before.
-- Weakest now: rain-noon. It reads as plaza-noon with a grey veil: no wet sheen on the paving, no puddles or darker damp ground, the rain streaks barely show, and the light is as flat as noon's.
+- Wetness is `uWet` (lingers: soaked half a game hour into a shower, dry 2.5 h after, `weather.js wetnessAt` from `spellOn`) and `uRain` (falling now); both 0 indoors, underground, in a lobby and in the snow, per view (`dayNight.view` sheltered).
+- `light.js` (every lit material, every tier): wet colors darker and richer (grass less), a sky sheen on what faces up, and with `GFX_PUDDLE` (ground tiles' path/stone, slabs: `groundPuddle` in `ground.js`) puddles that mirror the sky with drops ringing (`gfxRipples`, also on water). All gated on `uWet > 0`: dry shots unchanged, no new programs.
+- Streaks longer (0.95) and lighter; the overcast greys to a bluer grey (`daynight.js`), the grade cooler and a touch more saturated under rain clouds (`post.js POST.rain`).
+- Weakest now: dungeon. A flat, single brown room: no pools of torch light on the floor, no cool fill in the corners, little depth between floor, walls and the dark beyond.
