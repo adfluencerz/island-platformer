@@ -87,4 +87,4 @@ export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, fla
   U.uShadowTint.value.copy(SHADE).lerp(SHADE_LOW, low);
 }
 const SHADE = new THREE.Color(0.8, 0.86, 1.0);
-const SHADE_LOW = new THREE.Color(0.66, 0.76, 1.04);
+const SHADE_LOW = new THREE.Color(0.62, 0.73, 1.08);
