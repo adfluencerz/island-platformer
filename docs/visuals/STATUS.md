@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 16 (`phases/16-detail-built.md`)
+Current phase: 17 (`phases/17-detail-nature.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -19,7 +19,7 @@ Current phase: 16 (`phases/16-detail-built.md`)
 - [x] 13 Characters
 - [x] 14 Ambience
 - [x] 15 Perf and polish
-- [ ] 16 Surface detail: built things and buildings
+- [x] 16 Surface detail: built things and buildings
 - [ ] 17 Surface detail: nature
 - [ ] 18 Surface detail: characters, animals and held things
 - 19+ polish rounds (`phases/19-polish-rounds.md`)
@@ -45,8 +45,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Surface detail (16-18): extend phase 10's pattern: a hook like `groundDetail` (`src/gfx/ground.js`) per kind of surface, `NOISE`/`VORONOI` from `src/gfx/noise.js` patched in at 'common', world-space (or object-space for moving things), finer octaves faded by `gfxShow` so nothing shimmers.
-- Programs: plaza-noon 44 of 120 (lobby 85): each new hook setting is a program per material kind, so put kinds in uniforms or attributes, not defines, where they can share one.
-- `shore-noon` (the sea and the shore at x -66, z 4) is in the shots now: judge water edges and cliffs there.
-- Budgets are per tier now (`docs/visuals/README.md`), and `npm run gates` checks the low tier's too; grass is in patches (`GRASS_PATCH` in world.js), the ground in `SURFACE_CHUNK` squares.
-- Nights: `POST.nightSaturation` 0.62 on the dark parts in the grade; the low tier greys its diffuse light by `uNightGrey` 0.35 (light.js, `lights_fragment_end`).
+- The `detail` hook (`src/gfx/detail.js`): `detail(material, look?, name?)`, looks in `LOOKS` (wood, plank, stone, brick, cobble, thatch, tile, cloth, metal, plaster, endgrain) as the uniform `gfxDetailLook`, so every look is one program (plaza-noon 46 programs, lobby 88; calls unchanged).
+- Look by `userData.gfx.detail`, else the name (`BY_NAME`, `PLAIN` keeps leaves, rock, grass, water plain for phase 17), else the color (`defaultLook`). To add one: a name in `LOOKS`, a branch in `FRAGMENT`, a pattern in `BY_NAME`.
+- Frame: the piece's own (object space times its scale), so blocks and boards fit a part and grain runs along its long side; baked homes carry it per vertex (`bakeDetail`, 'detail:baked'), the dungeon per instance (`gfxLook`, 'detail:instanced', `add(geo, 'matte:stone', ...)`).
+- For nature (17): add looks (bark, rock, leaf...) the same way and take `rock|grass|leaf...` out of `PLAIN`; world-space-continuous surfaces (cliffs, ground) stay on `groundDetail`.
