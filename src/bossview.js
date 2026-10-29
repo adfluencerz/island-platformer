@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import parsnipModelUrl from './models/evil-parsnip.glb?url';
 import { BOSSES } from '../shared/balance.js';
 import { seedAt, seedsOver, waveOver, SEED_Y, ARENA_R, ARENAS, swarmAt, swarmsOver, SWARM_Y } from '../shared/bosses.js';
 import { damp } from './character.js';
@@ -99,6 +102,22 @@ export function dizzyStars(count = 3, radius = 0.4, size = 0.3) {
   };
 }
 
+// The evil parsnip's own model (src/models/evil-parsnip.glb), loaded once, the
+// first time a parsnip is built; until it is in, the parsnip below stands in
+let parsnipModel = null;
+function loadParsnipModel() {
+  parsnipModel ??= new GLTFLoader()
+    .setMeshoptDecoder(MeshoptDecoder)
+    .loadAsync(parsnipModelUrl)
+    .then((gltf) => gltf.scene)
+    .catch((err) => {
+      console.warn('evil parsnip model did not load; keeping the stand-in', err);
+      return null;
+    });
+  return parsnipModel;
+}
+const PARSNIP_HEIGHT = 3; // how tall the model stands, feet to leaves
+
 // The evil parsnip. parent: where it goes (the farm's world)
 function buildParsnip() {
   const skin = detail(mat(0xf0e2b0), 'skin');
@@ -150,6 +169,25 @@ function buildParsnip() {
   // little feet
   const feet = [-1, 1].map((sx) => part(root, ballGeo, skinDark, [sx * 0.32, 0.12, 0.1], [0.34, 0.22, 0.48]));
   const skins = [skin, skinDark];
+  // the model takes over once it is in: it goes in the body (so it tips over,
+  // rolls and squashes the same), feet on the ground, and the stand-in goes
+  let model = null;
+  loadParsnipModel().then((scene) => {
+    if (!scene) return;
+    model = scene.clone();
+    const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    model.scale.setScalar(PARSNIP_HEIGHT / size.y);
+    const box = new THREE.Box3().setFromObject(model);
+    model.position.set(-(box.min.x + box.max.x) / 2, -pivot.position.y - box.min.y, -(box.min.z + box.max.z) / 2);
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.material = o.material.clone(); // (its own, for the flash when bopped)
+      skins.push(o.material);
+    });
+    for (const child of body.children) child.visible = false;
+    body.add(model);
+  });
   // How it stands, moves and looks (b: as createBossView's update() has it)
   let tilt = 0; // 0 standing .. 1 lying on its side
   let spin = 0;
@@ -163,7 +201,7 @@ function buildParsnip() {
     if (rolling && b.mt >= def.roll.windup) spin += (dt * def.roll.speed) / 0.8;
     body.rotation.y = rolling ? spin : 0;
     body.rotation.x = 0;
-    for (const foot of feet) foot.visible = tilt < 0.5;
+    for (const foot of feet) foot.visible = !model && tilt < 0.5;
     // squash and stretch, and a waddle
     let sy = 1;
     let wobble = 0;
@@ -182,6 +220,8 @@ function buildParsnip() {
     feet.forEach((foot, i) => (foot.position.y = 0.12 + (b.move === 'rest' && !asleep ? Math.max(0, Math.sin(t * 8 + i * Math.PI)) * 0.12 : 0)));
     // the leaves spin up to shoot
     leaves.rotation.y += dt * (b.move === 'seeds' && b.phase === 'fight' ? 14 : 0.6);
+    // (the model's leaves are part of it, so it spins round itself to shoot)
+    if (model) model.rotation.y = b.move === 'seeds' && b.phase === 'fight' && b.mt >= def.seeds.windup ? model.rotation.y + dt * 9 : 0;
     // the face: asleep, grumpy, dizzy or friendly
     for (const eye of eyes) eye.scale.y = asleep ? 0.12 : dizzy ? 0.5 : 1;
     brows.forEach((brow, i) => {
