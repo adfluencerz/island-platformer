@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 28 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 29 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -32,6 +32,7 @@ Current phase: 28 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 25 Morning
 - [x] 26 The shore
 - [x] 27 The phone
+- [x] 28 The plaza stone
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -54,8 +55,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Medium re-weighed (measured: full grass +71k tris on the phone but +159k on a desktop's medium plaza-noon, 620k of 700k; round canopies +57k, outline +21k and a program): grass 0.75 x 6 blades, the rest kept.
-- New tier knobs, shared uniforms (no new programs): `grassSpread` (uGrassSpread, the tufts 1.2x wider on medium, not the flowers) and `detailGain` (uDetailGain, src/gfx/ground.js: groundK and the slabs' tint 1.35x on medium); 1 on low and high.
-- Medium: phone 639 -> 639-669 calls (drift), 380k -> 406-410k tris, 47 -> 46-47 programs; desktop plaza-noon at medium 620k -> 676k tris. High and low pixel-identical.
-- The plaza still reads cool grey in the phone view (the stone tiles' gap color blurs into the grass round the slabs, a soft grey halo, on desktop too).
-- Weakest now: plaza-noon (the stone plaza's grey halo and flat slabs, the only shot not yet polished); then a HUD restyle.
+- The grey halo was the ground's vertex blend (stone's color a quarter tile into the grass): stone now lends no color; `ground:tiles` paints its ground (warm mortar, some soil) out to a crisp noisy edge (stone share + noise, cut at 0.64 by fwidth), moss in the joints north of each slab.
+- Slabs (`ground:slab`): instance colors warmer (offsetHSL in world.js, by hash), worn pale middles, darker rims (faded to their average far off), one in five cracked across, moss along the north edge; one in six sunk and tipped (hash, no rng draws).
+- Edge tufts over slab sides facing grass: their own stream (seed ^ 0x3d6e), spliced into the shuffled list; no new calls or programs (plaza-noon 768-795 calls, 51 programs; phone 633-639, 47).
+- The outer mortar rim is a dark wavering ring where the plaza's circle runs past the slabs; sunken slabs read only faintly at plaza-noon distance.
+- Weakest now: the HUD (flat orange panels over a painterly scene, the hint and quest cards crowding the top-left in every shot); then forest-noon's flat canopy tops.

@@ -13,10 +13,14 @@ import { NOISE, VORONOI } from './noise.js';
 //          the greens, moss in the gaps of stone next to grass, paths worn
 //          lighter down their middles with a few pale pebbles, faint ripples
 //          on the sand; and (gfxShore: how near the open sea) the sand
-//          wet and darker at the waterline, a lace of foam over its edge
-//   slab   a stone tile's slab: cracks (Voronoi edges, some of them), each
-//          piece and each slab its own tint, and moss creeping in from the
-//          sides that face grass (gfxMoss, per slab: -x, +x, -z, +z)
+//          wet and darker at the waterline, a lace of foam over its edge;
+//          the stone's own ground (world.js gives it its neighbors' color)
+//          a warm mortar out to a crisp, wavering edge, moss in its joints
+//   slab   a stone tile's slab: cracks (Voronoi edges, some of them; all of
+//          them on a few slabs), each piece and each slab its own tint, a
+//          worn pale middle and a darker rim, and moss creeping in from the
+//          sides that face grass (gfxMoss, per slab: -x, +x, -z, +z) and
+//          along its shaded north edge
 //   turf   a platform's turf: the speckle where it is green
 //   earth  the sides of the earth: a mottle, soft clods and pale stones
 //   rough  the sides of rock: a mottle, cracks (some Voronoi edges) and
@@ -41,6 +45,8 @@ import { NOISE, VORONOI } from './noise.js';
 // survives the season's green and the greens are still found.
 
 const MOSS = 'vec3(0.075, 0.2, 0.04)'; // (linear)
+const MORTAR = 'vec3(0.15, 0.122, 0.088)'; // (the stone's ground: between and round the slabs)
+const SOIL = 'vec3(0.14, 0.095, 0.055)';
 
 // how much of a puddle at p (0..1): soft-edged patches of a slow noise, a
 // finer one wobbling their shores, fewer and smaller as the ground dries
@@ -86,28 +92,48 @@ const FRAGMENT = {
     float groundLaceAt = vGroundShore + 0.07 * groundSwash + (gfxNoise(groundP * 2.3 + vec2(uTime * 0.12, 7.0)) - 0.5) * 0.12;
     float groundLace = smoothstep(0.8, 0.9, groundLaceAt) * mix(0.55, smoothstep(0.3, 0.62, gfxNoise(groundP * 4.4 - vec2(0.0, uTime * 0.09))), gfxShow(4.4, groundPx));
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.9), groundLace * 0.75 * vGroundKind.w);
-    // moss where stone meets grass
-    float groundMoss = clamp(vGroundKind.y * vGroundKind.x * 4.0, 0.0, 1.0) * smoothstep(0.3, 0.7, mix(0.5, gfxNoise(groundP * 1.9 + 3.3), gfxShow(1.9, groundPx)));
-    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK, groundMoss * 0.7);
+    // the stone's own ground (world.js lends it no color, so it doesn't blur
+    // out into the grass): a warm dark mortar between and round the slabs,
+    // some of it soil, out to a crisp edge that wavers as if painted; moss
+    // creeping in over it from the grass, and in the joints on each slab's
+    // shaded (north) side
+    float groundStoneAt = vGroundKind.y + (gfxNoise(groundP * 2.6 + 4.3) - 0.5) * 0.6 * gfxShow(2.6, groundPx)
+      + (gfxNoise(groundP * 7.3 + 1.9) - 0.5) * 0.25 * gfxShow(7.3, groundPx);
+    float groundStoneW = fwidth(groundStoneAt) * 0.75 + 0.01;
+    float groundStone = smoothstep(0.64 - groundStoneW, 0.64 + groundStoneW, groundStoneAt);
+    vec3 groundMortar = mix(${MORTAR}, ${SOIL}, smoothstep(0.3, 0.7, gfxNoise(groundP * 1.7 + 8.8)));
+    diffuseColor.rgb = mix(diffuseColor.rgb, groundMortar * groundGain(groundK), groundStone);
+    highp vec2 groundTile = groundP - floor(groundP + 0.5); // (where on its tile: a slab covers ±0.43)
+    float groundNorth = mix(0.3, 1.0 - smoothstep(-0.46, -0.4, groundTile.y), gfxShow(8.0, groundPx));
+    float groundMoss = groundStone * clamp(max(groundNorth * smoothstep(0.4, 0.7, gfxNoise(groundP * 3.1 + 3.3)),
+      vGroundKind.x * 3.0 * smoothstep(0.35, 0.65, mix(0.5, gfxNoise(groundP * 1.9 + 3.3), gfxShow(1.9, groundPx)))), 0.0, 1.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundGain(groundK), groundMoss * 0.75);
     // puddles in the hollows of the paths and the stone
     float groundPuddle = smoothstep(0.65, 0.95, vGroundKind.y + vGroundKind.z) * (1.0 - groundMoss) * ${PUDDLE('groundP', '31.7')};`,
   slab: `
-    // pieces with cracks between (only some edges crack), each its own tint,
-    // and the slab its own, a little warmer or cooler
+    // pieces with cracks between (only some edges crack; on one slab in five
+    // all of them, deeper), each its own tint, and the slab its own, a
+    // little warmer or cooler, lighter or darker; worn smooth and pale in
+    // its middle where feet go, darker and grimier round its rim
     highp vec2 groundCell = gfxVoronoi(groundP * 1.15);
-    float groundSlab = gfxHash(floor(groundP + 0.5));
-    groundK *= 0.96 + 0.08 * groundCell.y;
+    highp vec2 groundId = floor(groundP + 0.5);
+    float groundSlab = gfxHash(groundId);
+    float groundCracked = step(0.8, gfxHash(groundId + 17.3));
+    vec2 groundAt = groundP - groundId; // (where on its slab: ±0.43)
+    float groundMid = 1.0 - smoothstep(0.05, 0.36, length(groundAt));
+    float groundRim = mix(0.3, smoothstep(0.3, 0.42, max(abs(groundAt.x), abs(groundAt.y))), gfxShow(8.0, groundPx));
+    groundK = mix(groundK, 1.0, 0.5 * groundMid) * (0.96 + 0.08 * groundCell.y) * (1.0 + 0.14 * groundMid - 0.16 * groundRim);
     float groundCrack = 1.0 - smoothstep(0.025, 0.025 + fwidth(groundCell.x) * 1.5 + 0.01, groundCell.x);
-    groundCrack *= smoothstep(0.4, 0.65, gfxNoise(groundP * 0.9 + 5.0)) * smoothstep(0.06, 0.03, groundPx);
-    groundK *= 1.0 - 0.3 * groundCrack;
-    diffuseColor.rgb *= groundK * (1.0 + (mix(vec3(1.04, 1.0, 0.94), vec3(0.95, 0.99, 1.05), groundSlab) - 1.0) * uDetailGain);
-    // moss creeping in from a side that faces grass, into the cracks there,
-    // and the odd pocket of it
-    vec2 groundAt = groundP - floor(groundP + 0.5); // (where on its slab: ±0.43)
+    groundCrack *= max(smoothstep(0.4, 0.65, gfxNoise(groundP * 0.9 + 5.0)), groundCracked) * smoothstep(0.06, 0.03, groundPx);
+    groundK *= 1.0 - (0.3 + 0.2 * groundCracked) * groundCrack;
+    diffuseColor.rgb *= groundK * (1.0 + (mix(vec3(1.06, 1.0, 0.9), vec3(0.97, 0.98, 1.0), groundSlab) * (0.93 + 0.14 * gfxHash(groundId + 5.1)) - 1.0) * uDetailGain);
+    // moss creeping in from a side that faces grass and along its shaded
+    // (north) edge, into the cracks there, and the odd pocket of it
     vec4 groundSide = vGroundMoss * (1.0 - smoothstep(0.0, 0.3, vec4(groundAt.x + 0.43, 0.43 - groundAt.x, groundAt.y + 0.43, 0.43 - groundAt.y)));
     float groundEdge = max(max(groundSide.x, groundSide.y), max(groundSide.z, groundSide.w));
+    groundEdge = max(groundEdge, 0.55 * (1.0 - smoothstep(0.0, 0.12, groundAt.y + 0.43)) * gfxShow(8.0, groundPx));
     float groundMoss = smoothstep(0.35, 0.75, groundEdge * (0.45 + 0.9 * mix(0.5, gfxNoise(groundP * 3.1 + 1.7), gfxShow(3.1, groundPx))));
-    groundMoss = max(groundMoss, groundCrack * groundEdge);
+    groundMoss = max(groundMoss, groundCrack * max(groundEdge, 0.5 * groundCracked));
     groundMoss = max(groundMoss, 0.6 * smoothstep(0.8, 0.92, gfxNoise(groundP * 1.4 + 9.0)));
     diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * (1.0 + 0.4 * (gfxNoise(groundP * 4.7) - 0.5) * gfxShow(4.7, groundPx)), groundMoss * 0.8);
     // puddles

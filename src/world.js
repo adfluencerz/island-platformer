@@ -901,6 +901,33 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const j = Math.floor(more() * (i + 1));
       [grass[i], grass[j]] = [grass[j], grass[i]];
     }
+    // ...and a few creeping in over the edges of the stone slabs that face
+    // grass, lower, from a stream of their own (each put in at a place of
+    // its own in the shuffled list, so the tiers thin them as the rest and
+    // nothing else moves)
+    const edge = mulberry32(map.seed ^ 0x3d6e);
+    const edgeRand = (min, max) => min + edge() * (max - min);
+    for (const [key, type] of tileGrid) {
+      if (type !== 'stone') continue;
+      const [gx, gz] = key.split(',').map(Number);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const next = tileGrid.get(`${gx + dx},${gz + dz}`);
+        const f = map.foliage[next];
+        if (!f || !map.tileStyles[next]?.lush) continue;
+        const lush = meadowNoise(gx + dx, gz + dz);
+        for (let n = Math.floor(edgeRand(2, 4.5)); n > 0; n--) {
+          const along = edgeRand(-0.5, 0.5);
+          const out = edgeRand(0.3, 0.48);
+          const x = gx + dx * out + dz * along;
+          const z = gz + dz * out + dx * along;
+          if (!isOpenGround(x + dx * 0.3, z + dz * 0.3)) continue; // (as the grass beside it)
+          const tuft = tuftLook(edgeRand, [x, z, f, lush]);
+          tuft[3] *= 0.75; // (lower, spread over the stone)
+          tuft[4] *= 0.6;
+          grass.splice(Math.floor(edge() * grass.length), 0, tuft);
+        }
+      }
+    }
 
     const tuftMat = map.tuftMat ?? new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
     tuftMat.side = THREE.DoubleSide;
@@ -1199,7 +1226,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     for (const [type, style] of Object.entries(map.tileStyles)) {
       kindDetail[type] = detailOf(type, style);
       kindColors[type] = new THREE.Color(style.color);
-      if (type === 'stone') kindColors[type].offsetHSL(0, -0.03, -0.07); // the gaps between the slabs
+      if (type === 'stone') kindColors[type].offsetHSL(0, -0.03, -0.07); // (its ground is painted by the shader: this is for the cliffs' lip)
     }
     const kinds = new Map(); // "qx,qz" (in quarter tiles) -> the map's kind of ground there
     const kindAt = (qx, qz) => {
@@ -1295,17 +1322,33 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           tint.setRGB(0, 0, 0);
           let lush = 0;
           let jitter = 0;
+          let open = 0; // (the share of it that isn't stone)
           const detail = [0, 0, 0, 0];
           for (let di = -1; di <= 1; di++) {
             for (let dj = -1; dj <= 1; dj++) {
               let kind = kindAt(qx + dj, qz + di);
               if (!kind || floorOf(kind) !== floor) kind = type;
               const w = (di ? 1 : 2) * (dj ? 1 : 2) / 16;
+              if (kindDetail[kind] >= 0) detail[kindDetail[kind]] += w;
+              if (kindDetail[kind] === 1) continue; // (stone lends no color: see below)
+              open += w;
               tint.add(c.copy(kindColors[kind]).multiplyScalar(w));
               if (map.tileStyles[kind].lush) lush += w;
-              if (kindDetail[kind] >= 0) detail[kindDetail[kind]] += w;
               jitter += map.tileStyles[kind].jitter * w;
             }
+          }
+          // The stone's own ground (its mortar, between and round the slabs)
+          // is painted by the shader out to a crisp, wavering edge (its
+          // share, gfxKind's y: src/gfx/ground.js), so its grey doesn't blur
+          // out into the grass round it: the colors here are of the rest
+          // (the plain stone's where there is nothing else)
+          if (open > 0) {
+            tint.multiplyScalar(1 / open);
+            lush /= open;
+            jitter /= open;
+          } else {
+            tint.copy(kindColors[type]);
+            jitter = map.tileStyles[type].jitter;
           }
           const shade = 1 - meadowNoise(x, z) * 0.1 * lush + (hash2(x, z) - 0.5) * jitter * 5;
           tint.multiplyScalar(shade * (1 - 0.4 * contactShade(x, floor, z)));
@@ -1350,14 +1393,25 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     stoneGeo.setAttribute('gfxMoss', new THREE.InstancedBufferAttribute(moss, 4, true));
     const stones = new THREE.InstancedMesh(stoneGeo, slabMat, slabs.length);
     stones.receiveShadow = true;
+    // (each a warm stone of its own, and one in six or so sunk a little into
+    // the earth, tipped and darker: by a hash of its tile, so nothing that
+    // the island's random stream places moves)
+    const tip = new THREE.Quaternion();
+    const warm = new THREE.Color();
     slabs.forEach(([gx, gz, floor], i) => {
       const { color, top } = tileLook.get(`${gx},${gz}`);
       const nx = hash2(gx, gz) - 0.5;
       const nz = hash2(gz, gx) - 0.5;
+      const sunk = hash2(gx * 1.7 + 3.1, gz * 0.9 - 7.3) < 0.17;
+      const lean = hash2(gx - 11.2, gz + 4.7) * Math.PI * 2;
       q.setFromAxisAngle(up, nx * 0.16);
-      m.compose(v.set((gx + nx * 0.05) * TILE_SIZE, floor + top - 0.03, (gz + nz * 0.05) * TILE_SIZE), q, s.set(1, 1, 1));
+      if (sunk) q.multiply(tip.setFromAxisAngle(v.set(Math.cos(lean), 0, Math.sin(lean)), 0.03));
+      const y = sunk ? GROUND_LIFT + 0.006 + (top - 0.012) * 0.3 : top;
+      m.compose(v.set((gx + nx * 0.05) * TILE_SIZE, floor + y - 0.03, (gz + nz * 0.05) * TILE_SIZE), q, s.set(1, 1, 1));
       stones.setMatrixAt(i, m);
-      stones.setColorAt(i, color);
+      const h = hash2(gx * 0.7 + 2.3, gz * 1.3 + 5.9);
+      warm.copy(color).offsetHSL(-0.045 + (hash2(gz + 9.1, gx - 1.7) - 0.5) * 0.05, 0.2 + 0.1 * h, 0.1 + (h - 0.5) * 0.08);
+      stones.setColorAt(i, sunk ? warm.multiplyScalar(0.88) : warm);
     });
     root.add(stones);
 
