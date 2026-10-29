@@ -90,6 +90,8 @@ const noShadow = (m) => ((m.userData.noShadow = true), m);
 // Little tiling pictures for the cloth, drawn once. Most are shades of gray
 // that darken the material's own color (a check, a knit, a weave); stripes
 // and dots are drawn in the color they go with (one picture per color).
+// Strong enough to read from the play camera, past the light and the tone
+// mapping (a plaid's check, a knit's ribs, a stripe).
 const textures = new Map();
 function texture(key, size, draw, srgb = false) {
   if (!textures.has(key)) {
@@ -110,34 +112,34 @@ const css = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
 // a fine plain weave
 const clothTex = () => texture('cloth', 16, (g, n) => {
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    g.fillStyle = gray((x + y) % 2 ? 246 : 228);
+    g.fillStyle = gray((x + y) % 2 ? 250 : 222);
     g.fillRect(x, y, 1, 1);
   }
 });
 // denim's diagonal twill
 const twillTex = () => texture('twill', 16, (g, n) => {
-  g.fillStyle = gray(248);
+  g.fillStyle = gray(252);
   g.fillRect(0, 0, n, n);
-  g.fillStyle = gray(212);
+  g.fillStyle = gray(196);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if ((x + y) % 4 < 2) g.fillRect(x, y, 1, 1);
 });
 // knitted ribs, running up and down
 const knitTex = () => texture('knit', 16, (g, n) => {
   for (let x = 0; x < n; x++) {
-    g.fillStyle = gray(x % 4 === 0 ? 190 : x % 4 === 2 ? 236 : 252);
+    g.fillStyle = gray(x % 4 === 0 ? 162 : x % 4 === 2 ? 228 : 255);
     g.fillRect(x, 0, 1, n);
   }
-  g.fillStyle = 'rgba(0,0,0,0.06)';
+  g.fillStyle = 'rgba(0,0,0,0.1)';
   for (let y = 0; y < n; y += 4) g.fillRect(0, y, n, 1);
 });
 // a buffalo check: bands across and down, darker where they cross, and fine lines between
 const plaidTex = () => texture('plaid', 64, (g, n) => {
   g.fillStyle = '#fff';
   g.fillRect(0, 0, n, n);
-  g.fillStyle = 'rgba(0,0,0,0.3)';
+  g.fillStyle = 'rgba(0,0,0,0.38)';
   g.fillRect(0, 0, n / 2, n);
   g.fillRect(0, 0, n, n / 2);
-  g.fillStyle = 'rgba(0,0,0,0.16)';
+  g.fillStyle = 'rgba(0,0,0,0.22)';
   g.fillRect(n * 0.72, 0, 3, n);
   g.fillRect(0, n * 0.72, n, 3);
 });
@@ -152,7 +154,7 @@ const strawTex = () => texture('straw', 32, (g, n) => {
     for (let k = 0; k < n; k++) g.fillRect((i + 2 - k + n * 2) % n, k, 1, 1);
   }
 });
-const CREAM = 0xf4efe4;
+const CREAM = 0xfaf5ea;
 const stripesTex = (color) => texture(`stripes:${color}`, 16, (g, n) => {
   g.fillStyle = css(color);
   g.fillRect(0, 0, n, n);
