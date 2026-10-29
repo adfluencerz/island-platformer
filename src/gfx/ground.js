@@ -27,6 +27,9 @@ import { NOISE, VORONOI } from './noise.js';
 // The sand (tiles) has fine ripples across the wind (from the south-west,
 // as the clouds drift and the trees lean), a steep dark lee to each, and
 // shell flecks, pale or pink.
+// In the rain, puddles (groundPuddle, GFX_PUDDLE: src/gfx/light.js wets
+// them) lie in the hollows of the paths and the stone (tiles) and on the
+// plaza's slabs, shrinking as the ground dries (uWet).
 // The finer octaves fade as a pixel covers more of them (gfxShow), so
 // nothing shimmers far off. Runs right after the vertex color is in, before
 // the seasons' grass color (src/seasons.js, hooked earlier: code patched in
@@ -34,6 +37,11 @@ import { NOISE, VORONOI } from './noise.js';
 // survives the season's green and the greens are still found.
 
 const MOSS = 'vec3(0.075, 0.2, 0.04)'; // (linear)
+
+// how much of a puddle at p (0..1): soft-edged patches of a slow noise, a
+// finer one wobbling their shores, fewer and smaller as the ground dries
+// (more: more of them, on the flat slabs)
+const PUDDLE = (p, seed, more = 0) => `smoothstep(0.0, 0.04, 0.75 * gfxNoise(${p} * 0.55 + ${seed}) + 0.25 * gfxNoise(${p} * 1.7 + ${seed} * 0.3) - ${(0.76 - more).toFixed(2)} + 0.08 * uWet)`;
 
 const VERTEX = {
   tiles: ['attribute vec4 gfxKind;\nvarying vec4 vGroundKind;', 'vGroundKind = gfxKind;'],
@@ -64,7 +72,9 @@ const FRAGMENT = {
     diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.92, 0.88, 0.8), vec3(0.92, 0.6, 0.55), gfxHash(groundSi + 11.0)), groundShell * smoothstep(0.5, 0.9, vGroundKind.w) * 0.85);
     // moss where stone meets grass
     float groundMoss = clamp(vGroundKind.y * vGroundKind.x * 4.0, 0.0, 1.0) * smoothstep(0.3, 0.7, mix(0.5, gfxNoise(groundP * 1.9 + 3.3), gfxShow(1.9, groundPx)));
-    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK, groundMoss * 0.7);`,
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK, groundMoss * 0.7);
+    // puddles in the hollows of the paths and the stone
+    float groundPuddle = smoothstep(0.65, 0.95, vGroundKind.y + vGroundKind.z) * (1.0 - groundMoss) * ${PUDDLE('groundP', '31.7')};`,
   slab: `
     // pieces with cracks between (only some edges crack), each its own tint,
     // and the slab its own, a little warmer or cooler
@@ -83,7 +93,9 @@ const FRAGMENT = {
     float groundMoss = smoothstep(0.35, 0.75, groundEdge * (0.45 + 0.9 * mix(0.5, gfxNoise(groundP * 3.1 + 1.7), gfxShow(3.1, groundPx))));
     groundMoss = max(groundMoss, groundCrack * groundEdge);
     groundMoss = max(groundMoss, 0.6 * smoothstep(0.8, 0.92, gfxNoise(groundP * 1.4 + 9.0)));
-    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * (1.0 + 0.4 * (gfxNoise(groundP * 4.7) - 0.5) * gfxShow(4.7, groundPx)), groundMoss * 0.8);`,
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * (1.0 + 0.4 * (gfxNoise(groundP * 4.7) - 0.5) * gfxShow(4.7, groundPx)), groundMoss * 0.8);
+    // puddles
+    float groundPuddle = (1.0 - groundMoss) * ${PUDDLE('groundP', '13.1', 0.05)};`,
   turf: `
     float groundGreen = clamp((diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * 6.0, 0.0, 1.0);
     float groundSpeck = smoothstep(0.6, 0.85, gfxNoise(groundP * 3.7 + 7.1)) * gfxShow(3.7, groundPx);
@@ -139,6 +151,7 @@ export function groundDetail(material, kind) {
   return hook(material, `ground:${kind}`, (shader) => {
     define(shader, 'GFX_WORLD');
     define(shader, 'GFX_GROUND');
+    if (kind === 'tiles' || kind === 'slab') define(shader, 'GFX_PUDDLE');
     const vertex = VERTEX[kind];
     if (vertex) {
       shader.vertexShader = patch(shader.vertexShader, 'common', vertex[0], 'GFX_GROUND');
