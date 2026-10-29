@@ -263,7 +263,7 @@ const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4e
 }));
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
 export const LOBBY_POND_Y = -0.12; // the lobby pond's surface (where a bobber floats: src/fishing.js)
-const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8c94, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 })), 'lake');
+const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8c94, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 })), 'pond');
 const padMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 }), 'crop');
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
 const reedMat = detail(foliageMat(0x6b8a3a), 'reed');
@@ -316,7 +316,7 @@ function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
 }
 // The pond's water: a disc, in a grid of half-metre squares, each corner
 // knowing how near the bank it is (gfxBank: 1 on the bank, 0 from BANK_REACH
-// out), for the shallows and the wet edge (src/gfx/water.js 'lake')
+// out), for the shallows and the wet edge (src/gfx/water.js)
 const BANK_REACH = 1.5;
 const BANK_RINGS = 6;
 function pondWaterGeo(pond, inPond) {

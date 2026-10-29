@@ -162,6 +162,16 @@ const POND_Z = -1; // its middle, from the middle of the tile it was built on
 const POND_IN = 1.25; // half the water's width
 const waterMat = waterLook(addRipples(mat(0x318ea0, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: false })), 'pond'); // (as the lake's: src/gfx/water.js)
 const padMat = mat(0x4f9e3c);
+// its water: a square, 1 across (scaled), in a grid whose corners know how
+// near the stones they are (gfxBank, as the lake's: src/maps.js pondWaterGeo)
+const pondWaterGeo = (() => {
+  const geo = new THREE.PlaneGeometry(1, 1, 6, 6).rotateX(-Math.PI / 2);
+  const p = geo.attributes.position;
+  const bank = [];
+  for (let i = 0; i < p.count; i++) bank.push(1 - Math.min(1, ((0.5 - Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)))) * POND_IN * 2) / 1.5));
+  geo.setAttribute('gfxBank', new THREE.Float32BufferAttribute(bank, 1));
+  return geo;
+})();
 // ---------- The aquarium ----------
 // Where in it the fish swim, from the middle of its tile: [x, y, z] of the
 // middle, and half its size
@@ -171,7 +181,7 @@ const sandMat = mat(0xe6cf98);
 
 function pond(g, solids, r) {
   part(g, box, MATS.soil, 0, 0.02, POND_Z, POND_IN * 2, 0.04, POND_IN * 2);
-  part(g, box, waterMat, 0, POND_WATER_Y, POND_Z, POND_IN * 2, 0.02, POND_IN * 2).castShadow = false;
+  part(g, pondWaterGeo, waterMat, 0, POND_WATER_Y + 0.01, POND_Z, POND_IN * 2, 1, POND_IN * 2).castShadow = false;
   // the stones, round the edge
   const n = 7;
   for (const side of [0, 1, 2, 3]) {

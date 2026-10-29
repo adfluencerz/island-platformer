@@ -21,8 +21,9 @@ import { NOISE } from './noise.js';
 //     and a scatter of broad flashes on the swells' crests, big enough to
 //     read from the play camera;
 //   - the broad swells' shade (rippleWave), kept over the mirror;
-//   - (the lake's, a pond that knows its bank: gfxBank) by the bank less
-//     mirror, and a dark wet band where the water meets it;
+//   - (the ponds' and the lake's, whose geometry knows how near the bank
+//     each corner is: gfxBank) by the bank less mirror, and a dark wet band
+//     where the water meets it;
 //   - in the rain (uRain), drops ringing on it (gfxRipples, src/gfx/light.js);
 //   - a slow mottle in the color (the sea's), or (the shallows') a soft,
 //     broken edge out at sea, turquoise deepening away from the shore, and
@@ -38,10 +39,8 @@ import { NOISE } from './noise.js';
 export const WATER = {
   sea: { fresnel: 0.9, glint: 1.0, solid: 0, dusk: 0.15, shade: 0.12 },
   shallows: { fresnel: 0.7, glint: 0.8, solid: 0, dusk: 0, shade: 0.08 },
-  pond: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45, shade: 0.14 },
-  // a pond that knows where its bank is (src/maps.js buildPond): the pond's
-  // look, and by the bank less mirror and a dark wet edge
-  lake: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45, shade: 0.14, bank: true },
+  // (bank: its geometry says how near the bank each corner is, gfxBank)
+  pond: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45, shade: 0.14, bank: true },
 };
 
 const f = (v) => v.toFixed(3);
@@ -67,7 +66,6 @@ const COLOR = {
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.8, 0.56) * (1.0 + 0.25 * waterNet), waterSand * 0.55);`,
   pond: `diffuseColor.rgb *= 0.94 + 0.12 * gfxNoise(vGfxWorld.xz * 0.35);`,
 };
-COLOR.lake = COLOR.pond;
 
 const SURFACE = ({ fresnel, glint, solid, dusk, shade }) => `
   {
