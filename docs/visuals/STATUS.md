@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 13 (`phases/13-characters.md`)
+Current phase: 14 (`phases/14-ambience.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -16,7 +16,7 @@ Current phase: 13 (`phases/13-characters.md`)
 - [x] 10 Ground detail
 - [x] 11 Water
 - [x] 12 Cliff skirts
-- [ ] 13 Characters
+- [x] 13 Characters
 - [ ] 14 Ambience
 - [ ] 15 Perf and polish
 - [ ] 16 Surface detail: built things and buildings
@@ -33,8 +33,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- plaza-noon 757 calls (+6, drift), 1.24M tris (+12k), programs 42 -> 45; lake-sunset 325 calls, lobby 454.
-- Cliffs: `world.js` "The cliffs" (in the ground block): one non-indexed mesh a GROUND_CHUNK chunk, down every tile side facing the sea or a lower floor (the lake's bank); the lip reuses the tile's edge vertices and colors. Earth boxes and colliders unchanged.
-- Material `cliffMat` (flat shaded, vertex colors), hook kind `ground:cliff` in `src/gfx/ground.js` (the earth mottle for now): phase 17's surface detail for cliffs goes there. The farm brings its own `map.cliffMat` so the seasons turn its grassy lip (`seasons.js`).
-- Foam is 1.1 wide now (was 0.8) so its solid line shows past rock pushed out up to 0.25. Terraces (`roughBox`) already had rough banded sides and an overhanging moss cap: left as they are.
-- A view of the cliffs from the sea: after a warp, `g.camera.position.set(...); g.camera.lookAt(...); g.draw()` (snapCamera first; draw doesn't move it back).
+- plaza-noon 754 calls (+9, the hulls and drift), 1.26M tris (+22k), programs 45 -> 43 (animals and mounts now share the farmers' rim program); plaza-morning 782.
+- Rim: `character.js` `RIM` (sky color warmed toward 0xffe6c2 at its own brightness, smoothstep from 0.35, squared), `rimmed(m)` for any lit material (animals' `mat`, gold ones, `mounts.js`); main.js `lightFarmers(hemi.color, 0.3 * hemi.intensity)`.
+- Outline: `buildHull` in `character.js`, knob `outline` (high only, `quality.js`): one `SkinnedMesh` a farmer, pieces pushed 0.018 along normals, bones = torso, arms, legs groups; `hullMat` 0x3a281c `BackSide`, no shadow; noShadow and non-FrontSide pieces left out; rebuilt with the look, made or dropped as the tier changes.
+- Cloth maps (phase 18 builds on these, all `texture()` keyed CanvasTextures, gray ones `NoColorSpace` multiplying the color): `cloth`, `twill`, `knit`, `plaid`, `straw`, `stripes:<hex>`, `dots:<hex>` (sRGB); contrast raised (knit ribs 162/228/255, plaid bands 0.38). Normal or roughness maps would go beside them on `own.*` materials.
+- Animals (`animals.js`) have the rim but no hull: they are many small groups, a hull each would add more than one draw; phase 18 could skin them the same way.
