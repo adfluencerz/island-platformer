@@ -17,6 +17,12 @@ import { NOISE } from './noise.js';
 //    (uShadowTint), so shadows are blue, not grey.
 // And at night, on the low tier (uNightGrey: no grade there, src/gfx/post.js),
 // the light on its colors goes a little toward grey, as by moonlight.
+// And in the rain (uWet, src/weather.js: lingering as it dries) the world is
+// wet: its colors a little darker and richer (what faces up most, the grass
+// less), a sheen of the sky's color on what faces up, more at a glancing
+// view, and (GFX_PUDDLE: the ground's path and stone, src/gfx/ground.js, its
+// groundPuddle) puddles, dark mirrors of the sky with drops ringing on them
+// while it falls (uRain). Nothing of it when dry.
 // Before tone mapping, as three's lighting is.
 
 // (the dome's low clouds are at (dir.xz / y) * 0.7 - offset * 0.006: these are three times as
@@ -39,6 +45,21 @@ ${NOISE}
   }
 `;
 
+// GLSL: drops ringing on water (0..1 a ring), at p: a ring now and then in
+// some cells of p (a ring as wide as a cell at most), each its own time
+export const RIPPLE_GLSL = /* glsl */ `
+#ifndef GFX_RIPPLES
+#define GFX_RIPPLES
+  float gfxRipples(highp vec2 p) {
+    highp vec2 c = floor(p);
+    vec2 at = p - c - 0.5 - (gfxHash2(c + 3.1) - 0.5) * 0.4;
+    float h = gfxHash(c + 7.7);
+    float t = fract(uTime * 0.9 + h * 5.0);
+    return (1.0 - smoothstep(0.0, 0.07, abs(length(at) - 0.42 * t))) * (1.0 - t) * step(0.3, h);
+  }
+#endif
+`;
+
 const WRAP_GLSL = /* glsl */ `
   float gfxWrapNL(float d) {
     #ifdef GFX_WRAP
@@ -51,7 +72,7 @@ const WRAP_GLSL = /* glsl */ `
   }
 `;
 
-export const LIGHT_UNIFORMS = ['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey'];
+export const LIGHT_UNIFORMS = ['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith'];
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -76,7 +97,7 @@ export function lightChunks() {
     lights_fragment_begin: [
       [
         'IncidentLight directLight;',
-        'IncidentLight directLight;\nfloat gfxSunLit = 1.0; // (how much of the sun reaches here: shadow, cloud, facing)\nfloat gfxCloud = 1.0; // (the cloud shadow here)',
+        `IncidentLight directLight;\nfloat gfxSunLit = 1.0; // (how much of the sun reaches here: shadow, cloud, facing)\nfloat gfxCloud = 1.0; // (the cloud shadow here)\n${WET_GLSL}`,
       ],
       [
         DIR_INFO,
@@ -120,6 +141,56 @@ export function lightChunks() {
   });
 }
 
+// In the rain: wet colors, darker and richer, the grass less; how wet and
+// facing up a pixel is (gfxWetUp) and how much of a puddle (gfxPuddle) for
+// the sheen (SHEEN_GLSL). Before the lights, on the material's color.
+const WET_GLSL = /* glsl */ `
+  float gfxWetUp = 0.0;
+  float gfxPuddle = 0.0;
+  // (not on water: it has its own sky, src/gfx/water.js)
+  #ifndef GFX_WATER
+  if ( uWet > 0.0 ) {
+    float gfxUp = smoothstep( 0.35, 0.9, inverseTransformDirection( geometryNormal, viewMatrix ).y );
+    float gfxK = uWet * ( 0.35 + 0.65 * gfxUp );
+    #ifdef GFX_GRASS
+      gfxK *= 0.7;
+    #endif
+    vec3 gfxC = material.diffuseColor;
+    float gfxL = dot( gfxC, vec3( 0.2126, 0.7152, 0.0722 ) );
+    material.diffuseColor = max( mix( vec3( gfxL ), gfxC, 1.0 + 0.3 * gfxK ), 0.0 ) * ( 1.0 - 0.28 * gfxK );
+    gfxWetUp = uWet * gfxUp;
+    #ifdef GFX_GRASS
+      gfxWetUp *= 0.4;
+    #endif
+    #ifdef GFX_PUDDLE
+      gfxPuddle = groundPuddle * gfxWetUp;
+      material.diffuseColor *= 1.0 - 0.5 * gfxPuddle;
+    #endif
+  }
+  #endif
+`;
+
+// The wet sheen: the sky's color (toward its zenith as the reflection looks
+// up) on what faces up, more at a glancing view, much more in a puddle, and
+// drops ringing in the puddles while it rains
+const SHEEN_GLSL = /* glsl */ `
+  #ifndef GFX_WATER
+  if ( uWet > 0.0 ) {
+    vec3 gfxWN = inverseTransformDirection( geometryNormal, viewMatrix );
+    vec3 gfxWV = inverseTransformDirection( geometryViewDir, viewMatrix );
+    vec3 gfxR = reflect( -gfxWV, gfxWN );
+    vec3 gfxSky = mix( uSkyHorizon, uSkyZenith, smoothstep( 0.1, 0.8, gfxR.y ) );
+    float gfxF = pow( 1.0 - saturate( dot( gfxWN, gfxWV ) ), 3.0 );
+    float gfxSheen = gfxWetUp * ( 0.06 + 0.3 * gfxF ) + gfxPuddle * ( 0.28 + 0.3 * gfxF );
+    #ifdef GFX_PUDDLE
+      highp vec2 gfxDrop = vGfxWorld.xz * 1.6;
+      gfxSheen += gfxPuddle * uRain * 0.45 * gfxRipples( gfxDrop ) * gfxShow( 1.6, gfxFootprint( gfxDrop ) );
+    #endif
+    reflectedLight.indirectDiffuse += gfxSky * gfxSheen;
+  }
+  #endif
+`;
+
 // Moonlight's grey: a little blue (its brightness the same), so what only the
 // moon lights at night goes cool and what a lamp lights stays warm (here on
 // the low tier, and in the grade on the others: src/gfx/post.js)
@@ -156,7 +227,7 @@ export function light(shader, renderer, material) {
   use(shader, LIGHT_UNIFORMS, 'f');
   let f = swap(shader.fragmentShader, 'lights_fragment_begin', own.lights_fragment_begin, 'GFX_LIGHT');
   const pars = PARS.find((name) => f.includes(`#include <${name}>`));
-  f = swap(f, pars, `${CLOUD_GLSL}\n${WRAP_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
-  f = swap(f, 'lights_fragment_end', `${THREE.ShaderChunk.lights_fragment_end}\n${GREY_GLSL}`, 'GFX_LIGHT');
+  f = swap(f, pars, `${CLOUD_GLSL}\n${RIPPLE_GLSL}\n${WRAP_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
+  f = swap(f, 'lights_fragment_end', `${THREE.ShaderChunk.lights_fragment_end}\n${GREY_GLSL}\n${SHEEN_GLSL}`, 'GFX_LIGHT');
   shader.fragmentShader = f;
 }

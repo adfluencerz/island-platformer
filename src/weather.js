@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { weatherAt, WEATHER } from '../shared/weather.js';
+import { weatherAt, spellOn, WEATHER } from '../shared/weather.js';
 import * as sound from './sound.js';
 import { U } from './gfx/uniforms.js';
 
@@ -15,13 +15,31 @@ const TOP = 12; // ...from this high over them, to a little under their feet
 const BELOW = 2;
 const RAIN_SPEED = 16; // units a second
 const SNOW_SPEED = 1.3;
-const STREAK = 0.55; // a raindrop's length
+const STREAK = 0.95; // a raindrop's length
 const SLANT = 0.3; // how far a storm's wind leans a raindrop, for each unit a second of it
 const DRIFT = 3; // how much faster than a glider the wind blows the drops along
 // The rain's streaks take the sky's color (its horizon's, a touch lighter, a
 // little of a pale grey kept) so they sit in the light and the grade: silver
 // by day, blue at night, warm at sunset
-const RAIN_TINT = { lift: 1.2, pale: new THREE.Color(0xb8c6d8), keep: 0.3 };
+const RAIN_TINT = { lift: 1.4, pale: new THREE.Color(0xc4d2e4), keep: 0.35 };
+// How wet the world is (src/gfx/light.js, ground.js): soaked this long into
+// a shower (game hours), dry again this long after it stops
+const SOAK = 0.5;
+const DRY = 2.5;
+
+// The wetness at `hours` on the farm's clock (0 to 1): from today's spell or
+// yesterday's (a late shower dries after midnight)
+export function wetnessAt(hours) {
+  let wet = 0;
+  for (let day = Math.floor(hours / 24) - 1; day <= Math.floor(hours / 24); day++) {
+    const spell = spellOn(day);
+    if (!spell || hours < spell.from) continue;
+    const soaked = Math.min(1, (Math.min(hours, spell.to) - spell.from) / SOAK);
+    const drying = hours > spell.to ? Math.max(0, 1 - (hours - spell.to) / DRY) : 1;
+    wet = Math.max(wet, soaked * drying * drying);
+  }
+  return wet;
+}
 
 export function createWeather({ scene, dayNight, count = 900 }) {
   // each drop: where in the square, and how far down its fall it starts
@@ -33,7 +51,7 @@ export function createWeather({ scene, dayNight, count = 900 }) {
   }
   const rainGeo = new THREE.BufferGeometry();
   rainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 6), 3));
-  const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xb8c6d8, transparent: true, opacity: 0.5, depthWrite: false }));
+  const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xc4d2e4, transparent: true, opacity: 0.55, depthWrite: false }));
   const snowGeo = new THREE.BufferGeometry();
   snowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
   const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.17, transparent: true, opacity: 0.9, depthWrite: false }));
@@ -120,7 +138,9 @@ export function createWeather({ scene, dayNight, count = 900 }) {
         }
       }
       if (thunderIn >= 0 && (thunderIn -= dt) < 0) sound.play('thunder');
-      dayNight.setWeather(amount * (storm ? 1 : 0.7), flash * (0.75 + 0.25 * Math.sin(elapsed * 60)), indoors);
+      // (wet: not in the snow, nor in a lobby, which has no weather)
+      const wet = hours === null || snowy ? 0 : wetnessAt(hours);
+      dayNight.setWeather(amount * (storm ? 1 : 0.7), flash * (0.75 + 0.25 * Math.sin(elapsed * 60)), indoors, wet, snowy ? 0 : amount);
       if (amount > 0) rain.material.color.copy(U.uSkyHorizon.value).multiplyScalar(RAIN_TINT.lift).lerp(RAIN_TINT.pale, RAIN_TINT.keep);
       sound.rain(indoors ? amount * 0.25 : amount);
 

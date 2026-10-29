@@ -163,6 +163,10 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let cloud = 0; // how overcast it is, 0 to 1, and lightning's flash (setWeather: src/weather.js)
   let flash = 0;
   let flashOut = 0; // (lightning's flash out in the open: a split screen's views under a roof see none, view())
+  let wet = 0; // how wet the world is and how hard it rains (0 to 1; under a roof: none), and out in the open
+  let rain = 0;
+  let wetOut = 0;
+  let rainOut = 0;
   let under = 0; // how far underground we are, 0 to 1, and the light down there (setUnderground: a boss's dungeon)
   const caveLight = new THREE.Color(0xffffff);
 
@@ -201,11 +205,12 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     return lerped;
   }
 
-  // Rain clouds: the sky and the light greyer and dimmer (as bright as they
-  // were, less a quarter, so a rainy night is no lighter)
+  // Rain clouds: the sky and the light greyer, cooler and dimmer (as bright
+  // as they were, less a quarter, so a rainy night is no lighter): a blue-grey,
+  // not a flat one
   function overcast(color) {
     const grey = (color.r * 0.3 + color.g * 0.59 + color.b * 0.11) * 0.75;
-    color.lerp(_grey.setRGB(grey * 0.92, grey * 0.97, grey * 1.08), cloud * 0.8);
+    color.lerp(_grey.setRGB(grey * 0.86, grey * 0.96, grey * 1.16), cloud * 0.8);
   }
   const _grey = new THREE.Color();
   const FLASH = new THREE.Color(0xe6ecff);
@@ -245,7 +250,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
-    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash }); // (the shaders' copy: src/gfx/uniforms.js)
+    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash, wet, rain }); // (the shaders' copy: src/gfx/uniforms.js)
     glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
     if (!clock) return night;
 
@@ -299,6 +304,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       under = amount;
       caveLight.setHex(color);
       flash = sheltered ? 0 : flashOut;
+      wet = sheltered ? 0 : wetOut;
+      rain = sheltered ? 0 : rainOut;
       const night = apply(false);
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
       motes.update(elapsed, 0, focus, sunlit(night));
@@ -328,11 +335,15 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       under = amount;
       caveLight.setHex(color);
     },
-    /** How overcast it is (0 to 1) and lightning's flash (0 to 1; sheltered: none seen): from the next update. */
-    setWeather(overcastBy, flashBy, sheltered = false) {
+    /** How overcast it is (0 to 1), lightning's flash (0 to 1), how wet the world is and how hard it rains (0 to 1; sheltered: none of these three seen): from the next update. */
+    setWeather(overcastBy, flashBy, sheltered = false, wetBy = 0, rainBy = 0) {
       cloud = overcastBy;
       flashOut = flashBy;
       flash = sheltered ? 0 : flashBy;
+      wetOut = wetBy;
+      rainOut = rainBy;
+      wet = sheltered ? 0 : wetBy;
+      rain = sheltered ? 0 : rainBy;
     },
   };
 }
