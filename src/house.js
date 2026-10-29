@@ -306,8 +306,8 @@ export function createHouseRoom(world) {
     wardrobeInReach: (pos) => pos.y < 2.2 && pos.x > right - 2.2 && Math.abs(pos.z - wardZ) < 1.2,
     // night: 0 by day, 1 at night
     setNight(night) {
-      MATS.lantern.emissiveIntensity = night * 1.6;
-      doorMats.get(MATS.lantern).emissiveIntensity = night * 1.6;
+      MATS.lantern.emissiveIntensity = night * 2.5; // (for the night's bloom: src/gfx/post.js)
+      doorMats.get(MATS.lantern).emissiveIntensity = night * 2.5;
       MATS.window.emissiveIntensity = night * 0.5;
       light.intensity = night * 6;
     },

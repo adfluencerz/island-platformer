@@ -2136,11 +2136,12 @@ export function createBuildings(world) {
     // night: 0 by day, 1 at night (the lamps' glow, and the light they
     // give the lamps nearest focus, the player)
     setNight(night, focus) {
-      MATS.lantern.emissiveIntensity = night * 1.6;
-      MATS.window.emissiveIntensity = night * 1.2;
+      // (bright enough at night, ~2.5 linear, that the bloom lifts them softly: src/gfx/post.js)
+      MATS.lantern.emissiveIntensity = night * 2.5;
+      MATS.window.emissiveIntensity = night * 2.0;
       const t = performance.now() / 1000;
-      MATS.flame.emissiveIntensity = 0.6 + night * 1.2;
-      MATS.flameCore.emissiveIntensity = 0.8 + night * 1.4;
+      MATS.flame.emissiveIntensity = 0.6 + night * 1.9;
+      MATS.flameCore.emissiveIntensity = 0.8 + night * 1.7;
       // the torches' flames dance a little, day and night
       for (const glow of glows.values()) {
         if (glow.flame) glow.flame.scale.y = glow.flame.userData.h * (1 + 0.12 * Math.sin(t * 9 + glow.seed) + 0.06 * Math.sin(t * 23 + glow.seed * 3));

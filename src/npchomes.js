@@ -297,8 +297,8 @@ export function buildNpcHomes(ctx) {
   buildSignposts(root);
   // night: 0 by day to 1 at night (dayNight.night()): the lights come on as it falls
   npcHomes.setNight = (night) => {
-    windowMat.emissiveIntensity = night ? 0.9 : 0;
-    lanternMat.emissiveIntensity = night ? 1.2 : 0.15;
+    windowMat.emissiveIntensity = night ? 2.0 * Math.min(1, night * 2) : 0; // (bright enough for the night's bloom: src/gfx/post.js)
+    lanternMat.emissiveIntensity = night ? 0.15 + 2.35 * Math.min(1, night * 2) : 0.15;
     for (const glow of glows) {
       glow.visible = night > 0.02;
       glow.material.opacity = 0.55 * Math.min(1, night);
