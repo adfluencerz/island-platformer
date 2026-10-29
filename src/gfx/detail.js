@@ -35,9 +35,27 @@ import { NOISE, VORONOI } from './noise.js';
 //            fruit: a soft blush, lighter on top, fine speckle
 //   reed     streaks along the blade, darker nodes, paler toward the tip
 //   fern     a frond: a dark midrib and leaflets slanting off it
+// and on what lives and what it holds (farmers, animals, mounts, tools;
+// patterns over the piece's own 3D place, no seed, so nothing jumps as it walks):
+//   skin     a soft warm and cool mottle, a fine speckle
+//   hair     strands from the crown down (round the piece's y axis), clumps,
+//            a soft sheen ring
+//   garment  over a cloth texture: soft folds, a heathered streak, stitched
+//            seams down the sides (z = 0 in a body's or a limb's frame), worn
+//            paler in patches at the knees and elbows (a band about 0.25
+//            under a limb's pivot, on its front and back)
+//   straw    a hat's braid, round and round from the brim's edge to the
+//            crown, each band its own tint, gaps between
+//   leather  a pebbled grain (Voronoi cells), creases, pale scuffs
+//   fur      a short-fur speckle and soft tufts, darker underneath, lighter
+//            on the back (hide, feathers, a coat, a bee's fuzz)
+//   wool     round curls (Voronoi cells), darker underneath
+//   horn     beaks, hooves, horns: fine growth ridges, lighter to the tip
+//   tool     by its color: wood grain along its y (brown), brushed metal
+//            (grey or metallic), a dull sheen on painted metal
 // The look is a uniform (gfxDetailLook), so every material with it shares one
-// program whatever its look (one for built things' looks, one for nature's:
-// 'detail', 'detail:nature'); a home's baked mesh (homekit.js bake) carries it
+// program whatever its look (one for built things' looks, one for nature's,
+// one for what lives: 'detail', 'detail:nature', 'detail:living'); a home's baked mesh (homekit.js bake) carries it
 // in its vertices instead (detailBaked, 'detail:baked'), with each part's own
 // frame (bakeDetail), the vertex colors as the base; a dungeon's instanced
 // pieces in an instanced attribute (detailInstanced, 'detail:instanced').
@@ -54,11 +72,13 @@ import { NOISE, VORONOI } from './noise.js';
 // fall on top.
 //
 // To add a look: a name in LOOKS (its index is its number), a branch in
-// FRAGMENT_BUILT or FRAGMENT_NATURE (and its name in NATURE if there), and a
+// FRAGMENT_BUILT, FRAGMENT_NATURE or FRAGMENT_LIVING (and its name in NATURE
+// or LIVING if one of those), and a
 // name pattern in BY_NAME if materials should get it on their own.
 
 export const LOOKS = ['none', 'wood', 'plank', 'stone', 'brick', 'cobble', 'thatch', 'tile', 'cloth', 'metal', 'plaster', 'endgrain',
-  'bark', 'rock', 'soil', 'leaf', 'crop', 'reed', 'fern'];
+  'bark', 'rock', 'soil', 'leaf', 'crop', 'reed', 'fern',
+  'skin', 'hair', 'garment', 'straw', 'leather', 'fur', 'wool', 'horn', 'tool'];
 
 // a material's look from its name (first match wins)
 const BY_NAME = [
@@ -419,6 +439,88 @@ const FRAGMENT_NATURE = /* glsl */ `
     dK *= 1.0 - fern * (0.35 * fGap + 0.3 * fRib);
   }`;
 
+const FRAGMENT_LIVING = /* glsl */ `
+  // for what lives and what it holds: two places that run on over a round
+  // body (dQ, and dR across it, where dQ stretches), how high up the piece,
+  // which way the face looks, how saturated the color; no seed (it moves)
+  dK = 1.0;
+  float dHRel = dot(dP, dUp) / max(dot(abs(dUp), dS), 1e-3);
+  highp vec2 dQ = dP.xz + dP.y * vec2(0.83, -0.61);
+  highp vec2 dR = dP.zy + dP.x * vec2(0.71, 0.53);
+  float dQPx = gfxFootprint(dQ);
+  // and one flat on the face (the plane its normal is nearest): cells and
+  // strokes there, which a seam between faces doesn't spoil
+  highp vec2 dW = dA.x > max(dA.y, dA.z) ? dP.zy + 3.1 : (dA.y > dA.z ? dP.xz + 7.3 : dP.xy);
+  float dSat = (max(dCol.r, max(dCol.g, dCol.b)) - min(dCol.r, min(dCol.g, dCol.b))) / max(max(dCol.r, max(dCol.g, dCol.b)), 1e-3);
+  float dBelly = smoothstep(0.15, -0.85, dHRel);
+  // one Voronoi for leather's grain and wool's curls
+  highp vec2 dVc = vec2(1.0, 0.5);
+  if (abs(dLook - 23.0) < 0.5 || abs(dLook - 25.0) < 0.5) dVc = gfxVoronoi(dW * (dLook < 24.0 ? 22.0 : 11.0));
+  if (dLook < 19.5) {
+    // skin: a soft warm and cool mottle, a fine speckle
+    float sM = gfxNoise(dQ * 7.0) + gfxNoise(dR * 7.0 + 3.1) - 1.0;
+    dCol *= vec3(1.0) + vec3(0.06, -0.015, -0.04) * sM;
+    dK = 1.0 + 0.07 * sM + 0.1 * (gfxNoise(dW * 24.0) - 0.5) * gfxShow(24.0, dQPx);
+  } else if (dLook < 20.5) {
+    // hair: strands from the crown down, clumps, a sheen ring round the top
+    vec2 hDir = dP.xz / max(length(dP.xz), 1e-3);
+    float hClump = gfxNoise(hDir * 3.0 + vec2(dP.y * 1.2, 0.0));
+    float hStrand = gfxNoise(hDir * 7.0 + vec2(dP.y * 2.5, 7.0)) - 0.5;
+    dK = (0.82 + 0.3 * hClump) * (1.0 + 0.45 * hStrand * gfxShow(28.0, dQPx)) * (1.0 + 0.14 * smoothstep(0.5, 0.68, dN.y) * smoothstep(0.93, 0.76, dN.y));
+  } else if (dLook < 21.5) {
+    // garment: soft folds; stitched seams down the sides; worn paler at the knees and elbows
+    float gFold = gfxNoise(dQ * 4.0) + gfxNoise(dR * 4.0 + 5.0) - 1.0;
+    float gHeather = (gfxNoise(dW * vec2(5.0, 18.0)) - 0.5) * gfxShow(18.0, dQPx);
+    float gSeam = step(0.05, abs(dP.x));
+    float gGroove = gfxDetailLine(abs(dP.z), 0.005, dQPx) * gSeam;
+    float gStitch = gfxDetailLine(abs(abs(dP.z) - 0.014), 0.004, dQPx) * step(0.45, fract((dP.x + dP.y) * 45.0)) * gSeam;
+    float gWorn = smoothstep(0.075, 0.025, abs(dP.y + 0.25)) * smoothstep(0.3, 0.6, abs(dN.z)) * smoothstep(0.35, 0.75, gfxNoise(dW * 9.0) + 0.3 * gFold);
+    dK = (1.0 + 0.16 * gFold) * (1.0 + 0.22 * gHeather) * (1.0 - 0.45 * gGroove);
+    dCol = mix(dCol, vec3(dLum) * 1.2 + 0.05, gWorn * 0.4);
+    dCol = mix(dCol, dCol * 1.4 + 0.05, gStitch * 0.7);
+  } else if (dLook < 22.5) {
+    // straw: a braid round and round from the brim's edge up over the crown
+    float sB = (dP.y - length(dP.xz)) * 24.0;
+    float sBand = floor(sB);
+    float sGap = gfxDetailLine((0.5 - abs(fract(sB) - 0.5)) / 24.0, 0.003, dQPx);
+    float sFibre = gfxNoise(dP.xz * 30.0 + sBand * 3.7) - 0.5;
+    dK = (0.88 + 0.2 * gfxHash(vec2(sBand, 3.0))) * (1.0 - 0.45 * sGap) * (1.0 + 0.24 * sFibre * gfxShow(30.0, dQPx));
+    dCol = mix(dCol, vec3(dLum) * vec3(1.25, 1.15, 0.85) + 0.03, 0.18 * smoothstep(0.3, 0.9, dN.y)); // (bleached on top)
+  } else if (dLook < 23.5) {
+    // leather: a pebbled grain, creases, pale scuffs
+    float lShow = gfxShow(22.0, dQPx * 0.5);
+    float lScuff = smoothstep(0.6, 0.8, gfxNoise(dQ * 7.0 + 2.0) + 0.2 * (gfxNoise(dW * 20.0) - 0.5));
+    dK = mix(1.0, (0.92 + 0.14 * dVc.y) * (0.9 + 0.1 * smoothstep(0.0, 0.2, dVc.x)), lShow) * (1.0 + 0.1 * (gfxNoise(dR * 5.0) - 0.5));
+    dCol = mix(dCol, dCol * 1.45 + 0.04, lScuff * 0.45);
+  } else if (dLook < 24.5) {
+    // fur: a short-fur speckle and soft tufts, darker underneath
+    float fS = (gfxNoise(dW * vec2(24.0, 8.0)) - 0.5) * gfxShow(24.0, dQPx); // (short strokes)
+    float fT = gfxNoise(dQ * 6.0) + gfxNoise(dR * 6.0 + 4.0) - 1.0;
+    dK = (1.0 + 0.26 * fT) * (1.0 + 0.5 * fS) * (1.0 - 0.34 * dBelly) * (1.0 + 0.1 * smoothstep(0.2, 1.0, dHRel));
+    dCol *= vec3(1.0) - vec3(0.0, 0.025, 0.06) * (dBelly + max(-fT, 0.0)); // (warmer in the shade of the fur)
+  } else if (dLook < 25.5) {
+    // wool: round curls, darker underneath
+    float wShow = gfxShow(12.0, dQPx * 0.5);
+    float wFine = gfxNoise(dW * 26.0) - 0.5;
+    dK = mix(0.92, (0.66 + 0.42 * smoothstep(0.0, 0.4, dVc.x)) * (0.9 + 0.16 * dVc.y), wShow) * (1.0 + 0.16 * wFine * gfxShow(26.0, dQPx)) * (1.0 - 0.32 * dBelly);
+    dCol *= vec3(1.0) - vec3(0.0, 0.02, 0.05) * dBelly;
+  } else if (dLook < 26.5) {
+    // horn: fine growth ridges across, lighter toward the tip
+    float hR = gfxNoise(vec2(dQ.x * 4.0, dP.y * 30.0)) - 0.5;
+    dK = (1.0 + 0.2 * hR * gfxShow(30.0, dQPx)) * mix(0.88, 1.1, smoothstep(-0.7, 0.8, dHRel));
+  } else {
+    // tool: by its color, wood grain along its y, brushed metal, or a dull sheen on paint
+    float tMetal = 1.0 - smoothstep(0.08, 0.16, dSat);
+    #ifdef STANDARD
+      tMetal = max(tMetal, step(0.3, metalness));
+    #endif
+    float tWood = (1.0 - tMetal) * step(0.2, dSat) * step(dCol.b, dCol.g) * step(dCol.g, dCol.r);
+    highp float tAcross = (dP.x - dP.z) * 26.0;
+    float tStreak = (gfxNoise(vec2(tAcross, dP.y * 2.0)) - 0.5) * gfxShow(26.0, dQPx);
+    float tLine = smoothstep(0.55, 0.95, abs(fract(tAcross * 0.6 + gfxNoise(vec2(tAcross * 0.15, dP.y * 3.0)) * 1.5) * 2.0 - 1.0)) * gfxShow(16.0, dQPx);
+    dK = (1.0 + (gfxNoise(dQ * 4.0) - 0.5) * 0.16) * (1.0 + tStreak * (tMetal * mix(0.22, 0.06, smoothstep(0.15, 0.4, dSat)) + tWood * 0.3)) * (1.0 - 0.22 * tLine * tWood);
+  }`;
+
 const FRAGMENT_TAIL = /* glsl */ `
   if (dLook > 0.5) diffuseColor.rgb = dCol * dK;
 }`;
@@ -428,9 +530,11 @@ const FRAGMENT_TAIL = /* glsl */ `
 const FRAGMENT = {
   built: FRAGMENT_HEAD + FRAGMENT_BUILT + FRAGMENT_TAIL,
   nature: FRAGMENT_HEAD + FRAGMENT_NATURE + FRAGMENT_TAIL,
+  living: FRAGMENT_HEAD + FRAGMENT_LIVING + FRAGMENT_TAIL,
 };
 const NATURE = new Set(['bark', 'rock', 'soil', 'leaf', 'crop', 'reed', 'fern']);
-export const familyOf = (look) => (NATURE.has(look) ? 'nature' : 'built');
+const LIVING = new Set(['skin', 'hair', 'garment', 'straw', 'leather', 'fur', 'wool', 'horn', 'tool']);
+export const familyOf = (look) => (NATURE.has(look) ? 'nature' : LIVING.has(look) ? 'living' : 'built');
 
 function compile(from, family = 'built') {
   return (shader, renderer, material) => {
@@ -446,6 +550,7 @@ function compile(from, family = 'built') {
 }
 const own = compile('uniform');
 const ownNature = compile('uniform', 'nature');
+const ownLiving = compile('uniform', 'living');
 const baked = compile('baked');
 const instanced = compile('instanced');
 
@@ -465,7 +570,30 @@ export function detail(material, look, name) {
   material.userData.gfx = { ...material.userData.gfx, detail: chosen };
   if (chosen === 'none' || !LOOKS.includes(chosen)) return material;
   uniformOf(material);
-  return familyOf(chosen) === 'nature' ? hook(material, 'detail:nature', ownNature) : hook(material, 'detail', own);
+  const family = familyOf(chosen);
+  if (family === 'nature') return hook(material, 'detail:nature', ownNature);
+  return family === 'living' ? hook(material, 'detail:living', ownLiving) : hook(material, 'detail', own);
+}
+
+// What lives and what it holds, by a material's name in a table (a mount's,
+// a boss's: { coat, mane, saddle, ... }): first match wins; the rest stay plain
+const LIVING_BY_NAME = [
+  [/^(eye|blush|smile|dark|wing|glow|seed|white|stripe|petal|leaf)/i, 'none'],
+  [/mane|hair/i, 'hair'],
+  [/coat|fuzz|plume|fur|feather|hide/i, 'fur'],
+  [/wool|fleece/i, 'wool'],
+  [/saddle|strap|belt|leather/i, 'leather'],
+  [/cape|scarf|cloth|band/i, 'garment'],
+  [/beak|horn|hoof|claw/i, 'horn'],
+  [/gold|metal|brass|blade|iron/i, 'tool'],
+  [/skin|belly|throat/i, 'skin'],
+];
+export function detailLiving(table) {
+  for (const [name, m] of Object.entries(table)) {
+    const hit = LIVING_BY_NAME.find(([re]) => re.test(name));
+    if (hit && hit[1] !== 'none') for (const one of [m].flat()) detail(one, hit[1]);
+  }
+  return table;
 }
 
 // Every material in a table ({ name: material or [materials] }), each its look by its name
