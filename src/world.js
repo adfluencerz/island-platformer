@@ -425,8 +425,11 @@ const cliffMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness:
 const CLIFF_EARTH = new THREE.Color(0x8a6646);
 const CLIFF_ROCK = new THREE.Color(0x4f4b47);
 
-// The ground's surface is drawn in squares this many tiles across
+// The decor's instancers are in squares this many tiles across (makeInstancer),
+// and the ground's surface and its cliffs in smaller ones (the whole island is
+// most of a view's triangles: the squares out of view are not drawn)
 const GROUND_CHUNK = 47;
+const SURFACE_CHUNK = 24;
 // The ground's surface sits this far above its floor (tilled soil is above it)
 const GROUND_LIFT = 0.012;
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
@@ -511,6 +514,7 @@ const TUFT_BLADES = 7;
 const TUFT_HEIGHT = 0.6; // (the tallest a blade is, before its instance's scale)
 const BLADE_INDICES = 9;
 const MORE_GRASS = 1.5; // (the extra tufts, as a share of a tile's own: see Grass and flowers)
+const GRASS_PATCH = 24; // (the grass is drawn in patches this many tiles a side, out of view ones not at all)
 function makeTuftGeometry() {
   const r = mulberry32(0x7af7);
   const rand = (min, max) => min + r() * (max - min);
@@ -819,18 +823,33 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const tuftMat = map.tuftMat ?? new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
     tuftMat.side = THREE.DoubleSide;
     addGrassWind(tuftMat, TUFT_HEIGHT);
-    const tuftMesh = new THREE.InstancedMesh(makeTuftGeometry(), tuftMat, grass.length);
-    tuftMesh.receiveShadow = true;
-    grass.forEach(([x, z, turn, k, tall, hue, light], i) => {
-      m.compose(v.set(x, 0.02, z), q.setFromAxisAngle(up, turn), s.set(k, tall, k));
-      tuftMesh.setMatrixAt(i, m);
-      tuftMesh.setColorAt(i, c.setHSL(hue, 0.5, light));
-      trackFoliage(x, z, tuftMesh, i);
-    });
-    tuftMesh.userData.tufts = grass.length;
-    grassTier(tuftMesh);
-    grassMeshes.add(tuftMesh);
-    root.add(tuftMesh);
+    // In square patches (GRASS_PATCH tiles a side), each its own InstancedMesh,
+    // so the ones out of view are not drawn: a view sees about a fifth of the
+    // island's grass. (Each keeps the shuffled order, so the tier thins every
+    // patch evenly; one tuft geometry for them all.)
+    const tuftGeo = makeTuftGeometry();
+    const patches = new Map(); // "px,pz" -> its tufts
+    for (const tuft of grass) {
+      const key = `${Math.floor(tuft[0] / GRASS_PATCH)},${Math.floor(tuft[1] / GRASS_PATCH)}`;
+      if (!patches.has(key)) patches.set(key, []);
+      patches.get(key).push(tuft);
+    }
+    for (const patch of patches.values()) {
+      const tuftMesh = new THREE.InstancedMesh(tuftGeo, tuftMat, patch.length);
+      tuftMesh.receiveShadow = true;
+      patch.forEach(([x, z, turn, k, tall, hue, light], i) => {
+        m.compose(v.set(x, 0.02, z), q.setFromAxisAngle(up, turn), s.set(k, tall, k));
+        tuftMesh.setMatrixAt(i, m);
+        tuftMesh.setColorAt(i, c.setHSL(hue, 0.5, light));
+        trackFoliage(x, z, tuftMesh, i);
+      });
+      tuftMesh.computeBoundingSphere(); // (now, while every tuft stands: one tilled away is scaled to nothing at the origin)
+      tuftMesh.boundingSphere.radius += 0.5; // (and room for them to sway)
+      tuftMesh.userData.tufts = patch.length;
+      grassTier(tuftMesh);
+      grassMeshes.add(tuftMesh);
+      root.add(tuftMesh);
+    }
 
     // Flowers: green stems plus colored heads, two InstancedMeshes sharing matrices
     const stemGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.3, 4).translate(0, 0.15, 0);
@@ -1110,7 +1129,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       return shade;
     };
 
-    // (in squares of GROUND_CHUNK tiles, a mesh each, so the ones out of
+    // (in squares of SURFACE_CHUNK tiles, a mesh each, so the ones out of
     // view aren't drawn: the whole island is most of a view's triangles)
     // (a tile's side has a cliff down from it where the sea or a lower
     // floor is next to it: dropAt gives -Infinity for the sea, the floor it
@@ -1134,7 +1153,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     for (const [key, type] of tileGrid) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
-      const chunkKey = `${Math.floor((gx + H) / GROUND_CHUNK)},${Math.floor((gz + H) / GROUND_CHUNK)}`;
+      const chunkKey = `${Math.floor((gx + H) / SURFACE_CHUNK)},${Math.floor((gz + H) / SURFACE_CHUNK)}`;
       if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], index: [] });
       const { pos, col, kind: kindOf, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
@@ -1249,7 +1268,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (!lip) continue;
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
-      const chunkKey = `${Math.floor((gx + H) / GROUND_CHUNK)},${Math.floor((gz + H) / GROUND_CHUNK)}`;
+      const chunkKey = `${Math.floor((gx + H) / SURFACE_CHUNK)},${Math.floor((gz + H) / SURFACE_CHUNK)}`;
       if (!cliffChunks.has(chunkKey)) cliffChunks.set(chunkKey, { pos: [], col: [] });
       const { pos, col } = cliffChunks.get(chunkKey);
       // the earth under sand is sandier
