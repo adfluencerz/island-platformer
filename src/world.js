@@ -776,6 +776,251 @@ const cliffMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness:
 const CLIFF_EARTH = new THREE.Color(0x8a6646);
 const CLIFF_ROCK = new THREE.Color(0x4f4b47);
 
+// ---------- Floating earth islands ----------
+// A platform that floats (the farm's grass platforms: addBox, in buildWorld)
+// drawn as a chunk of land torn out of the ground, as the references'
+// floating islands are: a turf on top, at the collider's top, its edge rolling
+// over in a soft lip that spills past the footprint, tufts on it and strands
+// hanging from the lip; under it earth and rock in ledged strata down the
+// collider's depth, then narrowing into a rough point with a couple of rocky
+// lumps beside it and a few roots dangling. Each platform its own (a hash of
+// where it is); only the look: what is stood on is the box. Both indexed and
+// smooth (src/gfx/smooth.js leaves them be). Returns { body, cap }, in the
+// box's own space (its middle at 0): the body in the cliffs' material (its
+// strata, cracks and the moss under the lip, by gfxCliff), the cap in turf's.
+// clear: how far the box's bottom is over the ground under it (the point stays off it)
+const ISLE_LIP = 0.16;
+const ISLE_ROOT = new THREE.Color(0x3d2b1e);
+const ISLE_COOL = new THREE.Color(0x3b3f48);
+const ISLE_TIP = new THREE.Color(0xb9d870);
+// the strata down its sides: warm earth, pale ochre, red clay, grey stone
+const ISLE_STRATA = [0x8f6a48, 0xb08d5e, 0x84553a, 0x7a736a, 0x9a7650].map((c) => new THREE.Color(c));
+function islandOutline(a, b, rc, s) {
+  // a rounded rectangle, half a by b, corner radius rc; s 0..1 round it from
+  // +x's middle toward +z: [x, z, nx, nz]
+  const sa = a - rc;
+  const sb = b - rc;
+  const arc = (Math.PI / 2) * rc;
+  const legs = [sb, arc, 2 * sa, arc, 2 * sb, arc, 2 * sa, arc, sb];
+  let t = s * legs.reduce((sum, l) => sum + l, 0);
+  let leg = 0;
+  while (leg < legs.length - 1 && t > legs[leg]) t -= legs[leg++];
+  const corner = (cx, cz, a0) => {
+    const ang = a0 + t / rc;
+    return [cx + Math.cos(ang) * rc, cz + Math.sin(ang) * rc, Math.cos(ang), Math.sin(ang)];
+  };
+  switch (leg) {
+    case 0: return [a, t, 1, 0];
+    case 1: return corner(sa, sb, 0);
+    case 2: return [sa - t, b, 0, 1];
+    case 3: return corner(-sa, sb, Math.PI / 2);
+    case 4: return [-a, sb - t, -1, 0];
+    case 5: return corner(-sa, -sb, Math.PI);
+    case 6: return [-sa + t, -b, 0, -1];
+    case 7: return corner(sa, -sb, 1.5 * Math.PI);
+    default: return [a, -sb + t, 1, 0];
+  }
+}
+
+function floatingIsland(x, z, w, h, d, color, clear) {
+  const rng = mulberry32(Math.floor(hash2(x * 1.31 + 0.7, z * 0.77 - 1.9) * 2 ** 31));
+  const r = () => rng() - 0.5;
+  const a = w / 2;
+  const b = d / 2;
+  const T = h / 2;
+  const rc = Math.min(0.45, 0.3 * Math.min(w, d));
+  const N = Math.max(24, Math.round((4 * (a + b) + 1) / 0.36));
+  const rim = Array.from({ length: N }, (_, j) => islandOutline(a, b, rc, j / N));
+  // the lobes round it (whole waves round the rim, so it closes) and each spot's own jitter
+  const waves = [2, 3, 5].map((k) => [k, rng() * 6.283, 0.5 + rng()]);
+  const lobe = (j) => waves.reduce((sum, [k, ph, amp]) => sum + amp * Math.sin((j / N) * 6.283 * k + ph), 0) / 2;
+
+  const build = () => ({ pos: [], col: [], cliff: [], idx: [] });
+  const vert = (g, px, py, pz, cc, under = 0) => {
+    g.pos.push(px, py, pz);
+    g.col.push(cc.r, cc.g, cc.b);
+    g.cliff.push(under, 9, 0);
+    return g.pos.length / 3 - 1;
+  };
+  // a ring of N (or n) round the rim: [index...]
+  const strip = (g, upper, lower) => {
+    const n = lower.length;
+    for (let j = 0; j < n; j++) {
+      const j1 = (j + 1) % n;
+      const U0 = upper.length === 1 ? upper[0] : upper[j];
+      const U1 = upper.length === 1 ? upper[0] : upper[j1];
+      const L0 = lower.length === 1 ? lower[0] : lower[j];
+      const L1 = lower.length === 1 ? lower[0] : lower[j1];
+      if (upper.length > 1) g.idx.push(U0, U1, L0);
+      if (lower.length > 1) g.idx.push(U1, L1, L0);
+    }
+  };
+  const tint = new THREE.Color();
+
+  // ---------- The body ----------
+  const body = build();
+  const under = Math.max(0.15, Math.min(0.5 * Math.min(w, d) + 0.35 + 0.4 * rng(), clear - 0.3));
+  const tip = [r() * 0.35 * a, r() * 0.35 * b];
+  // [depth under the top, out along the rim's normal, jitter]: ledged strata down the box's depth...
+  const sides = [[0.06, -0.03, 0.02], [0.24, 0.07, 0.05], [0.42, -0.04, 0.06], [0.58, 0.06, 0.07], [0.78, -0.05, 0.07], [1.0, -0.12, 0.08]];
+  const rings = [];
+  const earth = CLIFF_EARTH;
+  for (const [f, out, amp] of sides) {
+    const dd = f * h;
+    const layer = ISLE_STRATA[Math.floor(hash2(x + dd * 3.4, z - 2.1) * ISLE_STRATA.length)];
+    rings.push(rim.map(([px, pz, nx, nz], j) => {
+      const o = out + amp * (2 * r() + 0.7 * lobe(j));
+      tint.copy(f < 0.1 ? earth : layer).multiplyScalar(f < 0.1 ? 0.5 : 1.12 - 0.2 * f + 0.1 * r());
+      return vert(body, px + nx * o, T - dd + 0.05 * r() * (f > 0.1), pz + nz * o, tint, dd);
+    }));
+  }
+  // ...then narrowing to its point, rock, darker and cooler down it
+  const K = 5;
+  for (let k = 1; k <= K; k++) {
+    const t = k / (K + 1);
+    const sc = Math.pow(1 - t, 0.7);
+    const y = -T - under * t;
+    rings.push(rim.map(([px, pz, nx, nz], j) => {
+      const o = -0.1 + (0.1 + 0.12 * (1 - t)) * (2 * r() + lobe(j)) + 0.2 * (1 - t) * lobe(j);
+      const cx = tip[0] * t;
+      const cz = tip[1] * t;
+      tint.copy(ISLE_STRATA[Math.floor(hash2(x - k * 1.7, z + k * 2.3) * ISLE_STRATA.length)]).lerp(CLIFF_ROCK, Math.min(1, 0.15 + t)).lerp(ISLE_COOL, 0.5 * t).multiplyScalar(0.95 - 0.3 * t + 0.1 * r());
+      return vert(body, cx + (px + nx * o) * sc, y + 0.12 * r() * under, cz + (pz + nz * o) * sc, tint, h + under * t);
+    }));
+  }
+  tint.copy(ISLE_COOL).multiplyScalar(0.7);
+  rings.push([vert(body, tip[0], -T - under, tip[1], tint, h + under)]);
+  for (let i = 0; i < rings.length - 1; i++) strip(body, rings[i], rings[i + 1]);
+  // a couple of rocky lumps hanging beside the point (rings of 7 round their own middle)
+  for (let l = 0; l < 2; l++) {
+    const ang = rng() * 6.283;
+    const rad = (0.22 + 0.12 * rng()) * Math.min(w, d) * 0.5;
+    const lx = Math.cos(ang) * 0.42 * a + tip[0] * 0.3;
+    const lz = Math.sin(ang) * 0.42 * b + tip[1] * 0.3;
+    const top = -T - under * 0.1;
+    const deep = Math.min(under * (0.45 + 0.2 * rng()) + 0.1, clear - 0.1 * under - 0.2);
+    if (deep < 0.2) continue;
+    const lumpRings = [];
+    for (const [t, sc] of [[0, 1], [0.45, 0.85], [0.8, 0.45]]) {
+      const ring = [];
+      for (let j = 0; j < 7; j++) {
+        const q = (j / 7) * 6.283;
+        const rr = rad * sc * (1 + 0.25 * r());
+        tint.copy(CLIFF_ROCK).lerp(ISLE_COOL, 0.3 + 0.4 * t).multiplyScalar(0.85 - 0.2 * t + 0.1 * r());
+        ring.push(vert(body, lx + Math.cos(q) * rr, top - deep * t, lz + Math.sin(q) * rr, tint, h + under * 0.5));
+      }
+      lumpRings.push(ring);
+    }
+    tint.copy(ISLE_COOL).multiplyScalar(0.7);
+    lumpRings.push([vert(body, lx + r() * rad * 0.4, top - deep, lz + r() * rad * 0.4, tint, h + under)]);
+    for (let i = 0; i < lumpRings.length - 1; i++) strip(body, lumpRings[i], lumpRings[i + 1]);
+  }
+  // roots dangling from under the earth: thin, three-sided, narrowing, wandering
+  const rootCount = 4 + Math.floor(rng() * 3);
+  for (let n = 0; n < rootCount; n++) {
+    const j = Math.floor(rng() * N);
+    const from = rings[5 + Math.floor(rng() * 2)][j] * 3;
+    let px = body.pos[from] * 0.94;
+    let py = body.pos[from + 1] - 0.02;
+    let pz = body.pos[from + 2] * 0.94;
+    const len = Math.min(0.5 + 0.8 * rng(), clear + (py + T) - 0.2);
+    if (len < 0.25) continue;
+    const segs = 4;
+    let prev = null;
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const rad = 0.04 * (1 - t) + 0.008;
+      const ring = [];
+      tint.copy(ISLE_ROOT).multiplyScalar(0.9 + 0.2 * rng());
+      for (let k = 0; k < 3; k++) {
+        const q = (k / 3) * 6.283 + n;
+        ring.push(vert(body, px + Math.cos(q) * rad, py, pz + Math.sin(q) * rad, tint, 0));
+      }
+      if (prev) for (let k = 0; k < 3; k++) {
+        const k1 = (k + 1) % 3;
+        body.idx.push(prev[k], prev[k1], ring[k], prev[k1], ring[k1], ring[k]);
+      }
+      prev = ring;
+      px += r() * 0.14;
+      pz += r() * 0.14;
+      py -= len / segs;
+    }
+  }
+
+  // ---------- The turf ----------
+  const cap = build();
+  const base = new THREE.Color(color);
+  const top = T + 0.005;
+  const hang = rim.map((_, j) => 0.06 + 0.16 * rng() + 0.07 * lobe(j));
+  const flare = rim.map((_, j) => ISLE_LIP * (0.8 + 0.4 * rng() + 0.25 * lobe(j)));
+  const capRing = (outF, dy, k, dark = 0) => rim.map(([px, pz, nx, nz], j) => {
+    const o = typeof outF === 'function' ? outF(j) : outF;
+    tint.copy(base).multiplyScalar(k * (0.95 + 0.1 * rng()));
+    if (dark) tint.lerp(earth, dark);
+    return vert(cap, px + nx * o, top + (typeof dy === 'function' ? dy(j) : dy), pz + nz * o, tint);
+  });
+  tint.copy(base).multiplyScalar(1.02);
+  const middle = [vert(cap, 0, top, 0, tint)];
+  const inner = rim.map(([px, pz], j) => {
+    tint.copy(base).multiplyScalar(0.97 + 0.08 * rng());
+    return vert(cap, px * 0.55, top, pz * 0.55, tint);
+  });
+  const capRings = [
+    middle, inner,
+    capRing((j) => flare[j] * 0.35, 0, 1),
+    capRing((j) => flare[j] * 0.85, -0.05, 0.92),
+    capRing((j) => flare[j], -0.14, 0.78),
+    capRing((j) => flare[j] * 0.65, (j) => -0.2 - hang[j], 0.62, 0.25),
+    capRing(-0.06, (j) => -0.26 - hang[j] * 0.8, 0.45, 0.6),
+  ];
+  for (let i = 0; i < capRings.length - 1; i++) strip(cap, capRings[i], capRings[i + 1]);
+  const lit = cap.pos.length / 3; // (the blades from here: lit as the ground is, from above)
+  const blade = (bx, by, bz, tx, ty, tz, hw, dirX, dirZ, k0, k1) => {
+    tint.copy(base).multiplyScalar(k0);
+    const v0 = vert(cap, bx - dirZ * hw, by, bz + dirX * hw, tint);
+    const v1 = vert(cap, bx + dirZ * hw, by, bz - dirX * hw, tint);
+    tint.copy(base).lerp(ISLE_TIP, 0.55).multiplyScalar(k1);
+    const v2 = vert(cap, tx, ty, tz, tint);
+    cap.idx.push(v0, v1, v2, v1, v0, v2);
+  };
+  // tufts on top, three blades each
+  const tufts = Math.round(w * d * 2.2);
+  for (let n = 0; n < tufts; n++) {
+    const bx = r() * 2 * (a - 0.12);
+    const bz = r() * 2 * (b - 0.12);
+    for (let k = 0; k < 3; k++) {
+      const q = rng() * 6.283;
+      const tall = 0.16 + 0.18 * rng();
+      const lean = 0.05 + 0.08 * rng();
+      blade(bx, top - 0.01, bz, bx + Math.cos(q) * lean, top + tall, bz + Math.sin(q) * lean, 0.035, Math.cos(q), Math.sin(q), 0.8, 1.15);
+    }
+  }
+  // strands hanging from the lip
+  rim.forEach(([px, pz, nx, nz], j) => {
+    if (rng() < 0.25) return;
+    const o = flare[j] * 0.9;
+    const bx = px + nx * o;
+    const bz = pz + nz * o;
+    const fall = 0.2 + 0.32 * rng();
+    blade(bx, top - 0.1, bz, bx + nx * 0.07 + r() * 0.06, top - 0.12 - fall, bz + nz * 0.07 + r() * 0.06, 0.03, nx, nz, 0.8, 0.85);
+  });
+
+  const geometry = (g, upFrom = Infinity) => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3));
+    geo.setAttribute('gfxCliff', new THREE.Float32BufferAttribute(g.cliff, 3));
+    geo.setIndex(g.idx);
+    geo.computeVertexNormals();
+    const nor = geo.attributes.normal;
+    for (let i = upFrom; i < nor.count; i++) nor.setXYZ(i, 0, 1, 0);
+    return geo;
+  };
+  const capGeo = geometry(cap, lit);
+  capGeo.deleteAttribute('gfxCliff');
+  return { body: geometry(body), cap: capGeo };
+}
+
 // The decor's instancers are in squares this many tiles across (makeInstancer),
 // and the ground's surface and its cliffs in smaller ones (the whole island is
 // most of a view's triangles: the squares out of view are not drawn)
@@ -1182,6 +1427,19 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   }
 
   function addBox({ x, y, z, w, h, d, color = 0x6b8e23, cap = null }) {
+    // (one that floats, its bottom well over the ground under it: an earth island, floatingIsland)
+    const below = tileAt(x, z);
+    const clear = y - h / 2 - (below ? floorOf(below) : 0);
+    if (cap && clear > 0.4) {
+      const isle = floatingIsland(x, z, w, h, d, CAP_COLORS[cap], clear);
+      for (const mesh of [new THREE.Mesh(isle.body, map.cliffMat ?? cliffMat), new THREE.Mesh(isle.cap, map.turfMat ?? turfMat)]) {
+        mesh.position.set(x, y, z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        root.add(mesh);
+      }
+      return addCollider({ x, y, z, w, h, d });
+    }
     const mesh = new THREE.Mesh(roughBox(x, y, z, w, h, d, color), roughMat);
     mesh.position.set(x, y, z);
     mesh.castShadow = true;

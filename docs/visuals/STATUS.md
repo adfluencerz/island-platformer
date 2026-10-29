@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 46 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 52 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -58,6 +58,8 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 43 The autumn island
 - [x] 44 Torchlight in the dungeon
 - [x] 45 Forest shade and dappled light
+- [x] 47 Buildings at the low camera (PR #150)
+- [x] 48 The sky and the air (PR #151)
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -78,6 +80,10 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 - Dispose audit: geometries and textures steady over three lobby trips (home 420±10 with the last wild island
   kept), tier cycling (textures 23 / 22 / 9) and look changes (outline hull 420 <-> 422); programs only grow
   with three's per-material variants (shadows on/off), not per visit.
+
+## Parallel rounds
+- 47 Buildings at the low camera (PR #150): the built family of `src/gfx/detail.js` got roof tile rows with lit lips, plaster damp at its foot, hemmed cloth, a `glass` look for windows and contact shade at the foot of what is built (no new program).
+- 48 The sky and the air (PR #151): the cumulus a height field over the layer, anchored to the land on the cloud shadows' own noise (shaded undersides, lit flanks), a horizon bank and wisps, birds (`src/gfx/birds.js`, one draw) and tumbling leaves in the motes.
 
 ## Notes from the last phase
 - Canopy cover: each world builds a coarse cover map on the CPU (`src/world.js` coverCanopy: 2 texels a tile, R8, from the standing trees, `COVER_REACH` 2.1 times their floor-shade reach, a lone tree 0.3 of a wood's), rebuilt when a tree falls or grows; `viewFrom` hands it to the shaders as `uCanopyMap`/`uCanopyBox` (`src/gfx/uniforms.js`, `NO_COVER` when none).
