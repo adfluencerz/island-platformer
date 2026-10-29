@@ -7,7 +7,8 @@ import { use } from './uniforms.js';
 // near and far for each seat, and the dungeon's close dark, src/main.js), and
 // on top of it, out in the open, a soft aerial haze that starts nearer, so
 // the far side of the view already pales toward the sky, and a low haze that
-// lies over the sea and thins going up (uFogHeight). Its color is the sky's
+// lies over the sea and thins going up (uFogHeight), thicker and nearer in
+// the morning's mist (uMist). Its color is the sky's
 // at the horizon in that direction: the day's horizon, warmer toward a low
 // sun, the same as the sky dome's there (src/gfx/sky.js), so the far land
 // melts into the sky. Not tone mapped, like three's fog and the dome.
@@ -42,12 +43,17 @@ const FOG_GLSL = /* glsl */ `
     float gfxCave = smoothstep(0.0, 0.6, uUnder); // (well down in a dungeon: three's close dark fog alone)
     float gfxOpen = (1.0 - gfxCave) * (1.0 - 0.4 * uNight);
     // the air: the far side of the view pales a little, more round a low sun or in rain
-    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount) * smoothstep(0.4, 1.35, gfxS);
-    // the low haze over the sea, thinning going up
+    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist) * smoothstep(0.4 - 0.1 * uMist, 1.35, gfxS);
+    // the low haze over the sea, thinning going up; in the morning's mist
+    // thicker, nearer and lying higher
     float gfxAbove = max(vGfxWorld.y - uFogHeight.x, 0.0);
-    float gfxHaze = (0.38 + 0.2 * gfxLow) * exp(-gfxAbove * uFogHeight.y) * smoothstep(0.3, 1.2, gfxS);
+    float gfxHaze = (0.38 + 0.2 * gfxLow + 0.16 * uMist) * exp(-gfxAbove * uFogHeight.y * (1.0 - 0.3 * uMist))
+      * smoothstep(0.3 - 0.1 * uMist, 1.2 - 0.25 * uMist, gfxS);
     float gfxFog = 1.0 - (1.0 - fogFactor) * (1.0 - gfxAir * gfxOpen) * (1.0 - gfxHaze * gfxOpen);
-    vec3 gfxColor = linearToOutputTexel(vec4(gfxHorizon(normalize(gfxView)), 1.0)).rgb;
+    vec3 gfxSky = gfxHorizon(normalize(gfxView));
+    // (the mist pale and cool; toward the sun its warmth still burns through: gfxHorizon)
+    gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(0.94, 1.0, 1.1) * 1.06, 0.25 * uMist);
+    vec3 gfxColor = linearToOutputTexel(vec4(gfxSky, 1.0)).rgb;
     gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(gfxColor, fogColor, gfxCave), gfxFog);
   #endif
 #endif`;
@@ -57,7 +63,7 @@ export function atmos(shader, renderer, material) {
   if (material?.userData?.gfx?.noAtmos) return;
   define(shader, 'GFX_WORLD');
   define(shader, 'GFX_ATMOS');
-  use(shader, [...ATMOS_UNIFORMS, 'uFogHeight'], 'f');
+  use(shader, [...ATMOS_UNIFORMS, 'uFogHeight', 'uMist'], 'f');
   shader.fragmentShader = patch(shader.fragmentShader, 'fog_pars_fragment', HORIZON_GLSL, 'GFX_ATMOS');
   shader.fragmentShader = swap(shader.fragmentShader, 'fog_fragment', FOG_GLSL, 'GFX_ATMOS');
 }
