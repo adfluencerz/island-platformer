@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 20 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 21 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -24,6 +24,7 @@ Current phase: 20 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 18 Surface detail: characters, animals and held things
 - 19+ polish rounds (`phases/19-polish-rounds.md`)
 - [x] 19 Night figures
+- [x] 20 Golden hour
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -46,8 +47,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- The neighbours' yard lanterns (`npchomes.js` `npcHomes.lamps`, 0.4 m off their wall) share build.js's 6 pooled lamp lights (`addLamps`), decay 1.25, reach 10: no new lights; Mabel is now lit warm from her lantern.
-- The rim (`character.js`) is scaled by the surface's own color (`0.2 + 1.6 * diffuseColor`, per channel): no halo on dark hair, any time of day; at night it is 1.8x (main.js `lightFarmers`).
-- Moonlit darks go grey-blue, not grey (`MOON` in `gfx/light.js`, used by the grade and the low tier's night grey); lamp-lit parts keep their warmth.
-- The player's own night glow (10, reach 14) still makes the biggest warm wash round the farmer; shrink it if a later round wants lamp pools to stand out more.
-- Weakest now: lake-sunset. The lake reads as a dull brown-green pond and the light is flat: no golden-hour warmth on the grass, no warm sky in the water.
+- The day's sun dips to ~16° at 18:30 (`daynight.js` `apply()`: `0.22 + 0.78 * sin` by day; the moon's path as it was), so evenings and mornings (plaza-morning ~27° from ~30°) throw longer shadows; the shadow box still covers them.
+- The sunset key is now at 18.5 (the shot's hour): a golden sun at 2.3, a lavender sky light; the shade tint (`uniforms.js` `light()`) and the grade's sky lean (`post.js` `skyTintLow`) follow a low sun.
+- The pond (`water.js` `dusk`) mirrors more sky round a low sun, leaning from the dim zenith to the warm horizon: peach into mauve; the sea gets a little (0.15), the shallows none.
+- Weakest now: forest-noon. The pines are dark, flat cones on a uniform green floor with no dappled light or depth; it reads the plainest of the day shots.
