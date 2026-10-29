@@ -56,8 +56,9 @@ npm run browser --silent -- --shot night.png -e 'g.dayNight.setTime(21); g.step(
 - `g.draw()`: draw the scene (for a screenshot taken from inside a test).
 - `g.warp('plaza'|'lake'|'house'|'forest'|'dungeon'|{ x, z })`: the farmer
   there at once, the camera with them; `g.stats()`: what the last `g.draw()`
-  drew (draw calls, triangles, shaders, the graphics tier). `npm run shots`
-  takes ten fixed full-graphics screenshots with them (`docs/visuals/`).
+  drew (draw calls, triangles, shaders, the graphics tier).
+- `npm run shots [-- --tier low|medium|high] [--check]`: eleven fixed full-graphics screenshots, their stats and `shots/contact.png` (`docs/visuals/`).
+- `npm run gates`: every check a visuals phase must pass (tests, build, both browser runs, the shots and their budgets), one line each.
 - `g.player` (`position`, `velocity`, `onGround`), `g.inventory`, `g.shop`,
   `g.chest`, `g.animals`, `g.buildings`, `g.machines`, `g.cooking`,
   `g.fishing`, `g.dayNight`, `g.world`, `g.sound`, `g.place`, `g.net`, and

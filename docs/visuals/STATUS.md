@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 15 (`phases/15-polish.md`)
+Current phase: 16 (`phases/16-detail-built.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -18,7 +18,7 @@ Current phase: 15 (`phases/15-polish.md`)
 - [x] 12 Cliff skirts
 - [x] 13 Characters
 - [x] 14 Ambience
-- [ ] 15 Perf and polish
+- [x] 15 Perf and polish
 - [ ] 16 Surface detail: built things and buildings
 - [ ] 17 Surface detail: nature
 - [ ] 18 Surface detail: characters, animals and held things
@@ -32,9 +32,21 @@ Other shots (high): plaza-morning 1162 calls, forest-noon 726, lake-sunset 920, 
 rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls, 831k triangles.
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
+## Measured in phase 15
+`npm run shots -- --tier T` (960x600, pixel ratio 1, SwiftShader), calls / triangles / programs, before -> after
+(the grass in 24-tile patches and the ground surface and cliffs in 24-tile squares, out-of-view ones culled):
+- high: plaza-noon 762 / 1.26M / 46 -> 787 / 831k / 44; phone 658 / 1.18M -> 661 / 505k; split-2 1505 / 1.37M; lobby 463 / 226k / 85.
+- medium: plaza-noon 754 / 865k / 45 -> 773 / 611k / 43; phone 650 / 786k -> 659 / 373k; split-2 1458 / 1.01M.
+- low: plaza-noon 330 / 644k / 31 -> 359 / 478k / 30; phone 165 / 548k -> 180 / 264k; split-2 556 / 756k.
+- CPU a frame (headless Chromium, this container) of motes + rain + fireflies: 0.04 ms at 300 particles,
+  0.06 ms at 600, 0.10 ms at 900 (g.step in a shower: about 0.1-0.17 ms of 0.2-0.4 ms a step): kept on the CPU.
+- Dispose audit: geometries and textures steady over three lobby trips (home 420±10 with the last wild island
+  kept), tier cycling (textures 23 / 22 / 9) and look changes (outline hull 420 <-> 422); programs only grow
+  with three's per-material variants (shadows on/off), not per visit.
+
 ## Notes from the last phase
-- plaza-noon 754 calls (+0..2: the motes), 1.26M tris, programs 43 -> 46; phone (medium) 650 calls, 786k tris.
-- `src/gfx/motes.js` `MOTES`: 160 at 900 particles (`dayNight.setParticles(k.particles)`: 53 low, 107 medium), box 24 wide from -0.6 to +4.4 round the player, size 0.13, warm 0xfff0bd-ish at 0.6 (not tone mapped), breeze + 0.35 of `uWind`; faded by `(1-night)*(1-1.6*cloud)*(1-under)` in `daynight.js`.
-- Night emissives: build.js lantern 2.5, window 2.0, flame 0.6+1.9n, core 0.8+1.7n; npchomes lantern 2.5, window 2.0; house lantern 2.5. Fireflies 72, warmer (1, .86, .36) x1.35, size 0.19.
-- Bloom: `POST.bloom.underThreshold` 0.8 underground (night 0.72); dungeon `KINDS.glow` color 1.7 (past white). Rain: `RAIN_TINT` in weather.js (sky horizon x1.2, 30% pale grey).
-- Phase 15: re-measure the phone shot's frame time with motes + rain (both CPU-updated Points/lines a frame) and the bloom at night on medium.
+- Surface detail (16-18): extend phase 10's pattern: a hook like `groundDetail` (`src/gfx/ground.js`) per kind of surface, `NOISE`/`VORONOI` from `src/gfx/noise.js` patched in at 'common', world-space (or object-space for moving things), finer octaves faded by `gfxShow` so nothing shimmers.
+- Programs: plaza-noon 44 of 120 (lobby 85): each new hook setting is a program per material kind, so put kinds in uniforms or attributes, not defines, where they can share one.
+- `shore-noon` (the sea and the shore at x -66, z 4) is in the shots now: judge water edges and cliffs there.
+- Budgets are per tier now (`docs/visuals/README.md`), and `npm run gates` checks the low tier's too; grass is in patches (`GRASS_PATCH` in world.js), the ground in `SURFACE_CHUNK` squares.
+- Nights: `POST.nightSaturation` 0.62 on the dark parts in the grade; the low tier greys its diffuse light by `uNightGrey` 0.35 (light.js, `lights_fragment_end`).
