@@ -341,6 +341,7 @@ quality.onApply((k) => {
   renderer.shadowMap.enabled = shadows;
   post.apply(k);
   gfx.U.uCloudShadows.value = k.cloudShadows ? 1 : 0; // (the clouds' shadows on the land: src/gfx/light.js)
+  gfx.U.uNightGrey.value = post.on ? 0 : 0.35; // (the night's grey: the grade's on the post tiers, src/gfx/post.js; the light's without)
   sun.castShadow = shadows; // (which also has every lit material's shader made again, with or without them)
   weather.setParticles(k.particles);
   dayNight.setParticles(k.particles); // (the motes in the sunlight: src/gfx/motes.js)
@@ -5793,7 +5794,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
 }
 
 loadGame();

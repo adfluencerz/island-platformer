@@ -26,20 +26,28 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
-| particles     | 300  | 600           | 900  |
+| particles (rain, snow; motes: 160 at 900) | 300 | 600 | 900 |
+| night's grey  | in the light (0.35) | in the grade | in the grade |
 | character outline | off | off       | on   |
 
-## Budgets (farm, `plaza-noon` in `npm run shots`)
-- Draw calls: not more than the previous phase (the baseline is in STATUS.md); ≤ 900 from phase 09 on.
-- Programs ≤ 120. Triangles ≤ 1.5 M on high, ≤ 0.8 M on medium.
-- `npm run shots -- --check` reads the line below; lower `calls` as phases bring it down, never raise it.
-<!-- budgets {"calls": 850, "programs": 120, "triangles": {"high": 1500000, "medium": 800000, "low": 800000}} -->
+## Budgets (final from phase 15: `plaza-noon` and `phone` in `npm run shots`, each at its tier)
+Measured in phase 15 (960x600, pixel ratio 1, SwiftShader, shadow pass included; calls drift ±20 between runs):
+
+| tier   | plaza-noon calls / triangles / programs | phone calls / triangles | budget calls / triangles / programs |
+|--------|------------------------------------------|-------------------------|--------------------------------------|
+| high   | 787 / 831k / 44 | 661 / 505k  | 850 / 1.0 M / 120 |
+| medium | 773 / 611k / 43 | 659 / 373k  | 850 / 0.7 M / 120 |
+| low    | 359 / 478k / 30 | 180 / 264k  | 450 / 0.6 M / 100 |
+
+- Programs are the headroom for the surface detail of phases 16–18: about 75 free on every tier (a lobby, the most, has 85 on high).
+- `npm run shots -- --check` reads the line below for plaza-noon and the phone at their tiers; lower a number as phases bring it down, never raise it.
+<!-- budgets {"high": {"calls": 850, "triangles": 1000000, "programs": 120}, "medium": {"calls": 850, "triangles": 700000, "programs": 120}, "low": {"calls": 450, "triangles": 600000, "programs": 100}} -->
 
 ## Gates (every phase, all must pass before pushing)
 `npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
 - `npm test` and `npm run build`.
 - `npm run browser --silent -- -e 'g.step(2); return g.stats()'` with no page errors, and the same with `--full`.
-- `npm run shots` (ten PNGs, `contact.png`, `stats.json`) and `npm run shots -- --check`.
+- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (eleven PNGs, `contact.png`, `stats.json`: high, the phone medium).
 - Look at `shots/contact.png` once and judge it against the phase's "Proof" line.
 
 ## Rules

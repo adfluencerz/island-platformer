@@ -1,4 +1,4 @@
-// `npm run shots -- [--tier low|medium|high] [--check]`: ten fixed screenshots
+// `npm run shots -- [--tier low|medium|high] [--check]`: eleven fixed screenshots
 // of the game at full graphics, to judge its look by (docs/visuals/), with
 // what the renderer drew for each, and a contact sheet of them all:
 //
@@ -9,8 +9,8 @@
 //
 //   --tier T   draw at that graphics tier (?gfx=T); without, each page's own
 //              (high on the desktop, medium on the phone)
-//   --check    fail (exit 1) when plaza-noon is over the budgets in
-//              docs/visuals/README.md (its `budgets` comment)
+//   --check    fail (exit 1) when plaza-noon or the phone is over its
+//              tier's budgets in docs/visuals/README.md (its `budgets` comment)
 //
 // One dev server and one browser for all of them (scripts/lib/page.mjs); a
 // second context for the phone. Each shot sets the scene with window.__game
@@ -44,6 +44,7 @@ const SHOTS = [
   ['plaza-morning', (g) => (g.warp('plaza'), g.dayNight.setTime(8))],
   ['plaza-noon', (g) => (g.warp('plaza'), g.dayNight.setTime(12))],
   ['forest-noon', (g) => (g.warp('forest'), g.dayNight.setTime(12))],
+  ['shore-noon', (g) => (g.warp({ x: -66, z: 4 }), g.snapCamera(), g.dayNight.setTime(12))], // (the sea and the cliffs)
   ['lake-sunset', (g) => (g.warp('lake'), g.dayNight.setTime(18.5))],
   ['night-lamps', (g) => (g.warp('house'), g.dayNight.setTime(21.5))],
   ['rain-noon', (g, { rainy }) => {
@@ -130,20 +131,23 @@ try {
     exitCode = 1;
   }
 
-  // ---- the budgets (docs/visuals/README.md) ----
+  // ---- the budgets (docs/visuals/README.md): plaza-noon and the phone, each at its tier ----
   if (opts.check) {
     const readme = readFileSync('docs/visuals/README.md', 'utf8');
     const budgets = JSON.parse(readme.match(/<!-- budgets (\{.*\}) -->/)[1]);
-    const s = stats['plaza-noon'];
-    const over = [
-      s.calls > budgets.calls && `calls ${s.calls} > ${budgets.calls}`,
-      s.programs > budgets.programs && `programs ${s.programs} > ${budgets.programs}`,
-      s.triangles > budgets.triangles[s.tier] && `triangles ${s.triangles} > ${budgets.triangles[s.tier]} (${s.tier})`,
-    ].filter(Boolean);
+    const over = ['plaza-noon', 'phone'].flatMap((name) => {
+      const s = stats[name];
+      const b = budgets[s.tier];
+      return [
+        s.calls > b.calls && `${name} calls ${s.calls} > ${b.calls}`,
+        s.programs > b.programs && `${name} programs ${s.programs} > ${b.programs}`,
+        s.triangles > b.triangles && `${name} triangles ${s.triangles} > ${b.triangles}`,
+      ].map((o) => o && `${o} (${s.tier})`);
+    }).filter(Boolean);
     if (over.length) {
-      console.error(`plaza-noon is over budget: ${over.join(', ')}`);
+      console.error(`over budget: ${over.join(', ')}`);
       exitCode = 1;
-    } else log('plaza-noon is within the budgets');
+    } else log('plaza-noon and the phone are within the budgets');
   }
 } catch (e) {
   console.error(e.stack || e.message);
