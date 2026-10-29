@@ -137,10 +137,19 @@ export class Splash {
     const showGfx = () => (gfx.textContent = `Graphics: ${quality.tier()}`);
     shows.push(showGfx);
     showGfx();
+    // ...and the camera's angle from above: wide (low, the sky in view) or classic (src/view.js), at once
+    const cam = button('ui-btn ui-btn-small ui-btn-ghost', soundRow, '', () => {
+      view.toggleWide();
+      showCam();
+    });
+    cam.title = 'Wide: low, with the sky and the horizon in view. Classic: steeply down from above';
+    const showCam = () => (cam.textContent = `Camera: ${view.wide() ? 'wide' : 'classic'}`);
+    shows.push(showCam);
+    showCam();
     this.showSound = () => shows.forEach((show) => show());
     // the camera: from above, or in first person (V in game does the same)
     const viewRow = el('div', 'ui-row', main);
-    const showView = () => (viewBtn.textContent = `Camera: ${view.firstPerson() ? 'first person' : 'overhead'}`);
+    const showView = () => (viewBtn.textContent = `View: ${view.firstPerson() ? 'first person' : 'overhead'}`);
     const viewBtn = button('ui-btn ui-btn-small ui-btn-ghost', viewRow, '', () => {
       view.toggle();
       showView();
@@ -489,7 +498,7 @@ export class Splash {
     else if ((this.players?.() ?? 1) > 1) text.append(`On your farm, ${this.players()} farmers at this screen. It keeps going while they play.`);
     else text.append('On your farm. Time waits while the menu is open.');
     this.mainBtn.textContent = title ? 'Go to my farm' : 'Resume';
-    this.addBtn.hidden = title || place !== 'home' || !!(visit && !visit.mine); // (our own farm, with its helpers or not; not a friend's)
+    this.addBtn.hidden = title || !(place === 'home' || place === 'farm') || !!(visit && !visit.mine); // (our own farm, with its helpers ('farm') or not; not a friend's)
     this.homeBtn.hidden = title || !(place === 'lobby' || (visit && !visit.mine));
   }
 

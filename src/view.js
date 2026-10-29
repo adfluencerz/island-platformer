@@ -9,9 +9,20 @@ import './view.css';
 //   setFirstPerson(on)
 //   toggle()             V in game, and the menu's switch: returns the new setting
 //
+// From above, at which angle: wide (the default: low and further back, the
+// sky and the horizon in view) or classic (steeply down from above, as it
+// was). Kept as tp.cam; ?cam=wide|classic in the address wins (for testing:
+// scripts/shots.mjs), and is not kept. Underground and indoors the camera is
+// classic whatever this says (they have ceilings: src/main.js).
+//
+//   wide()               true at the wide angle
+//   setWide(on)
+//   toggleWide()         the menu's switch: returns the new setting
+//
 // (The camera itself is src/main.js: updateCamera, and looking round.)
 
 const STORE = 'tp.view';
+const CAM_STORE = 'tp.cam';
 
 function load() {
   try {
@@ -35,4 +46,32 @@ export function setFirstPerson(value) {
 export function toggle() {
   setFirstPerson(!on);
   return on;
+}
+
+const ANGLES = ['wide', 'classic'];
+function loadAngle() {
+  const asked = new URLSearchParams(location.search).get('cam');
+  if (ANGLES.includes(asked)) return asked;
+  try {
+    const kept = JSON.parse(localStorage.getItem(CAM_STORE))?.angle;
+    return ANGLES.includes(kept) ? kept : 'wide';
+  } catch {
+    return 'wide';
+  }
+}
+
+let angle = loadAngle();
+
+export const wide = () => angle === 'wide';
+
+export function setWide(value) {
+  angle = value ? 'wide' : 'classic';
+  try {
+    localStorage.setItem(CAM_STORE, JSON.stringify({ angle }));
+  } catch {}
+}
+
+export function toggleWide() {
+  setWide(!wide());
+  return wide();
 }

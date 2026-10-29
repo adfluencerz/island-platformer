@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
+import { detail } from './gfx/detail.js';
 
 // ---------- Items out in the world ----------
 // An item lying about (a treasure, a drop, a find on the farm) is its own
@@ -23,6 +24,9 @@ hook(itemMaterial, 'itemGlow', (shader) => {
   define(shader, 'GFX_ITEM_GLOW');
   shader.fragmentShader = patch(shader.fragmentShader, 'emissivemap_fragment', 'totalEmissiveRadiance += diffuseColor.rgb * 0.22;', 'GFX_ITEM_GLOW');
 });
+// and by each block's color, wood grain (browns), brushed metal (grays), a
+// soft sheen on the rest (the 'tool' look: src/gfx/detail.js)
+detail(itemMaterial, 'tool');
 
 // The geometry for an item (an item this page doesn't know, from a newer server: a coin)
 export function itemGeometry(item) {

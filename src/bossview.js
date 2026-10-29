@@ -1,7 +1,11 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import parsnipModelUrl from './models/evil-parsnip.glb?url';
 import { BOSSES } from '../shared/balance.js';
 import { seedAt, seedsOver, waveOver, SEED_Y, ARENA_R, ARENAS, swarmAt, swarmsOver, SWARM_Y } from '../shared/bosses.js';
 import { damp } from './character.js';
+import { detail } from './gfx/detail.js';
 
 // ---------- A boss, as it is drawn ----------
 // Each boss (shared/bosses.js has what it does; src/bosses.js says where it
@@ -21,7 +25,7 @@ const waveGeo = new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2);
 const shadowGeo = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
 const seedMat = mat(0xf2e2b0, { emissive: 0xc8a050, emissiveIntensity: 0.55 }); // (pale, with a glow of their own: seen on a dark floor, down in the boss's hall)
 // a little bee, of a swarm: buzzing round where its swarm is
-const BEE = { yellow: mat(0xffd23f), black: mat(0x2a1a10), wing: new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, roughness: 0.3 }) };
+const BEE = { yellow: detail(mat(0xffd23f), 'fur'), black: detail(mat(0x2a1a10), 'fur'), wing: new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, roughness: 0.3 }) };
 function littleBee(parent) {
   const g = new THREE.Group();
   parent.add(g);
@@ -31,7 +35,7 @@ function littleBee(parent) {
   return g;
 }
 // ...or a fly, of the bog toad's swarms
-const FLY = { body: mat(0x2a2f2a), wing: new THREE.MeshStandardMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.6, roughness: 0.3 }) };
+const FLY = { body: detail(mat(0x2a2f2a), 'fur'), wing: new THREE.MeshStandardMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.6, roughness: 0.3 }) };
 function littleFly(parent) {
   const g = new THREE.Group();
   parent.add(g);
@@ -98,10 +102,99 @@ export function dizzyStars(count = 3, radius = 0.4, size = 0.3) {
   };
 }
 
+// The evil parsnip's own model (src/models/evil-parsnip.glb), loaded once, the
+// first time a parsnip is built; until it is in, the parsnip below stands in
+let parsnipModel = null;
+function loadParsnipModel() {
+  parsnipModel ??= new GLTFLoader()
+    .setMeshoptDecoder(MeshoptDecoder)
+    .loadAsync(parsnipModelUrl)
+    .then((gltf) => gltf.scene)
+    .catch((err) => {
+      console.warn('evil parsnip model did not load; keeping the stand-in', err);
+      return null;
+    });
+  return parsnipModel;
+}
+const PARSNIP_HEIGHT = 3; // how tall the model stands, feet to leaves
+
+// The model comes as one stiff mesh, so it is given bones here: hips, a leg
+// each side, a spine that bends and the leaves on top. Each vertex follows the
+// bones by how high up it is (0 its feet .. 1 the tips of its leaves) and, in
+// the legs, which side it is on. Heights are where the model's parts are:
+const LEGS_TOP = [0.18, 0.3]; // the legs, fading into the tip of the body
+const SPINE = [0.28, 0.55]; // the body, bending more the higher up
+const LEAVES = [0.7, 0.8]; // the leaves
+const smooth = (a, b, x) => {
+  const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return k * k * (3 - 2 * k);
+};
+// (the weights go on the model's geometry, once; the bones, on each parsnip's mesh)
+function parsnipWeights(geo) {
+  if (geo.attributes.skinIndex) return geo.userData.rig;
+  const pos = geo.attributes.position;
+  geo.computeBoundingBox();
+  const { min, max } = geo.boundingBox;
+  const h = (y) => (y - min.y) / (max.y - min.y);
+  // the middle between its feet, and where its legs stand front to back
+  const feet = new THREE.Box3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) if (h(v.fromBufferAttribute(pos, i).y) < LEGS_TOP[1]) feet.expandByPoint(v);
+  const mid = feet.getCenter(new THREE.Vector3());
+  const side = (max.x - min.x) * 0.03; // (the legs blend across the middle that much, so they don't tear apart)
+  const index = new Uint16Array(pos.count * 4);
+  const weight = new Float32Array(pos.count * 4);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const k = h(v.y);
+    const leg = 1 - smooth(LEGS_TOP[0], LEGS_TOP[1], k);
+    const left = smooth(side, -side, v.x - mid.x);
+    const bend = smooth(SPINE[0], SPINE[1], k);
+    const top = smooth(LEAVES[0], LEAVES[1], k);
+    // bones: 0 hips, 1 spine, 2 leaves, 3 left leg, 4 right leg
+    index.set([0, 1, 3, 4], i * 4);
+    weight.set([(1 - leg) * (1 - bend), (1 - leg) * bend * (1 - top), leg * left, leg * (1 - left)], i * 4);
+    if (top > 0) {
+      index.set([0, 1, 2, 3], i * 4);
+      weight.set([(1 - leg) * (1 - bend), (1 - leg) * bend * (1 - top), (1 - leg) * bend * top, 0], i * 4);
+    }
+  }
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(index, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weight, 4));
+  const at = (k) => min.y + k * (max.y - min.y);
+  geo.userData.rig = { mid, hips: at(LEGS_TOP[1]), spine: at(SPINE[0]), leaves: at(LEAVES[0]), legX: (max.x - min.x) * 0.08 };
+  return geo.userData.rig;
+}
+// mesh (in the model): made a skinned mesh in its place; its bones back
+function rigParsnip(mesh) {
+  const rig = parsnipWeights(mesh.geometry);
+  const bone = (parent, x, y, z) => {
+    const b = new THREE.Bone();
+    b.position.set(x, y, z);
+    parent?.add(b);
+    return b;
+  };
+  const hips = bone(null, rig.mid.x, rig.hips, rig.mid.z);
+  const spine = bone(hips, 0, rig.spine - rig.hips, 0);
+  const leaves = bone(spine, 0, rig.leaves - rig.spine, 0);
+  const legs = [-1, 1].map((sx) => bone(hips, sx * rig.legX, 0, 0));
+  const skinned = new THREE.SkinnedMesh(mesh.geometry, mesh.material);
+  skinned.position.copy(mesh.position);
+  skinned.quaternion.copy(mesh.quaternion);
+  skinned.scale.copy(mesh.scale);
+  skinned.add(hips);
+  mesh.parent.add(skinned);
+  mesh.removeFromParent();
+  skinned.updateMatrixWorld(true);
+  skinned.bind(new THREE.Skeleton([hips, spine, leaves, ...legs]));
+  skinned.frustumCulled = false; // (its feet step out past the box it had standing)
+  return { skinned, hips, spine, leaves, legs };
+}
+
 // The evil parsnip. parent: where it goes (the farm's world)
 function buildParsnip() {
-  const skin = mat(0xf0e2b0);
-  const skinDark = mat(0xd4bd84);
+  const skin = detail(mat(0xf0e2b0), 'skin');
+  const skinDark = detail(mat(0xd4bd84), 'skin');
   const leaf = mat(0x4f9e3c);
   const leafLight = mat(0x7cc95a);
   const white = mat(0xffffff, { roughness: 0.4 });
@@ -149,6 +242,26 @@ function buildParsnip() {
   // little feet
   const feet = [-1, 1].map((sx) => part(root, ballGeo, skinDark, [sx * 0.32, 0.12, 0.1], [0.34, 0.22, 0.48]));
   const skins = [skin, skinDark];
+  // the model takes over once it is in: it goes in the body (so it tips over,
+  // rolls and squashes the same), feet on the ground, and the stand-in goes
+  let model = null;
+  let bones = null; // (its rig, once the model is in)
+  loadParsnipModel().then((scene) => {
+    if (!scene) return;
+    model = scene.clone();
+    const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    model.scale.setScalar(PARSNIP_HEIGHT / size.y);
+    const box = new THREE.Box3().setFromObject(model);
+    model.position.set(-(box.min.x + box.max.x) / 2, -pivot.position.y - box.min.y, -(box.min.z + box.max.z) / 2);
+    let mesh = null;
+    model.traverse((o) => (mesh ??= o.isMesh ? o : null));
+    bones = rigParsnip(mesh);
+    bones.skinned.castShadow = true;
+    bones.skinned.material = mesh.material.clone(); // (its own, for the flash when bopped)
+    skins.push(bones.skinned.material);
+    for (const child of body.children) child.visible = false;
+    body.add(model);
+  });
   // How it stands, moves and looks (b: as createBossView's update() has it)
   let tilt = 0; // 0 standing .. 1 lying on its side
   let spin = 0;
@@ -162,7 +275,7 @@ function buildParsnip() {
     if (rolling && b.mt >= def.roll.windup) spin += (dt * def.roll.speed) / 0.8;
     body.rotation.y = rolling ? spin : 0;
     body.rotation.x = 0;
-    for (const foot of feet) foot.visible = tilt < 0.5;
+    for (const foot of feet) foot.visible = !model && tilt < 0.5;
     // squash and stretch, and a waddle
     let sy = 1;
     let wobble = 0;
@@ -181,6 +294,36 @@ function buildParsnip() {
     feet.forEach((foot, i) => (foot.position.y = 0.12 + (b.move === 'rest' && !asleep ? Math.max(0, Math.sin(t * 8 + i * Math.PI)) * 0.12 : 0)));
     // the leaves spin up to shoot
     leaves.rotation.y += dt * (b.move === 'seeds' && b.phase === 'fight' ? 14 : 0.6);
+    // (the model's leaves are part of it, so it spins round itself to shoot)
+    if (model) model.rotation.y = b.move === 'seeds' && b.phase === 'fight' && b.mt >= def.seeds.windup ? model.rotation.y + dt * 9 : 0;
+    if (bones) {
+      // the model's legs step as it walks, kick about once friendly, dangle
+      // in the air and tuck in to roll; its body sways with its steps
+      const walking = b.move === 'rest' && !asleep && !friendly && !dizzy ? 1 : 0;
+      const step = Math.sin(t * 8);
+      const air = b.y > 0.1 && !rolling ? 1 : 0;
+      bones.legs.forEach((leg, i) => {
+        const s = i ? -1 : 1;
+        const kick = friendly ? Math.max(0, Math.sin(t * 6 + i * Math.PI)) * 0.7 : 0;
+        leg.rotation.x = s * step * 0.55 * walking - kick;
+        leg.rotation.z = (asleep ? 0.15 : air * 0.35) * -s;
+        leg.position.y = Math.max(0, s * step) * 0.1 * walking;
+      });
+      // the spine: a waddle and a lean in to walk, a lean back to shoot,
+      // round and round dizzy, slumped asleep, a happy sway once friendly
+      const sp = bones.spine.rotation;
+      sp.set(0.12 * walking, 0, step * 0.08 * walking);
+      if (b.move === 'seeds' && b.phase === 'fight' && b.mt < def.seeds.windup) sp.x = -0.25 * (b.mt / def.seeds.windup);
+      else if (b.move === 'hop' && b.phase === 'fight' && !air) sp.x = 0.2 * Math.min(1, b.mt / def.hop.windup);
+      if (dizzy) sp.set(Math.sin(t * 6) * 0.18, 0, Math.cos(t * 6) * 0.18);
+      if (asleep) sp.x = 0.18 + Math.sin(t * 1.8) * 0.03;
+      if (friendly) sp.z = Math.sin(t * 3) * 0.15;
+      // the leaves sway always, flap in the air and shake as it wakes
+      const lv = bones.leaves.rotation;
+      lv.set(Math.sin(t * 2.3) * 0.06 - air * 0.25, 0, Math.sin(t * 3.1) * 0.08 - sp.z * 0.8);
+      if (b.phase === 'wake') lv.z += Math.sin(t * 40) * 0.2;
+      if (asleep) lv.x += 0.2;
+    }
     // the face: asleep, grumpy, dizzy or friendly
     for (const eye of eyes) eye.scale.y = asleep ? 0.12 : dizzy ? 0.5 : 1;
     brows.forEach((brow, i) => {
@@ -200,11 +343,11 @@ function buildParsnip() {
 // its head. It walks on four paws, crouches and pounces, rears up to roar
 // (its mane puffing out), lies down to sleep, and wags its tail once friendly.
 function buildLion() {
-  const coat = mat(0xe8a83e);
-  const coatLight = mat(0xf6d08a);
-  const mane = mat(0xb85c1e);
-  const maneLight = mat(0xd9792b);
-  const cape = mat(0xd6453a);
+  const coat = detail(mat(0xe8a83e), 'fur');
+  const coatLight = detail(mat(0xf6d08a), 'fur');
+  const mane = detail(mat(0xb85c1e), 'hair');
+  const maneLight = detail(mat(0xd9792b), 'hair');
+  const cape = detail(mat(0xd6453a), 'garment');
   const white = mat(0xffffff, { roughness: 0.4 });
   const dark = mat(0x2a1a10, { roughness: 0.4 });
   const blushMat = mat(0xf28cb1);
@@ -310,10 +453,10 @@ function buildLion() {
 // buzzing wings. She shakes and buzzes louder to send her swarms, leans in to
 // dash across the arena, sits down dizzy after, and sleeps sat on the grass.
 function buildBee() {
-  const fuzz = mat(0xffc93c);
-  const fuzzLight = mat(0xffe08a);
+  const fuzz = detail(mat(0xffc93c), 'fur');
+  const fuzzLight = detail(mat(0xffe08a), 'fur');
   const stripe = mat(0x3a2a14);
-  const gold = mat(0xffd84a, { metalness: 0.5, roughness: 0.35, emissive: 0x6b4a00, emissiveIntensity: 0.2 });
+  const gold = detail(mat(0xffd84a, { metalness: 0.5, roughness: 0.35, emissive: 0x6b4a00, emissiveIntensity: 0.2 }), 'tool');
   const wingMat = new THREE.MeshStandardMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.6, roughness: 0.2 });
   const white = mat(0xffffff, { roughness: 0.4 });
   const dark = mat(0x2a1a10, { roughness: 0.4 });
@@ -397,10 +540,10 @@ function buildBee() {
 // flapping wings, swoops down with them swept back, beats them wide to raise
 // a gust, and sleeps with its head tucked in.
 function buildCrow() {
-  const plume = mat(0x2a2f45);
-  const plumeLight = mat(0x445078);
-  const beakMat = mat(0xf2a516);
-  const scarf = mat(0xd6453a);
+  const plume = detail(mat(0x2a2f45), 'fur');
+  const plumeLight = detail(mat(0x445078), 'fur');
+  const beakMat = detail(mat(0xf2a516), 'horn');
+  const scarf = detail(mat(0xd6453a), 'garment');
   const white = mat(0xffffff, { roughness: 0.4 });
   const dark = mat(0x111111, { roughness: 0.4 });
   const blushMat = mat(0xf28cb1);
@@ -502,11 +645,11 @@ function buildCrow() {
 // springs in great hops; it puffs its throat up into a balloon to croak, and
 // out to puff its flies; asleep its throat goes in and out.
 function buildToad() {
-  const skin = mat(0x5f9a3a);
-  const skinDark = mat(0x4a7f2c);
-  const belly = mat(0xd8e8a0);
-  const throatMat = mat(0xf2d8b0);
-  const gold = mat(0xf2c23a, { roughness: 0.4 });
+  const skin = detail(mat(0x5f9a3a), 'skin');
+  const skinDark = detail(mat(0x4a7f2c), 'skin');
+  const belly = detail(mat(0xd8e8a0), 'skin');
+  const throatMat = detail(mat(0xf2d8b0), 'skin');
+  const gold = detail(mat(0xf2c23a, { roughness: 0.4 }), 'tool');
   const dark = mat(0x111111, { roughness: 0.4 });
   const pad = mat(0x3f8a3a);
   const petal = mat(0xf7a6c8);

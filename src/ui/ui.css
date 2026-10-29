@@ -35,17 +35,17 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 
 .ui-btn {
   padding: 8px 14px;
-  border: 3px solid var(--inv-outline);
-  border-radius: 4px;
+  border: 2px solid var(--inv-outline);
+  border-radius: 8px 6px 8px 6px;
   background: var(--inv-wood);
   color: #fff;
   font: 700 22px var(--inv-font);
-  text-shadow: 0 2px 0 var(--inv-outline);
-  box-shadow: inset 0 3px 0 var(--inv-wood-light), inset 0 -3px 0 #a3530c;
+  text-shadow: 0 2px 0 var(--inv-wood-dark);
+  box-shadow: inset 0 3px 0 var(--inv-wood-light), inset 0 -3px 0 var(--inv-wood-dark);
   cursor: pointer;
 }
-.ui-btn:hover:not(:disabled) { background: #e98a2a; }
-.ui-btn:active:not(:disabled) { box-shadow: inset 0 3px 0 #a3530c; }
+.ui-btn:hover:not(:disabled) { background: #d6844b; }
+.ui-btn:active:not(:disabled) { box-shadow: inset 0 3px 0 var(--inv-wood-dark); }
 .ui-btn:disabled { filter: grayscale(0.8); opacity: 0.6; cursor: default; }
 .ui-btn-big { font-size: 31px; padding: 12px 16px; }
 .ui-btn-small { font-size: 20px; padding: 4px 10px; border-width: 2px; }
@@ -56,7 +56,8 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   text-shadow: none;
   box-shadow: inset 0 3px 0 #fff4dc, inset 0 -3px 0 var(--inv-slot-shade);
 }
-.ui-btn-ghost:hover:not(:disabled) { background: #fff0cf; }
+.ui-btn-ghost { border-color: rgba(98, 62, 28, 0.6); }
+.ui-btn-ghost:hover:not(:disabled) { background: #fffaf0; }
 /* a plain text link, for the less used ways in */
 .ui-link {
   all: unset;
@@ -76,8 +77,8 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 
 .ui-input {
   padding: 8px 10px;
-  border: 3px solid var(--inv-outline);
-  border-radius: 4px;
+  border: 2px solid rgba(98, 62, 28, 0.7);
+  border-radius: 7px;
   background: #fff4dc;
   color: var(--inv-ink);
   font: 600 22px var(--inv-font);
@@ -212,13 +213,25 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   position: fixed;
   top: 12px;
   left: 12px;
-  width: 230px;
-  padding: 12px 14px;
+  width: 250px;
+  box-sizing: border-box;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
+  font-size: 21px;
   z-index: 10;
 }
+.ui-players.brief { width: 300px; } /* (at home: as wide as the guide under it, guide.css) */
+.ui-players:hover, .ui-players.open { z-index: 11; } /* (opened up, over the guide under it) */
+/* Folded (not on a small screen): the hint on one line, cut short, and no Esc
+   line; at home, on the same line as the farm's name. Hover or click for all of it. */
+.ui-players .ui-tip { cursor: pointer; }
+:root:not(.compact) .ui-players:not(:hover):not(.open) .ui-tip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root:not(.compact) .ui-players:not(:hover):not(.open) .ui-players-esc { display: none; }
+:root:not(.compact) .ui-players.brief:not(:hover):not(.open) { flex-direction: row; align-items: baseline; gap: 10px; }
+:root:not(.compact) .ui-players.brief:not(:hover):not(.open) .ui-players-head { flex: none; }
+:root:not(.compact) .ui-players.brief:not(:hover):not(.open) .ui-players-body { flex: 1; min-width: 0; }
 .ui-players-head { display: flex; align-items: center; gap: 8px; }
 .ui-players-title {
   all: unset;
@@ -234,6 +247,8 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-players-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-ping { flex: none; font-size: 17px; }
 .ui-players-body { display: flex; flex-direction: column; gap: inherit; }
+.ui-players .ui-muted { font-size: 18px; }
+.ui-players .ui-small { font-size: 16px; }
 /* the hints under the place's name, going round (hud.js TIPS) */
 .ui-tip { transition: opacity 0.4s; }
 .ui-tip.fading { opacity: 0; }
@@ -270,12 +285,15 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   left: 50%;
   bottom: calc(var(--inv-slot) + 44px);
   transform: translateX(-50%);
-  padding: 4px 12px;
-  border-radius: 4px;
-  background: rgba(30, 14, 2, 0.6);
-  color: #fff;
-  font-size: 24px;
+  padding: 2px 14px;
+  border: var(--frame-line);
+  border-radius: 999px;
+  background: var(--hud-bg);
+  box-shadow: 0 2px 8px rgba(36, 22, 8, 0.2);
+  color: var(--inv-ink);
+  font-size: 22px;
   font-weight: 600;
+  white-space: nowrap;
   pointer-events: none;
   z-index: 10;
 }
@@ -311,8 +329,9 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   gap: 6px;
   padding: 2px 10px 2px 4px;
   border-radius: 12px;
-  background: rgba(30, 14, 2, 0.55);
-  color: #fff3c4;
+  background: rgba(40, 24, 8, 0.4);
+  color: #fff3d6;
+  text-shadow: var(--hud-text-shadow);
   font-size: 18px;
   font-weight: 600;
   pointer-events: none;
@@ -366,18 +385,18 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   overflow-y: auto;
   scrollbar-width: none;
 }
+/* (no box: light words with a soft dark shadow, readable on grass and at night) */
 .ui-chat-line {
   align-self: flex-start;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: rgba(30, 14, 2, 0.55);
-  color: #fff;
+  padding: 0 4px;
+  color: #fffaf0;
+  text-shadow: var(--hud-text-shadow);
   font-size: 21px;
   overflow-wrap: anywhere;
   transition: opacity 0.6s;
 }
-.ui-chat-line b { text-shadow: 0 1px 0 #000; }
-.ui-chat-line.system { color: #ffe6b8; font-style: italic; }
+.ui-chat-line b { text-shadow: 0 1px 1px rgba(0, 0, 0, 0.9), 0 0 5px rgba(255, 250, 235, 0.5); }
+.ui-chat-line.system { color: #ffeccb; font-style: italic; }
 .ui-chat-line.old { opacity: 0; }
 .ui-chat.open { pointer-events: auto; }
 .ui-chat.open .ui-chat-line.old { opacity: 1; }
@@ -385,11 +404,11 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-chat-form .ui-input { flex: 1; }
 
 @container seat (max-width: 760px) {
-  .ui-players { width: 190px; }
+  .ui-players, .ui-players.brief { width: 220px; }
 }
 @supports not (container-type: size) { /* (older browsers: the whole screen's, as before split screens) */
   @media (max-width: 760px) {
-    .ui-players { width: 190px; }
+    .ui-players, .ui-players.brief { width: 220px; }
   }
 }
 

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { PIECES, pieceTiles } from '../shared/level.js';
-import { TILE_SIZE, mulberry32 } from './world.js';
+import { TILE_SIZE, mulberry32, addRipples } from './world.js';
+import { waterLook, WATER_BANK_REACH } from './gfx/water.js';
+import { detailAll } from './gfx/detail.js';
 import { chestModel, CHEST_W } from './chest.js';
 import { createItemMesh } from './itemmesh.js';
 
@@ -56,7 +58,7 @@ const MATS = {
   plaster: mat(0xf0e2c4),
   roofTile: mat(0xa8492f),
   roofDark: mat(0x83361f),
-  window: mat(0xffe7a3, { emissive: 0xffb84a, emissiveIntensity: 0 }), // (the house's, lit at night with the lamps)
+  window: mat(0xc4def0, { emissive: 0xffb84a, emissiveIntensity: 0 }), // (the house's, lit at night with the lamps; glass by day: its look)
   hedge: mat(0x3f7f34),
   hedgeLight: mat(0x5a9a42),
   hedgeDark: mat(0x2f6128),
@@ -99,6 +101,7 @@ const MATS = {
   lichen: mat(0xb8b46a),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
+detailAll(MATS, { window: 'glass' }); // (painted detail, each by its name: wood, planks, stone, thatch, tiles... src/gfx/detail.js)
 // a boss's portal's swirl, by its boss: [deep, light]
 const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight], crow: [MATS.crowPortal, MATS.crowPortalLight], toad: [MATS.toadPortal, MATS.toadPortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
@@ -131,7 +134,9 @@ const GLOWS = {
 };
 const FLICKERS = new Set(['torch', 'campfire']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
-const GLOW_REACH = 9;
+const GLOW_REACH = 15; // (a lamp's warm pool: wide over the grass and up the walls, src/gfx/post.js blooms its heart)
+const GLOW_COLOR = 0xffc35a;
+const UNDER_GLOW = { power: 26, reach: 3.4, decay: 2 }; // (a dungeon's lamps: bright close by, a short reach and a steep falloff, so each lights its own pool, two along a wall two pools, and the dark between stays)
 
 // ---------- The house ----------
 // 5 tiles across and 4 deep (PIECES.house.size), built from the middle of its
@@ -155,8 +160,19 @@ const gable = new THREE.ExtrudeGeometry(gableShape, { depth: HOUSE_W, bevelEnabl
 export const POND_WATER_Y = 0.14; // the water's surface, where a bobber floats
 const POND_Z = -1; // its middle, from the middle of the tile it was built on
 const POND_IN = 1.25; // half the water's width
-const waterMat = mat(0x3d8fb8, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
+const waterMat = waterLook(addRipples(mat(0x318ea0, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: false })), 'pond'); // (as the lake's: src/gfx/water.js)
 const padMat = mat(0x4f9e3c);
+// its water: a square, 1 across (scaled), in a grid whose corners know how
+// near the stones they are (gfxBank, as the lake's: src/maps.js pondWaterGeo;
+// never deep, a metre and a quarter at most)
+const pondWaterGeo = (() => {
+  const geo = new THREE.PlaneGeometry(1, 1, 6, 6).rotateX(-Math.PI / 2);
+  const p = geo.attributes.position;
+  const bank = [];
+  for (let i = 0; i < p.count; i++) bank.push(1 - Math.min(1, ((0.5 - Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)))) * POND_IN * 2) / WATER_BANK_REACH));
+  geo.setAttribute('gfxBank', new THREE.Float32BufferAttribute(bank, 1));
+  return geo;
+})();
 // ---------- The aquarium ----------
 // Where in it the fish swim, from the middle of its tile: [x, y, z] of the
 // middle, and half its size
@@ -166,7 +182,7 @@ const sandMat = mat(0xe6cf98);
 
 function pond(g, solids, r) {
   part(g, box, MATS.soil, 0, 0.02, POND_Z, POND_IN * 2, 0.04, POND_IN * 2);
-  part(g, box, waterMat, 0, POND_WATER_Y, POND_Z, POND_IN * 2, 0.02, POND_IN * 2).castShadow = false;
+  part(g, pondWaterGeo, waterMat, 0, POND_WATER_Y + 0.01, POND_Z, POND_IN * 2, 1, POND_IN * 2).castShadow = false;
   // the stones, round the edge
   const n = 7;
   for (const side of [0, 1, 2, 3]) {
@@ -226,6 +242,7 @@ function house(g, solids) {
   part(g, box, MATS.stone, 1.4, WALL_TOP + RIDGE * 0.55, z0 - 0.75, 0.55, RIDGE * 1.3 + 0.5, 0.55);
   part(g, box, MATS.stoneDark, 1.4, WALL_TOP + RIDGE * 1.2 + 0.32, z0 - 0.75, 0.65, 0.14, 0.65);
   // the door, a step up to it, and a lamp over it
+  part(g, box, MATS.hole, 0, FOOT_H + 0.79, front + 0.035, 0.98, 1.62, 0.05).castShadow = false; // (the dark gap round it: set into the wall)
   part(g, box, MATS.plankB, 0, FOOT_H + 0.78, front + 0.04, 0.9, 1.56, 0.06);
   for (const x of [-0.22, 0, 0.22]) part(g, box, MATS.plankA, x, FOOT_H + 0.78, front + 0.075, 0.18, 1.5, 0.02).castShadow = false;
   part(g, box, MATS.iron, 0.3, FOOT_H + 0.78, front + 0.1, 0.07, 0.07, 0.05);
@@ -1958,7 +1975,7 @@ export function createBuildings(world) {
   const relics = new Map(); // key -> the relic floating over its pedestal (it turns)
   const swirls = new Map(); // key -> a boss's portal's swirl (it turns too)
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
-    const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
+    const light = new THREE.PointLight(GLOW_COLOR, 0, GLOW_REACH, 1.25); // (a soft falloff: a pool of light on the ground under a lamp, not only a bright spot by it)
     light.castShadow = false;
     world.root.add(light);
     return light;
@@ -2132,14 +2149,24 @@ export function createBuildings(world) {
       return best;
     },
 
+    // Lamps that are not built pieces (the neighbours' lanterns: src/npchomes.js
+    // lamps, Vector3s in the farm) share the same few lights at night
+    // (or, under: a dungeon's, src/dungeon.js, { at, color, flicker } each:
+    // lit while we are underground, whatever the hour)
+    addLamps(points, { key = 'lamp', under = false } = {}) {
+      points.forEach((p, i) => glows.set(`${key}:${i}`, p.isVector3 ? { at: p, flicker: false, flame: null, seed: i } : { ...p, flame: null, seed: i, under }));
+    },
+
     // night: 0 by day, 1 at night (the lamps' glow, and the light they
-    // give the lamps nearest focus, the player)
-    setNight(night, focus) {
-      MATS.lantern.emissiveIntensity = night * 1.6;
-      MATS.window.emissiveIntensity = night * 1.2;
+    // give the lamps nearest focus, the player); under: how far underground
+    // (a dungeon's lamps' light)
+    setNight(night, focus, under = 0) {
+      // (bright enough at night, ~2.5 linear, that the bloom lifts them softly: src/gfx/post.js)
+      MATS.lantern.emissiveIntensity = night * 3.2;
+      MATS.window.emissiveIntensity = night * 2.5;
       const t = performance.now() / 1000;
-      MATS.flame.emissiveIntensity = 0.6 + night * 1.2;
-      MATS.flameCore.emissiveIntensity = 0.8 + night * 1.4;
+      MATS.flame.emissiveIntensity = 0.6 + night * 1.9;
+      MATS.flameCore.emissiveIntensity = 0.8 + night * 1.7;
       // the torches' flames dance a little, day and night
       for (const glow of glows.values()) {
         if (glow.flame) glow.flame.scale.y = glow.flame.userData.h * (1 + 0.12 * Math.sin(t * 9 + glow.seed) + 0.06 * Math.sin(t * 23 + glow.seed * 3));
@@ -2150,8 +2177,9 @@ export function createBuildings(world) {
         relic.position.y = 1.25 + Math.sin(t * 1.6 + relic.parent.position.z) * 0.06;
       }
       for (const swirl of swirls.values()) swirl.rotation.z = -t * 2.2;
-      const nearest = night > 0.01 && focus
-        ? [...glows.values()].sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
+      const lit = (glow) => (glow.under ? under : night);
+      const nearest = (night > 0.01 || under > 0.01) && focus
+        ? [...glows.values()].filter((glow) => lit(glow) > 0.01).sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
         : [];
       glowLights.forEach((light, i) => {
         // (spare ones stay on, just dark: switching a light off and on makes
@@ -2159,7 +2187,10 @@ export function createBuildings(world) {
         const glow = nearest[i];
         if (!glow) return void (light.intensity = 0);
         const flicker = glow.flicker ? 0.85 + 0.1 * Math.sin(t * 11 + glow.seed) + 0.05 * Math.sin(t * 27 + glow.seed * 2) : 1;
-        light.intensity = night * 6 * flicker;
+        light.intensity = lit(glow) * (glow.under ? UNDER_GLOW.power : 9) * flicker;
+        light.color.setHex(glow.color ?? GLOW_COLOR);
+        light.distance = glow.under ? UNDER_GLOW.reach : GLOW_REACH;
+        light.decay = glow.under ? UNDER_GLOW.decay : 1.0; // (a gentle falloff: the pool large and warm, fading over the grass)
         light.position.copy(glow.at);
       });
     },

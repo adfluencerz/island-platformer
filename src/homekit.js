@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { detail, detailBaked, bakeDetail } from './gfx/detail.js';
 
 // ---------- What the neighbours' homes are built from ----------
 // The pieces src/npchomes.js, src/npcyards.js and src/nporooms.js share: the
@@ -18,11 +19,12 @@ export const cyl = new THREE.CylinderGeometry(1, 1, 1, 10);
 export const cone = new THREE.ConeGeometry(1, 1, 8);
 
 // A plain material is `bake`able (its color goes into the merged mesh); one
-// with `extra` (see-through, shiny, lit up) stays a mesh of its own
-export const mat = (color, extra) => {
+// with `extra` (see-through, shiny, lit up) stays a mesh of its own. `look`:
+// its painted detail (src/gfx/detail.js), else one by its color
+export const mat = (color, extra, look) => {
   const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true, ...extra });
   m.userData.bake = !extra;
-  return m;
+  return detail(m, look);
 };
 
 // A triangular prism along x, `w` long, its triangle `d` wide at the base
@@ -67,7 +69,7 @@ export const model = (obj) => ((obj.userData.noBake = true), obj);
 export function bakedMaterial(inside = false) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true });
   if (inside) m.userData.noSnow = true;
-  return m;
+  return detailBaked(m); // (each part's look in its vertices: bakeDetail)
 }
 export function bake(group, material) {
   for (const child of group.children) if (child.children.length && !child.userData.noBake && !child.userData.live && !child.userData.flat) bake(child, material);
@@ -93,7 +95,7 @@ export function bake(group, material) {
       const colors = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) colors.set([r, g, b], i * 3);
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      return geo;
+      return bakeDetail(geo, mesh.geometry, mesh.material, matrix);
     });
     const merged = new THREE.Mesh(mergeGeometries(geos), material);
     merged.castShadow = shadow;
@@ -130,17 +132,20 @@ export function makeStory() {
 }
 
 // ---------- Shared materials ----------
-export const woodMat = mat(0xa0682f);
-export const darkWoodMat = mat(0x6e4a2b);
-export const stoneMat = mat(0x9c9a92);
-export const ironMat = mat(0x3a3a3a, { roughness: 0.5, metalness: 0.5 });
+export const woodMat = mat(0xa0682f, undefined, 'wood');
+export const darkWoodMat = mat(0x6e4a2b, undefined, 'wood');
+export const stoneMat = mat(0x9c9a92, undefined, 'stone');
+export const ironMat = mat(0x3a3a3a, { roughness: 0.5, metalness: 0.5 }, 'metal');
 export const glassMat = new THREE.MeshStandardMaterial({ color: 0xcfe9ff, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.35, depthWrite: false });
-export const hayMat = mat(0xd9b24a);
+export const hayMat = mat(0xd9b24a, undefined, 'thatch');
 export const soilMat = mat(0x5b3a1e);
 export const leafMat = mat(0x4f9e3c);
-// lit at night (setNight in src/npchomes.js): lanterns, and windows, pale by day
+// lit at night (setNight in src/npchomes.js): lanterns, and windows, glass
+// by day (the sky in it, the room dark behind: the 'glass' look)
 export const lanternMat = new THREE.MeshStandardMaterial({ color: 0xffe7a3, emissive: 0xffb84a, emissiveIntensity: 0 });
-export const windowMat = new THREE.MeshStandardMaterial({ color: 0xbfe3ff, emissive: 0xffb84a, emissiveIntensity: 0, roughness: 0.3 });
+export const windowMat = detail(new THREE.MeshStandardMaterial({ color: 0xbfe3ff, emissive: 0xffb84a, emissiveIntensity: 0, roughness: 0.3 }), 'glass');
+// the dark gap round a door, so it reads as set into the wall
+const revealMat = mat(0x2a1e14, undefined, 'none');
 export const fireMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
 export const darkMat = new THREE.MeshBasicMaterial({ color: 0x1b140e }); // (the dark round a room, and inside an oven)
 
@@ -356,11 +361,14 @@ export function glowSprite(parent, [x, y, z], size = 1.4, color = 0xffc870) {
 // its foot. Solid all round.
 export function house(g, home, { wallH = 2.4, rise = 1.6, ridge = 'x', wall, trim, roof, door, base = null, thick = 0.14, overhang = 0.35 }, addCollider) {
   const { w, d } = home;
-  const wallMat = mat(wall);
-  const trimMat = mat(trim);
-  const roofMat = mat(roof);
+  // (painted: pale walls plaster, darker ones boards; a straw-colored roof thatch, else tiles)
+  const hsl = new THREE.Color(wall).getHSL({}, THREE.SRGBColorSpace);
+  const roofHsl = new THREE.Color(roof).getHSL({}, THREE.SRGBColorSpace);
+  const wallMat = mat(wall, undefined, hsl.l > 0.7 ? 'plaster' : 'plank');
+  const trimMat = mat(trim, undefined, 'wood');
+  const roofMat = mat(roof, undefined, roofHsl.h > 0.08 && roofHsl.h < 0.17 && roofHsl.s > 0.3 && roofHsl.l > 0.45 ? 'thatch' : 'tile');
   part(g, box, wallMat, [0, wallH / 2, 0], [w, wallH, d]);
-  if (base) part(g, box, mat(base), [0, 0.3, 0], [w + 0.06, 0.6, d + 0.06]);
+  if (base) part(g, box, mat(base, undefined, 'stone'), [0, 0.3, 0], [w + 0.06, 0.6, d + 0.06]);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) part(g, box, trimMat, [sx * (w / 2), wallH / 2, sz * (d / 2)], [0.16, wallH, 0.16]);
   part(g, box, trimMat, [0, wallH - 0.06, d / 2 + 0.02], [w + 0.1, 0.14, 0.06]);
   // the roof: the gable ends in the walls' color, the two slopes over them
@@ -375,11 +383,13 @@ export function house(g, home, { wallH = 2.4, rise = 1.6, ridge = 'x', wall, tri
   for (const s of [-1, 1]) {
     part(roofG, box, roofMat, [0, rise - Math.sin(slope) * run / 2 + thick / 2, s * Math.cos(slope) * run / 2], [len + overhang * 2, thick, run], [s * slope, 0, 0]);
   }
-  part(roofG, box, roofMat, [0, rise + thick * 0.6, 0], [len + overhang * 2 + 0.04, thick * 1.2, thick * 2.2]); // the ridge
+  const ridgeMat = mat(new THREE.Color(roof).multiplyScalar(0.62), undefined, roofMat.userData.gfx.detail); // (capped darker: a ridge line against the sky)
+  part(roofG, box, ridgeMat, [0, rise + thick * 0.6, 0], [len + overhang * 2 + 0.04, thick * 1.4, thick * 2.4]); // the ridge
   // the door, and a window either side of it
   const front = d / 2 + 0.03;
   part(g, box, trimMat, [0, 1.0, front], [1.2, 2.0, 0.06]);
-  part(g, box, mat(door), [0, 0.95, front + 0.03], [0.96, 1.86, 0.06]);
+  part(g, box, revealMat, [0, 0.96, front + 0.035], [1.04, 1.92, 0.05]);
+  part(g, box, mat(door, undefined, 'plank'), [0, 0.95, front + 0.03], [0.96, 1.86, 0.06]);
   part(g, ball, ironMat, [0.32, 0.95, front + 0.08], [0.05, 0.05, 0.05]);
   part(g, box, stoneMat, [0, 0.06, front + 0.45], [1.4, 0.12, 0.7]); // a step
   const winX = Math.min(w / 2 - 0.9, 1.7);

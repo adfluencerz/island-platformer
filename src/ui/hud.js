@@ -174,13 +174,15 @@ export class Hud {
     button('ui-btn ui-btn-small ui-btn-ghost compact-only', head, 'Menu', () => this.onMenu());
     const body = el('div', 'ui-players-body', this.panel);
     this.blurb = el('div', 'ui-muted ui-tip', body); // (the hints: TIPS)
+    // (on a big screen the hint is one line, cut short: hover, or click it, for all of it)
+    this.blurb.addEventListener('click', () => this.panel.classList.toggle('open'));
     this.codeRow = el('div', 'ui-code', body);
     this.codeText = el('span', '', this.codeRow);
     this.copyBtn = button('ui-btn ui-btn-small', this.codeRow, 'Copy invite', () => this.copyInvite());
     this.islandText = el('div', 'ui-muted ui-small', body);
     this.list = el('div', 'ui-player-list', body);
     this.homeBtn = button('ui-btn ui-btn-small ui-btn-ghost', body, 'Go home', () => this.onHome());
-    el('div', 'ui-muted ui-small', body, 'Esc: menu & controls');
+    el('div', 'ui-muted ui-small ui-players-esc', body, 'Esc: menu & controls');
     this.tipPlace = 'home';
     this.tipAt = 0;
     this.setFolded(true);
@@ -309,6 +311,7 @@ export class Hud {
     const online = lobby || place === 'farm'; // (others about: who is here, and chat)
     const away = lobby || (place === 'farm' && !visit?.mine); // (not on our own farm: the way home)
     this.panel.classList.toggle('foldable', online);
+    this.panel.classList.toggle('brief', !online); // (at home: the name and the hint on one line)
     this.codeRow.hidden = !lobby;
     this.islandText.hidden = !lobby;
     this.list.hidden = !online;

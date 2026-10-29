@@ -48,7 +48,7 @@
   font: inherit;
   color: inherit;
 }
-.chest-cell:hover { background: #ffdca4; }
+.chest-cell:hover { background: #fbeccd; }
 .chest-cell.chest-locked { cursor: default; }
 .chest-empty {
   align-self: center;

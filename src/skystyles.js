@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { detail } from './gfx/detail.js';
 
 // ---------- The sky isles' styles ----------
 // What each style of sky isle (SKY_STYLES, shared/skyisles.js) looks like:
@@ -20,11 +21,11 @@ import * as THREE from 'three';
 const matCache = new Map();
 function material(key, color) {
   if (key.startsWith('glow')) return new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, roughness: 0.4, flatShading: true });
-  if (key.startsWith('glass')) return new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.15, transparent: true, opacity: 0.75 });
+  if (key.startsWith('glass')) return detail(new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.15, transparent: true, opacity: 0.75 }), 'glass'); // (the sky in it, the room dark behind)
   if (key.startsWith('water')) return new THREE.MeshStandardMaterial({ color, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 });
   if (key.startsWith('ice')) return new THREE.MeshStandardMaterial({ color, roughness: 0.2, transparent: true, opacity: 0.85, flatShading: true });
-  if (key.startsWith('metal')) return new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.6, flatShading: true });
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true });
+  if (key.startsWith('metal')) return detail(new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.6, flatShading: true }), 'metal');
+  return detail(new THREE.MeshStandardMaterial({ color, roughness: 0.85, flatShading: true }), undefined, key); // (painted by its key: roof tiles, wall plaster, wood... src/gfx/detail.js)
 }
 export function matsFor(styleId, variant) {
   const look = SKY_LOOKS[styleId];

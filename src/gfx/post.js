@@ -4,6 +4,7 @@ import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { U } from './uniforms.js';
+import { MOON } from './light.js';
 
 // ---------- Post-processing: bloom, a color grade, anti-aliasing ----------
 // On medium and high (the tier's `post` knob, src/gfx/quality.js); low draws
@@ -21,8 +22,10 @@ import { U } from './uniforms.js';
 //   - bloom (three's UnrealBloomPass) on what is near white: the sun, the
 //     glints, bright cloud tops; at night and underground its threshold falls,
 //     so the lamps, the windows and the torches glow. Half-res on medium.
-//   - grade: a touch of saturation, a soft vignette (round each seat's own
-//     view), a tint warm by day and cool at night, leaning toward the sky;
+//   - grade: a touch of saturation (less at night, in the dark), a soft
+//     vignette (round each seat's own view), a tint warm by day and cool at
+//     night, leaning toward the sky; warm lights and cool shades (a split
+//     by brightness, most round a low sun) and a touch of contrast in the mids;
 //     written to the screen as it is (the target is in its color space already:
 //     no OutputPass, which would tone map and encode a second time).
 //
@@ -34,12 +37,25 @@ import { U } from './uniforms.js';
 
 // The look (uniforms: tweak live through window.__game.post.grade.uniforms)
 export const POST = {
-  bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72 }, // (thresholds: the screen's brightness, 0..1)
-  saturation: 1.08,
+  bloom: { strength: 0.22, nightStrength: 0.34, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
+  saturation: 1.14,
+  saturationLow: 0.08, // (more round a low sun: a sunset's colors rich, not muddy)
+  contrast: 1.06, // (in the mids, round CONTRAST_PIVOT)
+  split: [0.3, 0.9], // (warm lights, cool shades: by day, and round a low sun; none at night or underground)
+  nightSaturation: 0.62, // (at night the dark parts go grey-blue, as the eye sees by moonlight; what a lamp lights keeps its color. The low tier: src/gfx/light.js)
   vignette: 0.2,
   warm: new THREE.Color(1.02, 1.0, 0.97), // (the day's tint)
   cool: new THREE.Color(0.95, 0.98, 1.05), // (the night's)
   skyTint: 0.08, // (how far the tint leans toward the sky's horizon color)
+  skyTintLow: 0.07, // (and round a low sun, by day: a golden hour's warmth, mostly in the split's warm lights: a whole-picture orange made the greens olive)
+  rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
+  rainSaturation: 0.18,
+  mist: new THREE.Color(0.97, 0.99, 1.03), // (the morning's mist: a paler, cooler lean, so morning is not a second sunset)
+  mistSaturation: -0.04,
+  // underground: what no lamp lights goes grey-blue as by moonlight (the night's
+  // own look, how much of it), only the darkest of it (the brightness it starts
+  // to keep its color at, and keeps all of it by: a lamp's pool keeps its warmth)
+  cave: { shade: 0.75, dark: [0.03, 0.2] },
 };
 
 const MAX_SEATS = 4;
@@ -75,7 +91,23 @@ class SeatsPass extends Pass {
     // As the screen is drawn: three tone maps, and writes in the screen's
     // color space, only what is drawn to the screen or to an XR target (whose
     // texture's color space it takes), so for the seats the target says it is
-    // one (a half-float target: no sRGB format, the values are stored as written)
+    // one (a half-float target: no sRGB format, the values are stored as written).
+    // Kept (phase 15's audit) over the plain route (a linear target, then
+    // OutputPass to tone map and encode once at the end) because:
+    // - the sky dome and the fog are made for the screen: the dome is not tone
+    //   mapped and the fog is mixed in after tone mapping and encoding (sky.js,
+    //   atmos.js), so in a linear target they would come out tone mapped
+    //   twice or not encoded, and the far land would no longer meet the sky;
+    // - every program is the one the low tier draws to the screen with (three
+    //   keys a program on its tone mapping and color space): no second set
+    //   compiled for the post tiers, no hitch when the tier changes, and the
+    //   tiers look the same before the post;
+    // - the bloom's thresholds and the grade work on what the screen shows
+    //   (0..1), which is what they are tuned by.
+    // It rests on three r180's WebGLRenderer and WebGLPrograms choosing tone
+    // mapping and color space by isXRRenderTarget: `npm test` checks those
+    // lines are still there (scripts/test-multiplayer.js), so an upgrade that
+    // moves them fails there, not as a washed-out picture.
     target.texture.colorSpace = renderer.outputColorSpace;
     target.isXRRenderTarget = true;
     try {
@@ -114,8 +146,13 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
   uniforms: {
     tDiffuse: { value: null },
     uSaturation: { value: POST.saturation },
+    uNightSaturation: { value: POST.nightSaturation },
+    uNight: { value: 0 }, // (how much night there is to see: none underground)
     uVignette: { value: POST.vignette },
+    uDark: { value: new THREE.Vector2(0.25, 0.7) }, // (how dark is dark enough for the moon's grey-blue, and how light keeps its color)
     uTint: { value: new THREE.Color(1, 1, 1) },
+    uContrast: { value: POST.contrast },
+    uSplit: { value: 0 }, // (how much of the warm-light, cool-shade split)
     uSeats: { value: Array.from({ length: MAX_SEATS }, () => new THREE.Vector4(0, 0, 1, 1)) }, // (each view: x, y, w, h in 0..1, from the bottom left)
     uSeatCount: { value: 1 },
   },
@@ -129,15 +166,25 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
     uniform float uSaturation;
+    uniform float uNightSaturation;
+    uniform float uNight;
     uniform float uVignette;
+    uniform vec2 uDark;
     uniform vec3 uTint;
+    uniform float uContrast;
+    uniform float uSplit;
     uniform vec4 uSeats[${MAX_SEATS}];
     uniform int uSeatCount;
     varying vec2 vUv;
     void main() {
       vec4 col = texture2D(tDiffuse, vUv);
       float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-      col.rgb = max(mix(vec3(luma), col.rgb, uSaturation), 0.0) * uTint;
+      float moonlit = uNight * (1.0 - smoothstep(uDark.x, uDark.y, luma)); // (dark: by moonlight, grey-blue; what a lamp lights keeps its color)
+      float sat = uSaturation * mix(1.0, uNightSaturation, moonlit);
+      col.rgb = max(mix(luma * mix(vec3(1.0), vec3(${MOON}), moonlit), col.rgb, sat), 0.0) * uTint;
+      // warm in the light, cool in the shade (by brightness), and a touch more contrast in the mids
+      col.rgb *= mix(vec3(1.0), mix(vec3(0.95, 1.0, 1.07), vec3(1.05, 1.0, 0.93), smoothstep(0.1, 0.6, luma)), uSplit);
+      col.rgb = max((col.rgb - 0.35) * uContrast + 0.35, 0.0);
       // the vignette, round the view this pixel is in
       vec4 part = uSeats[0];
       for (int i = 1; i < ${MAX_SEATS}; i++) {
@@ -158,6 +205,7 @@ export function createPost(renderer, { seats, view, gap }) {
   const size = new THREE.Vector2();
   const tint = new THREE.Color();
   const sky = new THREE.Color();
+  const rainTint = new THREE.Color();
 
   function make() {
     renderer.getDrawingBufferSize(size);
@@ -219,8 +267,9 @@ export function createPost(renderer, { seats, view, gap }) {
       composer.setSize(size.x, size.y);
     },
     render() {
-      const night = Math.max(U.uNight.value, U.uUnder.value);
-      bloom.threshold = THREE.MathUtils.lerp(POST.bloom.threshold, POST.bloom.nightThreshold, night);
+      const { strength, nightStrength, threshold, nightThreshold, underThreshold } = POST.bloom;
+      bloom.threshold = THREE.MathUtils.lerp(THREE.MathUtils.lerp(threshold, nightThreshold, U.uNight.value), underThreshold, U.uUnder.value);
+      bloom.strength = THREE.MathUtils.lerp(strength, nightStrength, U.uNight.value * (1 - U.uUnder.value)); // (at night the lamps' hearts bloom wider: their warm pools; not underground)
       // the tint: warm by day, cool at night, leaning toward the sky's own color
       // (its hue: the horizon over its brightness), none underground
       sky.copy(U.uSkyHorizon.value);
@@ -229,8 +278,16 @@ export function createPost(renderer, { seats, view, gap }) {
       sky.r = Math.min(sky.r, 1.6);
       sky.g = Math.min(sky.g, 1.6);
       sky.b = Math.min(sky.b, 1.6);
-      tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, POST.skyTint).lerp(WHITE, U.uUnder.value);
+      const low = (1 - THREE.MathUtils.smoothstep(U.uSunDir.value.y, 0.12, 0.6)) * (1 - U.uNight.value) * (1 - U.uCloudAmount.value);
+      tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, THREE.MathUtils.lerp(POST.skyTint, POST.skyTintLow, low * (1 - 0.6 * U.uMist.value))).lerp(WHITE, U.uUnder.value);
+      tint.multiply(rainTint.copy(WHITE).lerp(POST.rain, U.uCloudAmount.value * (1 - U.uUnder.value)));
+      tint.multiply(rainTint.copy(WHITE).lerp(POST.mist, U.uMist.value));
       grade.uniforms.uTint.value.copy(tint);
+      grade.uniforms.uSplit.value = THREE.MathUtils.lerp(POST.split[0], POST.split[1], low) * (1 - U.uNight.value) * (1 - U.uUnder.value) * (1 - 0.7 * U.uCloudAmount.value);
+      grade.uniforms.uSaturation.value = POST.saturation + POST.saturationLow * low + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value) + POST.mistSaturation * U.uMist.value;
+      const under = U.uUnder.value;
+      grade.uniforms.uNight.value = Math.max(U.uNight.value * (1 - under), under * POST.cave.shade);
+      grade.uniforms.uDark.value.set(THREE.MathUtils.lerp(0.25, POST.cave.dark[0], under), THREE.MathUtils.lerp(0.7, POST.cave.dark[1], under));
       seatParts();
       renderer.setScissorTest(false); // (the screen's own, for the output: a split screen drawn straight leaves it on)
       renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);

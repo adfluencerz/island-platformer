@@ -7,7 +7,8 @@ Stylized painterly, in the spirit of Breath of the Wild, not realism:
 - a real sky: a gradient dome, drifting clouds, sun, moon and stars, and cloud shadows on the ground;
 - atmospheric depth: far land melts into the sky, a low haze over the sea;
 - bloom on lamps, glints and the sun, and a light color grade (a touch of saturation, a soft vignette);
-- the low-poly shapes and flat-color charm stay: it is the light and air that change.
+- smooth, soft forms (no faceted flat shading), cloud-like canopies, rounded rocks:
+  since phase 31 the low-poly facets are gone; the flat-color palette stays.
 It must stay playable in a browser and on phones: the Graphics setting (tiers,
 below) is the escape hatch, and every phase keeps the low tier cheap.
 
@@ -20,24 +21,37 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | pixel ratio cap | 0.5 | 1.5          | 2    |
 | shadow map    | off  | 1024          | 2048 |
 | post          | off  | half-res bloom | full |
-| grass density | 0.35 | 0.6           | 1.0  |
-| grass blades (of 7 a tuft) | 3 | 5     | 7    |
+| grass carpet (share of 96 blades a tile, since 33) | off: tufts | 0.6 | 1 |
+| grass density (tufts) | 0.35 | 0.75   | 1.0  |
+| grass blades (of 7 a tuft) | 3 | 6     | 7    |
+| grass spread (tuft, carpet blade width) | 1 | 1.2 | 1 |
+| tree detail (near level of canopies, pines, rocks, bushes; since 34: a round canopy 500 near, 80 far) | far | near | near |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
-| particles     | 300  | 600           | 900  |
+| particles (rain, snow; motes: 160 at 900) | 300 | 600 | 900 |
+| night's grey  | in the light (0.35) | in the grade | in the grade |
+| character outline (since 46: medium too) | off | on | on |
+| ground detail gain | 1 | 1.35        | 1    |
 
-## Budgets (farm, `plaza-noon` in `npm run shots`)
-- Draw calls: not more than the previous phase (the baseline is in STATUS.md); ≤ 900 from phase 09 on.
-- Programs ≤ 120. Triangles ≤ 1.5 M on high, ≤ 0.8 M on medium.
-- `npm run shots -- --check` reads the line below; lower `calls` as phases bring it down, never raise it.
-<!-- budgets {"calls": 1000, "programs": 120, "triangles": {"high": 1500000, "medium": 800000, "low": 800000}} -->
+## Budgets (final from phase 15: `plaza-noon` and `phone` in `npm run shots`, each at its tier)
+Measured in phase 15 (960x600, pixel ratio 1, SwiftShader, shadow pass included; calls drift ±20 between runs):
+
+| tier   | plaza-noon calls / triangles / programs | phone calls / triangles | budget calls / triangles / programs |
+|--------|------------------------------------------|-------------------------|--------------------------------------|
+| high   | 787 / 831k / 44 | 661 / 505k  | 850 / 1.0 M / 120 |
+| medium | 773 / 611k / 43 | 659 / 373k  | 850 / 0.7 M / 120 |
+| low    | 359 / 478k / 30 | 180 / 264k  | 450 / 0.6 M / 100 |
+
+- Programs are the headroom for the surface detail of phases 16–18: about 75 free on every tier (a lobby, the most, has 85 on high).
+- `npm run shots -- --check` reads the line below for plaza-noon and the phone at their tiers; lower a number as phases bring it down, never raise it.
+<!-- budgets {"high": {"calls": 850, "triangles": 1000000, "programs": 120}, "medium": {"calls": 850, "triangles": 700000, "programs": 120}, "low": {"calls": 450, "triangles": 600000, "programs": 100}} -->
 
 ## Gates (every phase, all must pass before pushing)
 `npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
 - `npm test` and `npm run build`.
 - `npm run browser --silent -- -e 'g.step(2); return g.stats()'` with no page errors, and the same with `--full`.
-- `npm run shots` (ten PNGs, `contact.png`, `stats.json`) and `npm run shots -- --check`.
+- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (twelve PNGs, `contact.png`, `stats.json`: high, the two phone shots medium).
 - Look at `shots/contact.png` once and judge it against the phase's "Proof" line.
 
 ## Rules
@@ -66,4 +80,21 @@ notes for next phase: ≤ 5 lines
 ## Tools
 - `window.__game` (dev): `stats()`, `warp('plaza'|'lake'|'house'|'forest'|'dungeon'|{x,z})`,
   `snapCamera()`, `dayNight.setTime(h)`, `step(s)`, `draw()`; the devtools Info tab shows the stats.
+- `?cam=wide|classic`: the camera's angle from above (the menu's Camera button, kept as `tp.cam`; wide by default, classic underground and indoors).
 - `npm run shots [-- --tier low|medium|high] [--check]`: `scripts/shots.mjs`, launcher in `scripts/lib/page.mjs`.
+
+## Parallel workers (several polish rounds at once)
+Each round gets its own branch `claude/festive-goldberg-tcdcpc-rNN` and its own
+git worktree with a copy of `node_modules` (`cp -a` it from the main checkout).
+Run every npm command there with its own ports so the harnesses do not collide:
+`GAME_PORT=31NN VITE_PORT=51NN BROWSER_URL=http://localhost:51NN npm run gates`
+(same three variables for `npm run shots`, `npm run browser` and `npm run dev`).
+Rounds running side by side take disjoint areas (one on lighting and the world,
+one on characters and animals, one on buildings and props, one on sky and air)
+and avoid editing the shared gfx core (`src/gfx/uniforms.js`, `shading.js`,
+`light.js`, `atmos.js`) unless the round needs it, keeping such edits small and
+additive. Before the final gates and before opening the PR, merge `origin/main`
+into the round's branch; when the orchestrator asks after another round merges,
+merge `origin/main` again, rerun the gates and push. Parallel rounds do not
+edit `STATUS.md` (the orchestrator ticks it after each wave); they write their
+notes at the end of their own `phases/NN-*.md`.

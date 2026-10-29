@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { detailInstanced, lookIndex } from './gfx/detail.js';
+import { hook } from './gfx/shading.js';
+import { patch } from './gfx/chunks.js';
 import { BOSS_IDS, ARENAS, ARENA_R, arenaExit } from '../shared/bosses.js';
 import { MAIN, ROOM_W, DOOR_W, LAYOUTS, roomCount, roomRect, gateAt, sideDoorAt, chestAt, dungeonExit, foeRooms } from '../shared/dungeons.js';
 import { createFoe } from './dungeonfoes.js';
@@ -66,13 +69,53 @@ const SEGMENTS = 36; // what stops a farmer at its walls: short pieces all round
 const LIFT_TIME = 1.2; // seconds the dark over a room takes to lift, once the gate into it opens
 const FADE = [0.45, 0.35, 0.25, 0.15]; // the sheets of dark the cavern fades through into it, nearest it first
 const DARK = 0x040306; // (as black as it is all round, underground: daynight.js)
+const LAMP_Y = { parsnip: 1.6, lion: 1.4, bee: 1.5, crow: 1.7, toad: 0.9 }; // (how high a lamp's light hangs, by its flame; a little under the cellar's lanterns, so its pool is on the floor)
+const LAMP_OUT = 0.95; // (and how far out from the lamp, into the room: its pool on the floor, not all up the wall)
+
+// ---------- The dark in a dungeon's corners ----------
+// (the 'dungeon:shade' hook) What is near the floor by a wall goes darker,
+// most in a corner, as does the floor along the walls, what faces down (under
+// a beam, a ledge, a shelf), and the cavern's rock the further out from the
+// dungeon it is: from the rooms of the dungeon drawn now (and its bridge), as
+// rects, and its hall, a circle (update(): the one we are near)
+const SHADE_RECTS = 8;
+const SHADE = {
+  uDungeonRects: { value: Array.from({ length: SHADE_RECTS }, () => new THREE.Vector4(1e5, 1e5, 1e5, 1e5)) }, // x0, z0, x1, z1 (spare ones far off)
+  uDungeonHall: { value: new THREE.Vector3(0, 0, -1) }, // x, z and its radius
+};
+const SHADE_GLSL = /* glsl */ `
+{
+  highp vec2 sP = vGfxWorld.xz;
+  vec2 sIn = vec2(-1e4); // (how far in from its walls, across and along, in the room it is in)
+  for (int i = 0; i < ${SHADE_RECTS}; i++) {
+    highp vec4 r = uDungeonRects[i];
+    vec2 e = vec2(min(sP.x - r.x, r.z - sP.x), min(sP.y - r.y, r.w - sP.y));
+    if (min(e.x, e.y) > min(sIn.x, sIn.y)) sIn = e;
+  }
+  float sHall = uDungeonHall.z - distance(sP, uDungeonHall.xy);
+  if (sHall > min(sIn.x, sIn.y)) sIn = vec2(sHall, 9.0);
+  vec2 sNear = 1.0 - smoothstep(0.0, 1.2, max(sIn, 0.0));
+  float sWall = min(1.0, 0.72 * (sNear.x + sNear.y)); // (by a wall; more in a corner)
+  float sLow = 1.0 - smoothstep(0.0, 1.4, vGfxWorld.y); // (near the floor)
+  float sOcc = sWall * sLow * sLow;
+  vec3 sN = inverseTransformDirection(normal, viewMatrix);
+  sOcc = max(sOcc, 0.8 * smoothstep(-0.25, -0.85, sN.y)); // (facing down: under a ledge)
+  float sOut = smoothstep(0.8, 7.0, -min(sIn.x, sIn.y)); // (out on the cavern's rock)
+  diffuseColor.rgb *= (1.0 - 0.6 * sOcc) * (1.0 - 0.55 * sOut);
+}`;
+function shade(shader) {
+  Object.assign(shader.uniforms, SHADE);
+  shader.fragmentShader = patch(shader.fragmentShader, 'common', `uniform highp vec4 uDungeonRects[${SHADE_RECTS}];\nuniform highp vec3 uDungeonHall;`);
+  shader.fragmentShader = patch(shader.fragmentShader, 'emissivemap_fragment', SHADE_GLSL);
+}
+const shaded = (material) => hook(material, 'dungeon:shade', shade);
 
 // What a piece is made of: white, each piece its own color (instance colors)
 const KINDS = {
-  matte: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true }),
+  matte: shaded(detailInstanced(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true }))), // (each piece its painted look: 'matte:stone')
   gloss: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.05, flatShading: true }),
   metal: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.65, flatShading: true }),
-  glow: new THREE.MeshBasicMaterial({ color: 0xffffff }), // (lit from within: flames, honey, crystals)
+  glow: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.7, 1.7) }), // (lit from within: flames, honey, crystals; past white, so the bloom finds them)
   water: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.82 }),
 };
 const box = new THREE.BoxGeometry(1, 1, 1);
@@ -106,6 +149,7 @@ function glowTexture() {
 let soft = null;
 const softGlow = () => (soft ??= glowTexture());
 const poolGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const POOL = 0.25; // (how strong: a hot heart in a lamp's real pool of light, not a warm wash over the floor)
 
 // a little random, the same every time (a dungeon looks the same on every page)
 function seeded(seed) {
@@ -138,11 +182,12 @@ function createBatch(parent, rand) {
   const c = new THREE.Color();
   return {
     add(geo, kind, color, x, y, z, w, h, d, rx = 0, ry = 0, rz = 0, vary = 0.08) {
-      const key = `${geo.uuid}:${kind}`;
-      if (!lists.has(key)) lists.set(key, { geo, kind, list: [] });
+      const [base, look = 'none'] = kind.split(':'); // ('matte:stone': matte, its look painted on: src/gfx/detail.js)
+      const key = `${geo.uuid}:${base}`;
+      if (!lists.has(key)) lists.set(key, { geo, kind: base, list: [] });
       c.setHex(color).multiplyScalar(1 + (rand() * 2 - 1) * vary);
       const matrix = m.compose(p.set(x, y, z), q.setFromEuler(e.set(rx, ry, rz)), s.set(w, h, d)).clone();
-      lists.get(key).list.push([frame ? matrix.premultiply(frame) : matrix, c.clone()]);
+      lists.get(key).list.push([frame ? matrix.premultiply(frame) : matrix, c.clone(), lookIndex(look)]);
     },
     within(matrix, fn) {
       const was = frame;
@@ -160,7 +205,10 @@ function createBatch(parent, rand) {
     },
     done() {
       for (const { geo, kind, list } of lists.values()) {
-        const mesh = new THREE.InstancedMesh(geo, KINDS[kind], list.length);
+        // (a matte piece's look, each its own: a copy of the shape to carry them)
+        const shape = kind === 'matte' ? geo.clone() : geo;
+        if (kind === 'matte') shape.setAttribute('gfxLook', new THREE.InstancedBufferAttribute(new Float32Array(list.map((piece) => piece[2])), 1));
+        const mesh = new THREE.InstancedMesh(shape, KINDS[kind], list.length);
         list.forEach(([matrix, color], i) => {
           mesh.setMatrixAt(i, matrix);
           mesh.setColorAt(i, color);
@@ -171,7 +219,7 @@ function createBatch(parent, rand) {
         parent.add(mesh);
       }
       if (!pools.length) return null;
-      const material = new THREE.MeshBasicMaterial({ map: softGlow(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.55 });
+      const material = new THREE.MeshBasicMaterial({ map: softGlow(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: POOL });
       const mesh = new THREE.InstancedMesh(poolGeo, material, pools.length);
       pools.forEach(([x, y, z, size, color], i) => {
         mesh.setMatrixAt(i, m.compose(p.set(x, y, z), q.identity(), s.set(size, 1, size)));
@@ -191,12 +239,23 @@ function createBatch(parent, rand) {
 // how: rising, or sinking); swirl: its ways home's; gate: the
 // gate's; cave: the light down there (src/bosses.js tints the dark with it)
 export const THEMES = {
-  parsnip: { rock: 0x3a2c22, floor: 0x4a3524, wall: 0x5a3d25, wall2: 0x6b4a2e, trim: 0x7a4f28, light: 0xffb050, mote: [0xffd9a0, 0.15], swirl: [0x6a2f94, 0xd9a8ff], gate: 0x7a4f28, band: 0x3a3632, cave: 0xffc890 },
+  parsnip: { rock: 0x3a2c22, floor: 0x5e5246, wall: 0x5a3d25, wall2: 0x6b4a2e, trim: 0x7a4f28, light: 0xffb050, mote: [0xffd9a0, 0.15], swirl: [0x6a2f94, 0xd9a8ff], gate: 0x7a4f28, band: 0x3a3632, cave: 0xffc890 },
   lion: { rock: 0x5a4430, floor: 0xd9bf88, wall: 0xd9b77a, wall2: 0xc9a464, trim: 0xe8cf94, light: 0xff9a3a, mote: [0xffb050, 0.35], swirl: [0xb8561a, 0xffd08a], gate: 0xc9a464, band: 0xe0a82e, cave: 0xffd0a0 },
   bee: { rock: 0x4a3418, floor: 0xe8b23a, wall: 0xb8801a, wall2: 0xf2c860, trim: 0x8a5a12, light: 0xffb020, mote: [0xffe070, 0.2], swirl: [0xc99a10, 0xfff0a0], gate: 0xf7d77a, band: 0xe8a820, cave: 0xffd890 },
   crow: { rock: 0x26262c, floor: 0x3a322a, wall: 0x4a3a2a, wall2: 0x5e4c38, trim: 0x2f2a24, light: 0x8fb0ff, mote: [0xc8d8ff, -0.12], swirl: [0x2f3f8a, 0xa8c0ff], gate: 0x5a4a36, band: 0x2f2a24, cave: 0xa8b8e8 },
   toad: { rock: 0x26302a, floor: 0x3a4630, wall: 0x56664e, wall2: 0x4a5a44, trim: 0x5f8a36, light: 0x7ae0bc, mote: [0xb8ff90, 0.1], swirl: [0x1f7a6a, 0x9ff0d0], gate: 0x5a4a30, band: 0x6f9a3e, cave: 0xa8e0c0 },
 };
+// how each dungeon's surfaces are painted (src/gfx/detail.js): its floor, the
+// near walls the camera looks in over, its trim (posts, beams, ledges)
+const LOOKS = {
+  parsnip: { floor: 'stone', near: 'stone', trim: 'wood' }, // (a cellar of flagstones and stone-lined walls in a timber frame)
+  lion: { floor: 'stone', near: 'stone', trim: 'stone' },
+  bee: { floor: 'plaster', near: 'plaster', trim: 'wood' },
+  crow: { floor: 'plank', near: 'wood', trim: 'wood' },
+  toad: { floor: 'cobble', near: 'stone', trim: 'stone' },
+};
+for (const [id, th] of Object.entries(THEMES)) th.looks = LOOKS[id];
+const matte = (th, part) => `matte:${th.looks[part]}`; // (a matte piece painted as the theme's `part` is)
 
 // world: the farm's (world.js buildWorld)
 export function createDungeons(world) {
@@ -204,6 +263,7 @@ export function createDungeons(world) {
   root.name = 'boss-dungeons';
   world.root.add(root);
   const dungeons = new Map(); // id -> { group, gates, swirl, flames, flies, motes, pools, foes }
+  const lamps = []; // every dungeon's lamps (and its hall's): { at, color, flicker }, for real lights
 
   function solid({ x, y, z, w, h, d }, extra = {}) {
     const aabb = {
@@ -240,7 +300,7 @@ export function createDungeons(world) {
       const x1 = side < 0 ? r.x1 : r.x1 + T;
       const z0 = side ? r.z0 - T : room === MAIN - 1 ? r.z0 - T / 2 : r.z0;
       const z1 = side ? r.z1 + T : room === 0 ? r.z1 + T : r.z1;
-      b.add(box, 'matte', th.floor, (x0 + x1) / 2, -0.15, (z0 + z1) / 2, x1 - x0, 0.3, z1 - z0, 0, 0, 0, 0);
+      b.add(box, matte(th, 'floor'), th.floor, (x0 + x1) / 2, -0.15, (z0 + z1) / 2, x1 - x0, 0.3, z1 - z0, 0, 0, 0, 0);
       solid({ x: (x0 + x1) / 2, y: -0.6, z: (z0 + z1) / 2, w: x1 - x0, h: 1.2, d: z1 - z0 }, { ground: true });
     });
     cavern(d);
@@ -309,7 +369,11 @@ export function createDungeons(world) {
     const swirl = wayHome(group, th, dungeonExit(id));
     const pools = b.done();
     const motes = makeMotes(d);
-    dungeons.set(id, { group, gates, chests, swirl, hallSwirl, flames: d.flames, flies: d.flies, motes, pools, foes: null, dark: makeDark(d) });
+    // (its rooms, its bridge and its hall, for the dark in its corners: SHADE)
+    const bw = (DOOR_W + 0.8) / 2;
+    const rects = [...rooms, { x0: ax - bw, x1: ax + bw, z0: az + HALL_R, z1: zFar }].map((r) => new THREE.Vector4(r.x0, r.z0, r.x1, r.z1));
+    const shadeAt = { rects, hall: new THREE.Vector3(ax, az, HALL_R) };
+    dungeons.set(id, { group, gates, chests, swirl, hallSwirl, flames: d.flames, flies: d.flies, motes, pools, foes: null, dark: makeDark(d), shadeAt });
   }
 
   // The bridge from the last main room's gate over to the way into the boss's
@@ -320,13 +384,13 @@ export function createDungeons(world) {
     const len = zFar - T / 2 - from;
     const mid = from + len / 2;
     const bw = DOOR_W + 0.8;
-    for (let z = from + 0.25; z < zFar - T / 2; z += 0.5) b.add(box, 'matte', th.trim, ax, -0.08, z, bw, 0.14, 0.44);
+    for (let z = from + 0.25; z < zFar - T / 2; z += 0.5) b.add(box, matte(th, 'trim'), ax, -0.08, z, bw, 0.14, 0.44);
     b.add(box, 'matte', th.rock, ax, -1, mid, bw - 0.4, 1.8, len);
     solid({ x: ax, y: -0.6, z: mid - 0.8, w: bw, h: 1.2, d: len + 1.6 }, { ground: true });
     for (const sx of [-1, 1]) {
       const rx = ax + sx * (bw / 2 + 0.1);
-      b.add(box, 'matte', th.trim, rx, 0.55, mid, 0.14, 0.12, len);
-      for (let z = from + 0.3; z < zFar; z += 1.1) b.add(box, 'matte', th.trim, rx, 0.3, z, 0.16, 0.6, 0.16);
+      b.add(box, matte(th, 'trim'), rx, 0.55, mid, 0.14, 0.12, len);
+      for (let z = from + 0.3; z < zFar; z += 1.1) b.add(box, matte(th, 'trim'), rx, 0.3, z, 0.16, 0.6, 0.16);
       solid({ x: rx, y: WALL_H / 2, z: mid - T / 2, w: 0.2, h: WALL_H, d: len + T });
     }
   }
@@ -341,7 +405,7 @@ export function createDungeons(world) {
   // Returns the way home's swirl.
   function hall(d) {
     const { b, th, ax, az, id, rand } = d;
-    b.add(round, 'matte', th.floor, ax, -0.15, az, 2 * HALL_W + T, 0.3, 2 * HALL_W + T, 0, 0, 0, 0);
+    b.add(round, matte(th, 'floor'), th.floor, ax, -0.15, az, 2 * HALL_W + T, 0.3, 2 * HALL_W + T, 0, 0, 0, 0);
     solid({ x: ax, y: -0.6, z: az, w: 2 * HALL_W + 2, h: 1.2, d: 2 * HALL_W + 2 }, { ground: true });
     hallFloor(d);
     const len = 2 * HALL_W * Math.tan(Math.PI / HALL_SIDES);
@@ -383,7 +447,7 @@ export function createDungeons(world) {
     for (const k of HALL_PIECES[id]) SETPIECES[id](d, { x0: ax - 8, x1: ax + 8, z0: az - 10.4, z1: az - 2 }, k);
     // the way home, a signpost by it
     const exit = arenaExit(id);
-    b.add(box, 'matte', th.trim, exit.x + 1.35, 0.55, exit.z + 0.5, 0.1, 1.1, 0.1);
+    b.add(box, matte(th, 'trim'), exit.x + 1.35, 0.55, exit.z + 0.5, 0.1, 1.1, 0.1);
     b.add(box, 'matte', 0xe8c98f, exit.x + 1.35, 1, exit.z + 0.56, 0.7, 0.3, 0.06);
     return wayHome(d.group, th, exit);
   }
@@ -405,7 +469,7 @@ export function createDungeons(world) {
       b.add(cyl, 'matte', 0xe8e0c8, x, h + 0.2, z, 0.08, 0.3, 0.08);
       b.add(ball, 'glow', th.light, x, h + 0.36, z, 0.4, 0.18, 0.4);
     } else {
-      b.add(box, 'matte', th.trim, x, h / 2, z, 0.45, h, 0.45);
+      b.add(box, matte(th, 'trim'), x, h / 2, z, 0.45, h, 0.45);
       b.add(box, 'matte', id === 'lion' ? th.wall2 : th.band, x, 0.1, z, 0.6, 0.2, 0.6);
       if (id === 'lion') {
         b.add(cyl, 'metal', 0x8a5a2a, x, h + 0.08, z, 0.5, 0.16, 0.5);
@@ -458,7 +522,7 @@ export function createDungeons(world) {
         for (let z = az - R + 0.5; z < az + R; z += 1) {
           if (!on(x, z, 0.4)) continue;
           const cracked = rand() < 0.08;
-          b.add(box, 'matte', cracked ? 0xb89c68 : th.floor, x, cracked ? -0.01 : 0.02, z, 0.96, 0.06, 0.96, 0, 0, 0, 0.07);
+          b.add(box, 'matte:stone', cracked ? 0xb89c68 : th.floor, x, cracked ? -0.01 : 0.02, z, 0.96, 0.06, 0.96, 0, 0, 0, 0.07);
         }
       }
       b.add(box, 'matte', 0x9a2418, ax, 0.06, laneZ, 1.8, 0.02, laneD, 0, 0, 0, 0);
@@ -538,8 +602,8 @@ export function createDungeons(world) {
         }
       }
       for (const sx of [-1, 1]) {
-        b.add(box, 'matte', th.trim, x + sx * 2.6, 1.1, z, 0.18, 2.2, 0.18);
-        b.add(box, 'matte', th.trim, x + sx * 2.4, 2.15, z, 0.6, 0.12, 0.12);
+        b.add(box, matte(th, 'trim'), x + sx * 2.6, 1.1, z, 0.18, 2.2, 0.18);
+        b.add(box, matte(th, 'trim'), x + sx * 2.4, 2.15, z, 0.6, 0.12, 0.12);
         b.add(cyl, 'metal', 0x3a3632, x + sx * 2.2, 2, z, 0.02, 0.3, 0.02);
         lantern(d, x + sx * 2.2, 1.65, z);
         b.pool(th.light, x + sx * 2.2, z + 0.6, 3.6);
@@ -547,7 +611,7 @@ export function createDungeons(world) {
     } else if (id === 'lion') {
       // a dais of three steps, a golden lion's head on it, a brazier either side
       for (let s = 0; s < 3; s++) b.add(box, 'matte', th.wall2, x, 0.12 + s * 0.24, z, 4.4 - s, 0.24, 2.4 - s * 0.55);
-      b.add(box, 'matte', th.trim, x, 0.98, z, 0.9, 0.5, 0.8);
+      b.add(box, matte(th, 'trim'), x, 0.98, z, 0.9, 0.5, 0.8);
       b.add(ball, 'metal', th.band, x, 1.7, z, 1.3, 1.2, 0.7);
       b.add(ball, 'metal', 0xffd27a, x, 1.68, z + 0.25, 0.72, 0.72, 0.5);
       b.add(ball, 'metal', 0xe0a82e, x, 1.5, z + 0.48, 0.28, 0.2, 0.16);
@@ -641,7 +705,7 @@ export function createDungeons(world) {
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+    const ground = new THREE.Mesh(geo, shaded(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true })));
     ground.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     ground.receiveShadow = true;
     d.group.add(ground);
@@ -680,19 +744,19 @@ export function createDungeons(world) {
     const len = z1 - z0;
     const mid = (z0 + z1) / 2;
     // its back and top, in the cavern's rock
-    b.add(box, 'matte', th.rock, x + sx * 0.2, SIDE_H / 2, mid, T + 0.4, SIDE_H, len, 0, 0, 0, 0.05);
+    b.add(box, 'matte:stone', th.rock, x + sx * 0.2, SIDE_H / 2, mid, T + 0.4, SIDE_H, len, 0, 0, 0, 0.05);
     if (id === 'parsnip') {
-      // a footing of stones, earth above in bands, a timber frame, roots and garlic hanging down
-      for (let z = z0 + 0.2; z < z1; z += 0.42 + rand() * 0.2) b.add(rock, 'matte', 0x6c665e, at(0.05), 0.25, z, 0.3, 0.45, 0.5, 0, rand() * 3, 0, 0.15);
-      for (let band = 0; band < 4; band++) b.add(box, 'matte', band % 2 ? th.wall : th.wall2, at(0.02 + rand() * 0.04), 0.7 + band * 0.52, mid, 0.08, 0.52, len, 0, 0, 0, 0.06);
+      // a footing of stones, stone-lined above in courses, a timber frame, roots and garlic hanging down
+      for (let z = z0 + 0.2; z < z1; z += 0.42 + rand() * 0.2) b.add(rock, 'matte:stone', 0x6c665e, at(0.05), 0.25, z, 0.3, 0.45, 0.5, 0, rand() * 3, 0, 0.15);
+      for (let band = 0; band < 4; band++) b.add(box, 'matte:stone', band % 2 ? 0x6e6052 : 0x625649, at(0.02 + rand() * 0.04), 0.7 + band * 0.52, mid, 0.08, 0.52, len, 0, 0, 0, 0.06);
       for (let z = z0 + 0.4; z < z1; z += 2.75) {
-        b.add(box, 'matte', th.trim, at(0.1), SIDE_H / 2, z, 0.2, SIDE_H, 0.26);
+        b.add(box, matte(th, 'trim'), at(0.1), SIDE_H / 2, z, 0.2, SIDE_H, 0.26);
         if (z + 2.75 < z1) {
           // a brace across to the next post
-          b.add(box, 'matte', th.trim, at(0.08), 1.4, z + 1.375, 0.12, 2.6, 0.14, Math.atan2(2.4, 2.2) * (rand() < 0.5 ? 1 : -1), 0, 0);
+          b.add(box, matte(th, 'trim'), at(0.08), 1.4, z + 1.375, 0.12, 2.6, 0.14, Math.atan2(2.4, 2.2) * (rand() < 0.5 ? 1 : -1), 0, 0);
         }
       }
-      b.add(box, 'matte', th.trim, at(0.1), SIDE_H - 0.15, mid, 0.24, 0.26, len);
+      b.add(box, matte(th, 'trim'), at(0.1), SIDE_H - 0.15, mid, 0.24, 0.26, len);
       for (let z = z0 + 0.3; z < z1; z += 0.5 + rand() * 0.6) {
         const l = 0.3 + rand() * 0.9;
         const rx = at(0.18 + rand() * 0.12);
@@ -714,20 +778,20 @@ export function createDungeons(world) {
       for (const [row, rh] of rows.entries()) {
         for (let z = z0 + (row % 2) * 0.6; z < z1 - 0.05;) {
           const l = Math.min(z1 - z, 1.1 + rand() * 0.5);
-          b.add(box, 'matte', rand() < 0.5 ? th.wall : th.wall2, at(rand() * 0.04), y + rh / 2, z + l / 2, 0.12, rh * 0.94, l * 0.96);
+          b.add(box, 'matte:stone', rand() < 0.5 ? th.wall : th.wall2, at(rand() * 0.04), y + rh / 2, z + l / 2, 0.12, rh * 0.94, l * 0.96);
           z += l;
         }
         y += rh;
       }
       b.add(box, 'matte', 0xb08a50, at(0.03), y + 0.25, mid, 0.1, 0.5, len, 0, 0, 0, 0.03);
       for (let z = z0 + 0.9; z < z1; z += 1.8) b.add(disc, 'metal', th.band, at(0.09), y + 0.25, z, 0.32, 0.05, 0.32, 0, 0, Math.PI / 2, 0.05);
-      b.add(box, 'matte', th.trim, at(0.12), SIDE_H - 0.08, mid, 0.3, 0.16, len);
+      b.add(box, matte(th, 'trim'), at(0.12), SIDE_H - 0.08, mid, 0.3, 0.16, len);
       for (let z = z0 + 1.8; z < z1 - 1; z += 3.67) {
         const broken = rand() < 0.2;
         const h = broken ? 1 + rand() * 0.8 : SIDE_H;
-        b.add(cyl, 'matte', th.trim, at(0.32), h / 2, z, 0.46, h, 0.46);
+        b.add(cyl, matte(th, 'trim'), at(0.32), h / 2, z, 0.46, h, 0.46);
         for (const [ry, size] of [[0.12, 0.66], [h - 0.1, broken ? 0 : 0.7]]) if (size) b.add(box, 'matte', th.wall2, at(0.32), ry, z, size, 0.2, size);
-        if (broken) b.add(cyl, 'matte', th.trim, at(0.9), 0.23, z + 0.8, 0.46, 1.2, 0.46, Math.PI / 2, 0.6, 0);
+        if (broken) b.add(cyl, matte(th, 'trim'), at(0.9), 0.23, z + 0.8, 0.46, 1.2, 0.46, Math.PI / 2, 0.6, 0);
         // a banner between this column and the next
         if (z + 1.85 < z1 - 1) {
           b.add(box, 'matte', 0xa8261c, at(0.06), 1.55, z + 1.85, 0.04, 1.5, 0.9);
@@ -759,7 +823,7 @@ export function createDungeons(world) {
     if (id === 'crow') {
       // logs laid along it (their ends paler), wicker panels, nests along the top, perches with rooks on
       for (let row = 0; row < 7; row++) {
-        b.add(log, 'matte', row % 2 ? th.wall : th.wall2, at(0.08), 0.2 + row * 0.39, mid, 0.42, len, 0.42, Math.PI / 2, 0, 0);
+        b.add(log, 'matte:wood', row % 2 ? th.wall : th.wall2, at(0.08), 0.2 + row * 0.39, mid, 0.42, len, 0.42, Math.PI / 2, 0, 0);
       }
       for (let z = z0 + 1.2; z < z1 - 1; z += 4.2) {
         // a wicker panel
@@ -770,7 +834,7 @@ export function createDungeons(world) {
       }
       for (let z = z0 + 2; z < z1 - 1; z += 3 + rand() * 2.5) nest(d, at(-0.1), SIDE_H + 0.05, z);
       for (let z = z0 + 3.2; z < z1 - 1; z += 5.3) {
-        b.add(cyl, 'matte', th.trim, at(0.5), 2.1, z, 0.07, 1, 0.07, 0, 0, sx * Math.PI / 2);
+        b.add(cyl, matte(th, 'trim'), at(0.5), 2.1, z, 0.07, 1, 0.07, 0, 0, sx * Math.PI / 2);
         perched(d, at(0.75), 2.15, z, -sx);
       }
       return;
@@ -779,11 +843,11 @@ export function createDungeons(world) {
     for (let row = 0; row < 5; row++) {
       for (let z = z0 + (row % 2) * 0.5; z < z1 - 0.05;) {
         const l = Math.min(z1 - z, 0.8 + rand() * 0.6);
-        b.add(box, 'matte', rand() < 0.5 ? th.wall : th.wall2, at(rand() * 0.06), 0.28 + row * 0.55, z + l / 2, 0.14, 0.52, l * 0.95, 0, 0, 0, 0.1);
+        b.add(box, 'matte:stone', rand() < 0.5 ? th.wall : th.wall2, at(rand() * 0.06), 0.28 + row * 0.55, z + l / 2, 0.14, 0.52, l * 0.95, 0, 0, 0, 0.1);
         z += l;
       }
     }
-    b.add(box, 'matte', th.trim, x, SIDE_H + 0.08, mid, T + 0.5, 0.18, len);
+    b.add(box, matte(th, 'trim'), x, SIDE_H + 0.08, mid, T + 0.5, 0.18, len);
     for (let z = z0 + 0.4; z < z1; z += 0.6 + rand() * 0.7) {
       b.add(box, 'matte', 0x4f7a2e, at(0.02), SIDE_H - 0.3 - rand() * 0.4, z, 0.08, 0.5 + rand() * 0.9, 0.35 + rand() * 0.4);
       if (rand() < 0.45) {
@@ -799,8 +863,8 @@ export function createDungeons(world) {
   // at x, z: low, a ledge and stones (the camera looks in over it)
   function nearWall(d, x, z, w) {
     const { th, b, rand, id } = d;
-    b.add(box, 'matte', id === 'lion' ? th.wall2 : th.wall, x, 0.25, z, w, 0.5, T);
-    b.add(box, 'matte', th.trim, x, 0.55, z, w + 0.1, 0.1, T + 0.1);
+    b.add(box, matte(th, 'near'), id === 'lion' ? th.wall2 : th.wall, x, 0.25, z, w, 0.5, T);
+    b.add(box, matte(th, 'trim'), x, 0.55, z, w + 0.1, 0.1, T + 0.1);
     for (let sx = x - w / 2 + T; sx < x + w / 2 - T; sx += 0.9 + rand() * 0.6) b.add(rock, 'matte', th.rock, sx, 0.62, z + (rand() - 0.5) * 0.3, 0.35, 0.18, 0.3, 0, rand() * 3, 0, 0.2);
   }
 
@@ -808,7 +872,7 @@ export function createDungeons(world) {
   function crossWall(d, x, z, w) {
     const { th, b, id, rand } = d;
     if (id === 'crow') {
-      for (let row = 0; row < 3; row++) b.add(log, 'matte', row % 2 ? th.wall : th.wall2, x, 0.21 + row * 0.4, z, 0.42, w, 0.42, 0, 0, Math.PI / 2);
+      for (let row = 0; row < 3; row++) b.add(log, 'matte:wood', row % 2 ? th.wall : th.wall2, x, 0.21 + row * 0.4, z, 0.42, w, 0.42, 0, 0, Math.PI / 2);
       return;
     }
     if (id === 'bee') {
@@ -825,11 +889,11 @@ export function createDungeons(world) {
     for (let row = 0; row < 2; row++) {
       for (let cx = x - w / 2 + (row % 2) * 0.4; cx < x + w / 2 - 0.05;) {
         const l = Math.min(x + w / 2 - cx, 0.7 + rand() * 0.5);
-        b.add(box, 'matte', rand() < 0.5 ? stone : id === 'parsnip' ? 0x5c5750 : th.wall2, cx + l / 2, 0.32 + row * 0.62, z, l * 0.96, 0.6, T, 0, 0, 0, 0.1);
+        b.add(box, 'matte:stone', rand() < 0.5 ? stone : id === 'parsnip' ? 0x5c5750 : th.wall2, cx + l / 2, 0.32 + row * 0.62, z, l * 0.96, 0.6, T, 0, 0, 0, 0.1);
         cx += l;
       }
     }
-    b.add(box, 'matte', th.trim, x, MID_H + 0.06, z, w + 0.04, 0.14, T + 0.12);
+    b.add(box, matte(th, 'trim'), x, MID_H + 0.06, z, w + 0.04, 0.14, T + 0.12);
     if (id === 'toad') for (let cx = x - w / 2 + 0.3; cx < x + w / 2; cx += 0.7) b.add(box, 'matte', 0x4f7a2e, cx, MID_H + 0.17, z + (rand() - 0.5) * 0.2, 0.5, 0.1, T + 0.1);
   }
 
@@ -853,12 +917,12 @@ export function createDungeons(world) {
         b.add(box, 'matte', th.wall2, x + sx * px, 1.15, z, 0.5, 2.3, T + 0.15);
         b.add(box, 'matte', 0x4f7a2e, x + sx * px, 2.32, z, 0.55, 0.12, T + 0.2);
       } else {
-        b.add(box, 'matte', th.trim, x + sx * px, 1.15, z, 0.45, 2.3, T + 0.15);
+        b.add(box, matte(th, 'trim'), x + sx * px, 1.15, z, 0.45, 2.3, T + 0.15);
         b.add(box, 'matte', id === 'lion' ? th.wall2 : th.band, x + sx * px, 0.1, z, 0.6, 0.2, T + 0.25);
       }
     }
     if (id === 'parsnip') {
-      b.add(box, 'matte', th.trim, x, 2.4, z, DOOR_W + 1.1, 0.3, T + 0.2);
+      b.add(box, matte(th, 'trim'), x, 2.4, z, DOOR_W + 1.1, 0.3, T + 0.2);
       lantern(d, x, 2.05, z + 0.4);
     } else if (id === 'lion') {
       b.add(arch, 'matte', th.trim, x, 2.25, z, DOOR_W + 0.9, DOOR_W + 0.9, 3.5);
@@ -901,9 +965,9 @@ export function createDungeons(world) {
     const W = r.x1 - r.x0;
     const D = r.z1 - r.z0;
     if (id === 'parsnip') {
-      // packed earth, a boardwalk down the middle, straw and pebbles
-      for (let i = 0; i < 30; i++) b.add(box, 'matte', 0x3f2d1e, r.x0 + 0.5 + rand() * (W - 1), 0.01, r.z0 + 0.5 + rand() * (D - 1), 0.6 + rand(), 0.02, 0.6 + rand(), 0, rand() * 3, 0, 0.15);
-      for (let z = r.z0 + 0.25; z < r.z1 - 0.1; z += 0.45) b.add(box, 'matte', 0x8a5a32, cx + (rand() - 0.5) * 0.08, 0.04, z, 2.4, 0.06, 0.4, 0, (rand() - 0.5) * 0.04, 0, 0.12);
+      // flagstones (earth trodden over them), a boardwalk down the middle, straw and pebbles
+      for (let i = 0; i < 30; i++) b.add(cyl, 'matte', 0x52463a, r.x0 + 0.5 + rand() * (W - 1), 0.01, r.z0 + 0.5 + rand() * (D - 1), 0.6 + rand(), 0.02, 0.6 + rand(), 0, rand() * 3, 0, 0.15);
+      for (let z = r.z0 + 0.25; z < r.z1 - 0.1; z += 0.45) b.add(box, 'matte:wood', 0x8a5a32, cx + (rand() - 0.5) * 0.08, 0.04, z, 2.4, 0.06, 0.4, 0, (rand() - 0.5) * 0.04, 0, 0.12);
       for (const sx of [-1, 1]) b.add(box, 'matte', 0x5a3d25, cx + sx * 1.15, 0.06, (r.z0 + r.z1) / 2, 0.1, 0.05, D - 0.2);
       for (let i = 0; i < 16; i++) b.add(box, 'matte', 0xd9b45a, r.x0 + 0.8 + rand() * (W - 1.6), 0.03, r.z0 + 0.6 + rand() * (D - 1.2), 0.06, 0.02, 0.45, 0, rand() * Math.PI, 0, 0.15);
       for (let i = 0; i < 20; i++) b.add(rock, 'matte', 0x7a746a, r.x0 + 0.5 + rand() * (W - 1), 0.03, r.z0 + 0.5 + rand() * (D - 1), 0.12, 0.08, 0.1, 0, rand() * 3, 0, 0.2);
@@ -912,7 +976,7 @@ export function createDungeons(world) {
       for (let x = r.x0 + 0.5; x < r.x1; x += 1) {
         for (let z = r.z0 + 0.5; z < r.z1; z += 1) {
           const cracked = rand() < 0.08;
-          b.add(box, 'matte', cracked ? 0xb89c68 : th.floor, x, cracked ? -0.01 : 0.02, z, 0.96, 0.06, 0.96, 0, 0, 0, 0.07);
+          b.add(box, 'matte:stone', cracked ? 0xb89c68 : th.floor, x, cracked ? -0.01 : 0.02, z, 0.96, 0.06, 0.96, 0, 0, 0, 0.07);
         }
       }
       b.add(box, 'matte', 0x9a2418, cx, 0.06, (r.z0 + r.z1) / 2, 1.8, 0.02, D - 0.6, 0, 0, 0, 0);
@@ -1026,6 +1090,9 @@ export function createDungeons(world) {
   function lamp(d, wallX, z, sx) {
     const { th, b, id, rand } = d;
     const x = wallX - sx * 0.35; // (by the wall)
+    // (a real light too, a little out from the wall at its flame's height:
+    // the farm's pooled lamp lights, src/build.js addLamps, nearest first)
+    lamps.push({ at: b.at(x - sx * LAMP_OUT, LAMP_Y[id], z), color: th.light, flicker: id === 'parsnip' || id === 'lion' });
     if (id === 'parsnip') {
       // a lantern hanging off the beam on a chain
       b.add(cyl, 'metal', 0x3a3632, x, SIDE_H - 0.35, z, 0.02, 0.5, 0.02);
@@ -1118,7 +1185,7 @@ export function createDungeons(world) {
         b.add(ball, 'metal', 0xffd27a, x - sx * 0.1, 0.95, z, 0.34, 0.34, 0.3);
       } else if (pick === 2) {
         // a fallen bit of column
-        b.add(cyl, 'matte', th.trim, x, 0.24, z, 0.48, 1.3, 0.48, Math.PI / 2, rand() * 0.6, 0);
+        b.add(cyl, matte(th, 'trim'), x, 0.24, z, 0.48, 1.3, 0.48, Math.PI / 2, rand() * 0.6, 0);
         b.add(rock, 'matte', th.wall2, x + 0.3, 0.12, z + 0.6, 0.35, 0.25, 0.3);
       } else {
         // dry grass in a pot
@@ -1460,6 +1527,8 @@ export function createDungeons(world) {
   }
 
   return {
+    // Where every dungeon's lamps are (in the farm: { at, color, flicker }): they light the rooms round them (src/bosses.js)
+    lamps,
     // Every frame, for each dungeon: `near` (we are in it or its hall: it
     // is drawn), `inside` (in it: it is dark past its first shut gate), `run`
     // (as dungeonFromWire has it, the foes drawn where `shown` has them: { x,
@@ -1473,6 +1542,8 @@ export function createDungeons(world) {
       for (const gate of d.gates) setGate(gate, gate.k < cleared);
       darken(id, d, cleared, inside && near, t);
       if (!near) return;
+      SHADE.uDungeonRects.value.forEach((v, i) => (d.shadeAt.rects[i] ? v.copy(d.shadeAt.rects[i]) : v.setScalar(1e5)));
+      SHADE.uDungeonHall.value.copy(d.shadeAt.hall);
       for (const gate of d.gates) {
         gate.sink += ((gate.open ? 1 : 0) - gate.sink) * Math.min(1, (dt / SINK_TIME) * 3);
         gate.group.position.y = -gate.sink * (GATE_H + 0.1);
@@ -1491,7 +1562,7 @@ export function createDungeons(world) {
         const k = 1 + Math.sin(t * 13 + p) * 0.12 + Math.sin(t * 29 + p * 2) * 0.08;
         f.scale.set(1 / Math.sqrt(k), k, 1 / Math.sqrt(k));
       }
-      if (d.pools) d.pools.opacity = 0.5 + Math.sin(t * 9) * 0.03 + Math.sin(t * 23) * 0.02;
+      if (d.pools) d.pools.opacity = POOL + Math.sin(t * 9) * 0.03 + Math.sin(t * 23) * 0.02;
       for (const fly of d.flies) {
         const { home, phase } = fly.userData;
         fly.position.set(home.x + Math.sin(t * 0.7 + phase) * 0.6, home.y + Math.sin(t * 1.3 + phase) * 0.25, home.z + Math.cos(t * 0.9 + phase) * 0.8);
@@ -1596,7 +1667,7 @@ const SETPIECES = {
     if (k === 0) {
       // a lion statue, fallen apart, on its pedestal
       b.add(box, 'matte', th.wall2, x, 0.4, z, 1.6, 0.8, 1.2);
-      b.add(box, 'matte', th.trim, x, 0.85, z, 1.4, 0.1, 1);
+      b.add(box, matte(th, 'trim'), x, 0.85, z, 1.4, 0.1, 1);
       b.add(ball, 'matte', th.trim, x, 1.35, z - 0.1, 1.1, 0.8, 0.7);
       b.add(ball, 'matte', th.wall2, x + 0.6, 0.2, z + 1, 0.9, 0.7, 0.6);
       b.add(ball, 'matte', 0xd9b77a, x + 0.6, 0.35, z + 1.05, 0.5, 0.5, 0.4);
@@ -1606,7 +1677,7 @@ const SETPIECES = {
       const px = r.x1 - 2.6;
       b.add(box, 'matte', th.wall2, px, 0.15, z, 2.6, 0.3, 2.6);
       b.add(box, 'water', 0x2a8a9a, px, 0.28, z, 2.2, 0.04, 2.2);
-      for (const [ox, oz] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]]) b.add(cyl, 'matte', th.trim, px + ox, 0.45, z + oz, 0.3, 0.9, 0.3);
+      for (const [ox, oz] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]]) b.add(cyl, matte(th, 'trim'), px + ox, 0.45, z + oz, 0.3, 0.9, 0.3);
       b.add(ball, 'metal', th.band, px, 0.6, z, 0.35, 0.35, 0.35);
       d.b.pool(0x6ae0ff, px, z, 3, 0.32);
     } else if (k === 3) {

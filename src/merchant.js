@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ITEMS } from './items.js';
 import { createFarmer, damp } from './character.js';
 import { foliageMat } from './world.js';
+import { detail } from './gfx/detail.js';
 import { STALL } from '../shared/farmland.js';
 
 export { STALL };
@@ -36,14 +37,15 @@ const MERCHANT_LOOK = {
   neckColor: 0xd4a017,
 };
 
-const woodMat = foliageMat(0xa0682f);
-const darkWoodMat = foliageMat(0x7a4a22);
-const topMat = foliageMat(0xc48a4a);
-const clothMats = [foliageMat(0xfff4e0), foliageMat(0xd8452f)];
-const basketMat = foliageMat(0xc9a066);
+// (painted detail, src/gfx/detail.js: the stall's boards, its posts' grain, the awning's weave)
+const woodMat = detail(foliageMat(0xa0682f), 'plank');
+const darkWoodMat = detail(foliageMat(0x7a4a22), 'wood');
+const topMat = detail(foliageMat(0xc48a4a), 'plank');
+const clothMats = [detail(foliageMat(0xfff4e0), 'cloth'), detail(foliageMat(0xd8452f), 'cloth')];
+const basketMat = detail(foliageMat(0xc9a066), 'thatch');
 const signMat = new THREE.MeshStandardMaterial({ map: signTexture(), roughness: 0.9 });
 const lanternMat = new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffa630, emissiveIntensity: 1.2 });
-const ironMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.5, metalness: 0.5 });
+const ironMat = detail(new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.5, metalness: 0.5 }), 'metal');
 const turnipMat = foliageMat(0xf2eef5);
 const carrotMat = foliageMat(0xff8c1a);
 const sunflowerMat = foliageMat(0xffd23f);

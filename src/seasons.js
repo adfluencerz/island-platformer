@@ -154,18 +154,17 @@ function snowOn(obj) {
   for (const child of obj.children) snowOn(child);
 }
 
-// map: the farm's map (its leafMats, pineMats, tuftMat, groundMat, turfMat
+// map: the farm's map (its leafMats, pineMats, tuftMat, carpetMat, groundMat, turfMat, cliffMat
 // and flower materials)
 export function createSeasons(map) {
   const a = new THREE.Color();
   const b = new THREE.Color();
   const tint = new THREE.Color();
   const mix = (from, to, t, out) => out.copy(a.setHex(from)).lerp(b.setHex(to), t);
-  for (const m of [map.groundMat, map.turfMat]) if (m) seasonal(m, { grass: true });
+  for (const m of [map.groundMat, map.turfMat, map.cliffMat]) if (m) seasonal(m, { grass: true });
   for (const m of [map.flowerHeadMat, map.flowerStemMat]) m?.userData && (m.userData.base = m.color.clone());
 
   let state = null; // the last update's: { now, next, blend, into, night }
-  let copies = []; // [a tree's own copy of a leaf or needle material, the one it copies] (world.js: it fades on its own)
   let lit = null; // { root, trees, sun, hemi, scene } once attach()ed
   let scanIn = 0;
   let elapsed = 0;
@@ -249,8 +248,7 @@ export function createSeasons(map) {
     attach({ root, trees = [], sun, hemi, scene, sky }) {
       lit = { root, sun, hemi, scene, sky };
       if (map.tuftMat) seasonal(map.tuftMat, { grass: true, sink: true }); // (once world.js has made it sway)
-      const own = new Set([...map.leafMats, ...map.pineMats]);
-      copies = trees.flatMap((t) => t.materials.filter((m) => own.has(m.userData.from)).map((m) => [m, m.userData.from]));
+      if (map.carpetMat) seasonal(map.carpetMat, { grass: true, sink: true });
       snowOn(root);
       // (autumn's leaves, under the trees with leaves)
       const spots = [];
@@ -290,7 +288,6 @@ export function createSeasons(map) {
       const { now, next, blend } = state;
       map.leafMats.forEach((m, i) => mix(now.leaves[i % now.leaves.length], next.leaves[i % next.leaves.length], blend, m.color));
       map.pineMats.forEach((m, i) => mix(now.pines[i % now.pines.length], next.pines[i % next.pines.length], blend, m.color));
-      for (const [copy, from] of copies) copy.color.copy(from.color);
       mix(now.grass, next.grass, blend, uGrass.value);
       // the flowers: out, fading (browner, warmer), or gone
       const flowers = blendOf('flowers');

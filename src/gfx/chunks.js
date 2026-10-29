@@ -14,7 +14,9 @@ export const NEEDLES = {
   emissivemap_fragment: { needle: '#include <emissivemap_fragment>', stages: 'f' },
   fog_pars_fragment: { needle: '#include <fog_pars_fragment>', stages: 'f' },
   fog_fragment: { needle: '#include <fog_fragment>', stages: 'f' },
+  colorspace_fragment: { needle: '#include <colorspace_fragment>', stages: 'f' }, // (after tone mapping: src/gfx/water.js)
   lights_fragment_begin: { needle: '#include <lights_fragment_begin>', stages: 'f' },
+  lights_fragment_end: { needle: '#include <lights_fragment_end>', stages: 'f' },
   // (one each: libs names the shaders that have it)
   lights_physical_pars_fragment: { needle: '#include <lights_physical_pars_fragment>', stages: 'f', libs: ['standard'] },
   lights_lambert_pars_fragment: { needle: '#include <lights_lambert_pars_fragment>', stages: 'f', libs: ['lambert'] },

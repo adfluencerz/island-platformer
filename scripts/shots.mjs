@@ -1,4 +1,4 @@
-// `npm run shots -- [--tier low|medium|high] [--check]`: ten fixed screenshots
+// `npm run shots -- [--tier low|medium|high] [--check]`: twelve fixed screenshots
 // of the game at full graphics, to judge its look by (docs/visuals/), with
 // what the renderer drew for each, and a contact sheet of them all:
 //
@@ -9,8 +9,8 @@
 //
 //   --tier T   draw at that graphics tier (?gfx=T); without, each page's own
 //              (high on the desktop, medium on the phone)
-//   --check    fail (exit 1) when plaza-noon is over the budgets in
-//              docs/visuals/README.md (its `budgets` comment)
+//   --check    fail (exit 1) when plaza-noon or a phone shot is over its
+//              tier's budgets in docs/visuals/README.md (its `budgets` comment)
 //
 // One dev server and one browser for all of them (scripts/lib/page.mjs); a
 // second context for the phone. Each shot sets the scene with window.__game
@@ -44,6 +44,7 @@ const SHOTS = [
   ['plaza-morning', (g) => (g.warp('plaza'), g.dayNight.setTime(8))],
   ['plaza-noon', (g) => (g.warp('plaza'), g.dayNight.setTime(12))],
   ['forest-noon', (g) => (g.warp('forest'), g.dayNight.setTime(12))],
+  ['shore-noon', (g) => (g.warp({ x: -66, z: 4 }), g.snapCamera(), g.dayNight.setTime(12))], // (the sea and the cliffs)
   ['lake-sunset', (g) => (g.warp('lake'), g.dayNight.setTime(18.5))],
   ['night-lamps', (g) => (g.warp('house'), g.dayNight.setTime(21.5))],
   ['rain-noon', (g, { rainy }) => {
@@ -54,7 +55,7 @@ const SHOTS = [
     g.step(2); // (the sky clouds over)
     g.__restoreWeather = () => (g.weather.update = update);
   }],
-  ['dungeon', (g) => (g.warp('dungeon'), g.dayNight.setTime(12))],
+  ['dungeon', (g) => (g.warp('dungeon'), g.dayNight.setTime(12), g.step(2))], // (the dark settles in: the light goes underground over a second or so)
   ['split-2', async (g) => {
     g.warp('plaza');
     g.dayNight.setTime(12);
@@ -69,6 +70,12 @@ const SHOTS = [
     if (g.place !== 'lobby') throw new Error('never got into the lobby');
     g.dayNight.setTime(12);
   }],
+];
+
+// On the phone page (390x844, touch, its own tier: medium)
+const PHONE_SHOTS = [
+  ['phone', (g) => (g.warp('plaza'), g.dayNight.setTime(12))],
+  ['phone-forest-dusk', (g) => (g.warp('forest'), g.dayNight.setTime(18.5), g.snapCamera())], // (the user's own phone screenshot: a forest at 6:20 pm)
 ];
 
 const log = logger();
@@ -102,17 +109,18 @@ try {
   await desk.context.close();
 
   const phone = await openFarm(browser, { query, full: true, size: PHONE, touch: true, log });
-  await shoot(phone.page, 'phone', (g) => (g.warp('plaza'), g.dayNight.setTime(12)));
+  for (const [name, set] of PHONE_SHOTS) await shoot(phone.page, name, set);
   errors.push(...phone.errors.map((e) => `phone: ${e}`));
 
   writeFileSync(`${OUT}/stats.json`, JSON.stringify(stats, null, 2) + '\n');
 
   // ---- the contact sheet: a blank page of the shots, labelled ----
-  const names = [...SHOTS.map(([n]) => n), 'phone'];
+  const names = [...SHOTS, ...PHONE_SHOTS].map(([n]) => n);
+  const tall = new Set(PHONE_SHOTS.map(([n]) => n));
   const cell = (n) => {
     const s = stats[n];
     const src = `data:image/png;base64,${readFileSync(`${OUT}/${n}.png`).toString('base64')}`;
-    return `<figure${n === 'phone' ? ' class="tall"' : ''}><img src="${src}"><figcaption><b>${n}</b> ${s.tier} · ${s.calls} calls · ${(s.triangles / 1e3).toFixed(0)}k tris · ${s.programs} programs</figcaption></figure>`;
+    return `<figure${tall.has(n) ? ' class="tall"' : ''}><img src="${src}"><figcaption><b>${n}</b> ${s.tier} · ${s.calls} calls · ${(s.triangles / 1e3).toFixed(0)}k tris · ${s.programs} programs</figcaption></figure>`;
   };
   const sheet = await phone.context.newPage();
   await sheet.setViewportSize({ width: 1500, height: 800 });
@@ -130,20 +138,23 @@ try {
     exitCode = 1;
   }
 
-  // ---- the budgets (docs/visuals/README.md) ----
+  // ---- the budgets (docs/visuals/README.md): plaza-noon and the phone, each at its tier ----
   if (opts.check) {
     const readme = readFileSync('docs/visuals/README.md', 'utf8');
     const budgets = JSON.parse(readme.match(/<!-- budgets (\{.*\}) -->/)[1]);
-    const s = stats['plaza-noon'];
-    const over = [
-      s.calls > budgets.calls && `calls ${s.calls} > ${budgets.calls}`,
-      s.programs > budgets.programs && `programs ${s.programs} > ${budgets.programs}`,
-      s.triangles > budgets.triangles[s.tier] && `triangles ${s.triangles} > ${budgets.triangles[s.tier]} (${s.tier})`,
-    ].filter(Boolean);
+    const over = ['plaza-noon', ...PHONE_SHOTS.map(([n]) => n)].flatMap((name) => {
+      const s = stats[name];
+      const b = budgets[s.tier];
+      return [
+        s.calls > b.calls && `${name} calls ${s.calls} > ${b.calls}`,
+        s.programs > b.programs && `${name} programs ${s.programs} > ${b.programs}`,
+        s.triangles > b.triangles && `${name} triangles ${s.triangles} > ${b.triangles}`,
+      ].map((o) => o && `${o} (${s.tier})`);
+    }).filter(Boolean);
     if (over.length) {
-      console.error(`plaza-noon is over budget: ${over.join(', ')}`);
+      console.error(`over budget: ${over.join(', ')}`);
       exitCode = 1;
-    } else log('plaza-noon is within the budgets');
+    } else log('plaza-noon and the phone are within the budgets');
   }
 } catch (e) {
   console.error(e.stack || e.message);

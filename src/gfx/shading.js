@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { patch } from './chunks.js';
 import { atmos } from './atmos.js';
 import { light } from './light.js';
+import './smooth.js'; // (no faceted, flat-shaded look: src/gfx/smooth.js)
 
 // ---------- One way to change a material's shader ----------
 // hook(material, key, fn): fn(shader, renderer, material) runs when the
@@ -9,7 +10,8 @@ import { light } from './light.js';
 // below) and the hooks added before it. The key names the change and its
 // settings ('wind:0.250'): materials with the same keys, in the same order,
 // share one shader program, so a key must say everything fn does differently.
-// Hooking a key again replaces that hook where it was.
+// Hooking a name again (the key up to its first ':') replaces that hook where
+// it was, whatever its settings were ('wind:0.300' replaces 'wind:0.250').
 //
 // Set once on THREE.Material's prototype, so no material needs its own
 // onBeforeCompile (and nothing has to look for the ones that do).
@@ -44,9 +46,11 @@ const BASE = [
   atmos, // (the fog: the far land melts into the sky, a low haze over the sea: src/gfx/atmos.js)
 ];
 
+const nameOf = (key) => key.split(':')[0];
+
 export function hook(material, key, fn) {
   const list = registry.get(material) ?? [];
-  const at = list.findIndex((h) => h.key === key);
+  const at = list.findIndex((h) => nameOf(h.key) === nameOf(key));
   if (at >= 0) list[at] = { key, fn };
   else list.push({ key, fn });
   registry.set(material, list);

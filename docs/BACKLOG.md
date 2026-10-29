@@ -67,10 +67,23 @@ Open pull requests, each from the backlog below:
       listeners and their farmer's meshes stay till the page goes
 
 ### Visuals
-- [ ] The visual overhaul, stylized and painterly (a real sky, clouds and
-      their shadows, lush grass, soft light, bloom), phase by phase: see
-      `docs/visuals/` (README.md for the direction, tiers and budgets,
-      STATUS.md for where it stands)
+The visual overhaul, stylized and painterly, phase by phase: see
+`docs/visuals/` (README.md for the direction, tiers and budgets, STATUS.md
+for where it stands).
+- [x] Phases 0 to 15: the Graphics tiers and the gates; a shading core with
+      a soft wrapped light, cool shadows and filmic tone mapping; a sky dome
+      with clouds, sun, moon and stars, and the clouds' shadows on the land;
+      height fog melting the far land into the sky; bloom and a color grade
+      (quieter, greyer nights); grass that sways and parts; instanced trees,
+      bushes and rocks that fade out of the camera's way; painted ground
+      detail; water with sky reflections, glints and shore foam; cliff
+      skirts; outlined, rim-lit characters; motes and fireflies; and every
+      tier within its budget (the grass and the ground drawn in patches, the
+      ones out of view not at all)
+- [ ] Phases 16 to 18, next: surface detail, painted into the built things
+      and buildings, then nature (trunks, rocks, soil, crops), then the
+      characters, animals and held things
+- [ ] Phase 19 on: polish rounds (`docs/visuals/phases/19-polish-rounds.md`)
 
 ### Tech
 - [ ] Replace the simple AABB resolver with a physics engine (`cannon-es` or

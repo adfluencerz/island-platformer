@@ -4,20 +4,20 @@
   position: fixed;
   top: 150px;
   left: 12px;
-  width: 230px;
+  width: 300px; /* (as wide as the place panel: ui.css) */
   box-sizing: border-box;
-  padding: 10px 14px 12px;
+  padding: 6px 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
   z-index: 10;
   pointer-events: auto;
 }
 .ui-guide-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ui-guide-count { font-size: 18px; color: var(--ui-soft); }
-.ui-guide .ui-guide-skip { padding: 2px 7px; font-size: 15px; line-height: 1; box-shadow: none; }
-.ui-guide-title { font-size: 23px; }
-.ui-guide-how { font-size: 19px; line-height: 1.15; }
+.ui-guide-count { font-size: 16px; color: var(--ui-soft); }
+.ui-guide .ui-guide-skip { padding: 1px 6px; font-size: 13px; line-height: 1; box-shadow: none; border-width: 1px; }
+.ui-guide-title { font-size: 20px; line-height: 1.05; }
+.ui-guide-how { font-size: 17px; line-height: 1.1; }
 /* a step ticked off: the next one pops in */
 .ui-guide.ticked { animation: ui-guide-pop 0.5s ease-out; }
 @keyframes ui-guide-pop {
@@ -28,9 +28,9 @@
 
 :root.compact .ui-guide {
   left: calc(var(--safe-l) + 10px);
-  width: 190px;
-  padding: 6px 10px 8px;
-  gap: 2px;
+  width: 200px;
+  padding: 5px 10px 7px;
+  gap: 1px;
 }
 :root.compact .ui-guide-count { font-size: 15px; }
 :root.compact .ui-guide-title { font-size: 18px; }

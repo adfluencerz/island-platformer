@@ -44,6 +44,7 @@ import { NEEDLES, patch, swap } from '../src/gfx/chunks.js';
 import { patchToneChunk } from '../src/gfx/tonemap.js';
 import { lightChunks } from '../src/gfx/light.js';
 import { hook, hasHook, cloneHooked } from '../src/gfx/shading.js';
+import { detail, defaultLook, LOOKS, lookIndex, bakeDetail, detailBaked } from '../src/gfx/detail.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { DungeonRun, MAIN, ROOM_W, LAYOUTS, roomCount, roomRect, roomEntry, roomAt, roomOpen, dungeonAt, dungeonStart, dungeonExit, gateAt, sideDoorAt, chestAt, chestLoot, foeRooms, dungeonFromWire, foeHits } from '../shared/dungeons.js';
@@ -3879,6 +3880,46 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   assert.notEqual(key(clear), key(new THREE.MeshStandardMaterial()), 'and a program of its own');
 });
 
+await test('painted detail: every look shares one program, materials get looks by name or color, a baked part carries its own', () => {
+  const made = (color = 0xffffff, extra) => new THREE.MeshStandardMaterial({ color, ...extra });
+  const key = (m) => m.customProgramCacheKey();
+  const [plank, stone] = [detail(made(), 'plank'), detail(made(), 'stone')];
+  assert.equal(key(plank), 'gfx1||detail');
+  assert.equal(key(plank), key(stone), 'the look is a uniform, not a define: one program');
+  assert.equal(key(detail(made(0x4f9e3c))), 'gfx1||', 'no look (green): no hook, its program as before');
+  for (const [name, look] of [['post', 'wood'], ['plankA', 'plank'], ['stoneDark', 'stone'], ['flagstone', 'stone'], ['roofTile', 'tile'], ['straw', 'thatch'], ['iron', 'metal'], ['cloth', 'cloth'], ['plaster', 'plaster'], ['gravel', 'cobble'], ['hedge', 'leaf'], ['leaf', 'leaf'], ['rockMoss', 'rock'], ['soil', 'soil'], ['earth', 'soil'], ['reed', 'reed'], ['fern', 'fern'], ['grass', 'none'], ['water', 'none'], ['lichen', 'none']]) {
+    assert.equal(defaultLook(made(), name), look, `${name}: ${look}`);
+  }
+  assert.equal(defaultLook(made(0x8a6a3a)), 'wood', 'a brown: wood');
+  assert.equal(defaultLook(made(0x9c9a92)), 'stone', 'a grey: stone');
+  assert.equal(defaultLook(made(0x8a3a2a)), 'brick', 'a dark red-brown: brick');
+  assert.equal(defaultLook(made(0xffe7a3, { emissive: 0xffc35a })), 'none', 'a lamp: none');
+  assert.equal(LOOKS[lookIndex('tile')], 'tile');
+  assert.equal(key(detail(made(), 'bark')), 'gfx1||detail:nature', 'nature\'s looks: a program of their own');
+  assert.equal(key(detail(made(), 'bark')), key(detail(made(), 'leaf')), 'and one for all of them');
+  const geo = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  const matrix = new THREE.Matrix4().compose(new THREE.Vector3(1, 2, 3), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), new THREE.Vector3(2, 0.5, 4));
+  const baked = bakeDetail(geo.clone().applyMatrix4(matrix), geo, stone, matrix);
+  assert.equal(baked.attributes.gfxPiece.getW(0), lookIndex('stone'));
+  assert.deepEqual([baked.attributes.gfxSize.getX(0), baked.attributes.gfxSize.getY(0), baked.attributes.gfxSize.getZ(0)], [2, 0.5, 4]);
+  assert.ok(Math.abs(baked.attributes.gfxUp.getZ(0) + 1) < 1e-6, 'up, in the turned part\'s own frame');
+  assert.equal(key(detailBaked(made())), 'gfx1||detail:baked');
+});
+
+await test('post: three still tone maps and encodes into a target flagged as XR, as the screen (src/gfx/post.js SeatsPass)', () => {
+  // The post chain draws the scene into its target as it would draw it to the
+  // screen by flagging the target isXRRenderTarget for the seats' pass. That
+  // rests on these lines of three's WebGLRenderer (r180): if a three upgrade
+  // moves them, the post tiers would draw untoned and linear, and look washed
+  // out against the low tier, so fail here instead.
+  const src = readFileSync(new URL(import.meta.resolve('three')), 'utf8');
+  const has = (re, what) => assert.ok(re.test(src), `three's renderer: ${what}`);
+  has(/if \( currentRenderTarget === null \|\| currentRenderTarget\.isXRRenderTarget === true \) \{\s*toneMapping = renderer\.toneMapping;/, 'a program is tone mapped for an XR target (WebGLPrograms)');
+  has(/outputColorSpace: \( currentRenderTarget === null \) \? renderer\.outputColorSpace : \( currentRenderTarget\.isXRRenderTarget === true \? currentRenderTarget\.texture\.colorSpace : LinearSRGBColorSpace \)/, "a program encodes in an XR target's texture color space (WebGLPrograms)");
+  has(/const colorSpace = \( _currentRenderTarget === null \) \? _this\.outputColorSpace : \( _currentRenderTarget\.isXRRenderTarget === true \? _currentRenderTarget\.texture\.colorSpace : LinearSRGBColorSpace \);/, "the program's color space is checked the same way when drawing (setProgram)");
+  has(/if \( _currentRenderTarget === null \|\| _currentRenderTarget\.isXRRenderTarget === true \) \{\s*toneMapping = _this\.toneMapping;/, 'and its tone mapping (setProgram)');
+});
+
 await test('the farm\'s seasons: a week each, spring to winter and round again, turning on a season\'s last day', () => {
   const at = (day, hour) => {
     const { now, next, blend } = seasonAt(day, hour);
@@ -3993,8 +4034,9 @@ async function signUp(username, color = PLAYER_COLORS[3]) {
 }
 let botAuth = await signUp('Bot');
 
-// (farm: be on that farm instead; auth: whose browser it is, as "<id>.<token>")
-function client(code = '', key = `key${Math.random()}`, { farm = null, auth = botAuth } = {}) {
+// (farm: be on that farm instead; auth: whose browser it is, as "<id>.<token>";
+// local: a farmer at a split screen, src/net/connection.js seat)
+function client(code = '', key = `key${Math.random()}`, { farm = null, auth = botAuth, local = false } = {}) {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws${farm ? `?farm=${farm}` : code ? `?lobby=${code}` : ''}`);
   const inbox = [];
   const waiters = [];
@@ -4004,7 +4046,7 @@ function client(code = '', key = `key${Math.random()}`, { farm = null, auth = bo
     for (const w of [...waiters]) if (w.match(m)) waiters.splice(waiters.indexOf(w), 1) && w.done(m);
   });
   const closed = new Promise((done) => ws.on('close', (code) => done(code)));
-  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(auth && { auth }) })));
+  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(auth && { auth }), ...(local && { local }) })));
   return {
     ws,
     inbox,
@@ -4092,6 +4134,25 @@ try {
     const w = await fern.next(S.WELCOME);
     assert.deepEqual([w.name, w.color], ['Fern', PLAYER_COLORS[6]]);
     fern.ws.close(1000);
+  });
+
+  await test('a split screen in a lobby: each farmer at the screen on a line of their own, as their own account', async () => {
+    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
+    const page = client(code, 'k-screen', { auth: await signUp('Hana', PLAYER_COLORS[2]) });
+    const pw = await page.next(S.WELCOME);
+    // (the second farmer at the screen: the same browser's key and theirs, src/net/connection.js)
+    const seat = client(code, 'k-screen:1', { auth: await signUp('Ivo', PLAYER_COLORS[4]), local: true });
+    const sw = await seat.next(S.WELCOME);
+    assert.deepEqual([sw.name, sw.color], ['Ivo', PLAYER_COLORS[4]]);
+    assert.notEqual(sw.id, pw.id);
+    await page.next(S.ROSTER, (m) => [pw.id, sw.id].every((id) => m.list.some((p) => p.id === id)));
+    // what the lobby says to one of them goes to them alone
+    seat.send({ t: C.TAKE, id: 99999 });
+    await seat.next(S.DENY, (m) => m.id === 99999);
+    await new Promise((done) => setTimeout(done, 300));
+    assert.ok(!page.inbox.some((m) => m.t === S.DENY), 'the page\'s own line hears nothing of it');
+    page.ws.close(1000);
+    seat.ws.close(1000);
   });
 
   await test('what a farmer wears goes by their account: in the welcome, the roster, and after new clothes (DRESS)', async () => {

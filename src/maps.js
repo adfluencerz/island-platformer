@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples, leafMats, pineMats } from './world.js';
+import { waterLook, WATER_BANK_REACH } from './gfx/water.js';
+import { detail } from './gfx/detail.js';
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
 import { buildSkyIsles } from './skyisles.js';
@@ -74,8 +76,10 @@ export const HOME = {
   leafMats: leafMats.map((m) => m.clone()),
   pineMats: pineMats.map((m) => m.clone()),
   tuftMat: new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }),
+  carpetMat: new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true }), // (the grass carpet's: src/world.js makeCarpet)
   groundMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
   turfMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), // (on its platforms)
+  cliffMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }), // (the lips of its cliffs)
   flowerStemMat: new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 }),
   flowerHeadMat: new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true }),
   build(ctx) {
@@ -130,9 +134,17 @@ const THEMES = {
     flowers: [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff6b4a, 0x7ec8ff],
   },
   autumn: {
-    tiles: { grass: 0x86973c, moss: 0x5a6530, meadow: 0xa9aa4c },
-    hue: [0.15, 0.22], // the grass is turning
+    tiles: { grass: 0x8a923a, moss: 0x5c6330, meadow: 0xaca64a },
+    hue: [0.13, 0.2], // the grass is turning, golden
     leaves: [0xd9822b, 0xc4502b, 0xe3a832, 0x9e8a34],
+    // (and each tree and bush its own color, by where it stands: a riot of
+    // reds, oranges and golds, a few still green: src/world.js leafTint)
+    palette: [
+      0xc23a22, 0xd8482a, 0xa8321f, // reds, scarlet, a deep crimson
+      0xe0642a, 0xe8822c, 0xd8702a, 0xf09a30, // oranges
+      0xf0b232, 0xf2c23c, 0xe6a42a, 0xe8b83a, // golds, amber
+      0x86a238, 0x5f9a3c, // a few still green
+    ],
     flowers: [0xffe14d, 0xff9f1c, 0xff6b4a, 0xffffff, 0xd8452f],
   },
   blossom: {
@@ -200,6 +212,7 @@ export function wildMap(island) {
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
+    leafPalette: theme.palette,
     // Rock steps, solid down to the ground, with moss on top
     platforms: island.terraces.map(([x, z, w, d, top], i) => ({
       x, y: top / 2, z, w, h: top, d, color: [0x8a857b, 0x7d786f, 0x918b80, 0x86817a][i % 4], cap: 'moss',
@@ -215,6 +228,8 @@ export function wildMap(island) {
 }
 
 // ---------- The wild island's set pieces ----------
+// (painted detail on what grows, src/gfx/detail.js: streaks up the reeds and
+// stems, a frond's leaflets, veins on the leaves, bark and rings on the logs)
 const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf1e6cc, roughness: 0.8 });
 const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9 });
 // reeds on the marsh (generation 4): a thin stalk 2 tall (scaled to its height) and a brown velvet head
@@ -222,33 +237,33 @@ const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
 const gladeStemGeo = new THREE.CylinderGeometry(0.012, 0.018, 0.4, 4);
 const gladeBellGeo = new THREE.SphereGeometry(0.04, 6, 5);
-const gladeStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const gladeStemMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 }), 'reed');
 const gladeBellMat = new THREE.MeshStandardMaterial({ color: 0x5a6fd8, roughness: 0.5 });
 const patchVineGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.5, 4).rotateZ(Math.PI / 2);
 const patchPumpkinGeo = new THREE.SphereGeometry(0.22, 8, 6);
-const patchVineMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 });
-const patchPumpkinMat = new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 });
+const patchVineMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 }), 'crop');
+const patchPumpkinMat = detail(new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 }), 'crop');
 // fern fronds in the glen (generation 8): a leaning blade, a few to a clump
 const glenFrondGeo = new THREE.ConeGeometry(0.09, 1, 4).translate(0, 0.5, 0);
-const glenFrondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 });
+const glenFrondMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 }), 'fern');
 // dune grass (generation 9): a pale, narrow plume; and driftwood, 1 long (scaled to its length)
 const plumeGeo = new THREE.ConeGeometry(0.07, 1, 5).translate(0, 0.5, 0);
-const plumeMat = new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 });
+const plumeMat = detail(new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 }), 'reed');
 const driftGeo = new THREE.CylinderGeometry(0.13, 0.15, 1, 7).rotateZ(Math.PI / 2);
 // strawberry plants on the bank (generation 11): a low clump of leaves with a berry or two
 const bankLeafGeo = new THREE.SphereGeometry(0.16, 6, 4);
-const bankLeafMat = new THREE.MeshStandardMaterial({ color: 0x3f8f3a, roughness: 0.8 });
+const bankLeafMat = detail(new THREE.MeshStandardMaterial({ color: 0x3f8f3a, roughness: 0.8 }), 'crop');
 const bankBerryGeo = new THREE.ConeGeometry(0.05, 0.09, 6).rotateX(Math.PI);
-const bankBerryMat = new THREE.MeshStandardMaterial({ color: 0xe0303a, roughness: 0.5 });
-const driftMat = foliageMat(0xb8a58a);
-const driftEndMat = foliageMat(0xd9cdb4);
+const bankBerryMat = detail(new THREE.MeshStandardMaterial({ color: 0xe0303a, roughness: 0.5 }), 'crop');
+const driftMat = detail(foliageMat(0xb8a58a), 'wood');
+const driftEndMat = detail(foliageMat(0xd9cdb4), 'endgrain');
 const fieldStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1, 5);
 const fieldHeadGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.04, 10).rotateX(Math.PI / 2);
 const fieldHeartGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 8).rotateX(Math.PI / 2);
-const fieldStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const fieldStemMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 }), 'reed');
 const fieldHeadMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5 });
-const fieldHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 });
-const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
+const fieldHeartMat = detail(new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 }), 'crop');
+const marshReedMat = detail(new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 }), 'reed');
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
 // dots, a brown cep, violet, and golden
@@ -258,12 +273,15 @@ const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4e
 }));
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
 export const LOBBY_POND_Y = -0.12; // the lobby pond's surface (where a bobber floats: src/fishing.js)
-const pondWaterMat = addRipples(new THREE.MeshStandardMaterial({ color: 0x3aa0a8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 }));
-const padMat = new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 });
+const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8c94, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 })), 'pond');
+const padMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 }), 'crop');
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
-const reedMat = foliageMat(0x6b8a3a);
-const logMat = foliageMat(0x7a5432);
-const logEndMat = foliageMat(0xc49a6c);
+const reedMat = detail(foliageMat(0x6b8a3a), 'reed');
+const logMat = detail(foliageMat(0x7a5432), 'bark');
+const logEndMat = detail(foliageMat(0xc49a6c), 'endgrain');
+// (one geometry each, 1 tall or long, scaled: all of them drawn in a few draws)
+const pondReedGeo = new THREE.ConeGeometry(0.035, 1, 4);
+const logGeo = new THREE.CylinderGeometry(0.3, 0.32, 1, 9);
 
 // ---------- The biomes' set pieces ----------
 // For a lobby's island and the farm's valley alike. ctx: world.js's set
@@ -274,8 +292,7 @@ const logEndMat = foliageMat(0xc49a6c);
 // The pond: still water over a muddy bottom, lily pads, a few pink flowers,
 // reeds round the edge (the lily pads, for drifting)
 function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
-  const water = new THREE.Mesh(new THREE.CircleGeometry(pond.r + 0.9, 40), pondWaterMat);
-  water.rotation.x = -Math.PI / 2;
+  const water = new THREE.Mesh(pondWaterGeo(pond, inPond), pondWaterMat);
   water.position.set(pond.x, waterY, pond.z);
   root.add(water);
   const pads = [];
@@ -301,12 +318,60 @@ function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
     if (!inPond(x, z)) continue;
     for (let n = 0; n < 4; n++) {
       const h = rand(0.6, 1.1);
-      const reed = addDecor(new THREE.ConeGeometry(0.035, h, 4), reedMat, x + rand(-0.15, 0.15), floor + h / 2, z + rand(-0.15, 0.15), 1, 1, 1, root);
+      const reed = addDecor(pondReedGeo, reedMat, x + rand(-0.15, 0.15), floor + h / 2, z + rand(-0.15, 0.15), 1, h, 1, root);
       reed.rotation.set(rand(-0.15, 0.15), 0, rand(-0.15, 0.15));
     }
   }
   return pads;
 }
+// The pond's water: a disc, in a grid of half-metre squares, each corner
+// knowing how near the bank it is (gfxBank: 1 on the bank, 0 from
+// WATER_BANK_REACH out), for the shallows, the wet edge and the deep middle
+// (src/gfx/water.js): rings round it, a quarter metre apart for the first
+// metre and a half, then half a metre
+const BANK_RINGS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6];
+function pondWaterGeo(pond, inPond) {
+  const R = pond.r + 0.9;
+  const n = Math.ceil((R * 2) / 0.5);
+  const step = (R * 2) / n;
+  const pos = [];
+  const bank = [];
+  const index = [];
+  for (let i = 0; i <= n; i++) {
+    for (let j = 0; j <= n; j++) {
+      const x = -R + j * step;
+      const z = -R + i * step;
+      pos.push(x, 0, z);
+      // how far to the nearest ground that is not the pond: rings round it, eight ways
+      let d = inPond(pond.x + x, pond.z + z) ? WATER_BANK_REACH : 0;
+      for (const r of BANK_RINGS) {
+        if (d < WATER_BANK_REACH) break;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          if (!inPond(pond.x + x + Math.cos(a) * r, pond.z + z + Math.sin(a) * r)) { d = r; break; }
+        }
+      }
+      bank.push(1 - d / WATER_BANK_REACH);
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const x = -R + (j + 0.5) * step;
+      const z = -R + (i + 0.5) * step;
+      if (Math.hypot(x, z) > R + step) continue; // (a disc: the corners are under the ground)
+      const a = i * (n + 1) + j;
+      const b = a + n + 1;
+      index.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
+  geo.setAttribute('gfxBank', new THREE.Float32BufferAttribute(bank, 1));
+  geo.setIndex(index);
+  return geo;
+}
+
 // ...and they drift a little
 function driftPads(pads, t) {
   pads.forEach((pad, i) => {
@@ -320,9 +385,11 @@ function fallenLogs({ scatter, tileAt, isOpenGround, rand, rng, root, addCollide
   scatter(n, 7, (x, z) => tileAt(x, z) === 'moss' && isOpenGround(x, z, 1.6) && offTrail(x, z, 2), (x, z) => {
     const len = rand(2.2, 3.4);
     const along = rng() < 0.5; // lying east-west, else north-south
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, len, 9), [logMat, logEndMat, logEndMat]);
+    const log = new THREE.Mesh(logGeo, [logMat, logEndMat, logEndMat]);
     log.rotation.set(along ? 0 : Math.PI / 2, 0, along ? Math.PI / 2 : 0);
+    log.scale.y = len;
     log.position.set(x, 0.3, z);
+    log.userData.decor = true; // (still: drawn instanced, world.js)
     log.castShadow = true;
     log.receiveShadow = true;
     root.add(log);
@@ -425,6 +492,7 @@ function duneGrass({ scatter, tileAt, isOpenGround, rand, rng, root }, offTrail,
     log.rotation.y = rand(0, Math.PI);
     log.scale.x = len;
     log.position.set(x, 0.14, z);
+    log.userData.decor = true;
     log.castShadow = true;
     log.receiveShadow = true;
     root.add(log);
@@ -463,6 +531,7 @@ function buildWildPieces(island, ctx) {
       const dot = new THREE.Mesh(dotGeo, dotMat);
       dot.position.set(x + Math.cos(a) * d, top - (i % 3 === 0 ? 0.02 : 0.12), z + Math.sin(a) * d);
       dot.scale.set(1, 0.35, 1);
+      dot.userData.decor = true; // (still: drawn instanced, world.js)
       root.add(dot);
     }
     for (const mesh of [stalk, cap, gills]) {

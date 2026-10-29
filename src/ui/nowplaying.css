@@ -1,0 +1,30 @@
+/* "Now playing": the song's name, at the top in the middle (src/ui/nowplaying.js) */
+.now-playing {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60; /* (over the menu too: the song often starts there) */
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 16px;
+  box-sizing: border-box;
+  background: var(--hud-bg);
+  font-family: var(--inv-font);
+  font-size: 22px;
+  color: var(--inv-ink);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.now-playing[hidden] { display: none; }
+.now-playing-label { color: #86522a; font-size: 18px; }
+.now-playing-label::before { content: '♪ '; }
+.now-playing-title { overflow: hidden; text-overflow: ellipsis; }
+.now-playing.in { animation: now-playing 4s ease-in-out forwards; }
+@keyframes now-playing {
+  0% { opacity: 0; transform: translate(-50%, -12px); }
+  10%, 85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
+}

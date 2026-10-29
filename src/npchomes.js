@@ -24,6 +24,7 @@ export const npcHomes = {
   outside: {}, // id -> the home's group on the farm (tapping it goes in)
   rooms: {}, // id -> { root, entry, exit, counter, customer, bed, table, door (its group) }
   dock: { mend() {} }, // Finn's dock: mend(true) puts its missing planks back
+  lamps: [], // where the yards' lanterns hang, in the farm (Vector3s)
   setNight() {},
   setHour() {},
   animate() {},
@@ -266,11 +267,16 @@ function porthole(parent, x, y, z, trim) {
 }
 
 
+// (a lantern's light hangs a little out from it and below, off the wall it is
+// on, so the wall by it doesn't burn white and the ground under it gets more)
+const OFF_WALL = new THREE.Vector3(0, -0.2, 0.4);
+
 // ctx: world.js's set piece kit, for the farm (src/maps.js HOME.build)
 export function buildNpcHomes(ctx) {
   const { root, addCollider } = ctx;
   const anims = [];
   const glows = []; // (lit at night)
+  const lamps = npcHomes.lamps = []; // where the yards' lanterns are, in the farm (they get real lights at night: src/build.js addLamps)
   const clocks = []; // (told the hour)
   const outsideMat = bakedMaterial(false);
   const insideMat = bakedMaterial(true);
@@ -280,7 +286,10 @@ export function buildNpcHomes(ctx) {
     g.position.set(home.x, 0, home.z);
     root.add(g);
     const yard = makeStory();
+    const before = glows.length;
     YARDS[id](g, home, { addCollider, anims, glows, story: yard });
+    g.updateMatrixWorld(true);
+    for (const glow of glows.slice(before)) if (glow.userData.lamp) lamps.push(glow.getWorldPosition(new THREE.Vector3()).add(OFF_WALL));
     bake(g, outsideMat);
     npcHomes.outside[id] = g;
     const look = ROOMS[id];
@@ -297,11 +306,11 @@ export function buildNpcHomes(ctx) {
   buildSignposts(root);
   // night: 0 by day to 1 at night (dayNight.night()): the lights come on as it falls
   npcHomes.setNight = (night) => {
-    windowMat.emissiveIntensity = night ? 0.9 : 0;
-    lanternMat.emissiveIntensity = night ? 1.2 : 0.15;
+    windowMat.emissiveIntensity = night ? 2.5 * Math.min(1, night * 2) : 0; // (bright enough for the night's bloom: src/gfx/post.js)
+    lanternMat.emissiveIntensity = night ? 0.15 + 3.05 * Math.min(1, night * 2) : 0.15;
     for (const glow of glows) {
       glow.visible = night > 0.02;
-      glow.material.opacity = 0.55 * Math.min(1, night);
+      glow.material.opacity = 0.7 * Math.min(1, night);
     }
   };
   let hour = -1;

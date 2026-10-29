@@ -9,6 +9,8 @@ import './daynight.css';
 // time, so one game hour is DAY_LENGTH_SECONDS / 24 seconds.
 import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { light as shaderLight, U } from './gfx/uniforms.js';
+import { createMotes } from './gfx/motes.js';
+import { createBirds } from './gfx/birds.js';
 
 export { DAY_LENGTH_SECONDS };
 
@@ -20,19 +22,29 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // Set for the filmic tone mapping (src/gfx/tonemap.js, exposure 1.15): a warm
 // sun a little stronger than the sky, a cool blue sky light and a blue-violet
 // ground bounce, so lit sides are warm and shade is cool; dusk's sun and sky
-// are lifted so a sunset glows, and night is moonlit blue. The sky (src/gfx/sky.js)
-// runs from `zenith` overhead to `horizon`, which is the fog's color too (the
-// far land melts into it); neither is tone mapped.
+// are lifted so a sunset glows (its sun golden and strong for its low angle,
+// its sky light lavender, so the long shadows go cool), and night is moonlit
+// blue. The sky (src/gfx/sky.js) runs from `zenith` overhead to `horizon`,
+// which is the fog's color too (the far land melts into it); neither is tone
+// mapped. Morning is its own: cooler, paler and less saturated than the
+// sunset (a cream-gold sun, a peach horizon still at 8:00, a cool blue sky
+// light), with a mist lying low (morningMist), the day's colors back by 9:30.
+// The sky's light is lifted at dawn and dusk (and dusk's sun golden, not
+// orange), so the land stays warm green and gold, not a muddy olive.
 const KEYS = [
-  { h: 0, horizon: 0x0b1026, zenith: 0x02040e, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
-  { h: 4.5, horizon: 0x111a3a, zenith: 0x040816, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  // (night: the moon the key, silver and brighter than the sky's fill, so it
+  // models the crowns and throws shadows; the horizon a lighter blue than the
+  // zenith, the far land lifting into it: src/gfx/atmos.js gfxNight)
+  { h: 0, horizon: 0x26386e, zenith: 0x03060f, light: 0xa4baff, lightI: 0.95, hemiSky: 0x2c4690, hemiGround: 0x141a3c, hemiI: 0.48 },
+  { h: 4.5, horizon: 0x223262, zenith: 0x050a18, light: 0xa4baff, lightI: 0.9, hemiSky: 0x2c4690, hemiGround: 0x141a3c, hemiI: 0.5 },
   { h: 6, horizon: 0x8a6a9c, zenith: 0x2e3468, light: 0xff9a6a, lightI: 0.5, hemiSky: 0xb09ac8, hemiGround: 0x3a3458, hemiI: 0.75 },
-  { h: 7, horizon: 0xf2b27a, zenith: 0x6a8cc4, light: 0xffc488, lightI: 1.25, hemiSky: 0xf0dce0, hemiGround: 0x464468, hemiI: 0.9 },
-  { h: 8.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
+  { h: 7, horizon: 0xeeb08c, zenith: 0x6488c4, light: 0xffbc84, lightI: 1.55, hemiSky: 0xccd0ee, hemiGround: 0x4a4a6c, hemiI: 0.95 },
+  { h: 8.25, horizon: 0xe6ccb6, zenith: 0x5690d2, light: 0xffd8a8, lightI: 2.15, hemiSky: 0xaec8f2, hemiGround: 0x3a4a7a, hemiI: 0.82 },
+  { h: 9.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
   { h: 17, horizon: 0x87ceeb, zenith: 0x3f88d2, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
-  { h: 18.3, horizon: 0xf0955a, zenith: 0x4c5c9e, light: 0xffa060, lightI: 1.9, hemiSky: 0xf4b8c0, hemiGround: 0x4a4070, hemiI: 1.25 },
-  { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
-  { h: 20.5, horizon: 0x1a2048, zenith: 0x060a20, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
+  { h: 18.5, horizon: 0xf0a274, zenith: 0x5a5ca2, light: 0xffb466, lightI: 2.7, hemiSky: 0xc2c2ea, hemiGround: 0x6a5448, hemiI: 1.75 },
+  { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0xa48cc4, hemiGround: 0x382c5c, hemiI: 1.05 },
+  { h: 20.5, horizon: 0x2a3a70, zenith: 0x060a20, light: 0xa4baff, lightI: 0.95, hemiSky: 0x2c4690, hemiGround: 0x141a3c, hemiI: 0.5 },
 ];
 
 const COLOR_PROPS = ['horizon', 'zenith', 'light', 'hemiSky', 'hemiGround'];
@@ -43,12 +55,19 @@ for (const key of KEYS) for (const p of COLOR_PROPS) key[p] = new THREE.Color(ke
 
 const SUNRISE = 6;
 const SUNSET = 19;
+const MIDDAY_SIDE = 0.42; // (how far off to the side, toward the east, the midday sun stands)
 
 // 0 during the day, 1 at night, easing over dawn and dusk
 function nightAmount(hour) {
   const ramp = (h, start, end) => THREE.MathUtils.smoothstep(h, start, end);
   if (hour < 12) return 1 - ramp(hour, 5, 7.5);
   return ramp(hour, 18.5, 20.5);
+}
+
+// The morning's mist: 1 from dawn to about 8:30, gone by 10:00
+function morningMist(hour) {
+  const ramp = (h, start, end) => THREE.MathUtils.smoothstep(h, start, end);
+  return ramp(hour, 5, 6.5) * (1 - ramp(hour, 8.5, 10));
 }
 
 function formatTime(hour) {
@@ -109,7 +128,7 @@ function createFireflies(count) {
   const points = new THREE.Points(
     geo,
     new THREE.PointsMaterial({
-      size: 0.16,
+      size: 0.19,
       vertexColors: true,
       transparent: true,
       blending: THREE.AdditiveBlending,
@@ -132,10 +151,11 @@ function createFireflies(count) {
       pos[i * 3] = focus.x + wrap(bx - focus.x);
       pos[i * 3 + 1] = base[i * 3 + 1] + Math.sin(t * 1.1 + p * 2) * 0.25;
       pos[i * 3 + 2] = focus.z + wrap(bz - focus.z);
-      const glow = night * Math.max(0, Math.sin(t * 2.3 + p * 3)) ** 2;
-      col[i * 3] = 0.85 * glow;
-      col[i * 3 + 1] = 1.0 * glow;
-      col[i * 3 + 2] = 0.45 * glow;
+      // warm and bright at their peak, past the night's bloom threshold
+      const glow = 1.35 * night * Math.max(0, Math.sin(t * 2.3 + p * 3)) ** 2;
+      col[i * 3] = 1.0 * glow;
+      col[i * 3 + 1] = 0.86 * glow;
+      col[i * 3 + 2] = 0.36 * glow;
     }
     geo.attributes.position.needsUpdate = true;
     geo.attributes.color.needsUpdate = true;
@@ -143,10 +163,15 @@ function createFireflies(count) {
   return { points, update };
 }
 
-// Underground (a boss's dungeon): black all round, the hemisphere and the sun
-// down low in the cave's color, and the warm light round the farmer up
+// Underground (a boss's dungeon): black all round; the hemisphere a dim,
+// cool blue-grey fill (a little of the cave's color in it), so what no lamp
+// reaches reads cool, not brown; the overhead light low, in the cave's
+// color; and a small, soft light round the farmer (the lamps' own light:
+// src/build.js, the dungeon's lamps)
 const CAVE_DARK = new THREE.Color(0x040306);
-const CAVE = { hemiI: 0.7, lightI: 0.32, glow: 16 };
+const CAVE_FILL = new THREE.Color(0x5a78c8); // (the hemisphere's sky: a faint cool fill from above, so the shade between the torches reads blue, not black...)
+const CAVE_FLOOR = new THREE.Color(0x161a2a); // (...and its ground)
+const CAVE = { hemiI: 1.7, lightI: 0.06, fill: 0.92, glow: 1.5, reach: 3.5 }; // (glow, reach: the light round the farmer, small: it lights them, not the room)
 
 export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let hour = THREE.MathUtils.euclideanModulo(startHour, 24);
@@ -159,6 +184,10 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let cloud = 0; // how overcast it is, 0 to 1, and lightning's flash (setWeather: src/weather.js)
   let flash = 0;
   let flashOut = 0; // (lightning's flash out in the open: a split screen's views under a roof see none, view())
+  let wet = 0; // how wet the world is and how hard it rains (0 to 1; under a roof: none), and out in the open
+  let rain = 0;
+  let wetOut = 0;
+  let rainOut = 0;
   let under = 0; // how far underground we are, 0 to 1, and the light down there (setUnderground: a boss's dungeon)
   const caveLight = new THREE.Color(0xffffff);
 
@@ -169,8 +198,16 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   const glow = new THREE.PointLight(0xffb36b, 0, 14, 1.4);
   glow.position.set(0, 2.2, 1.2);
 
-  const fireflies = createFireflies(90);
+  const fireflies = createFireflies(72);
   scene.add(fireflies.points);
+  // ...and by day, pollen and dust drifting in the sunlight (src/gfx/motes.js)
+  const motes = createMotes();
+  scene.add(motes.points);
+  // ...and a few birds crossing the sky (src/gfx/birds.js)
+  const birds = createBirds();
+  scene.add(birds.mesh);
+  // how much sun there is for them: none at night, under clouds or rain, or underground
+  const sunlit = (night) => (1 - night) * Math.max(0, 1 - cloud * 1.6) * (1 - under);
 
   // The sky's colors once the day's light is set (the shaders' own: the season
   // tints them in place, src/seasons.js)
@@ -192,13 +229,15 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     return lerped;
   }
 
-  // Rain clouds: the sky and the light greyer and dimmer (as bright as they
-  // were, less a quarter, so a rainy night is no lighter)
+  // Rain clouds: the sky and the light greyer, cooler and dimmer (as bright
+  // as they were, less a quarter, so a rainy night is no lighter): a blue-grey,
+  // not a flat one
   function overcast(color) {
     const grey = (color.r * 0.3 + color.g * 0.59 + color.b * 0.11) * 0.75;
-    color.lerp(_grey.setRGB(grey * 0.92, grey * 0.97, grey * 1.08), cloud * 0.8);
+    color.lerp(_grey.setRGB(grey * 0.86, grey * 0.96, grey * 1.16), cloud * 0.8);
   }
   const _grey = new THREE.Color();
+  const _fill = new THREE.Color();
   const FLASH = new THREE.Color(0xe6ecff);
 
   // clock: the clock's panel too (not for a split screen's other views: view())
@@ -210,8 +249,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     if (under > 0) {
       s.horizon.lerp(CAVE_DARK, under);
       s.zenith.lerp(CAVE_DARK, under);
-      s.hemiSky.lerp(caveLight, under);
-      s.hemiGround.lerp(CAVE_DARK, under);
+      s.hemiSky.lerp(_fill.copy(caveLight).lerp(CAVE_FILL, CAVE.fill), under);
+      s.hemiGround.lerp(CAVE_FLOOR, under);
       s.light.lerp(caveLight, under);
     }
     scene.background.copy(s.horizon);
@@ -223,18 +262,32 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     sun.intensity = THREE.MathUtils.lerp(s.lightI * (1 - cloud * 0.65), CAVE.lightI, under);
 
     // The sun arcs east (+X) to west (-X) between sunrise and sunset; at
-    // night the same light becomes the moon on the opposite side. It never
-    // drops below ~20° up, so low light still reaches flat ground and shadows
-    // don't stretch to infinity at the horizon.
+    // night the same light becomes the moon on the opposite side. The sun
+    // sits low round sunrise and sunset (about 16° up at 18:30, so a golden
+    // hour throws long shadows) but never below ~10°, so low light still
+    // reaches flat ground and shadows don't stretch to infinity; the moon
+    // keeps above ~20°. In the morning it climbs more slowly (about 20° up at
+    // 8:00, long shadows over the dew), back on its path by noon.
     const angle = ((hour - SUNRISE) / (SUNSET - SUNRISE)) * Math.PI;
     const isDay = hour >= SUNRISE && hour < SUNSET;
     const sign = isDay ? 1 : -1;
-    sunDir.set(Math.cos(angle) * sign, 0.4 + 0.6 * Math.abs(Math.sin(angle)), 0.45).normalize();
+    const slow = isDay && hour < 12 ? THREE.MathUtils.lerp(0.3, 1, THREE.MathUtils.smoothstep(hour, 6.5, 11.5)) : 1;
+    const up = Math.abs(Math.sin(angle)) * slow;
+    // (the moon stands off to the side and a little beyond what the camera
+    // looks at: a side-back light, the crowns modelled and their edges rimmed
+    // toward it, the shadows reaching back toward us)
+    // (and round midday, the sun high, a little off to the side, so the
+    // crowns are modelled, lit on one side, and the shadows fall aside of
+    // what casts them, not straight back behind it: none of it at 8:00 or 18:30)
+    const midday = isDay ? THREE.MathUtils.smoothstep(hour, 9.5, 11.5) * (1 - THREE.MathUtils.smoothstep(hour, 14, 16.5)) : 0;
+    sunDir.set(Math.cos(angle) * sign + MIDDAY_SIDE * midday, isDay ? 0.22 + 0.78 * up : 0.4 + 0.6 * up, isDay ? 0.45 : -0.3).normalize();
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
-    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash }); // (the shaders' copy: src/gfx/uniforms.js)
-    glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
+    const mist = morningMist(hour) * (1 - under) * (1 - 0.6 * cloud);
+    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash, wet, rain, mist }); // (the shaders' copy: src/gfx/uniforms.js)
+    glow.intensity = Math.max(night * 10 * (1 - under), under * CAVE.glow); // (underground: a little light round us)
+    glow.distance = THREE.MathUtils.lerp(14, CAVE.reach, under);
     if (!clock) return night;
 
     // Clock panel: dial sky color and the sun/moon riding the arc
@@ -280,20 +333,30 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       ui.root.classList.toggle('fast', fastForward && !paused);
       const night = apply();
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
+      motes.update(elapsed, dt, focus, sunlit(night));
+      birds.update(sunlit(night));
     },
     /** A split screen's farmer's own view (src/main.js): the light as far underground as they are (amount, color), the fireflies round them (focus), and no lightning seen under a roof (sheltered). */
     view(focus, amount, color = 0xffffff, sheltered = false) {
       under = amount;
       caveLight.setHex(color);
       flash = sheltered ? 0 : flashOut;
+      wet = sheltered ? 0 : wetOut;
+      rain = sheltered ? 0 : rainOut;
       const night = apply(false);
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
+      motes.update(elapsed, 0, focus, sunlit(night));
+      birds.update(sunlit(night));
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {
       day = 1 + Math.floor(hours / 24);
       hour = THREE.MathUtils.euclideanModulo(hours, 24);
       apply();
+    },
+    /** The graphics tier's particle knob (src/gfx/quality.js): how many motes drift by day. */
+    setParticles(n) {
+      motes.setParticles(n);
     },
     hour: () => hour,
     day: () => day,
@@ -310,11 +373,15 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       under = amount;
       caveLight.setHex(color);
     },
-    /** How overcast it is (0 to 1) and lightning's flash (0 to 1; sheltered: none seen): from the next update. */
-    setWeather(overcastBy, flashBy, sheltered = false) {
+    /** How overcast it is (0 to 1), lightning's flash (0 to 1), how wet the world is and how hard it rains (0 to 1; sheltered: none of these three seen): from the next update. */
+    setWeather(overcastBy, flashBy, sheltered = false, wetBy = 0, rainBy = 0) {
       cloud = overcastBy;
       flashOut = flashBy;
       flash = sheltered ? 0 : flashBy;
+      wetOut = wetBy;
+      rainOut = rainBy;
+      wet = sheltered ? 0 : wetBy;
+      rain = sheltered ? 0 : rainBy;
     },
   };
 }

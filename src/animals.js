@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { damp } from './character.js';
+import { damp, rimmed, contactShadow } from './character.js';
 import { foliageMat } from './world.js';
+import { detail } from './gfx/detail.js';
 import { ITEMS } from './items.js';
 import { ANIMALS, LAY_HOURS, EGGS_PER_HEN, PEN_LEVELS } from '../shared/balance.js'; // (what they give, and how often; the pens' levels)
 import { YARD, PASTURE, PEN_RECTS } from '../shared/farmland.js';
@@ -116,14 +117,15 @@ function nextLay(hours) {
 }
 
 // ---------- Building the pens ----------
-const railMat = foliageMat(0xd9b48a);
-const postMat = foliageMat(0xa0682f);
-const wallMat = foliageMat(0xb8452f);
-const trimMat = foliageMat(0xf3ead8);
-const roofMat = foliageMat(0x5b4636);
+// (painted detail, src/gfx/detail.js: grain on the rails and posts, boards on the coop and barn, shingles, straw)
+const railMat = detail(foliageMat(0xd9b48a), 'wood');
+const postMat = detail(foliageMat(0xa0682f), 'wood');
+const wallMat = detail(foliageMat(0xb8452f), 'plank');
+const trimMat = detail(foliageMat(0xf3ead8), 'wood');
+const roofMat = detail(foliageMat(0x5b4636), 'tile');
 const darkMat = foliageMat(0x2a1a10);
-const strawMat = foliageMat(0xe3c46a);
-const hayEndMat = foliageMat(0xc9a64a);
+const strawMat = detail(foliageMat(0xe3c46a), 'thatch');
+const hayEndMat = detail(foliageMat(0xc9a64a), 'endgrain');
 const grainMat = foliageMat(0xf0d27a);
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x5ab4d6, roughness: 0.15, metalness: 0.1 });
 const box = new THREE.BoxGeometry(1, 1, 1);
@@ -366,11 +368,14 @@ export const penRect = (pen, level) => rectOf(PEN_RECTS[pen][level - 1]);
 // A model gives: root, rig (scaled for squash & stretch from the feet), legs
 // [{ pivot, phase, front }], and pose(a, t), which moves its own parts (head,
 // wings, tail, fleece) from the animal's state.
-const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...opts });
+const mat = (color, opts = {}) => rimmed(new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...opts })); // (the farmers' rim: they stand out the same way)
+// a hide, feathers or a fleece by its color, each with its painted look
+// (src/gfx/detail.js: a short-fur speckle, wool's curls, darker underneath)
 const matCache = new Map();
-const matOf = (color) => {
-  if (!matCache.has(color)) matCache.set(color, mat(color));
-  return matCache.get(color);
+const matOf = (color, look = 'fur') => {
+  const key = `${color}:${look}`;
+  if (!matCache.has(key)) matCache.set(key, detail(mat(color), look));
+  return matCache.get(key);
 };
 const ballGeo = new THREE.SphereGeometry(1, 12, 9);
 const ball = (parent, material, at, scale) => piece(parent, ballGeo, material, at, scale);
@@ -388,8 +393,8 @@ function limb(parent, [x, y, z], geo, material, length, foot, footMat, phase, fr
 // A hen: round body, tail up, little wings, red comb
 const HEN_COLORS = [0xf6f1e4, 0xa45a2a, 0xd9a24a, 0x3d3735];
 const combMat = mat(0xe0362c, { roughness: 0.6 });
-const beakMat = mat(0xf2a516, { roughness: 0.6 });
-const henLegMat = mat(0xe8962a, { roughness: 0.6 });
+const beakMat = detail(mat(0xf2a516, { roughness: 0.38 }), 'horn'); // (beaks and hooves a little glossy)
+const henLegMat = detail(mat(0xe8962a, { roughness: 0.5 }), 'horn');
 const beakGeo = new THREE.ConeGeometry(0.035, 0.08, 5);
 const henLegGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.14, 4);
 const henFootGeo = new THREE.BoxGeometry(0.06, 0.012, 0.08);
@@ -402,7 +407,7 @@ function buildHen(color) {
   root.userData.noSnow = true; // (snow keeps off the animals: src/seasons.js)
   const rig = new THREE.Group();
   rig.scale.setScalar(HEN_SCALE);
-  root.add(rig);
+  root.add(rig, contactShadow(0.4, 0.48)); // (sat in the grass: character.js)
   const legs = [-1, 1].map((sx, i) => limb(rig, [sx * 0.065, 0.15, 0.02], henLegGeo, henLegMat, 0.14, henFootGeo, henLegMat, i * Math.PI, true));
 
   const body = new THREE.Group();
@@ -444,10 +449,10 @@ function buildHen(color) {
 
 // A cow: a long body with patches, a pink muzzle, little horns, a bell and a swishing tail
 const COW_COLORS = [[0xf7f3ea, 0x2b2b2b], [0xc68a52, 0xf7f3ea], [0x6b3f22, 0x4a2a16]];
-const muzzleMat = mat(0xf2a7a7, { roughness: 0.6 });
-const hoofMat = mat(0x3a2a20);
-const hornMat = mat(0xf0e4c8, { roughness: 0.5 });
-const bellMat = mat(0xd9a520, { roughness: 0.35, metalness: 0.6 });
+const muzzleMat = detail(mat(0xf2a7a7, { roughness: 0.6 }), 'skin');
+const hoofMat = detail(mat(0x3a2a20, { roughness: 0.38 }), 'horn');
+const hornMat = detail(mat(0xf0e4c8, { roughness: 0.4 }), 'horn');
+const bellMat = detail(mat(0xd9a520, { roughness: 0.35, metalness: 0.6 }), 'tool');
 const cowLegGeo = new THREE.CylinderGeometry(0.075, 0.065, 0.5, 7);
 const hoofGeo = new THREE.CylinderGeometry(0.075, 0.08, 0.08, 7);
 const cowBodyGeo = new THREE.CapsuleGeometry(0.36, 0.7, 6, 14).rotateX(Math.PI / 2);
@@ -462,7 +467,7 @@ function buildCow(color) {
   const root = new THREE.Group();
   root.userData.noSnow = true;
   const rig = new THREE.Group();
-  root.add(rig);
+  root.add(rig, contactShadow(0.8, 1.25)); // (sat in the grass: character.js)
   const legs = [[-1, 1, 0], [1, 1, Math.PI], [-1, -1, Math.PI], [1, -1, 0]].map(([sx, sz, phase]) =>
     limb(rig, [sx * 0.2, 0.55, sz * 0.42], cowLegGeo, hideMat, 0.5, hoofGeo, hoofMat, phase, sz > 0));
 
@@ -511,18 +516,18 @@ function buildCow(color) {
 
 // A sheep: a dark face peeping out of a cloud of fleece, which you can shear
 const WOOL_COLORS = [0xf4f0e6, 0xe8dcc0, 0x9c968e, 0x3d3735];
-const faceMat = mat(0x3a3330);
-const skinMat = mat(0xe9d8c4);
+const faceMat = detail(mat(0x3a3330), 'fur');
+const skinMat = detail(mat(0xe9d8c4), 'skin');
 const sheepLegGeo = new THREE.CylinderGeometry(0.04, 0.035, 0.38, 6);
 const woolGeo = new THREE.IcosahedronGeometry(1, 1);
 const FLEECE = [[0, 0, 0, 0.36, 0.32, 0.46], [0.2, 0.17, 0.22, 0.2], [-0.2, 0.17, 0.2, 0.2], [0.22, 0.14, -0.2, 0.21], [-0.21, 0.15, -0.22, 0.21], [0, 0.26, 0, 0.22], [0, 0.22, -0.28, 0.19], [0.27, -0.05, 0, 0.19], [-0.27, -0.05, 0, 0.19], [0, 0.18, 0.3, 0.17]];
 
 function buildSheep(color) {
-  const woolMat = matOf(WOOL_COLORS[color] ?? WOOL_COLORS[0]);
+  const woolMat = matOf(WOOL_COLORS[color] ?? WOOL_COLORS[0], 'wool');
   const root = new THREE.Group();
   root.userData.noSnow = true;
   const rig = new THREE.Group();
-  root.add(rig);
+  root.add(rig, contactShadow(0.6, 0.78)); // (sat in the grass: character.js)
   const legs = [[-1, 1, 0], [1, 1, Math.PI], [-1, -1, Math.PI], [1, -1, 0]].map(([sx, sz, phase]) =>
     limb(rig, [sx * 0.14, 0.4, sz * 0.24], sheepLegGeo, faceMat, 0.38, null, null, phase, sz > 0));
 
@@ -572,17 +577,17 @@ const MOST_SHINY = 12; // of a kind
 const goldMats = new Map(); // a material -> its gold one
 function gild(root) {
   root.traverse((obj) => {
-    if (!obj.isMesh || !obj.material?.color) return;
+    if (!obj.isMesh || !obj.material?.color || obj.material.userData.contact) return; // (not the contact shadow)
     if (!goldMats.has(obj.material)) {
       const { r, g, b } = obj.material.color;
       const light = 0.35 + 0.65 * Math.min(1, 0.3 * r + 0.59 * g + 0.11 * b + 0.25); // (dark parts stay a darker gold)
-      goldMats.set(obj.material, new THREE.MeshStandardMaterial({
+      goldMats.set(obj.material, rimmed(new THREE.MeshStandardMaterial({
         color: new THREE.Color(1, 0.8, 0.25).multiplyScalar(light),
         emissive: 0x6b4a00,
         emissiveIntensity: 0.35,
         metalness: 0.55,
         roughness: 0.35,
-      }));
+      })));
     }
     obj.material = goldMats.get(obj.material);
   });

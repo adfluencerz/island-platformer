@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { rimmed } from './character.js';
+import { detailLiving } from './gfx/detail.js';
 
 // ---------- Mounts ----------
 // What a farmer rides once a boss is beaten (its `mount` item, src/items.js):
@@ -8,8 +10,8 @@ import * as THREE from 'three';
 // how high they sit on it. animate(dt, walk, t): walk 0..1, how much they
 // are walking.
 
-const mat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, flatShading: true });
-const MATS = {
+const mat = (color) => rimmed(new THREE.MeshStandardMaterial({ color, roughness: 0.75, flatShading: true })); // (the farmers' rim)
+const MATS = detailLiving({
   skin: mat(0xf0e2b0),
   skinDark: mat(0xd4bd84),
   leaf: mat(0x4f9e3c),
@@ -19,7 +21,7 @@ const MATS = {
   dark: mat(0x2a1a10),
   white: mat(0xffffff),
   blush: mat(0xf28cb1),
-};
+}); // (each its painted look by its name: src/gfx/detail.js)
 const ball = new THREE.IcosahedronGeometry(0.5, 1);
 const box = new THREE.BoxGeometry(1, 1, 1);
 const cone = new THREE.ConeGeometry(0.42, 1.5, 12).rotateX(-Math.PI / 2); // (point backward, along -z)
@@ -97,7 +99,7 @@ function parsnip() {
 
 // The super lion, friends now: a saddle on its back, its mane round a happy
 // face at the front, its cape on and its tail swishing
-const LION = { coat: mat(0xe8a83e), coatLight: mat(0xf6d08a), mane: mat(0xb85c1e), cape: mat(0xd6453a) };
+const LION = detailLiving({ coat: mat(0xe8a83e), coatLight: mat(0xf6d08a), mane: mat(0xb85c1e), cape: mat(0xd6453a) });
 function lion() {
   const { coat, coatLight, mane } = LION;
   const root = new THREE.Group();
@@ -154,6 +156,7 @@ function lion() {
 // between her wings, her crown still on
 const BEE = { fuzz: mat(0xffc93c), fuzzLight: mat(0xffe08a), stripe: mat(0x3a2a14), gold: mat(0xffd84a),
   wing: new THREE.MeshStandardMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.6, roughness: 0.2 }) };
+detailLiving(BEE);
 function bee() {
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -200,7 +203,7 @@ function bee() {
 
 // The giant crow, friends now: hopping along, its wings folded round the
 // saddle, its scarf flying
-const CROW = { plume: mat(0x2a2f45), plumeLight: mat(0x445078), beak: mat(0xf2a516), scarf: mat(0xd6453a) };
+const CROW = detailLiving({ plume: mat(0x2a2f45), plumeLight: mat(0x445078), beak: mat(0xf2a516), scarf: mat(0xd6453a) });
 function crow() {
   const root = new THREE.Group();
   const body = new THREE.Group();
