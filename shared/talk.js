@@ -568,9 +568,13 @@ export function hubOptions({ npc, state, c, status, messages }) {
     options.push({ kind: 'deliver', from, mission, text: `Tell ${NPCS[npc].name}: "${mission.message.say}"`, hot: true });
   }
   if (status.mission) {
-    if (!status.heard) options.push({ kind: 'ask', text: 'Is there anything I can do for you?', hot: true });
-    else if (status.ready) options.push({ kind: 'handover', text: 'I\'ve brought what you asked for.', hot: true });
-    else options.push({ kind: 'progress', text: 'How are things with your request?' });
+    // (once their requests are all done, an errand a day)
+    const [ask, ready, progress] = status.errand
+      ? ['Anything you need doing today?', 'I\'ve done your errand.', 'What was today\'s errand again?']
+      : ['Is there anything I can do for you?', 'I\'ve brought what you asked for.', 'How are things with your request?'];
+    if (!status.heard) options.push({ kind: 'ask', text: ask, hot: true });
+    else if (status.ready) options.push({ kind: 'handover', text: ready, hot: true });
+    else options.push({ kind: 'progress', text: progress });
   }
   for (const node of momentsDue(npc, state, c)) options.push({ kind: 'moment', node, text: node.text, hot: true });
   options.push({ kind: 'chat', text: 'Can we chat?' });

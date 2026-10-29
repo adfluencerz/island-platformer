@@ -3,7 +3,8 @@ import { ITEMS, spriteURL } from './items.js';
 import { PIECES } from '../shared/level.js';
 import { NPCS, rewardText } from '../shared/npcs.js';
 import { textOf, followUps } from '../shared/talk.js';
-import { FRIENDSHIP } from '../shared/balance.js';
+import { FRIENDSHIP, ERRANDS } from '../shared/balance.js';
+import { unlocksOf } from '../shared/unlocks.js';
 import { DEFAULT_LOOK } from '../shared/looks.js';
 import { el, button } from './ui/dom.js';
 
@@ -119,6 +120,11 @@ export function needText(need) {
   if (need.deed === 'chop') return { text: 'Trees felled', icon: spriteURL(ITEMS.axe) };
   if (need.deed === 'mine') return { text: 'Rocks broken', icon: spriteURL(ITEMS.pickaxe) };
   if (need.deed === 'cook') return { text: 'Meals cooked', icon: spriteURL(ITEMS.fried_egg) };
+  if (need.deed === 'make') return { text: 'Things made at the workbench', icon: spriteURL(ITEMS.mallet) };
+  if (need.deed === 'loot') return { text: 'Spots picked on the wild islands', icon: spriteURL(ITEMS.coin) };
+  if (need.deed === 'boss') return { text: 'Bosses beaten', icon: spriteURL(ITEMS.parsnip_seal) };
+  if (need.deed === 'dungeon') return { text: 'Dungeon chests opened', icon: spriteURL(ITEMS.key) };
+  if (need.deed === 'game') return { text: 'Party games played', icon: spriteURL(ITEMS.coin) };
   if (need.deed === 'tell') return { text: `Tell ${NPCS[need.who].name}`, icon: portraitURL(need.who) };
   if (need.built) return { text: `${PIECES[need.built].name} on your farm`, icon: spriteURL(ITEMS.wood) };
   return { text: '?', icon: '' };
@@ -193,13 +199,13 @@ export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notif
     if (askEl.hidden) return;
     if (!st.mission) {
       askEl.className = 'talk-ask done';
-      el('div', 'talk-ask-title', askEl, 'Nothing they need right now');
-      el('div', 'talk-ask-text', askEl, `You have done everything ${NPCS[who].name} asked. Their thanks!`);
+      el('div', 'talk-ask-title', askEl, 'Nothing more today');
+      el('div', 'talk-ask-text', askEl, `You have done everything ${NPCS[who].name} asked, and today's errand. Come back tomorrow!`);
       return;
     }
     const { mission } = st;
     askEl.className = `talk-ask${st.ready ? ' ready' : ''}`;
-    el('div', 'talk-ask-title', askEl, `${mission.title}${st.ready ? ' · ready!' : ''}`);
+    el('div', 'talk-ask-title', askEl, `${st.errand ? 'Today\'s errand: ' : ''}${mission.title}${st.ready ? ' · ready!' : ''}`);
     const list = el('div', 'talk-needs', askEl);
     for (const n of st.needs) {
       const { text, icon } = needText(n.need);
@@ -211,6 +217,23 @@ export function createDialog({ npcs, day, hour, ctx, onShop, onOpenChange, notif
       el('span', 'talk-need-count', row, `${Math.min(n.have, n.count)}/${n.count}`);
     }
     el('div', 'talk-reward', askEl, `For it: ${rewardOf(mission)}`);
+    const opens = unlocksText(mission);
+    if (opens) el('div', 'talk-reward talk-unlocks', askEl, `Unlocks: ${opens}`);
+    if (st.errand) {
+      const left = ERRANDS.every - (npcs.state(who).errands % ERRANDS.every);
+      const [item, n] = NPCS[who].bonus;
+      el('div', 'talk-reward', askEl, left === 1 ? `And with this one, ${n > 1 ? `${n} × ` : 'a '}${ITEMS[item].name.toLowerCase()} from ${NPCS[who].name}` : `${left - 1} more after this one, and a little extra from ${NPCS[who].name}`);
+    }
+  }
+
+  // What doing mission opens up besides what it gives, in words ('': nothing)
+  function unlocksText(mission) {
+    const { blueprints, upgrades } = unlocksOf(mission.id);
+    const names = { workbench: 'the workbench', yard: 'the hen yard', pasture: 'the pasture' };
+    return [
+      ...blueprints.map((piece) => `${PIECES[piece].name} plans`),
+      ...upgrades.map(([id, level]) => `${names[id]} level ${level}`),
+    ].join(', ');
   }
 
   const rewardOf = (mission) => rewardText(mission, (item) => ITEMS[item].name);
