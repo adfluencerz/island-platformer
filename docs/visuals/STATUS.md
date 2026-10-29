@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 30 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 31 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -34,6 +34,7 @@ Current phase: 30 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 27 The phone
 - [x] 28 The plaza stone
 - [x] 29 The HUD
+- [x] 30 The tree crowns
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -56,8 +57,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- One frame (`.inv-frame`, inventory.css tokens `--frame-*`, `--hud-bg`): cream parchment, a thin warm line, uneven corners, a soft inner shadow; the palette moved from orange to cream/sand/terracotta, so menus, bag, shop and touch buttons follow.
-- The HUD over the world is see-through (`--hud-bg`): place panel, guide, clock (daynight.css), gold (light digit slots), toolbar (cream wells, terracotta ring), party card, prompt (a pill).
-- Place panel: hint on one line, cut short (at home beside the name, `.brief`), all of it on hover or a click (`.open`); the guide 300px wide in smaller type. Chat and notices have no box (`--hud-text-shadow`); notices sit over the prompt, 40cqw wide.
-- No GPU cost: plaza-noon 753-802 calls, 860k triangles, 49-51 programs, as before.
-- Weakest now: forest-noon (flat canopy tops, the trees read as green blobs from above); then rain-noon's grey wash.
+- The crowns are painted per vertex in the 'tree' hook (`src/world.js` hookTree): sun-side light from `uSunDir` lifted toward up, yellow-green lit and blue-green shade, a warm dark underside, a sky rim by `cameraPosition`, lobes from the blob's bumps and a seeded slow pattern.
+- A per-material uniform `uTreeLeaf` tells leaves from bark (trunks and stumps as before), so no new program; bushes on the leaf materials get the crown look too.
+- Pines: each facet its own shade (a hash of its face normal), a lit warm skirt edge, a darker collar under the tier above, a dark hollow underneath; winter snow still lies on top (seasons.js runs after).
+- No GPU cost: forest-noon 499 calls / 718k tris / 49 programs, plaza-noon 792 / 861k / 49, phone 669 / 410k / 46.
+- Weakest now: rain-noon's grey wash (flat, desaturated, little depth); then the near pines from straight above, still a little faceted.
