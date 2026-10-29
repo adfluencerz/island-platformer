@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples, leafMats, pineMats } from './world.js';
+import { waterLook } from './gfx/water.js';
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
 import { buildSkyIsles } from './skyisles.js';
@@ -258,7 +259,7 @@ const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4e
 }));
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
 export const LOBBY_POND_Y = -0.12; // the lobby pond's surface (where a bobber floats: src/fishing.js)
-const pondWaterMat = addRipples(new THREE.MeshStandardMaterial({ color: 0x3aa0a8, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 }));
+const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x3a9a9a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 })), 'pond');
 const padMat = new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 });
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
 const reedMat = foliageMat(0x6b8a3a);
