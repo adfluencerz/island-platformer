@@ -7,8 +7,8 @@ import { NOISE } from './noise.js';
 // Every lit material's (a base hook, src/gfx/shading.js), in two parts a
 // material can opt out of (userData.gfx):
 //  - the wrap (noWrap): the sun (and any lamp) lights a face from a little
-//    past side-on, smoothstep(-uWrap, 1, N.L), in a soft half-tone step
-//    (uToon), so the terminator is soft and blocky shapes read painterly;
+//    past side-on, smoothstep(-uWrap, 1, N.L), toward a two-step toon ramp
+//    with a soft edge (uToon), so the terminator is soft and forms read painterly;
 //  - the sky's shade (noCloud): the clouds' shadows drift over the land with
 //    the sky's clouds (gfxCloudShadow: same drift, uCloudOffset, at about three
 //    times the dome's density), more and darker as the weather clouds over; none
@@ -64,7 +64,7 @@ const WRAP_GLSL = /* glsl */ `
   float gfxWrapNL(float d) {
     #ifdef GFX_WRAP
       float w = smoothstep(-uWrap * (1.0 - uNight), 1.0, d); // (none by moonlight: the night stays quiet)
-      float band = 0.5 * smoothstep(0.04, 0.22, w) + 0.5 * smoothstep(0.42, 0.85, w); // (dark, a half-tone, lit)
+      float band = smoothstep(0.1, 0.5, w); // (two steps, shade and light, the edge between them soft)
       return mix(w, band, uToon);
     #else
       return saturate(d);

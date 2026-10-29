@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { patch } from './chunks.js';
 import { atmos } from './atmos.js';
 import { light } from './light.js';
+import './smooth.js'; // (no faceted, flat-shaded look: src/gfx/smooth.js)
 
 // ---------- One way to change a material's shader ----------
 // hook(material, key, fn): fn(shader, renderer, material) runs when the

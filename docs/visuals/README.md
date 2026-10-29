@@ -24,7 +24,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | grass density | 0.35 | 0.75          | 1.0  |
 | grass blades (of 7 a tuft) | 3 | 6     | 7    |
 | grass spread (tuft width) | 1 | 1.2    | 1    |
-| tree detail (tris a canopy blob) | 20 | 20 | 80 |
+| tree detail (tris a canopy blob) | 20 | 80 (since 31) | 80 |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
@@ -50,7 +50,7 @@ Measured in phase 15 (960x600, pixel ratio 1, SwiftShader, shadow pass included;
 `npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
 - `npm test` and `npm run build`.
 - `npm run browser --silent -- -e 'g.step(2); return g.stats()'` with no page errors, and the same with `--full`.
-- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (eleven PNGs, `contact.png`, `stats.json`: high, the phone medium).
+- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (twelve PNGs, `contact.png`, `stats.json`: high, the two phone shots medium).
 - Look at `shots/contact.png` once and judge it against the phase's "Proof" line.
 
 ## Rules

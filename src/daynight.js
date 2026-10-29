@@ -28,16 +28,18 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // mapped. Morning is its own: cooler, paler and less saturated than the
 // sunset (a cream-gold sun, a peach horizon still at 8:00, a cool blue sky
 // light), with a mist lying low (morningMist), the day's colors back by 9:30.
+// The sky's light is lifted at dawn and dusk (and dusk's sun golden, not
+// orange), so the land stays warm green and gold, not a muddy olive.
 const KEYS = [
   { h: 0, horizon: 0x0b1026, zenith: 0x02040e, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
   { h: 4.5, horizon: 0x111a3a, zenith: 0x040816, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
   { h: 6, horizon: 0x8a6a9c, zenith: 0x2e3468, light: 0xff9a6a, lightI: 0.5, hemiSky: 0xb09ac8, hemiGround: 0x3a3458, hemiI: 0.75 },
-  { h: 7, horizon: 0xeeb08c, zenith: 0x6488c4, light: 0xffbc84, lightI: 1.55, hemiSky: 0xccd0ee, hemiGround: 0x3a4274, hemiI: 0.78 },
-  { h: 8.25, horizon: 0xe6ccb6, zenith: 0x5690d2, light: 0xffd8a8, lightI: 2.15, hemiSky: 0xaec8f2, hemiGround: 0x2e4482, hemiI: 0.72 },
+  { h: 7, horizon: 0xeeb08c, zenith: 0x6488c4, light: 0xffbc84, lightI: 1.55, hemiSky: 0xccd0ee, hemiGround: 0x4a4a6c, hemiI: 0.95 },
+  { h: 8.25, horizon: 0xe6ccb6, zenith: 0x5690d2, light: 0xffd8a8, lightI: 2.15, hemiSky: 0xaec8f2, hemiGround: 0x3a4a7a, hemiI: 0.82 },
   { h: 9.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
   { h: 17, horizon: 0x87ceeb, zenith: 0x3f88d2, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
-  { h: 18.5, horizon: 0xf4945a, zenith: 0x5a5ca2, light: 0xffa458, lightI: 2.3, hemiSky: 0xbcb0e0, hemiGround: 0x4a3c6c, hemiI: 1.1 },
-  { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
+  { h: 18.5, horizon: 0xf4945a, zenith: 0x5a5ca2, light: 0xffb466, lightI: 2.7, hemiSky: 0xc2c2ea, hemiGround: 0x6a5448, hemiI: 1.75 },
+  { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0xa48cc4, hemiGround: 0x382c5c, hemiI: 1.05 },
   { h: 20.5, horizon: 0x1a2048, zenith: 0x060a20, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
 ];
 

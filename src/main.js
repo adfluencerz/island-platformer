@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import './gfx/smooth.js'; // (first: no flat shading, smooth normals, before anything is made)
 import { ITEMS, spriteURL } from './items.js';
 import { createItemMesh, itemGeometry } from './itemmesh.js';
 import { createFarmFinds } from './finds.js';
@@ -302,7 +303,7 @@ sun.shadow.camera.bottom = -SUN_REACH;
 const sunFar = (reach) => 40 + reach * 1.4;
 sun.shadow.camera.far = sunFar(SUN_REACH);
 sun.shadow.normalBias = 0.035; // (the wrapped light shows faces near side-on to the sun: no acne on them)
-sun.shadow.radius = 2.5; // (soft-edged, painterly shadows)
+sun.shadow.radius = 4; // (soft-edged, painterly shadows)
 scene.add(sun, sun.target);
 
 // Moved in steps of a few shadow-map texels, so the shadows' edges don't crawl as it pans

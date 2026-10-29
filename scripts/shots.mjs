@@ -1,4 +1,4 @@
-// `npm run shots -- [--tier low|medium|high] [--check]`: eleven fixed screenshots
+// `npm run shots -- [--tier low|medium|high] [--check]`: twelve fixed screenshots
 // of the game at full graphics, to judge its look by (docs/visuals/), with
 // what the renderer drew for each, and a contact sheet of them all:
 //
@@ -9,7 +9,7 @@
 //
 //   --tier T   draw at that graphics tier (?gfx=T); without, each page's own
 //              (high on the desktop, medium on the phone)
-//   --check    fail (exit 1) when plaza-noon or the phone is over its
+//   --check    fail (exit 1) when plaza-noon or a phone shot is over its
 //              tier's budgets in docs/visuals/README.md (its `budgets` comment)
 //
 // One dev server and one browser for all of them (scripts/lib/page.mjs); a
@@ -72,6 +72,12 @@ const SHOTS = [
   }],
 ];
 
+// On the phone page (390x844, touch, its own tier: medium)
+const PHONE_SHOTS = [
+  ['phone', (g) => (g.warp('plaza'), g.dayNight.setTime(12))],
+  ['phone-forest-dusk', (g) => (g.warp('forest'), g.dayNight.setTime(18.5), g.snapCamera())], // (the user's own phone screenshot: a forest at 6:20 pm)
+];
+
 const log = logger();
 mkdirSync(OUT, { recursive: true });
 const stopDev = await startDev(log);
@@ -103,17 +109,18 @@ try {
   await desk.context.close();
 
   const phone = await openFarm(browser, { query, full: true, size: PHONE, touch: true, log });
-  await shoot(phone.page, 'phone', (g) => (g.warp('plaza'), g.dayNight.setTime(12)));
+  for (const [name, set] of PHONE_SHOTS) await shoot(phone.page, name, set);
   errors.push(...phone.errors.map((e) => `phone: ${e}`));
 
   writeFileSync(`${OUT}/stats.json`, JSON.stringify(stats, null, 2) + '\n');
 
   // ---- the contact sheet: a blank page of the shots, labelled ----
-  const names = [...SHOTS.map(([n]) => n), 'phone'];
+  const names = [...SHOTS, ...PHONE_SHOTS].map(([n]) => n);
+  const tall = new Set(PHONE_SHOTS.map(([n]) => n));
   const cell = (n) => {
     const s = stats[n];
     const src = `data:image/png;base64,${readFileSync(`${OUT}/${n}.png`).toString('base64')}`;
-    return `<figure${n === 'phone' ? ' class="tall"' : ''}><img src="${src}"><figcaption><b>${n}</b> ${s.tier} · ${s.calls} calls · ${(s.triangles / 1e3).toFixed(0)}k tris · ${s.programs} programs</figcaption></figure>`;
+    return `<figure${tall.has(n) ? ' class="tall"' : ''}><img src="${src}"><figcaption><b>${n}</b> ${s.tier} · ${s.calls} calls · ${(s.triangles / 1e3).toFixed(0)}k tris · ${s.programs} programs</figcaption></figure>`;
   };
   const sheet = await phone.context.newPage();
   await sheet.setViewportSize({ width: 1500, height: 800 });
@@ -135,7 +142,7 @@ try {
   if (opts.check) {
     const readme = readFileSync('docs/visuals/README.md', 'utf8');
     const budgets = JSON.parse(readme.match(/<!-- budgets (\{.*\}) -->/)[1]);
-    const over = ['plaza-noon', 'phone'].flatMap((name) => {
+    const over = ['plaza-noon', ...PHONE_SHOTS.map(([n]) => n)].flatMap((name) => {
       const s = stats[name];
       const b = budgets[s.tier];
       return [
