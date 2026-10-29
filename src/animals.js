@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { damp, rimmed } from './character.js';
 import { foliageMat } from './world.js';
+import { detail } from './gfx/detail.js';
 import { ITEMS } from './items.js';
 import { ANIMALS, LAY_HOURS, EGGS_PER_HEN, PEN_LEVELS } from '../shared/balance.js'; // (what they give, and how often; the pens' levels)
 import { YARD, PASTURE, PEN_RECTS } from '../shared/farmland.js';
@@ -116,14 +117,15 @@ function nextLay(hours) {
 }
 
 // ---------- Building the pens ----------
-const railMat = foliageMat(0xd9b48a);
-const postMat = foliageMat(0xa0682f);
-const wallMat = foliageMat(0xb8452f);
-const trimMat = foliageMat(0xf3ead8);
-const roofMat = foliageMat(0x5b4636);
+// (painted detail, src/gfx/detail.js: grain on the rails and posts, boards on the coop and barn, shingles, straw)
+const railMat = detail(foliageMat(0xd9b48a), 'wood');
+const postMat = detail(foliageMat(0xa0682f), 'wood');
+const wallMat = detail(foliageMat(0xb8452f), 'plank');
+const trimMat = detail(foliageMat(0xf3ead8), 'wood');
+const roofMat = detail(foliageMat(0x5b4636), 'tile');
 const darkMat = foliageMat(0x2a1a10);
-const strawMat = foliageMat(0xe3c46a);
-const hayEndMat = foliageMat(0xc9a64a);
+const strawMat = detail(foliageMat(0xe3c46a), 'thatch');
+const hayEndMat = detail(foliageMat(0xc9a64a), 'endgrain');
 const grainMat = foliageMat(0xf0d27a);
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x5ab4d6, roughness: 0.15, metalness: 0.1 });
 const box = new THREE.BoxGeometry(1, 1, 1);

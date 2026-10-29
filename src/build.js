@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PIECES, pieceTiles } from '../shared/level.js';
 import { TILE_SIZE, mulberry32, addRipples } from './world.js';
 import { waterLook } from './gfx/water.js';
+import { detailAll } from './gfx/detail.js';
 import { chestModel, CHEST_W } from './chest.js';
 import { createItemMesh } from './itemmesh.js';
 
@@ -100,6 +101,7 @@ const MATS = {
   lichen: mat(0xb8b46a),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
+detailAll(MATS); // (painted detail, each by its name: wood, planks, stone, thatch, tiles... src/gfx/detail.js)
 // a boss's portal's swirl, by its boss: [deep, light]
 const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight], crow: [MATS.crowPortal, MATS.crowPortalLight], toad: [MATS.toadPortal, MATS.toadPortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);

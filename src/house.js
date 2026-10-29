@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { HOUSE_ROOM, HOUSE_FIELD, HOUSE_DOOR_IN, inHouseRoom } from '../shared/level.js';
 import { TILE_SIZE } from './world.js';
+import { detailAll } from './gfx/detail.js';
+import { cloneHooked } from './gfx/shading.js';
 
 // ---------- Inside the house ----------
 // The room the house's door leads to (HOUSE_ROOM in shared/level.js): out
@@ -51,6 +53,7 @@ const MATS = {
   honey: mat(0xf0a020),
   dark: new THREE.MeshBasicMaterial({ color: 0x1b140e }),
 };
+detailAll(MATS, { floorGap: 'none' }); // (painted detail by name: boards, plaster, stone... src/gfx/detail.js)
 const box = new THREE.BoxGeometry(1, 1, 1);
 
 // world: the farm's (world.js buildWorld): the room goes on it, and its walls
@@ -135,7 +138,7 @@ export function createHouseRoom(world) {
   // (its own materials: it fades while the farmer is just behind it, so they can be seen)
   const doorMats = new Map();
   const doorPart = (material, x, y, z, w, h, d) => {
-    if (!doorMats.has(material)) doorMats.set(material, material.clone());
+    if (!doorMats.has(material)) doorMats.set(material, cloneHooked(material));
     const mesh = part(box, doorMats.get(material), 0, 0, 0, w, h, d);
     root.remove(mesh);
     mesh.position.set(x, y, z);
