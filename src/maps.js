@@ -263,7 +263,7 @@ const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4e
 }));
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
 export const LOBBY_POND_Y = -0.12; // the lobby pond's surface (where a bobber floats: src/fishing.js)
-const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x3a9a9a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 })), 'pond');
+const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8c94, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 })), 'pond');
 const padMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 }), 'crop');
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
 const reedMat = detail(foliageMat(0x6b8a3a), 'reed');
@@ -282,8 +282,7 @@ const logGeo = new THREE.CylinderGeometry(0.3, 0.32, 1, 9);
 // The pond: still water over a muddy bottom, lily pads, a few pink flowers,
 // reeds round the edge (the lily pads, for drifting)
 function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
-  const water = new THREE.Mesh(new THREE.CircleGeometry(pond.r + 0.9, 40), pondWaterMat);
-  water.rotation.x = -Math.PI / 2;
+  const water = new THREE.Mesh(pondWaterGeo(pond, inPond), pondWaterMat);
   water.position.set(pond.x, waterY, pond.z);
   root.add(water);
   const pads = [];
@@ -315,6 +314,53 @@ function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
   }
   return pads;
 }
+// The pond's water: a disc, in a grid of half-metre squares, each corner
+// knowing how near the bank it is (gfxBank: 1 on the bank, 0 from BANK_REACH
+// out), for the shallows and the wet edge (src/gfx/water.js)
+const BANK_REACH = 1.5;
+const BANK_RINGS = 6;
+function pondWaterGeo(pond, inPond) {
+  const R = pond.r + 0.9;
+  const n = Math.ceil((R * 2) / 0.5);
+  const step = (R * 2) / n;
+  const pos = [];
+  const bank = [];
+  const index = [];
+  for (let i = 0; i <= n; i++) {
+    for (let j = 0; j <= n; j++) {
+      const x = -R + j * step;
+      const z = -R + i * step;
+      pos.push(x, 0, z);
+      // how far to the nearest ground that is not the pond: rings round it, eight ways
+      let d = inPond(pond.x + x, pond.z + z) ? BANK_REACH : 0;
+      for (let ring = 1; ring <= BANK_RINGS && d === BANK_REACH; ring++) {
+        const r = (ring / BANK_RINGS) * BANK_REACH;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          if (!inPond(pond.x + x + Math.cos(a) * r, pond.z + z + Math.sin(a) * r)) { d = r; break; }
+        }
+      }
+      bank.push(1 - d / BANK_REACH);
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const x = -R + (j + 0.5) * step;
+      const z = -R + (i + 0.5) * step;
+      if (Math.hypot(x, z) > R + step) continue; // (a disc: the corners are under the ground)
+      const a = i * (n + 1) + j;
+      const b = a + n + 1;
+      index.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
+  geo.setAttribute('gfxBank', new THREE.Float32BufferAttribute(bank, 1));
+  geo.setIndex(index);
+  return geo;
+}
+
 // ...and they drift a little
 function driftPads(pads, t) {
   pads.forEach((pad, i) => {

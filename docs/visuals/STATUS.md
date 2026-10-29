@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 24 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 25 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -28,6 +28,7 @@ Current phase: 24 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 21 Forest light
 - [x] 22 Rain
 - [x] 23 Dungeon light
+- [x] 24 Water surface
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -50,7 +51,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Dungeon lamps (and boss halls') are real lights: `dungeon.js` `lamps` -> `buildings.addLamps(..., { under: true })`, the same 6 pooled lights, nearest first, lit by `setNight(night, focus, under)`; short reach (`UNDER_GLOW` in `build.js`).
-- Underground: a dim blue-grey hemisphere (`daynight.js CAVE_FILL/CAVE`), a small farmer glow (reach 7); the grade's moonlit grey-blue on only the darkest (`post.js POST.cave`, `uDark`), the low tier's `uNightGrey` too.
-- Fog: `CAVE_FOG` [12, 23] in rooms, `HALL_FOG` [15, 36] in a boss's hall (`cave.hall`, so the boss reads). The `dungeon` shot now steps 2 s (it was caught mid-way into the dark).
-- Weakest now: lake-sunset. The lake and its banks read as one flat pink-brown slab: no sunset glint or sky on the water, muddy shadows, little depth to the far shore.
+- Water swells: `world.js addRipples` adds three crossing swells (2.7-5.5 m, slow) that tilt the normal and shade the color; their height is `rippleWave`, kept over the mirror by `water.js` (`WATER.*.shade`).
+- Glints: a coarser layer (`WATER_BIG`, 0.77 m cells, about one in four lit on the crests) reads at 960x600; the fine facets as before.
+- Banks: pond water carries `gfxBank` (1 at the bank, 0 from 1.5 m out; `maps.js pondWaterGeo`, `build.js pondWaterGeo`): less mirror in the shallows, a dark wet band at the edge. Cliffs: the wet band darker and taller, rock under a pond falls dark.
+- Weakest now: plaza-morning. At 8:00 it looks almost the same as noon: no low warm morning light, no long soft shadows, no morning haze or dew; the grass and the plaza stones read flat and even.

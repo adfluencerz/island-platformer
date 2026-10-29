@@ -132,8 +132,10 @@ const FRAGMENT = {
     cliffMoss *= cliffHas * (1.0 - smoothstep(0.2, 0.3, cliffLum)) * mix(0.6, 1.0, gfxNoise(groundP * 3.3 + 1.0));
     diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK * (0.8 + 0.4 * gfxNoise(groundP * 5.1)), cliffMoss * 0.85);
     // wet and darker just over the water, its top edge wavering
-    float cliffWet = 1.0 - smoothstep(0.1, 0.3, vGroundCliff.y + (gfxNoise(vec2(cliffAlong * 1.7, 4.0)) - 0.5) * 0.14);
-    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.6, 0.64, 0.66), cliffWet * cliffHas);`,
+    float cliffWet = 1.0 - smoothstep(0.12, 0.36, vGroundCliff.y + (gfxNoise(vec2(cliffAlong * 1.7, 4.0)) - 0.5) * 0.14);
+    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.5, 0.55, 0.58), cliffWet * cliffHas);
+    // and under the water (seen through a pond's), falling dark: the bank's contact shadow
+    diffuseColor.rgb *= 1.0 - 0.6 * cliffHas * (1.0 - smoothstep(-0.3, 0.0, vGroundCliff.y));`,
 };
 
 // where the noise is read: the ground's plane, or (for sides) slanted by the
