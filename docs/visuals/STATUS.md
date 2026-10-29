@@ -52,7 +52,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Sun: in the morning it climbs more slowly (`daynight.js`, `slow`: about 20° at 8:00, its old path from noon); new keys at 7:00 and 8:25 (cream-gold sun 2.15, peach horizon, cool blue sky light 0.72), the day's colors from 9:30.
+- Sun: in the morning it climbs more slowly (`daynight.js`, `slow`: about 20° at 8:00, its old path from noon); new keys at 7:00 and 8:15 (cream-gold sun 2.15, peach horizon, cool blue sky light 0.72), the day's colors from 9:30.
 - `uMist` (`uniforms.js`, from `morningMist()`: 1 from dawn to 8:30, gone by 10:00, none underground, less in rain): the atmos haze thicker, nearer and higher, pale and cool away from the sun; dew on the grass tips (vertex color); the grade a touch paler and less saturated (`POST.mist`).
-- plaza-morning draws about 60 more calls than noon (the low sun's longer shadow box); the check reads noon and the phone, both unchanged.
+- plaza-morning draws about 60 more calls than before (805 -> 863; likely more casters in the low sun's shadow pass); the check reads noon and the phone, both unchanged.
 - Weakest now: shore-noon. The beach is a flat, bright band with no wet sand, foam line or ripples on it, and the sea beyond is one even blue; the cliffs and the shore meet the water without much depth.
