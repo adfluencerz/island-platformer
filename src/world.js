@@ -8,6 +8,7 @@ import { use } from './gfx/uniforms.js';
 import { groundDetail } from './gfx/ground.js';
 import { detail } from './gfx/detail.js';
 import { waterLook } from './gfx/water.js';
+import { NOISE } from './gfx/noise.js';
 import { knobs, onApply } from './gfx/quality.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
@@ -334,25 +335,34 @@ export function addRipples(material) {
 // The sea around every island (main.js puts it there), lighter in the
 // shallows along the shore, and the foam where it meets the shore
 export const SEA_LEVEL = -0.6;
-const SHALLOWS_WIDTH = 2.4;
-const SHALLOWS_COLOR = new THREE.Color(0x6fd6d0);
-const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false });
+const SHALLOWS_WIDTH = 4.5; // (the turquoise band the inner half, a fainter shelf the outer: src/gfx/water.js)
+const SHALLOWS_COLOR = new THREE.Color(0x2fe2b6);
+const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false });
 waterLook(addRipples(shallowsMat), 'shallows'); // (rocking with the sea, mirroring the sky as it does: src/gfx/water.js)
 const FOAM_WIDTH = 1.1; // (its solid line wider than the cliffs reach out over it: The cliffs)
 const FOAM_COLOR = new THREE.Color(0xffffff);
 const foamMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
 foamMat.userData.noSnow = true;
-// vertex alpha: 1 at the shore, 0 at the foam's outer edge. A solid line
-// hugs the shore and bands of foam wash in and out beyond it.
+// vertex alpha: 1 at the shore, 0 at the foam's outer edge. A line hugs the
+// shore, reaching out and drawing back with the swash (as the wet sand's
+// lace does: src/gfx/ground.js), and bands of foam wash in and out beyond
+// it; both broken into lace by a drifting noise, faded to its average where
+// a pixel covers too much of it.
 hook(foamMat, 'foam', (shader) => {
   define(shader, 'GFX_WORLD');
   define(shader, 'GFX_FOAM');
   use(shader, ['uTime'], 'f');
+  shader.fragmentShader = patch(shader.fragmentShader, 'common', NOISE, 'GFX_FOAM');
   shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     float shore = vColor.a;
+    highp vec2 foamP = vGfxWorld.xz;
+    float foamShow = gfxShow(3.6, gfxFootprint(foamP));
     float drift = sin(vGfxWorld.x * 0.8 + vGfxWorld.z * 0.6) * 1.5;
+    float swash = sin(uTime * 0.85 + dot(foamP, vec2(0.23, 0.31)));
     float wave = sin(shore * 11.0 + uTime * 1.6 + drift);
-    diffuseColor.a = max(smoothstep(0.55, 0.9, shore) * 0.9, smoothstep(0.5, 0.9, wave) * shore * 0.75);`, 'GFX_FOAM');
+    float lace = mix(0.6, smoothstep(0.28, 0.6, gfxNoise(foamP * 3.6 + vec2(uTime * 0.11, -uTime * 0.07))), foamShow);
+    float line = smoothstep(0.5 - 0.12 * swash, 0.82 - 0.08 * swash, shore + (gfxNoise(foamP * 1.7 + 5.0) - 0.5) * 0.25);
+    diffuseColor.a = max(line * mix(0.55, 1.0, lace), smoothstep(0.45, 0.9, wave) * shore * 0.8 * lace);`, 'GFX_FOAM');
 });
 
 // ---------- The decor kit: a few shared geometries/materials, many meshes ----------
@@ -1240,18 +1250,37 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (SIDES.some(([dx, dz]) => dropAt(gx + dx, gz + dz, floorOf(type)) !== null)) lipColors.set(key, new Float32Array(75));
     }
 
-    const chunks = new Map(); // "cx,cz" -> { pos, col, kind, index }
+    // (how near the open sea a point is, for the wet sand at the waterline:
+    // 1 on a side that faces it, 0 SHORE_REACH tiles in; src/gfx/ground.js)
+    const SHORE_REACH = 1.5;
+    const shoreAt = (x, z, gx, gz) => {
+      let d = SHORE_REACH;
+      for (let sz = gz - 2; sz <= gz + 2; sz++) {
+        for (let sx = gx - 2; sx <= gx + 2; sx++) {
+          if (tileGrid.has(`${sx},${sz}`)) continue;
+          d = Math.min(d, Math.hypot(Math.max(sx - 0.5 - x, 0, x - sx - 0.5), Math.max(sz - 0.5 - z, 0, z - sz - 0.5)));
+        }
+      }
+      return 1 - d / SHORE_REACH;
+    };
+    const nearSea = (gx, gz) => {
+      for (let sz = gz - 2; sz <= gz + 2; sz++) for (let sx = gx - 2; sx <= gx + 2; sx++) if (!tileGrid.has(`${sx},${sz}`)) return true;
+      return false;
+    };
+
+    const chunks = new Map(); // "cx,cz" -> { pos, col, kind, shore, index }
     const tint = new THREE.Color();
     const slabs = [];
     for (const [key, type] of tileGrid) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
       const chunkKey = `${Math.floor((gx + H) / SURFACE_CHUNK)},${Math.floor((gz + H) / SURFACE_CHUNK)}`;
-      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], index: [] });
-      const { pos, col, kind: kindOf, index } = chunks.get(chunkKey);
+      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], shore: [], index: [] });
+      const { pos, col, kind: kindOf, shore: shoreOf, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
       groundTiles.set(key, { chunk: chunks.get(chunkKey), first });
       const lip = lipColors.get(key);
+      const coast = nearSea(gx, gz);
       for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
           const ox = (j - 2) / 4;
@@ -1279,7 +1308,11 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           tint.multiplyScalar(shade * (1 - 0.4 * contactShade(x, floor, z)));
           pos.push(x, floor + GROUND_LIFT, z);
           col.push(tint.r, tint.g, tint.b);
-          lip?.set([tint.r, tint.g, tint.b], (i * 5 + j) * 3);
+          const shore = coast ? shoreAt(gx + ox, gz + oz, gx, gz) : 0;
+          shoreOf.push(Math.round(shore * 255));
+          // (the lip over the sea as wet as the sand at its edge: the tiles' look)
+          const wet = 1 - 0.42 * detail[3] * Math.min(Math.max((shore - 0.35) / 0.25, 0), 1);
+          lip?.set([tint.r * wet, tint.g * wet, tint.b * wet * 0.96], (i * 5 + j) * 3);
           for (const d of detail) kindOf.push(Math.round(d * 255));
         }
       }
@@ -1292,12 +1325,13 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (type === 'stone') slabs.push([gx, gz, floor]);
     }
     for (const chunk of chunks.values()) {
-      const { pos, col, kind, index } = chunk;
+      const { pos, col, kind, shore, index } = chunk;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       geo.setAttribute('gfxKind', new THREE.Uint8BufferAttribute(kind, 4, true)); // (src/gfx/ground.js)
+      geo.setAttribute('gfxShore', new THREE.Uint8BufferAttribute(shore, 1, true));
       geo.setIndex(index);
       chunk.geo = geo; // (for its shade under the trees: shadeCanopy)
       const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)

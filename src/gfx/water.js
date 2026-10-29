@@ -25,9 +25,10 @@ import { NOISE } from './noise.js';
 //     each corner is: gfxBank) by the bank less mirror, and a dark wet band
 //     where the water meets it;
 //   - in the rain (uRain), drops ringing on it (gfxRipples, src/gfx/light.js);
-//   - a slow mottle in the color (the sea's), or (the shallows') a soft,
-//     broken edge out at sea, turquoise deepening away from the shore, and
-//     toward the shore the sandy floor in ripples showing through.
+//   - a slow mottle in the color (the sea's, deeper and lighter patches,
+//     the lighter greener), or (the shallows') a nearly solid turquoise band
+//     by the shore with the sandy floor in ripples showing through, and a
+//     fainter, patchy shelf beyond it, its edge soft and broken.
 // The sea stays opaque; translucent water grows a little more solid where
 // it mirrors the sky. Cheap enough for every tier.
 
@@ -46,24 +47,36 @@ export const WATER = {
 const f = (v) => v.toFixed(3);
 
 const COLOR = {
-  // big, slow patches of lighter and deeper water
-  sea: `diffuseColor.rgb *= 0.9 + 0.2 * gfxNoise(vGfxWorld.xz * 0.05 + vec2(uTime * 0.012, 0.0));`,
+  // big, slow patches of deeper and lighter water, a finer drift of them
+  // over it, the lighter ones a little greener (the shallows' shelf, out from
+  // the shore, lies over it: world.js)
+  sea: `
+    highp vec2 waterSeaP = vGfxWorld.xz;
+    float waterPatch = gfxNoise(waterSeaP * 0.07 + vec2(uTime * 0.012, 0.0)) * 0.6
+      + mix(0.5, gfxNoise(waterSeaP * 0.21 - vec2(0.0, uTime * 0.02) + 5.0), gfxShow(0.21, gfxFootprint(waterSeaP))) * 0.4;
+    diffuseColor.rgb *= mix(vec3(0.74, 0.82, 0.96), vec3(1.05, 1.2, 1.08), smoothstep(0.25, 0.75, waterPatch));`,
   // vertex alpha: 1 at the shore, 0 out at sea (world.js shoreStrip). A
-  // softer, broken outer edge, deeper turquoise away from the shore.
+  // turquoise band by the shore, nearly solid, the sandy floor showing
+  // through it in ripples; further out a fainter, patchy, paler shelf, its
+  // edge soft and broken, fading into the sea.
   shallows: `
     float waterShore = vColor.a;
-    float waterEdge = waterShore + (gfxNoise(vGfxWorld.xz * 0.9) - 0.5) * 0.45;
-    diffuseColor.a = opacity * smoothstep(0.0, 0.7, waterEdge);
-    diffuseColor.rgb *= mix(vec3(0.62, 0.86, 0.95), vec3(1.06), smoothstep(0.2, 1.0, waterShore));
-    // the sandy floor showing through toward the shore, in ripples across the
-    // wind (as the beach's: src/gfx/ground.js), and a light caustic net drifting on it
     highp vec2 waterSandP = vGfxWorld.xz;
     float waterSandPx = gfxFootprint(waterSandP);
+    float waterEdge = waterShore + (gfxNoise(waterSandP * 0.9) - 0.5) * 0.25 * gfxShow(0.9, waterSandPx) + (gfxNoise(waterSandP * 0.23 + 9.0) - 0.5) * 0.3;
+    diffuseColor.a = opacity * (0.4 * smoothstep(0.0, 0.2, waterEdge) + 0.6 * smoothstep(0.18, 0.45, waterEdge));
+    diffuseColor.rgb *= mix(vec3(0.55, 0.8, 1.0), vec3(1.0), smoothstep(0.15, 0.55, waterShore));
+    diffuseColor.rgb *= 0.92 + 0.16 * gfxNoise(waterSandP * 0.35 + vec2(uTime * 0.03, 3.0));
+    // the sandy floor showing through toward the shore, in ripples across the
+    // wind (as the beach's: src/gfx/ground.js), and a light caustic net
+    // drifting on it: the turquoise lighter over the crests, a touch sandy
     float waterRf = fract(dot(waterSandP, vec2(0.92, 0.38)) * 2.2 + gfxNoise(waterSandP * 0.45 + 2.0) * 1.6);
-    float waterRipple = smoothstep(0.0, 0.75, waterRf) * (1.0 - smoothstep(0.75, 1.0, waterRf));
-    float waterSand = smoothstep(0.25, 0.95, waterShore) * (0.45 + 0.55 * mix(0.5, waterRipple, gfxShow(2.2, waterSandPx * 0.5)));
+    float waterRipple = smoothstep(0.0, 0.7, waterRf) * (1.0 - smoothstep(0.7, 1.0, waterRf));
+    float waterFloor = mix(0.5, waterRipple, gfxShow(2.2, waterSandPx * 0.5));
+    float waterSand = smoothstep(0.3, 0.9, waterShore);
     float waterNet = smoothstep(0.62, 0.8, gfxNoise(waterSandP * 1.6 + vec2(uTime * 0.25, -uTime * 0.18)) + gfxNoise(waterSandP * 1.9 - vec2(uTime * 0.2, uTime * 0.23)) * 0.4) * gfxShow(1.9, waterSandPx * 0.5);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.8, 0.56) * (1.0 + 0.25 * waterNet), waterSand * 0.55);`,
+    diffuseColor.rgb *= 1.0 + waterSand * (0.8 * waterFloor - 0.25 + 0.3 * waterNet);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.78, 0.5), waterSand * (0.08 + 0.2 * waterFloor));`,
   pond: `diffuseColor.rgb *= 0.94 + 0.12 * gfxNoise(vGfxWorld.xz * 0.35);`,
 };
 

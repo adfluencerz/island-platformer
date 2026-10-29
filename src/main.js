@@ -296,7 +296,11 @@ sun.shadow.camera.left = -SUN_REACH;
 sun.shadow.camera.right = SUN_REACH;
 sun.shadow.camera.top = SUN_REACH;
 sun.shadow.camera.bottom = -SUN_REACH;
-sun.shadow.camera.far = 100;
+// (the box's depth: from the light, 40 toward the sun from the look-at point
+// (src/daynight.js), to a little past the view's far side; deeper, a low sun's
+// box only takes in casters far beyond the view, whose shadows fall further off)
+const sunFar = (reach) => 40 + reach * 1.4;
+sun.shadow.camera.far = sunFar(SUN_REACH);
 sun.shadow.normalBias = 0.035; // (the wrapped light shows faces near side-on to the sun: no acne on them)
 sun.shadow.radius = 2.5; // (soft-edged, painterly shadows)
 scene.add(sun, sun.target);
@@ -308,7 +312,7 @@ function reachSun(zoom) {
   const reach = SUN_REACH * Math.max(1, Math.ceil(zoom * 4) / 4);
   if (reach === sunReach) return;
   sunReach = reach;
-  Object.assign(sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach });
+  Object.assign(sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach, far: sunFar(reach) });
   sun.shadow.camera.updateProjectionMatrix();
 }
 const _sunOffset = new THREE.Vector3();
@@ -395,12 +399,12 @@ function enterWorld(name, seed, wire) {
 
 let wildIsland = null; // the wild island we are on, in a lobby (shared/worldgen.js: where its water is)
 
-// The sea around every island, deep blue-green; it mirrors the sky as the
+// The sea around every island, a deep blue in slow patches; it mirrors the sky as the
 // view grazes it and fades into the fog toward the horizon
 const WATER_Y = SEA_LEVEL;
 const water = new THREE.Mesh(
   new THREE.PlaneGeometry(1000, 1000), // (out to the bosses' arenas and the neighbours' rooms, and beyond)
-  waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x1f7f9e, roughness: 0.2, metalness: 0.1 })), 'sea') // (sky, glitter: src/gfx/water.js)
+  waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x18709c, roughness: 0.2, metalness: 0.1 })), 'sea') // (sky, glitter: src/gfx/water.js)
 );
 water.rotation.x = -Math.PI / 2;
 water.position.y = WATER_Y;

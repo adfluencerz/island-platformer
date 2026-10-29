@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 26 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 27 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -30,6 +30,7 @@ Current phase: 26 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 23 Dungeon light
 - [x] 24 Water surface
 - [x] 25 Morning
+- [x] 26 The shore
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -52,7 +53,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Sun: in the morning it climbs more slowly (`daynight.js`, `slow`: about 20° at 8:00, its old path from noon); new keys at 7:00 and 8:15 (cream-gold sun 2.15, peach horizon, cool blue sky light 0.72), the day's colors from 9:30.
-- `uMist` (`uniforms.js`, from `morningMist()`: 1 from dawn to 8:30, gone by 10:00, none underground, less in rain): the atmos haze thicker, nearer and higher, pale and cool away from the sun; dew on the grass tips (vertex color); the grade a touch paler and less saturated (`POST.mist`).
-- plaza-morning draws about 60 more calls than before (805 -> 863; likely more casters in the low sun's shadow pass); the check reads noon and the phone, both unchanged.
-- Weakest now: shore-noon. The beach is a flat, bright band with no wet sand, foam line or ripples on it, and the sea beyond is one even blue; the cliffs and the shore meet the water without much depth.
+- Beach: `gfxShore` per ground vertex (world.js, 1 at a side facing open sea, 0 1.5 tiles in); on sand (ground.js tiles) a darker warm wet band breathing with a swash (uTime), a damp line and a foam lace at the edge; the cliff lip over the sea darkened to match.
+- Shallows 4.5 tiles wide: a near-solid turquoise band (0x2fe2b6, opacity 0.9) with the sand's ripples brightening it, then a fainter patchy shelf; foam broken into drifting lace; the sea a deeper blue (0x18709c) in two scales of patches, the lighter greener.
+- Shadow box depth now `40 + reach * 1.4` (76, was 100): a low sun's box no longer takes in casters 40-60 m past the view; plaza-morning 868 -> 795 calls, sunset likewise, noon unchanged.
+- Programs unchanged (plaza-noon 50); concave coast corners stack two shallows strips (more turquoise there, reads as a shallower bay).
+- Weakest now: phone (medium): the plaza small and flat, the grass thin and the stone a grey slab at that size; plaza-noon is the only other shot not yet polished.
