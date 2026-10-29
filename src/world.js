@@ -123,8 +123,11 @@ function addGrassWind(material, height, spread = false) {
 // screen pattern (no transparency: nothing to sort or recompile). Only an
 // InstancedMesh reads it (it must have the attribute: makeInstancer gives it);
 // the same material on a plain mesh (a bush, a stump) is never faded.
-// Each part is lit brighter on top and darker underneath (by the mesh's own
-// height: each blob or cone of a canopy has its own), smooth-shaded if soft
+// Each part is lit brighter on top and darker underneath: a trunk by its own
+// height; the leaves (uTreeLeaf, the material's own) painted per vertex, a
+// crown bright and warm on the sun's side (uSunDir, lifted toward up), cool
+// in its shade, a soft rim toward the sky, a few lobes, a pine's tiers lit
+// at their tops and edges, each facet its own shade; smooth-shaded if soft
 // (a round canopy's normals are a ball's; a pine's cones keep their facets),
 // and sways with the grass's gusts (sampled
 // where the instance stands, GRASS_WIND_GLSL) when the tier's treeSway is on:
@@ -137,17 +140,21 @@ function hookTree(material, soft = true) {
   const sway = treeSway;
   treeLooks.add(material);
   material.flatShading = !soft;
+  const leaf = { value: material === trunkMat ? 0 : 1 };
   return hook(material, `tree${sway ? ':sway' : ''}`, (shader) => {
     define(shader, 'GFX_TREE');
     define(shader, 'GFX_SHADOW_LIFT');
     if (sway) define(shader, 'GFX_SWAY');
     if (sway) use(shader, ['uTime', 'uWind', 'uCloudOffset'], 'v');
+    use(shader, ['uSunDir', 'uNight'], 'v');
+    shader.uniforms.uTreeLeaf = leaf; // (its own: leaves and bark share the program)
     shader.vertexShader = patch(shader.vertexShader, 'common', `
       #ifdef USE_INSTANCING
         attribute float aFade;
       #endif
       varying float vTreeFade;
       varying vec4 vCanopyShade;
+      uniform float uTreeLeaf;
       #ifdef GFX_SWAY
         ${GRASS_WIND_GLSL}
       #endif`, 'GFX_TREE');
@@ -156,21 +163,66 @@ function hookTree(material, soft = true) {
       #ifdef USE_INSTANCING
         vTreeFade = aFade;
       #endif
+      // (the crown's light, per vertex: where it faces in the world, how
+      // much it faces the sun lifted toward up, a rim toward the sky by the
+      // view, and a seed by where the piece stands, for its own lobes)
+      #ifdef USE_INSTANCING
+        mat4 crownM = modelMatrix * instanceMatrix;
+      #else
+        mat4 crownM = modelMatrix;
+      #endif
+      vec3 crownN = normalize(mat3(crownM) * objectNormal);
+      vec3 crownAt = (crownM * vec4(transformed, 1.0)).xyz;
+      float crownLit = dot(crownN, normalize(uSunDir + vec3(0.0, 0.8, 0.0)));
+      float crownRim = pow(1.0 - clamp(dot(crownN, normalize(cameraPosition - crownAt)), 0.0, 1.0), 2.0)
+        * smoothstep(-0.1, 0.7, crownN.y) * (1.0 - 0.8 * uNight);
+      vec3 crownH = fract(floor(crownM[3].xyz * 2.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973));
+      crownH += dot(crownH, crownH.yzx + 33.33);
+      float crownSeed = fract((crownH.x + crownH.y) * crownH.z);
       #ifdef FLAT_SHADED
-        // (a pine's tier, pineGeo: light at the tip, cool and dark under the
-        // skirt, its rim lighter and a touch warm, catching the sun)
-        // (and the sun gets through to its rim and top a little, though the
-        // tier above shades it: light.js, GFX_SHADOW_LIFT)
+        // (a pine's tier, pineGeo: light at the tip and on its sun side,
+        // its skirt's edge lighter and warm, catching the sun, the hollow
+        // under the skirt dark and cool, each facet a shade of its own, as
+        // clumps of needles; and the sun gets through to its rim and top a
+        // little, though the tier above shades it: light.js, GFX_SHADOW_LIFT)
         float canopyTop = smoothstep(-0.5, 0.7, position.y);
         float canopyRim = smoothstep(0.62, 0.95, length(position.xz));
-        vCanopyShade.rgb = (mix(1.1, 2.05, canopyTop) + 1.0 * canopyRim)
-          * mix(vec3(0.8, 0.92, 1.14), vec3(1.08, 1.05, 0.88), canopyTop)
-          * mix(vec3(1.0), vec3(1.12, 1.08, 0.8), canopyRim);
-        vCanopyShade.a = 0.3 + 0.5 * max(canopyRim, canopyTop * canopyTop);
+        // (the inner skirt, just outside the rim of the tier above: a darker
+        // collar under each rim, so the tiers read layered from above)
+        float tierCollar = smoothstep(0.4, 0.55, length(position.xz)) * (1.0 - smoothstep(0.62, 0.82, length(position.xz)));
+        float tierUnder = smoothstep(0.05, -0.3, objectNormal.y); // (the face's own normal)
+        float tierLit = smoothstep(-0.4, 0.8, crownLit);
+        vec3 tierH = fract(floor(objectNormal * 6.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973) + crownSeed);
+        tierH += dot(tierH, tierH.yzx + 33.33);
+        float tierFacet = fract((tierH.x + tierH.y) * tierH.z);
+        float tierK = (mix(1.15, 1.95, canopyTop) * mix(0.8, 1.32, tierLit) + 1.15 * canopyRim)
+          * (0.8 + 0.4 * tierFacet) * mix(1.0, 0.5, tierUnder) * (1.0 - 0.28 * tierCollar);
+        vCanopyShade.rgb = tierK
+          * mix(vec3(0.86, 0.95, 1.04), vec3(1.18, 1.1, 0.7), max(0.6 * canopyTop, tierLit)) // (a pine's blue-green warmed a little, even in shade)
+          * mix(vec3(1.0), vec3(1.16, 1.1, 0.74), canopyRim * (1.0 - tierUnder))
+          + crownRim * vec3(0.3, 0.42, 0.4);
+        vCanopyShade.a = (0.3 + 0.5 * max(canopyRim, canopyTop * canopyTop)) * (1.0 - tierUnder);
       #else
-        // (a round canopy's blob, a trunk: warm on top, cool underneath)
-        float canopyTop = smoothstep(-0.9, 0.5, position.y);
-        vCanopyShade = vec4(mix(0.72, 1.15, canopyTop) * mix(vec3(0.9, 0.95, 1.08), vec3(1.04, 1.02, 0.94), canopyTop), 0.0);
+        if (uTreeLeaf > 0.5) {
+          // (a round canopy's blob, a bush: a bright, warm crown on the sun's
+          // side, a touch yellow-green, cooler blue-green in its shade, the
+          // underside dark and warm; a few lobes lighter and darker, from its
+          // corners pushed out or in (canopyGeo) and a slow pattern of its
+          // own; a soft rim toward the sky)
+          float crownTop = smoothstep(-0.55, 0.85, crownLit);
+          float crownUnder = smoothstep(0.0, -0.75, crownN.y);
+          float crownBump = smoothstep(0.9, 1.08, length(position));
+          float crownLobe = sin(position.x * 2.7 + crownSeed * 6.28) * sin(position.z * 2.4 - position.y * 1.6 + crownSeed * 11.0);
+          float crownK = mix(0.62, 1.45, crownTop) * (0.84 + 0.26 * crownBump + 0.16 * crownLobe);
+          crownK = mix(crownK, 0.95, 0.5 * uNight);
+          vec3 crownCol = mix(vec3(0.82, 0.93, 1.12), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
+          crownCol = mix(crownCol, vec3(1.0, 0.9, 0.74), 0.6 * crownUnder);
+          vCanopyShade = vec4(crownK * crownCol + crownRim * vec3(0.28, 0.38, 0.36), 0.0);
+        } else {
+          // (a trunk: warm on top, cool underneath)
+          float canopyTop = smoothstep(-0.9, 0.5, position.y);
+          vCanopyShade = vec4(mix(0.72, 1.15, canopyTop) * mix(vec3(0.9, 0.95, 1.08), vec3(1.04, 1.02, 0.94), canopyTop), 0.0);
+        }
       #endif
       #if defined(GFX_SWAY) && defined(USE_INSTANCING)
         highp vec3 swayRoot = (modelMatrix * instanceMatrix[3]).xyz;
