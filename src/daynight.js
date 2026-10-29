@@ -54,6 +54,7 @@ for (const key of KEYS) for (const p of COLOR_PROPS) key[p] = new THREE.Color(ke
 
 const SUNRISE = 6;
 const SUNSET = 19;
+const MIDDAY_SIDE = 0.42; // (how far off to the side, toward the east, the midday sun stands)
 
 // 0 during the day, 1 at night, easing over dawn and dusk
 function nightAmount(hour) {
@@ -271,7 +272,11 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     // (the moon stands off to the side and a little beyond what the camera
     // looks at: a side-back light, the crowns modelled and their edges rimmed
     // toward it, the shadows reaching back toward us)
-    sunDir.set(Math.cos(angle) * sign, isDay ? 0.22 + 0.78 * up : 0.4 + 0.6 * up, isDay ? 0.45 : -0.3).normalize();
+    // (and round midday, the sun high, a little off to the side, so the
+    // crowns are modelled, lit on one side, and the shadows fall aside of
+    // what casts them, not straight back behind it: none of it at 8:00 or 18:30)
+    const midday = isDay ? THREE.MathUtils.smoothstep(hour, 9.5, 11.5) * (1 - THREE.MathUtils.smoothstep(hour, 14, 16.5)) : 0;
+    sunDir.set(Math.cos(angle) * sign + MIDDAY_SIDE * midday, isDay ? 0.22 + 0.78 * up : 0.4 + 0.6 * up, isDay ? 0.45 : -0.3).normalize();
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);

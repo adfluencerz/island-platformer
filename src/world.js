@@ -292,7 +292,19 @@ function hookTree(material, pine = false) {
       diffuseColor.rgb *= mix(vCanopyShade.rgb, vec3(dot(vCanopyShade.rgb, vec3(0.3, 0.45, 0.25))) * vec3(1.06, 0.97, 1.0), 0.4 * treePink);
       // (a clump's lit side a step brighter and warmer than its shaded foot,
       // crisp per pixel: the round crown's clumps inside its outline)
-      if (vCrownLit > -0.5) diffuseColor.rgb *= mix(vec3(0.8), vec3(1.15, 1.12, 0.97), smoothstep(0.5, 0.64, vCrownLit));
+      if (vCrownLit > -0.5) {
+        float crownStep = smoothstep(0.5, 0.64, vCrownLit);
+        diffuseColor.rgb *= mix(vec3(0.8), vec3(1.15, 1.12, 0.97), crownStep);
+        // (an autumn crown, red, orange or gold: its shade deeper and redder,
+        // not the green's cool blue-green, which greys it; its lit top golden)
+        float crownWarm = clamp((diffuseColor.r - diffuseColor.g) * 4.0 - 0.2, 0.0, 1.0) * (1.0 - treePink);
+        diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(1.08, 0.74, 0.7), vec3(1.1, 1.06, 0.84), crownStep), crownWarm);
+        #ifdef USE_FOG
+          // (and far off its fire paling first, softer and lighter, so the far wood melts into the haze)
+          float crownFar = crownWarm * smoothstep(0.7, 1.5, vFogDepth / max(fogNear, 1e-3));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.15, 1.08, 1.0) + 0.04, 0.45 * crownFar);
+        #endif
+      }
       float gfxShadowLift = vCanopyShade.a;`, 'GFX_TREE');
   });
 }
@@ -1587,6 +1599,17 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // A map may dress its trees and bushes in its own leaves (a season, say)
   const leaves = map.leafMats ?? leafMats;
   const needles = map.pineMats ?? pineMats;
+  // (a map's own palette, an autumn's: each round tree and bush one of its
+  // colors, by where it stands, on top of its leaf (the tint, times the
+  // material's color, is the palette's), its shade and warmth its own still)
+  const palette = map.leafPalette?.map((hex) => new THREE.Color(hex));
+  const leafTint = (leaf, x, z, shade, warm) => {
+    const tint = new THREE.Color(shade + warm, shade, shade - warm);
+    if (!palette) return tint;
+    const c = palette[Math.floor(hash2(x * 1.37 + 17.1, z * 0.91 - 5.3) * palette.length) % palette.length];
+    const m = leaf.color;
+    return tint.setRGB(tint.r * c.r / Math.max(m.r, 1e-3), tint.g * c.g / Math.max(m.g, 1e-3), tint.b * c.b / Math.max(m.b, 1e-3));
+  };
   // (all of them drawn instanced, in a few draws: makeInstancer; their
   // materials shared, the 'tree' hook fading one at a time)
   // (and their painted detail, src/gfx/detail.js: bark up the trunks, a
@@ -1639,7 +1662,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // (each tree a shade of its own: lighter or darker, a touch warmer or cooler)
     const shade = 0.95 + hash2(x, z) * 0.17;
     const warm = (hash2(z + 3.1, x - 7.7) - 0.5) * 0.08;
-    for (const obj of tree.children) if (obj.material !== trunkMat) obj.userData.tint = new THREE.Color(shade + warm, shade, shade - warm);
+    for (const obj of tree.children) if (obj.material !== trunkMat) obj.userData.tint = kind === 'pine' ? new THREE.Color(shade + warm, shade, shade - warm) : leafTint(obj.material, x, z, shade, warm);
     const parts = treeDecor.adopt(tree);
     // its stump, for when it is felled (a slot of its own, hidden till then)
     const stump = new THREE.Mesh(stumpGeo, stumpMats);
@@ -1665,7 +1688,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const k = rand(0.35, 0.6);
     const shade = 0.95 + hash2(x, z) * 0.12;
     const warm = (hash2(z + 3.1, x - 7.7) - 0.5) * 0.06;
-    const tint = new THREE.Color(shade + warm, shade, shade - warm);
+    const tint = leafTint(leaf, x, z, shade, warm);
     // (one soft clump of lobes, turned and stretched its own way)
     const turn = rand(-0.3, 0.3) * 10;
     const long = rng() < 0.5 ? 1.15 + rand(-0.3, 0.3) * 0.3 : 1;
