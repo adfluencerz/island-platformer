@@ -51,8 +51,9 @@ const SOIL = 'vec3(0.14, 0.095, 0.055)';
 
 // how much of a puddle at p (0..1): soft-edged patches of a slow noise, a
 // finer one wobbling their shores, fewer and smaller as the ground dries
-// (more: more of them, on the flat slabs)
-const PUDDLE = (p, seed, more = 0) => `smoothstep(0.0, 0.04, 0.75 * gfxNoise(${p} * 0.55 + ${seed}) + 0.25 * gfxNoise(${p} * 1.7 + ${seed} * 0.3) - ${(0.76 - more).toFixed(2)} + 0.08 * uWet)`;
+// (more: more of them, on the flat slabs); a damp shore round each, partly
+// in (light.js darkens all of it and mirrors the sky in the core)
+const PUDDLE = (p, seed, more = 0) => `smoothstep(-0.07, 0.04, 0.75 * gfxNoise(${p} * 0.55 + ${seed}) + 0.25 * gfxNoise(${p} * 1.7 + ${seed} * 0.3) - ${(0.76 - more).toFixed(2)} + 0.08 * uWet)`;
 
 const VERTEX = {
   tiles: ['attribute vec4 gfxKind;\nattribute float gfxShore;\nvarying vec4 vGroundKind;\nvarying float vGroundShore;', 'vGroundKind = gfxKind;\nvGroundShore = gfxShore;'],

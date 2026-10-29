@@ -35,6 +35,7 @@ const fragmentShader = /* glsl */ `
   uniform float uNight;
   uniform float uUnder;
   uniform float uCloudAmount;
+  uniform float uRain;
   uniform float uFlash;
   uniform vec2 uCloudOffset;
   uniform float uTime;
@@ -90,7 +91,10 @@ ${HORIZON_GLSL}
       // the way to the zenith's color by 30 degrees up: the view from low down,
       // src/main.js, sees that much of the sky over the horizon)
       float up = smoothstep(0.0, 0.14, y); // (what is in the sky fades out into the haze)
-      col = mix(horizon, uSkyZenith, pow(smoothstep(0.0, 0.5, y), 0.7));
+      // (in the rain, by day, the sky dark and heavy overhead, low cloud
+      // dragging its undersides, the horizon's band left pale)
+      float rain = uRain * (1.0 - smoothstep(0.0, 0.25, uNight));
+      col = mix(horizon, uSkyZenith * (1.0 - 0.3 * rain), pow(smoothstep(0.0, 0.5, y), 0.7 - 0.25 * rain));
 
       vec3 sunDir = normalize(uSunDir);
       float mu = dot(dir, sunDir);
@@ -140,7 +144,7 @@ ${HORIZON_GLSL}
       col = mix(col, highCol, high.x * 0.55 * fade);
       // (painterly: the lit side in two soft steps, not a smooth ramp)
       float lit = smoothstep(0.25, 0.45, low.y) * 0.6 + smoothstep(0.6, 0.8, low.y) * 0.4;
-      vec3 lowCol = mix(shade, bright, lit) + flash;
+      vec3 lowCol = mix(shade * (1.0 - 0.35 * rain), bright * (1.0 - 0.2 * rain), lit) + flash;
       col = mix(col, lowCol, low.x * mix(0.92, 0.7, uNight) * fade); // (thinner at night: the stars between)
 
       // and lightning's flash in the sky (the horizon has it already)
@@ -164,6 +168,7 @@ export function createSky() {
       uNight: U.uNight,
       uUnder: U.uUnder,
       uCloudAmount: U.uCloudAmount,
+      uRain: U.uRain,
       uFlash: U.uFlash,
       uCloudOffset: U.uCloudOffset,
       uTime: U.uTime,

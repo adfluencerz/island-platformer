@@ -49,7 +49,7 @@ export const POST = {
   skyTint: 0.08, // (how far the tint leans toward the sky's horizon color)
   skyTintLow: 0.07, // (and round a low sun, by day: a golden hour's warmth, mostly in the split's warm lights: a whole-picture orange made the greens olive)
   rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
-  rainSaturation: 0.1,
+  rainSaturation: 0.18,
   mist: new THREE.Color(0.97, 0.99, 1.03), // (the morning's mist: a paler, cooler lean, so morning is not a second sunset)
   mistSaturation: -0.04,
   // underground: what no lamp lights goes grey-blue as by moonlight (the night's
