@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { detailInstanced, lookIndex } from './gfx/detail.js';
+import { hook } from './gfx/shading.js';
+import { patch } from './gfx/chunks.js';
 import { BOSS_IDS, ARENAS, ARENA_R, arenaExit } from '../shared/bosses.js';
 import { MAIN, ROOM_W, DOOR_W, LAYOUTS, roomCount, roomRect, gateAt, sideDoorAt, chestAt, dungeonExit, foeRooms } from '../shared/dungeons.js';
 import { createFoe } from './dungeonfoes.js';
@@ -67,11 +69,50 @@ const SEGMENTS = 36; // what stops a farmer at its walls: short pieces all round
 const LIFT_TIME = 1.2; // seconds the dark over a room takes to lift, once the gate into it opens
 const FADE = [0.45, 0.35, 0.25, 0.15]; // the sheets of dark the cavern fades through into it, nearest it first
 const DARK = 0x040306; // (as black as it is all round, underground: daynight.js)
-const LAMP_Y = { parsnip: 1.9, lion: 1.4, bee: 1.5, crow: 1.7, toad: 0.9 }; // (how high a lamp's light hangs, by its flame)
+const LAMP_Y = { parsnip: 1.6, lion: 1.4, bee: 1.5, crow: 1.7, toad: 0.9 }; // (how high a lamp's light hangs, by its flame; a little under the cellar's lanterns, so its pool is on the floor)
+const LAMP_OUT = 0.95; // (and how far out from the lamp, into the room: its pool on the floor, not all up the wall)
+
+// ---------- The dark in a dungeon's corners ----------
+// (the 'dungeon:shade' hook) What is near the floor by a wall goes darker,
+// most in a corner, as does the floor along the walls, what faces down (under
+// a beam, a ledge, a shelf), and the cavern's rock the further out from the
+// dungeon it is: from the rooms of the dungeon drawn now (and its bridge), as
+// rects, and its hall, a circle (update(): the one we are near)
+const SHADE_RECTS = 8;
+const SHADE = {
+  uDungeonRects: { value: Array.from({ length: SHADE_RECTS }, () => new THREE.Vector4(1e5, 1e5, 1e5, 1e5)) }, // x0, z0, x1, z1 (spare ones far off)
+  uDungeonHall: { value: new THREE.Vector3(0, 0, -1) }, // x, z and its radius
+};
+const SHADE_GLSL = /* glsl */ `
+{
+  highp vec2 sP = vGfxWorld.xz;
+  vec2 sIn = vec2(-1e4); // (how far in from its walls, across and along, in the room it is in)
+  for (int i = 0; i < ${SHADE_RECTS}; i++) {
+    highp vec4 r = uDungeonRects[i];
+    vec2 e = vec2(min(sP.x - r.x, r.z - sP.x), min(sP.y - r.y, r.w - sP.y));
+    if (min(e.x, e.y) > min(sIn.x, sIn.y)) sIn = e;
+  }
+  float sHall = uDungeonHall.z - distance(sP, uDungeonHall.xy);
+  if (sHall > min(sIn.x, sIn.y)) sIn = vec2(sHall, 9.0);
+  vec2 sNear = 1.0 - smoothstep(0.0, 1.2, max(sIn, 0.0));
+  float sWall = min(1.0, 0.72 * (sNear.x + sNear.y)); // (by a wall; more in a corner)
+  float sLow = 1.0 - smoothstep(0.0, 1.4, vGfxWorld.y); // (near the floor)
+  float sOcc = sWall * sLow * sLow;
+  vec3 sN = inverseTransformDirection(normal, viewMatrix);
+  sOcc = max(sOcc, 0.8 * smoothstep(-0.25, -0.85, sN.y)); // (facing down: under a ledge)
+  float sOut = smoothstep(0.8, 7.0, -min(sIn.x, sIn.y)); // (out on the cavern's rock)
+  diffuseColor.rgb *= (1.0 - 0.6 * sOcc) * (1.0 - 0.55 * sOut);
+}`;
+function shade(shader) {
+  Object.assign(shader.uniforms, SHADE);
+  shader.fragmentShader = patch(shader.fragmentShader, 'common', `uniform highp vec4 uDungeonRects[${SHADE_RECTS}];\nuniform highp vec3 uDungeonHall;`);
+  shader.fragmentShader = patch(shader.fragmentShader, 'emissivemap_fragment', SHADE_GLSL);
+}
+const shaded = (material) => hook(material, 'dungeon:shade', shade);
 
 // What a piece is made of: white, each piece its own color (instance colors)
 const KINDS = {
-  matte: detailInstanced(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true })), // (each piece its painted look: 'matte:stone')
+  matte: shaded(detailInstanced(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true }))), // (each piece its painted look: 'matte:stone')
   gloss: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.05, flatShading: true }),
   metal: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.65, flatShading: true }),
   glow: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.7, 1.7) }), // (lit from within: flames, honey, crystals; past white, so the bloom finds them)
@@ -108,6 +149,7 @@ function glowTexture() {
 let soft = null;
 const softGlow = () => (soft ??= glowTexture());
 const poolGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const POOL = 0.25; // (how strong: a hot heart in a lamp's real pool of light, not a warm wash over the floor)
 
 // a little random, the same every time (a dungeon looks the same on every page)
 function seeded(seed) {
@@ -177,7 +219,7 @@ function createBatch(parent, rand) {
         parent.add(mesh);
       }
       if (!pools.length) return null;
-      const material = new THREE.MeshBasicMaterial({ map: softGlow(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.55 });
+      const material = new THREE.MeshBasicMaterial({ map: softGlow(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: POOL });
       const mesh = new THREE.InstancedMesh(poolGeo, material, pools.length);
       pools.forEach(([x, y, z, size, color], i) => {
         mesh.setMatrixAt(i, m.compose(p.set(x, y, z), q.identity(), s.set(size, 1, size)));
@@ -197,7 +239,7 @@ function createBatch(parent, rand) {
 // how: rising, or sinking); swirl: its ways home's; gate: the
 // gate's; cave: the light down there (src/bosses.js tints the dark with it)
 export const THEMES = {
-  parsnip: { rock: 0x3a2c22, floor: 0x4a3524, wall: 0x5a3d25, wall2: 0x6b4a2e, trim: 0x7a4f28, light: 0xffb050, mote: [0xffd9a0, 0.15], swirl: [0x6a2f94, 0xd9a8ff], gate: 0x7a4f28, band: 0x3a3632, cave: 0xffc890 },
+  parsnip: { rock: 0x3a2c22, floor: 0x5e5246, wall: 0x5a3d25, wall2: 0x6b4a2e, trim: 0x7a4f28, light: 0xffb050, mote: [0xffd9a0, 0.15], swirl: [0x6a2f94, 0xd9a8ff], gate: 0x7a4f28, band: 0x3a3632, cave: 0xffc890 },
   lion: { rock: 0x5a4430, floor: 0xd9bf88, wall: 0xd9b77a, wall2: 0xc9a464, trim: 0xe8cf94, light: 0xff9a3a, mote: [0xffb050, 0.35], swirl: [0xb8561a, 0xffd08a], gate: 0xc9a464, band: 0xe0a82e, cave: 0xffd0a0 },
   bee: { rock: 0x4a3418, floor: 0xe8b23a, wall: 0xb8801a, wall2: 0xf2c860, trim: 0x8a5a12, light: 0xffb020, mote: [0xffe070, 0.2], swirl: [0xc99a10, 0xfff0a0], gate: 0xf7d77a, band: 0xe8a820, cave: 0xffd890 },
   crow: { rock: 0x26262c, floor: 0x3a322a, wall: 0x4a3a2a, wall2: 0x5e4c38, trim: 0x2f2a24, light: 0x8fb0ff, mote: [0xc8d8ff, -0.12], swirl: [0x2f3f8a, 0xa8c0ff], gate: 0x5a4a36, band: 0x2f2a24, cave: 0xa8b8e8 },
@@ -206,7 +248,7 @@ export const THEMES = {
 // how each dungeon's surfaces are painted (src/gfx/detail.js): its floor, the
 // near walls the camera looks in over, its trim (posts, beams, ledges)
 const LOOKS = {
-  parsnip: { floor: 'plank', near: 'plank', trim: 'wood' },
+  parsnip: { floor: 'stone', near: 'stone', trim: 'wood' }, // (a cellar of flagstones and stone-lined walls in a timber frame)
   lion: { floor: 'stone', near: 'stone', trim: 'stone' },
   bee: { floor: 'plaster', near: 'plaster', trim: 'wood' },
   crow: { floor: 'plank', near: 'wood', trim: 'wood' },
@@ -327,7 +369,11 @@ export function createDungeons(world) {
     const swirl = wayHome(group, th, dungeonExit(id));
     const pools = b.done();
     const motes = makeMotes(d);
-    dungeons.set(id, { group, gates, chests, swirl, hallSwirl, flames: d.flames, flies: d.flies, motes, pools, foes: null, dark: makeDark(d) });
+    // (its rooms, its bridge and its hall, for the dark in its corners: SHADE)
+    const bw = (DOOR_W + 0.8) / 2;
+    const rects = [...rooms, { x0: ax - bw, x1: ax + bw, z0: az + HALL_R, z1: zFar }].map((r) => new THREE.Vector4(r.x0, r.z0, r.x1, r.z1));
+    const shadeAt = { rects, hall: new THREE.Vector3(ax, az, HALL_R) };
+    dungeons.set(id, { group, gates, chests, swirl, hallSwirl, flames: d.flames, flies: d.flies, motes, pools, foes: null, dark: makeDark(d), shadeAt });
   }
 
   // The bridge from the last main room's gate over to the way into the boss's
@@ -659,7 +705,7 @@ export function createDungeons(world) {
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+    const ground = new THREE.Mesh(geo, shaded(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true })));
     ground.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     ground.receiveShadow = true;
     d.group.add(ground);
@@ -700,9 +746,9 @@ export function createDungeons(world) {
     // its back and top, in the cavern's rock
     b.add(box, 'matte:stone', th.rock, x + sx * 0.2, SIDE_H / 2, mid, T + 0.4, SIDE_H, len, 0, 0, 0, 0.05);
     if (id === 'parsnip') {
-      // a footing of stones, earth above in bands, a timber frame, roots and garlic hanging down
+      // a footing of stones, stone-lined above in courses, a timber frame, roots and garlic hanging down
       for (let z = z0 + 0.2; z < z1; z += 0.42 + rand() * 0.2) b.add(rock, 'matte:stone', 0x6c665e, at(0.05), 0.25, z, 0.3, 0.45, 0.5, 0, rand() * 3, 0, 0.15);
-      for (let band = 0; band < 4; band++) b.add(box, 'matte:plaster', band % 2 ? th.wall : th.wall2, at(0.02 + rand() * 0.04), 0.7 + band * 0.52, mid, 0.08, 0.52, len, 0, 0, 0, 0.06);
+      for (let band = 0; band < 4; band++) b.add(box, 'matte:stone', band % 2 ? 0x6e6052 : 0x625649, at(0.02 + rand() * 0.04), 0.7 + band * 0.52, mid, 0.08, 0.52, len, 0, 0, 0, 0.06);
       for (let z = z0 + 0.4; z < z1; z += 2.75) {
         b.add(box, matte(th, 'trim'), at(0.1), SIDE_H / 2, z, 0.2, SIDE_H, 0.26);
         if (z + 2.75 < z1) {
@@ -919,9 +965,9 @@ export function createDungeons(world) {
     const W = r.x1 - r.x0;
     const D = r.z1 - r.z0;
     if (id === 'parsnip') {
-      // packed earth, a boardwalk down the middle, straw and pebbles
-      for (let i = 0; i < 30; i++) b.add(box, 'matte', 0x3f2d1e, r.x0 + 0.5 + rand() * (W - 1), 0.01, r.z0 + 0.5 + rand() * (D - 1), 0.6 + rand(), 0.02, 0.6 + rand(), 0, rand() * 3, 0, 0.15);
-      for (let z = r.z0 + 0.25; z < r.z1 - 0.1; z += 0.45) b.add(box, 'matte', 0x8a5a32, cx + (rand() - 0.5) * 0.08, 0.04, z, 2.4, 0.06, 0.4, 0, (rand() - 0.5) * 0.04, 0, 0.12);
+      // flagstones (earth trodden over them), a boardwalk down the middle, straw and pebbles
+      for (let i = 0; i < 30; i++) b.add(cyl, 'matte', 0x52463a, r.x0 + 0.5 + rand() * (W - 1), 0.01, r.z0 + 0.5 + rand() * (D - 1), 0.6 + rand(), 0.02, 0.6 + rand(), 0, rand() * 3, 0, 0.15);
+      for (let z = r.z0 + 0.25; z < r.z1 - 0.1; z += 0.45) b.add(box, 'matte:wood', 0x8a5a32, cx + (rand() - 0.5) * 0.08, 0.04, z, 2.4, 0.06, 0.4, 0, (rand() - 0.5) * 0.04, 0, 0.12);
       for (const sx of [-1, 1]) b.add(box, 'matte', 0x5a3d25, cx + sx * 1.15, 0.06, (r.z0 + r.z1) / 2, 0.1, 0.05, D - 0.2);
       for (let i = 0; i < 16; i++) b.add(box, 'matte', 0xd9b45a, r.x0 + 0.8 + rand() * (W - 1.6), 0.03, r.z0 + 0.6 + rand() * (D - 1.2), 0.06, 0.02, 0.45, 0, rand() * Math.PI, 0, 0.15);
       for (let i = 0; i < 20; i++) b.add(rock, 'matte', 0x7a746a, r.x0 + 0.5 + rand() * (W - 1), 0.03, r.z0 + 0.5 + rand() * (D - 1), 0.12, 0.08, 0.1, 0, rand() * 3, 0, 0.2);
@@ -1046,7 +1092,7 @@ export function createDungeons(world) {
     const x = wallX - sx * 0.35; // (by the wall)
     // (a real light too, a little out from the wall at its flame's height:
     // the farm's pooled lamp lights, src/build.js addLamps, nearest first)
-    lamps.push({ at: b.at(x - sx * 0.45, LAMP_Y[id], z), color: th.light, flicker: id === 'parsnip' || id === 'lion' });
+    lamps.push({ at: b.at(x - sx * LAMP_OUT, LAMP_Y[id], z), color: th.light, flicker: id === 'parsnip' || id === 'lion' });
     if (id === 'parsnip') {
       // a lantern hanging off the beam on a chain
       b.add(cyl, 'metal', 0x3a3632, x, SIDE_H - 0.35, z, 0.02, 0.5, 0.02);
@@ -1496,6 +1542,8 @@ export function createDungeons(world) {
       for (const gate of d.gates) setGate(gate, gate.k < cleared);
       darken(id, d, cleared, inside && near, t);
       if (!near) return;
+      SHADE.uDungeonRects.value.forEach((v, i) => (d.shadeAt.rects[i] ? v.copy(d.shadeAt.rects[i]) : v.setScalar(1e5)));
+      SHADE.uDungeonHall.value.copy(d.shadeAt.hall);
       for (const gate of d.gates) {
         gate.sink += ((gate.open ? 1 : 0) - gate.sink) * Math.min(1, (dt / SINK_TIME) * 3);
         gate.group.position.y = -gate.sink * (GATE_H + 0.1);
@@ -1514,7 +1562,7 @@ export function createDungeons(world) {
         const k = 1 + Math.sin(t * 13 + p) * 0.12 + Math.sin(t * 29 + p * 2) * 0.08;
         f.scale.set(1 / Math.sqrt(k), k, 1 / Math.sqrt(k));
       }
-      if (d.pools) d.pools.opacity = 0.5 + Math.sin(t * 9) * 0.03 + Math.sin(t * 23) * 0.02;
+      if (d.pools) d.pools.opacity = POOL + Math.sin(t * 9) * 0.03 + Math.sin(t * 23) * 0.02;
       for (const fly of d.flies) {
         const { home, phase } = fly.userData;
         fly.position.set(home.x + Math.sin(t * 0.7 + phase) * 0.6, home.y + Math.sin(t * 1.3 + phase) * 0.25, home.z + Math.cos(t * 0.9 + phase) * 0.8);

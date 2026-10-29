@@ -136,7 +136,7 @@ const FLICKERS = new Set(['torch', 'campfire']); // (a flame, not a lamp: its li
 const GLOW_LIGHTS = 6;
 const GLOW_REACH = 15; // (a lamp's warm pool: wide over the grass and up the walls, src/gfx/post.js blooms its heart)
 const GLOW_COLOR = 0xffc35a;
-const UNDER_GLOW = { power: 14, reach: 6.5, decay: 1.6 }; // (a dungeon's lamps: bright close by, a short reach, so each lights a pool and the dark between stays)
+const UNDER_GLOW = { power: 26, reach: 3.4, decay: 2 }; // (a dungeon's lamps: bright close by, a short reach and a steep falloff, so each lights its own pool, two along a wall two pools, and the dark between stays)
 
 // ---------- The house ----------
 // 5 tiles across and 4 deep (PIECES.house.size), built from the middle of its

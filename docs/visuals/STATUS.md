@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 44 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 45 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -56,6 +56,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 41 A moonlit night with depth
 - [x] 42 Noon light with depth
 - [x] 43 The autumn island
+- [x] 44 Torchlight in the dungeon
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -78,8 +79,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Autumn crowns: a palette per wild theme (`THEMES.autumn.palette` in `src/maps.js`: reds, oranges, golds, two greens), picked per round tree and bush by `hash2` of where it stands and carried in the instance tint (`leafTint` in `src/world.js`: palette over the leaf material's color), so no new materials, draws or programs.
-- `hookTree`'s fragment: a warm crown (r over g) gets a deeper, redder shade and a golden lit top instead of the greens' cool blue-green, and far off its fire pales toward the haze (0.45 from 0.7 to 1.5 fog-nears); greens and the blossom pink untouched. Autumn grass a touch more golden (hue 0.13-0.2).
-- Midday side light (`MIDDAY_SIDE` 0.42 in `src/daynight.js`, 9:30-16:30, none at 8:00 or 18:30): the noon sun stands off to the east, so crowns light on one side and shadows fall aside (stones, trees, platforms), on every island; plaza-noon calls dropped about 130 (the shadow pass culls differently).
-- The lobby already went through every base hook (gfxDay near/far, carpet, detail, cloud and sun shadows): its flat look was the front light, which the side light fixes.
-- Weakest shot now: dungeon (high, last polished in round 23): one flat, even warm-brown room in the wide view, the torchlight with no pools of light and dark between, the floor boards and walls without depth or shadow, against the references' lit-and-shaded interiors.
+- Torch pools: the dungeon's lamps (`UNDER_GLOW` in `src/build.js`: power 26, reach 3.4, decay 2) hang 0.95 out from their lamp (`LAMP_OUT`; the cellar's at 1.6 high), so two lamps along a wall light two pools on the floor with dark between; the farmer's own light underground small (`CAVE` glow 1.5, reach 3.5), the additive floor pools a heart only (`POOL` 0.25).
+- Cool fill: the cave's hemisphere a brighter, bluer sky (`CAVE_FILL` 0x5a78c8, `hemiI` 1.7), so what no torch reaches reads blue-grey; fog, `CAVE_DARK` and `uUnder` as they were.
+- Stone: the cellar's (parsnip) floor flagstones and its wall courses in the `stone` look, grey-brown, boardwalk in `wood`, trodden earth as round dark patches.
+- Dark in the corners: a `dungeon:shade` hook on the dungeon's matte pieces and cavern floor (`src/dungeon.js`: the shown dungeon's room, bridge and hall rects as a uniform array): darker by the walls near the floor (most in corners), on what faces down, and out on the cavern's rock. Dungeon 428 calls, 63 programs (+1: the cavern floor); the overworld shots unchanged.
+- Weakest shot now: forest-noon (high, last polished in round 21, before the low camera): the wood at noon is pale, even crowns over a bright, flat floor, with no dappled shade or dark under the canopies against the references' deep, cool forest shade with sunlit gaps.
