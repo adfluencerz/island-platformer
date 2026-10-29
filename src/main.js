@@ -2765,6 +2765,7 @@ function steer(dt) {
 // down gives back what it cost. Esc or Done ends it. On a farm with helpers
 // the room says yes (BUILT) or no (FARM_DENY: it goes, and the cost comes back).
 const buildings = createBuildings(worlds.home);
+buildings.addLamps(npcHomes.lamps); // (the neighbours' lanterns light the ground round them at night too)
 
 // ---------- The house ----------
 // Built in build mode (the house piece, one to a farm, 5 tiles by 4). E at

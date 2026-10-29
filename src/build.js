@@ -134,7 +134,7 @@ const GLOWS = {
 };
 const FLICKERS = new Set(['torch', 'campfire']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
-const GLOW_REACH = 9;
+const GLOW_REACH = 10;
 
 // ---------- The house ----------
 // 5 tiles across and 4 deep (PIECES.house.size), built from the middle of its
@@ -1961,7 +1961,7 @@ export function createBuildings(world) {
   const relics = new Map(); // key -> the relic floating over its pedestal (it turns)
   const swirls = new Map(); // key -> a boss's portal's swirl (it turns too)
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
-    const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.5);
+    const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.25); // (a soft falloff: a pool of light on the ground under a lamp, not only a bright spot by it)
     light.castShadow = false;
     world.root.add(light);
     return light;
@@ -2133,6 +2133,12 @@ export function createBuildings(world) {
         }
       }
       return best;
+    },
+
+    // Lamps that are not built pieces (the neighbours' lanterns: src/npchomes.js
+    // lamps, Vector3s in the farm) share the same few lights at night
+    addLamps(points) {
+      points.forEach((at, i) => glows.set(`lamp:${i}`, { at, flicker: false, flame: null, seed: i }));
     },
 
     // night: 0 by day, 1 at night (the lamps' glow, and the light they
