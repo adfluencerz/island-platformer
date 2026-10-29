@@ -76,6 +76,7 @@ const WRAP_GLSL = /* glsl */ `
 export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith', ...DUSK_UNIFORMS])];
 const DUSK_FILL = '0.55'; // (how much of the sky's light the near field loses at dusk, in the shade)
 const MORNING_FILL = '0.5'; // (and in the misty morning)
+const RAIN_FILL = '0.5'; // (and in the rain, in the shade or not: the overcast's flat light)
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -147,8 +148,12 @@ export function lightChunks() {
             // (in the morning less so, and the near shade cooler: clear, cool, the long shadows blue)
             float gfxNearShade = ( 1.0 - smoothstep( 0.7, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.45 * gfxSunLit );
             float gfxMorn = gfxMorning() * gfxNearShade;
-            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * gfxNearShade - ${MORNING_FILL} * gfxMorn;
+            // (in the rain the overcast's flat light: less of it near the camera
+            // whatever the sun, so the wet foreground is dark and rich and the sheen reads on it)
+            float gfxNearRain = gfxRain() * ( 1.0 - smoothstep( 0.6, 2.0, vFogDepth / max( fogNear, 1e-3 ) ) );
+            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * gfxNearShade - ${MORNING_FILL} * gfxMorn - ${RAIN_FILL} * gfxNearRain;
             irradiance *= mix( vec3( 1.0 ), vec3( 0.9, 0.98, 1.12 ), gfxMorn );
+            irradiance *= mix( vec3( 1.0 ), vec3( 0.96, 1.04, 0.78 ), gfxNearRain ); // (and less blue: the wet greens deep, not teal)
           #endif
         #endif
         ${INDIRECT_END}`,
@@ -163,24 +168,30 @@ export function lightChunks() {
 const WET_GLSL = /* glsl */ `
   float gfxWetUp = 0.0;
   float gfxPuddle = 0.0;
+  float gfxMirror = 0.0; // (the water itself, inside its damp, dark shore)
   // (not on water: it has its own sky, src/gfx/water.js)
   #ifndef GFX_WATER
   if ( uWet > 0.0 ) {
     float gfxUp = smoothstep( 0.35, 0.9, inverseTransformDirection( geometryNormal, viewMatrix ).y );
     float gfxK = uWet * ( 0.35 + 0.65 * gfxUp );
-    #ifdef GFX_GRASS
-      gfxK *= 0.7;
+    #if defined( GFX_GRASS ) || defined( GFX_CARPET )
+      gfxK *= 0.7; // (the grass: its blades less, and less of the sky's sheen on them, below)
     #endif
     vec3 gfxC = material.diffuseColor;
     float gfxL = dot( gfxC, vec3( 0.2126, 0.7152, 0.0722 ) );
-    material.diffuseColor = max( mix( vec3( gfxL ), gfxC, 1.0 + 0.3 * gfxK ), 0.0 ) * ( 1.0 - 0.28 * gfxK );
+    float gfxRich = 0.0;
+    #if defined( USE_FOG ) && !defined( FOG_EXP2 )
+      gfxRich = gfxRain() * ( 1.0 - smoothstep( 0.8, 2.0, vFogDepth / max( fogNear, 1e-3 ) ) ); // (the near field richer and darker while it falls)
+    #endif
+    material.diffuseColor = max( mix( vec3( gfxL ), gfxC, 1.0 + ( 0.3 + 0.5 * gfxRich ) * gfxK ), 0.0 ) * ( 1.0 - ( 0.28 + 0.1 * gfxRich ) * gfxK );
     gfxWetUp = uWet * gfxUp;
-    #ifdef GFX_GRASS
+    #if defined( GFX_GRASS ) || defined( GFX_CARPET )
       gfxWetUp *= 0.4;
     #endif
     #ifdef GFX_PUDDLE
       gfxPuddle = groundPuddle * gfxWetUp;
-      material.diffuseColor *= 1.0 - 0.5 * gfxPuddle;
+      gfxMirror = smoothstep( 0.55, 1.0, groundPuddle ) * gfxWetUp;
+      material.diffuseColor *= 1.0 - 0.65 * gfxPuddle;
     #endif
   }
   #endif
@@ -197,10 +208,15 @@ const SHEEN_GLSL = /* glsl */ `
     vec3 gfxR = reflect( -gfxWV, gfxWN );
     vec3 gfxSky = mix( uSkyHorizon, uSkyZenith, smoothstep( 0.1, 0.8, gfxR.y ) );
     float gfxF = pow( 1.0 - saturate( dot( gfxWN, gfxWV ) ), 3.0 );
-    float gfxSheen = gfxWetUp * ( 0.06 + 0.3 * gfxF ) + gfxPuddle * ( 0.28 + 0.3 * gfxF );
+    // (little of it looking down on the near field, which stays dark and rich,
+    // more toward the glancing far side; the puddles mirror it whatever the angle)
+    // (from the wide camera's angle a puddle mirrors the sky a little above
+    // the horizon, its pale band: lifted toward it, so the puddles read bright)
+    gfxSky = mix( gfxSky, uSkyHorizon, 0.3 * gfxMirror );
+    float gfxSheen = gfxWetUp * ( 0.025 + 0.45 * gfxF ) + gfxMirror * ( 0.32 + 0.35 * gfxF );
     #ifdef GFX_PUDDLE
-      highp vec2 gfxDrop = vGfxWorld.xz * 1.6;
-      gfxSheen += gfxPuddle * uRain * 0.45 * gfxRipples( gfxDrop ) * gfxShow( 1.6, gfxFootprint( gfxDrop ) );
+      highp vec2 gfxDrop = vGfxWorld.xz * 1.2;
+      gfxSheen += ( gfxMirror + 0.4 * gfxPuddle ) * uRain * 0.7 * gfxRipples( gfxDrop ) * gfxShow( 1.2, gfxFootprint( gfxDrop ) ); // (and a few on their damp shores)
     #endif
     reflectedLight.indirectDiffuse += gfxSky * gfxSheen;
   }

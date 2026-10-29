@@ -48,9 +48,15 @@ export const DUSK_GLSL = /* glsl */ `
     return uMist * smoothstep(0.1, 0.5, uSunDir.x)
       * (1.0 - smoothstep(0.0, 0.25, uNight)) * (1.0 - uCloudAmount) * (1.0 - uUnder);
   }
+  // (and the rain's: how hard it falls now (uRain), by day, out in the open:
+  // the grey held back to the middle distance and the far field, a dark,
+  // wet, rich foreground; 0 when dry, so the wet ground drying keeps its look)
+  float gfxRain() {
+    return uRain * (1.0 - smoothstep(0.0, 0.25, uNight)) * (1.0 - uUnder);
+  }
 #endif
 `;
-export const DUSK_UNIFORMS = ['uSunDir', 'uNight', 'uCloudAmount', 'uUnder', 'uMist'];
+export const DUSK_UNIFORMS = ['uSunDir', 'uNight', 'uCloudAmount', 'uUnder', 'uMist', 'uRain'];
 
 export const ATMOS_UNIFORMS = ['uSkyHorizon', 'uSkyGlow', 'uSunDir', 'uNight', 'uUnder', 'uCloudAmount'];
 
@@ -71,20 +77,25 @@ const FOG_GLSL = /* glsl */ `
     // toward the horizon: the near field clear and rich, the far one pale)
     // (in the morning the mist the same: held back to the middle distance and
     // the far field, a little thicker there, the foreground clear)
+    // (in the rain the grey the same: the near field dark and wet, the veil
+    // growing with distance, thicker and greyer far off)
     float gfxDk = gfxDusk();
     float gfxMn = gfxMorning();
-    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist + 0.1 * gfxDk + 0.06 * gfxMn) * smoothstep(0.4 - 0.1 * uMist + 0.5 * gfxDk + 0.5 * gfxMn, 1.35 + 0.2 * gfxDk + 0.1 * gfxMn, gfxS);
+    float gfxRn = gfxRain();
+    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist + 0.1 * gfxDk + 0.06 * gfxMn + 0.15 * gfxRn) * smoothstep(0.4 - 0.1 * uMist + 0.5 * gfxDk + 0.5 * gfxMn + 0.35 * gfxRn, 1.35 + 0.2 * gfxDk + 0.1 * gfxMn - 0.05 * gfxRn, gfxS);
     // the low haze over the sea, thinning going up; in the morning's mist
     // thicker, nearer and lying higher
     float gfxAbove = max(vGfxWorld.y - uFogHeight.x, 0.0);
-    float gfxHaze = (0.38 + 0.2 * gfxLow + 0.16 * uMist + 0.1 * gfxMn) * exp(-gfxAbove * uFogHeight.y * (1.0 - 0.3 * uMist))
-      * smoothstep(0.3 - 0.1 * uMist + 0.5 * gfxDk + 0.45 * gfxMn, 1.2 - 0.25 * uMist + 0.25 * gfxDk + 0.3 * gfxMn, gfxS);
+    float gfxHaze = (0.38 + 0.2 * gfxLow + 0.16 * uMist + 0.1 * gfxMn + 0.12 * gfxRn) * exp(-gfxAbove * uFogHeight.y * (1.0 - 0.3 * uMist - 0.3 * gfxRn))
+      * smoothstep(0.3 - 0.1 * uMist + 0.5 * gfxDk + 0.45 * gfxMn + 0.35 * gfxRn, 1.2 - 0.25 * uMist + 0.25 * gfxDk + 0.3 * gfxMn + 0.05 * gfxRn, gfxS);
     float gfxFog = 1.0 - (1.0 - fogFactor) * (1.0 - gfxAir * gfxOpen) * (1.0 - gfxHaze * gfxOpen);
     vec3 gfxSky = gfxHorizon(normalize(gfxView));
     // (the mist pale and cool; toward the sun its warmth still burns through: gfxHorizon)
     gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(0.94, 1.0, 1.1) * 1.06, 0.25 * uMist);
     // (at dusk the far land pale gold, not the horizon's orange laid over the green)
     gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(1.3, 1.08, 0.72), 0.45 * gfxDk);
+    // (in the rain a cool blue-grey, not the grey-green of the land under it)
+    gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(0.9, 0.98, 1.12), 0.4 * gfxRn);
     vec3 gfxColor = linearToOutputTexel(vec4(gfxSky, 1.0)).rgb;
     gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(gfxColor, fogColor, gfxCave), gfxFog);
   #endif
@@ -95,7 +106,7 @@ export function atmos(shader, renderer, material) {
   if (material?.userData?.gfx?.noAtmos) return;
   define(shader, 'GFX_WORLD');
   define(shader, 'GFX_ATMOS');
-  use(shader, [...ATMOS_UNIFORMS, 'uFogHeight', 'uMist'], 'f');
+  use(shader, [...ATMOS_UNIFORMS, ...DUSK_UNIFORMS, 'uFogHeight'], 'f');
   shader.fragmentShader = patch(shader.fragmentShader, 'fog_pars_fragment', HORIZON_GLSL + DUSK_GLSL, 'GFX_ATMOS');
   shader.fragmentShader = swap(shader.fragmentShader, 'fog_fragment', FOG_GLSL, 'GFX_ATMOS');
 }
