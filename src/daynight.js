@@ -168,9 +168,9 @@ function createFireflies(count) {
 // color; and a small, soft light round the farmer (the lamps' own light:
 // src/build.js, the dungeon's lamps)
 const CAVE_DARK = new THREE.Color(0x040306);
-const CAVE_FILL = new THREE.Color(0x4c68b0); // (the hemisphere's sky...)
+const CAVE_FILL = new THREE.Color(0x5a78c8); // (the hemisphere's sky: a faint cool fill from above, so the shade between the torches reads blue, not black...)
 const CAVE_FLOOR = new THREE.Color(0x161a2a); // (...and its ground)
-const CAVE = { hemiI: 0.6, lightI: 0.06, fill: 0.85, glow: 6, reach: 7 };
+const CAVE = { hemiI: 1.7, lightI: 0.06, fill: 0.92, glow: 1.5, reach: 3.5 }; // (glow, reach: the light round the farmer, small: it lights them, not the room)
 
 export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let hour = THREE.MathUtils.euclideanModulo(startHour, 24);
