@@ -23,9 +23,9 @@ import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progres
 import { TALK, nodesOf, holds, textOf, chatTopics, momentsDue, followUps, rewardFor, hear, hubOptions, cleanState } from '../shared/talk.js';
 import { ITEMS } from '../src/items.js';
 import { MERCHANT_STOCK, FRIENDSHIP, FARM_FORAGE } from '../shared/balance.js';
-import { HOUSE_ROOM, movedKey } from '../shared/level.js';
+import { HOUSE_ROOM, movedKey, rollSpot } from '../shared/level.js';
 import { hashSeed } from '../shared/worldgen.js';
-import { FISHING, RODS, SHOP, FISH_WEIGHT, TACKLE, AQUARIUM } from '../shared/balance.js';
+import { FISHING, RODS, SHOP, FISH_WEIGHT, TACKLE, AQUARIUM, COIN_VALUE } from '../shared/balance.js';
 import { BEANSTALK, DAY_LENGTH_SECONDS as DAY_SECONDS } from '../shared/balance.js';
 import { biting, castLine, FISH_LIST, cleanLog, onBoard, boardFor, weightText, BOARD_SIZE } from '../shared/fishing.js';
 import { fingerprint } from './seed-fingerprint.js';
@@ -364,6 +364,33 @@ await test('every lobby has an old key somewhere, on a spot a save keeps it on',
   room.hideKey();
   assert.equal(can.at(-1).item, 'key');
   assert.equal(can.filter((s) => s.item === 'golden_seeds').length, can.length - 1);
+});
+
+// A lobby picked clean, on average over a few islands of today's generation:
+// what it sells for (coins at COIN_VALUE), and its gems, golden seeds and
+// boss key pieces. (Before the rebalance one came to ~10.8k gold, ~10.6 gems,
+// ~8 golden seeds and ~13.7 key pieces: enough to buy nearly everything.)
+await test('a lobby picked clean pays for a few things, not for everything', () => {
+  const rand = mulberry32(7);
+  const pieces = new Set(Object.values(BOSSES).map((b) => b.key));
+  const sum = { gold: 0, gem: 0, golden_seeds: 0, pieces: 0 };
+  const n = 40;
+  for (let i = 0; i < n; i++) {
+    const island = islandFor(`worth-${i}-v${CURRENT_GEN}`, { cached: false });
+    for (const [kind, x, , z] of island.spots) {
+      const spot = rollSpot(island, kind, x, z, rand);
+      for (const [item, count] of spot.bundle ?? [[spot.item, spot.count]]) {
+        sum.gold += (item === 'coin' ? COIN_VALUE : SHOP[item]?.sell ?? 0) * count;
+        if (item in sum) sum[item] += count;
+        if (pieces.has(item)) sum.pieces += count;
+      }
+    }
+  }
+  const per = Object.fromEntries(Object.entries(sum).map(([k, v]) => [k, v / n]));
+  assert.ok(per.gold > 3000 && per.gold < 6500, `gold ${per.gold}`);
+  assert.ok(per.gem > 1 && per.gem < 4.5, `gems ${per.gem}`);
+  assert.ok(per.golden_seeds < 4.5, `golden seeds ${per.golden_seeds}`);
+  assert.ok(per.pieces > 2 && per.pieces < 6, `key pieces ${per.pieces}`);
 });
 
 await test('new seeds carry their generation, and grow what it added', () => {

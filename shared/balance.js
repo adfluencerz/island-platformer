@@ -39,7 +39,7 @@ export const SHOP = {
   shroom_spores: { price: 60, sell: 30 },
   lily_seeds: { price: 50, sell: 25 },
   cotton_seeds: { price: 90, sell: 45 },
-  golden_seeds: { price: 450, sell: 100 }, // (Basil sells a few, once you have helped him enough)
+  golden_seeds: { price: 600, sell: 100 }, // (Basil sells a few, once you have helped him enough)
   // crops
   turnip: { sell: 35 },
   carrot: { sell: 60 },
@@ -52,15 +52,15 @@ export const SHOP = {
   // gathered in lobbies
   berries: { sell: 15 },
   mushroom: { sell: 25 },
-  heather: { sell: 30 },
-  cattail: { sell: 35 },
-  bluebell: { sell: 40 },
+  heather: { sell: 15 },
+  cattail: { sell: 18 },
+  bluebell: { sell: 20 },
   pumpkin: { sell: 50 },
-  fern: { sell: 40 },
-  seashell: { sell: 40 },
-  strawberry: { sell: 30 },
+  fern: { sell: 20 },
+  seashell: { sell: 20 },
+  strawberry: { sell: 15 },
   gem: { sell: 200 },
-  ...Object.fromEntries(RELICS.map((relic) => [relic, { sell: 400 }])), // (the sky isles' relics)
+  ...Object.fromEntries(RELICS.map((relic) => [relic, { sell: 250 }])), // (the sky isles' relics)
   wood: { sell: 6 },
   stone: { sell: 4 },
   steel: { sell: 30 }, // (a lump of it now and then in a rock)
@@ -359,7 +359,7 @@ export const DUNGEONS = {
   },
   lion: {
     name: 'Sunbaked Ruins', foe: ['lion cub', 'lion cubs'], foes: [3, 3, 4, 4], guards: [2, 3], hp: 3, walk: 2, pause: [0.8, 1.5], keep: 3.5,
-    loot: [['gem', 0.08, 1, 1], ['coin', 0.12, 4, 8]],
+    loot: [['gem', 0.04, 1, 1], ['coin', 0.12, 4, 8]],
     move: 'dash', windup: 0.5, speed: 8, time: 0.55,
   },
   bee: {
@@ -369,7 +369,7 @@ export const DUNGEONS = {
   },
   crow: {
     name: 'Rookery', foe: ['rook', 'rooks'], foes: [3, 4, 4, 5], guards: [2, 3], hp: 3, walk: 1.4, pause: [1, 1.8], keep: 3,
-    loot: [['pumpkin_seeds', 0.1, 1, 3], ['key', 0.04, 1, 1], ['coin', 0.1, 3, 6]],
+    loot: [['pumpkin_seeds', 0.1, 1, 3], ['key', 0.02, 1, 1], ['coin', 0.1, 3, 6]],
     move: 'swoop', windup: 0.6, height: 2.6, dive: 0.75,
   },
   toad: {
@@ -389,8 +389,8 @@ export const DUNGEONS = {
 export const DUNGEON = {
   reset: 45, flinch: 0.5, knock: 1.6, bump: 6,
   chest: {
-    rolls: [3, 5], key: 0.05,
-    loot: [['coin', 0.38, 3, 8], ['steel', 0.14, 1, 3], ['arrow', 0.12, 4, 8], ['gem', 0.06, 1, 1], ['golden_seeds', 0.05, 1, 1], ['recipe_card', 0.03, 1, 1], ['wood', 0.06, 4, 8], ['stone', 0.06, 4, 8]],
+    rolls: [3, 5], key: 0.03,
+    loot: [['coin', 0.38, 3, 8], ['steel', 0.14, 1, 3], ['arrow', 0.12, 4, 8], ['gem', 0.03, 1, 1], ['golden_seeds', 0.02, 1, 1], ['recipe_card', 0.03, 1, 1], ['wood', 0.06, 4, 8], ['stone', 0.06, 4, 8]],
   },
 };
 
@@ -404,24 +404,24 @@ function bossPieces(weight) {
 // spot has something again. `loot`: [item, weight, min, max]: each time it
 // regrows one is picked (the higher the weight, the likelier) with min..max of it.
 export const LOBBY_SPOTS = {
-  bush: { regrow: [35, 50], loot: [['berries', 1, 2, 3]] },
-  mushroom: { regrow: [25, 40], loot: [['mushroom', 0.95, 1, 2], ['golden_seeds', 0.05, 1, 1]] },
-  heather: { regrow: [30, 45], loot: [['heather', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 2 islands)
-  cattail: { regrow: [30, 45], loot: [['cattail', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 4)
-  bluebell: { regrow: [30, 45], loot: [['bluebell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 5)
-  sunflower: { regrow: [30, 45], loot: [['sunflower', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 6)
-  pumpkin: { regrow: [30, 45], loot: [['pumpkin', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 7)
-  fern: { regrow: [30, 45], loot: [['fern', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 8)
-  seashell: { regrow: [30, 45], loot: [['seashell', 0.93, 1, 3], ['golden_seeds', 0.07, 1, 1]] }, // (generation 9)
-  strawberry: { regrow: [30, 45], loot: [['strawberry', 0.93, 2, 4], ['golden_seeds', 0.07, 1, 1]] }, // (generation 11)
+  bush: { regrow: [35, 50], loot: [['berries', 1, 1, 1]] },
+  mushroom: { regrow: [25, 40], loot: [['mushroom', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] },
+  heather: { regrow: [30, 45], loot: [['heather', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 2 islands)
+  cattail: { regrow: [30, 45], loot: [['cattail', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 4)
+  bluebell: { regrow: [30, 45], loot: [['bluebell', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 5)
+  sunflower: { regrow: [30, 45], loot: [['sunflower', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 6)
+  pumpkin: { regrow: [30, 45], loot: [['pumpkin', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 7)
+  fern: { regrow: [30, 45], loot: [['fern', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 8)
+  seashell: { regrow: [30, 45], loot: [['seashell', 0.98, 1, 1], ['golden_seeds', 0.02, 1, 1]] }, // (generation 9)
+  strawberry: { regrow: [30, 45], loot: [['strawberry', 0.98, 1, 2], ['golden_seeds', 0.02, 1, 1]] }, // (generation 11)
   meadow: {
     regrow: [30, 50],
-    loot: [['coin', 0.72, 1, 1], ['turnip_seeds', 0.22, 2, 4], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.04, 1, 1], ['key', 0.04, 1, 1], ...bossPieces(0.025)],
+    loot: [['coin', 0.8, 1, 1], ['turnip_seeds', 0.22, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.012, 1, 1], ['key', 0.015, 1, 1], ...bossPieces(0.008)],
   },
   // up on the sky isles (generation 10): finds lying about, and on the steps up
   sky: {
     regrow: [40, 60],
-    loot: [['coin', 0.5, 2, 4], ['gem', 0.22, 1, 1], ['sunflower_seeds', 0.12, 2, 3], ['carrot_seeds', 0.1, 2, 4], ['golden_seeds', 0.05, 1, 1], ['key', 0.1, 1, 1], ...bossPieces(0.07)],
+    loot: [['coin', 0.5, 1, 3], ['gem', 0.07, 1, 1], ['sunflower_seeds', 0.12, 1, 2], ['carrot_seeds', 0.1, 1, 3], ['golden_seeds', 0.015, 1, 1], ['key', 0.04, 1, 1], ...bossPieces(0.02)],
   },
   // (the relic and the chests up there: what is on them is rolled their own way, SKY_CHESTS)
   relic: { regrow: [0, 0], loot: [] },
@@ -429,7 +429,7 @@ export const LOBBY_SPOTS = {
   sky_vault: { regrow: [0, 0], loot: [] },
   ledge: {
     regrow: [40, 60],
-    loot: [['gem', 0.45, 1, 1], ['carrot_seeds', 0.25, 2, 4], ['sunflower_seeds', 0.2, 1, 3], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.06, 1, 1], ['key', 0.08, 1, 1], ...bossPieces(0.05)],
+    loot: [['gem', 0.07, 1, 1], ['carrot_seeds', 0.3, 1, 3], ['sunflower_seeds', 0.2, 1, 2], ['flax_seeds', 0.18, 1, 2], ['golden_seeds', 0.02, 1, 1], ['key', 0.03, 1, 1], ...bossPieces(0.008)],
   },
 };
 
@@ -445,8 +445,8 @@ export const SKY_ISLES = { count: [1, 3], radius: [5, 7.5], top: [9, 15], firstS
 // are in one, each from `loot` ([item, weight, min, max], as for the spots;
 // the same thing twice is one stack).
 export const SKY_CHESTS = {
-  sky_chest: { rolls: [3, 5], loot: [['coin', 0.45, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.12, 2, 3], ['flax_seeds', 0.1, 2, 3], ['golden_seeds', 0.04, 1, 1], ['key', 0.06, 1, 1], ...bossPieces(0.06)] },
-  sky_vault: { rolls: [4, 6], loot: [['coin', 0.35, 4, 8], ['gem', 0.3, 1, 2], ['golden_seeds', 0.15, 1, 2], ['sunflower_seeds', 0.1, 3, 5], ['carrot_seeds', 0.1, 3, 5], ...bossPieces(0.2)] },
+  sky_chest: { rolls: [2, 4], loot: [['coin', 0.45, 2, 4], ['gem', 0.05, 1, 1], ['carrot_seeds', 0.12, 2, 3], ['sunflower_seeds', 0.12, 1, 3], ['flax_seeds', 0.1, 1, 3], ['golden_seeds', 0.015, 1, 1], ['key', 0.03, 1, 1], ...bossPieces(0.02)] },
+  sky_vault: { rolls: [3, 5], loot: [['coin', 0.4, 3, 6], ['gem', 0.06, 1, 1], ['golden_seeds', 0.05, 1, 1], ['sunflower_seeds', 0.1, 2, 4], ['carrot_seeds', 0.1, 2, 4], ...bossPieces(0.03)] },
 };
 
 // ---------- The neighbours ----------
@@ -497,7 +497,7 @@ export const FARM_FINDS = {
     ['carrot_seeds', 0.12, 1, 3],
     ['flax_seeds', 0.1, 1, 2],
     ['sunflower_seeds', 0.07, 1, 2],
-    ['gem', 0.04, 1, 1],
+    ['gem', 0.02, 1, 1],
     ['golden_seeds', 0.01, 1, 1],
   ],
 };
@@ -779,7 +779,7 @@ export const TACKLE = { bait: { bite: 0.6 }, lure: { luck: 1.6 } };
 export const AQUARIUM = { holds: 6 };
 // What is in a little chest fished up: `rolls` things, each from `loot`
 // ([item, weight, min, max], as for the sky isle chests)
-export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.15, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.05, 1, 1], ['key', 0.03, 1, 1], ['lure', 0.1, 1, 2]] };
+export const FISHED_CHEST = { rolls: [2, 3], loot: [['coin', 0.5, 2, 5], ['gem', 0.06, 1, 1], ['carrot_seeds', 0.12, 2, 4], ['sunflower_seeds', 0.1, 1, 3], ['golden_seeds', 0.02, 1, 1], ['key', 0.015, 1, 1], ['lure', 0.1, 1, 2]] };
 // ---------- Skills ----------
 // Five skills that level up by doing (shared/skills.js, src/skills.js), from
 // level 1 to SKILLS.max. `next`: XP from each level to the one after (1 -> 2
@@ -899,7 +899,7 @@ export const MINIGAMES = {
   prize: {
     coins: 12,
     perPlayer: 3,
-    loot: [['carrot_seeds', 0.35, 2, 4], ['sunflower_seeds', 0.3, 2, 3], ['gem', 0.25, 1, 1], ['golden_seeds', 0.1, 1, 1]],
+    loot: [['carrot_seeds', 0.4, 2, 4], ['sunflower_seeds', 0.35, 2, 3], ['gem', 0.1, 1, 1], ['golden_seeds', 0.04, 1, 1]],
     played: [1, 2],
   },
 };
