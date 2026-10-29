@@ -1,6 +1,6 @@
 import './skills.css';
 import { DOUBLE_JUMP, SKILLS } from '../shared/balance.js';
-import { SKILL_LIST, levelOf, cleanSkills, overallLevel, canDoubleJump, bonusChance, swingsAt, perksAt } from '../shared/skills.js';
+import { SKILL_LIST, levelOf, xpAt, cleanSkills, overallLevel, canDoubleJump, bonusChance, swingsAt, perksAt } from '../shared/skills.js';
 
 // ---------- Skills ----------
 // The XP you have earned in each skill (shared/skills.js), saved with the
@@ -75,6 +75,10 @@ export function createSkills({ onLevelUp } = {}) {
     swings: (base, id) => swingsAt(base, level(id)),
     render,
     serialize: () => ({ ...xps }),
+    // (the developer tools) every skill at the start of `by` levels up or down
+    shift(by) {
+      xps = cleanSkills(Object.fromEntries(Object.keys(xps).map((id) => [id, xpAt(level(id) + by)])));
+    },
     restore(saved) {
       xps = cleanSkills(saved);
     },

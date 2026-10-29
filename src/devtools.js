@@ -15,7 +15,8 @@ import { devToolsOn } from '../shared/constants.js';
 // (or nothing). giant(kind), skyFoot(), skyStyle(), find(), regrow();
 // items(): [[id, name]] of everything there is; give(id, count), gold(n),
 // oldKey(), bossKeys(); speed(n) (1: normal; and speed() what it is),
-// plaza(), skills(xp) (to each skill; Infinity: the top); clock(hour) (on to
+// plaza(), skills(xp) (to each skill; Infinity: the top), levels(by) (every
+// skill that many levels up, or down); clock(hour) (on to
 // the next time it is that hour), later(hours); info(): [[label, value]].
 // The valley: places(): [[id, name]] to go to, goTo(id); neighbours():
 // [[id, name]], finish(id) (their request now, done), hearts() (all five, with
@@ -134,8 +135,10 @@ export function createDevTools(api) {
     });
     const go = section(p, 'Getting about');
     btn(go, 'Back to the plaza', () => api.plaza(), 'Where farmers arrive');
-    const sk = section(p, 'Skills', 'Two of each skill\'s levels up, or all the way');
+    const sk = section(p, 'Skills', 'Every skill a level up or down, a couple of levels\' XP, or all the way');
     btn(sk, '+250 XP each', () => api.skills(250));
+    btn(sk, 'Level up', () => api.levels(1), 'Every skill one level up');
+    btn(sk, 'Level down', () => api.levels(-1), 'Every skill one level down (to its start)');
     btn(sk, 'Top every skill', () => api.skills(Infinity), 'And the double jump with it');
   }
   const showSpeed = () => speedBtns.forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === api.speed()));
