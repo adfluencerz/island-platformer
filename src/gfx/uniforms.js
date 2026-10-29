@@ -21,6 +21,7 @@ export const U = {
   uFlash: { value: 0 }, // lightning's flash, 0 to 1 (none seen under a roof)
   uWet: { value: 0 }, // how wet the world is, 0 to 1: up in a shower, drying after (src/weather.js; none under a roof or underground)
   uRain: { value: 0 }, // how hard it is raining now, 0 to 1 (drops ringing on water and puddles; likewise)
+  uMist: { value: 0 }, // the morning's mist, 0 to 1: from dawn, gone by mid-morning (the haze lower and thicker, dew on the grass)
   uCloudOffset: { value: new THREE.Vector2() }, // how far the clouds have drifted (world units)
   uWind: { value: new THREE.Vector2() }, // a storm's wind, xz (units a second)
   uPlayers: { value: Array.from({ length: MAX_PLAYERS }, () => new THREE.Vector4(0, -1e4, 0, 0)) }, // the farmers here: xyz, w 1 (0: none)
@@ -35,7 +36,7 @@ export const U = {
 
 const TYPES = {
   uTime: 'float', uSunDir: 'vec3', uSunColor: 'vec3', uSkyZenith: 'vec3', uSkyHorizon: 'vec3', uSkyGlow: 'vec3',
-  uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uFlash: 'float', uWet: 'float', uRain: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
+  uNight: 'float', uUnder: 'float', uCloudAmount: 'float', uFlash: 'float', uWet: 'float', uRain: 'float', uMist: 'float', uCloudOffset: 'vec2', uWind: 'vec2',
   uPlayers: `vec4[${MAX_PLAYERS}]`, uCamPos: 'vec3', uFogHeight: 'vec2', uShadowTint: 'vec3', uWrap: 'float', uToon: 'float', uCloudShadows: 'float', uNightGrey: 'float',
 };
 
@@ -74,7 +75,7 @@ export function look(camera) {
 // The day's light (src/daynight.js), for the view being drawn (sky, zenith:
 // the sky's colors, copied before the season tints them in place:
 // dayNight.sky, src/seasons.js)
-export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, flash = 0, wet = 0, rain = 0 }) {
+export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, flash = 0, wet = 0, rain = 0, mist = 0 }) {
   U.uSunDir.value.copy(sunDir);
   U.uSunColor.value.copy(sun.color).multiplyScalar(sun.intensity);
   U.uSkyHorizon.value.copy(sky);
@@ -86,6 +87,7 @@ export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, fla
   U.uFlash.value = flash;
   U.uWet.value = wet * (1 - under);
   U.uRain.value = rain * (1 - under);
+  U.uMist.value = mist;
   // round a low sun (sunrise, sunset) the shade goes cooler, so long shadows read blue against the gold
   const low = (1 - THREE.MathUtils.smoothstep(sunDir.y, 0.12, 0.6)) * (1 - night) * (1 - cloud);
   U.uShadowTint.value.copy(SHADE).lerp(SHADE_LOW, low);
