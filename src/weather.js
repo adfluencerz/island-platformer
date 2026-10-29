@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { weatherAt, WEATHER } from '../shared/weather.js';
 import * as sound from './sound.js';
+import { U } from './gfx/uniforms.js';
 
 // ---------- The weather, to see and hear ----------
 // shared/weather.js says when it rains on the farm; this shows it: rain
@@ -17,6 +18,10 @@ const SNOW_SPEED = 1.3;
 const STREAK = 0.55; // a raindrop's length
 const SLANT = 0.3; // how far a storm's wind leans a raindrop, for each unit a second of it
 const DRIFT = 3; // how much faster than a glider the wind blows the drops along
+// The rain's streaks take the sky's color (its horizon's, a touch lighter, a
+// little of a pale grey kept) so they sit in the light and the grade: silver
+// by day, blue at night, warm at sunset
+const RAIN_TINT = { lift: 1.2, pale: new THREE.Color(0xb8c6d8), keep: 0.3 };
 
 export function createWeather({ scene, dayNight, count = 900 }) {
   // each drop: where in the square, and how far down its fall it starts
@@ -116,6 +121,7 @@ export function createWeather({ scene, dayNight, count = 900 }) {
       }
       if (thunderIn >= 0 && (thunderIn -= dt) < 0) sound.play('thunder');
       dayNight.setWeather(amount * (storm ? 1 : 0.7), flash * (0.75 + 0.25 * Math.sin(elapsed * 60)), indoors);
+      if (amount > 0) rain.material.color.copy(U.uSkyHorizon.value).multiplyScalar(RAIN_TINT.lift).lerp(RAIN_TINT.pale, RAIN_TINT.keep);
       sound.rain(indoors ? amount * 0.25 : amount);
 
       falling = Math.round(limit * amount);
