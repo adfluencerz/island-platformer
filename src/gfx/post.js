@@ -44,6 +44,8 @@ export const POST = {
   cool: new THREE.Color(0.95, 0.98, 1.05), // (the night's)
   skyTint: 0.08, // (how far the tint leans toward the sky's horizon color)
   skyTintLow: 0.16, // (and round a low sun, by day: a golden hour's warmth)
+  rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
+  rainSaturation: 0.1,
 };
 
 const MAX_SEATS = 4;
@@ -184,6 +186,7 @@ export function createPost(renderer, { seats, view, gap }) {
   const size = new THREE.Vector2();
   const tint = new THREE.Color();
   const sky = new THREE.Color();
+  const rainTint = new THREE.Color();
 
   function make() {
     renderer.getDrawingBufferSize(size);
@@ -257,7 +260,9 @@ export function createPost(renderer, { seats, view, gap }) {
       sky.b = Math.min(sky.b, 1.6);
       const low = (1 - THREE.MathUtils.smoothstep(U.uSunDir.value.y, 0.12, 0.6)) * (1 - U.uNight.value) * (1 - U.uCloudAmount.value);
       tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, THREE.MathUtils.lerp(POST.skyTint, POST.skyTintLow, low)).lerp(WHITE, U.uUnder.value);
+      tint.multiply(rainTint.copy(WHITE).lerp(POST.rain, U.uCloudAmount.value * (1 - U.uUnder.value)));
       grade.uniforms.uTint.value.copy(tint);
+      grade.uniforms.uSaturation.value = POST.saturation + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value);
       grade.uniforms.uNight.value = U.uNight.value * (1 - U.uUnder.value);
       seatParts();
       renderer.setScissorTest(false); // (the screen's own, for the output: a split screen drawn straight leaves it on)

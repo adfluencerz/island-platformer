@@ -18,6 +18,7 @@ import { NOISE } from './noise.js';
 //     little wave facets that catch the sun from any side, added
 //     on top of the tone-mapped color, so its brightest sparkles pass the
 //     bloom's threshold (src/gfx/post.js) and glow, without a white smear;
+//   - in the rain (uRain), drops ringing on it (gfxRipples, src/gfx/light.js);
 //   - a slow mottle in the color (the sea's), or (the shallows') a soft,
 //     broken edge out at sea, turquoise deepening away from the shore, and
 //     toward the shore the sandy floor in ripples showing through.
@@ -108,10 +109,16 @@ const SURFACE = ({ fresnel, glint, solid, dusk }) => `
     float waterUp = smoothstep(0.0, 0.06, waterL.y) * (1.0 - 0.85 * uCloudAmount) * (1.0 - 0.6 * uNight) * (1.0 + 0.6 * waterLow);
     vec3 waterGlint = uSunColor * (waterSpec * waterUp * ${f(glint * 2.4)});
     gl_FragColor.rgb += min(waterGlint, vec3(1.6));
+    // drops ringing on it while it rains (src/gfx/light.js gfxRipples)
+    if (uRain > 0.0) {
+      highp vec2 waterDrop = waterP * 1.3;
+      float waterRing = gfxRipples(waterDrop) * gfxShow(1.3, gfxFootprint(waterDrop));
+      gl_FragColor.rgb += linearToOutputTexel(vec4(mix(uSkyHorizon, vec3(1.0), 0.3), 1.0)).rgb * waterRing * uRain * 0.35;
+    }
     gl_FragColor.a = max(gl_FragColor.a, min(dot(waterGlint, vec3(0.33)), 1.0));
   }`;
 
-const UNIFORMS = ['uTime', 'uSunDir', 'uSunColor', 'uSkyHorizon', 'uSkyZenith', 'uSkyGlow', 'uNight', 'uUnder', 'uCloudAmount'];
+const UNIFORMS = ['uTime', 'uSunDir', 'uSunColor', 'uSkyHorizon', 'uSkyZenith', 'uSkyGlow', 'uNight', 'uUnder', 'uCloudAmount', 'uRain'];
 
 export function waterLook(material, kind) {
   const look = WATER[kind];
