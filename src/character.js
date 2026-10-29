@@ -4,6 +4,7 @@ import { DEFAULT_LOOK } from '../shared/looks.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { knobs, onApply } from './gfx/quality.js';
+import { detail } from './gfx/detail.js';
 
 // ---------- Character model ----------
 // A little farmer built from primitives, used for the local player, for
@@ -89,18 +90,23 @@ const noShadow = (m) => ((m.userData.noShadow = true), m);
 
 // ---------- Cloth ----------
 // Little tiling pictures for the cloth, drawn once. Most are shades of gray
-// that darken the material's own color (a check, a knit, a weave); stripes
-// and dots are drawn in the color they go with (one picture per color).
-// Strong enough to read from the play camera, past the light and the tone
-// mapping (a plaid's check, a knit's ribs, a stripe).
+// that darken the material's own color (a weave, a twill, a knit, a check);
+// stripes and dots are drawn in the color they go with (one picture per
+// color). Thread by thread, each thread its own shade (slubs), so the weave
+// reads up close; the knit's stitches and the plaid's check big enough to
+// read from the play camera, past the light and the tone mapping. The plain
+// weave, the twill and the knit span four of a shape's tiles (repeat), so a
+// thread keeps its size and the picture its detail. The rest of the look
+// (folds, seams, the worn knees) is the 'garment' detail (src/gfx/detail.js).
 const textures = new Map();
-function texture(key, size, draw, srgb = false) {
+function texture(key, size, draw, srgb = false, repeat = 1) {
   if (!textures.has(key)) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     draw(canvas.getContext('2d'), size);
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeat, repeat);
     tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     tex.anisotropy = 4;
     textures.set(key, tex);
@@ -109,88 +115,128 @@ function texture(key, size, draw, srgb = false) {
 }
 const gray = (v) => `rgb(${v},${v},${v})`;
 const css = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
-
-// a fine plain weave
-const clothTex = () => texture('cloth', 16, (g, n) => {
+// the same threads every time (a picture is drawn once, but alike on every page)
+const seeded = (seed) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+// a gray picture from shade(x, y) (0..255), pixel by pixel
+function shades(g, n, shade) {
+  const img = g.createImageData(n, n);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    g.fillStyle = gray((x + y) % 2 ? 250 : 222);
-    g.fillRect(x, y, 1, 1);
+    const v = Math.max(0, Math.min(255, Math.round(shade(x, y))));
+    const i = (y * n + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
   }
+  g.putImageData(img, 0, 0);
+}
+// each of n threads its own shade, now and then a slub (a thicker, paler run)
+const threads = (n, rand, base, spread) => Array.from({ length: n }, () => base + (rand() - 0.5) * spread + (rand() < 0.12 ? spread * 0.8 : 0));
+
+// a plain weave, two pixels a thread: over, under
+const clothTex = () => texture('cloth', 64, (g, n) => {
+  const rand = seeded(7);
+  const warp = threads(n / 2, rand, 246, 14);
+  const weft = threads(n / 2, rand, 224, 18);
+  shades(g, n, (x, y) => {
+    const over = ((x >> 1) + (y >> 1)) % 2;
+    const edge = (over ? x : y) % 2 ? 0.94 : 1; // (each thread rounded)
+    return (over ? warp[x >> 1] : weft[y >> 1]) * edge + (rand() - 0.5) * 6;
+  });
+}, false, 0.25);
+// denim's diagonal twill, the blue warp heathered up and down, paler streaks
+const twillTex = () => texture('twill', 64, (g, n) => {
+  const rand = seeded(11);
+  const warp = threads(n / 2, rand, 200, 26);
+  const fade = Array.from({ length: n }, (_, x) => 1 + 0.08 * Math.sin(x * 0.4 + 1.3) + (rand() < 0.08 ? 0.12 : 0));
+  shades(g, n, (x, y) => {
+    const over = ((x >> 1) + (y >> 1)) % 3 < 2;
+    return (over ? warp[x >> 1] * fade[x] : 250) + (rand() - 0.5) * 8;
+  });
+}, false, 0.25);
+// knitted stitches: columns of Vs, a dark ridge between, a row's edge faintly darker
+const knitTex = () => texture('knit', 64, (g, n) => {
+  const rand = seeded(5);
+  const yarn = threads(n / 8, rand, 240, 16);
+  shades(g, n, (x, y) => {
+    const lx = Math.abs((x % 8) - 3.5) / 4; // (0 the column's middle, 0.9 its edge)
+    const ly = (y % 8) / 8;
+    const leg = 1 - Math.min(1, Math.abs(lx - 0.3 - (0.5 - ly) * 0.45) * 3.2);
+    const ridge = lx > 0.8 ? 0.72 : 1;
+    return (150 + (yarn[x >> 3] - 150) * leg) * ridge * (y % 8 === 0 ? 0.9 : 1) + (rand() - 0.5) * 8;
+  });
+}, false, 0.25);
+// a buffalo check: bands across and down, darker where they cross, fine
+// lines between, and a twill's diagonal through it all
+const plaidTex = () => texture('plaid', 128, (g, n) => {
+  const rand = seeded(3);
+  shades(g, n, (x, y) => {
+    const band = (x < n / 2 ? 0.62 : 1) * (y < n / 2 ? 0.62 : 1);
+    const line = Math.abs(x - n * 0.74) < 3 || Math.abs(y - n * 0.74) < 3 ? 0.78 : 1;
+    const twill = ((x >> 1) + (y >> 1)) % 4 < 2 ? 0.93 : 1;
+    return 255 * band * line * twill + (rand() - 0.5) * 8;
+  });
 });
-// denim's diagonal twill
-const twillTex = () => texture('twill', 16, (g, n) => {
-  g.fillStyle = gray(252);
-  g.fillRect(0, 0, n, n);
-  g.fillStyle = gray(196);
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if ((x + y) % 4 < 2) g.fillRect(x, y, 1, 1);
-});
-// knitted ribs, running up and down
-const knitTex = () => texture('knit', 16, (g, n) => {
-  for (let x = 0; x < n; x++) {
-    g.fillStyle = gray(x % 4 === 0 ? 162 : x % 4 === 2 ? 228 : 255);
-    g.fillRect(x, 0, 1, n);
-  }
-  g.fillStyle = 'rgba(0,0,0,0.1)';
-  for (let y = 0; y < n; y += 4) g.fillRect(0, y, n, 1);
-});
-// a buffalo check: bands across and down, darker where they cross, and fine lines between
-const plaidTex = () => texture('plaid', 64, (g, n) => {
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, n, n);
-  g.fillStyle = 'rgba(0,0,0,0.38)';
-  g.fillRect(0, 0, n / 2, n);
-  g.fillRect(0, 0, n, n / 2);
-  g.fillStyle = 'rgba(0,0,0,0.22)';
-  g.fillRect(n * 0.72, 0, 3, n);
-  g.fillRect(0, n * 0.72, n, 3);
-});
-// woven straw, criss-cross
-const strawTex = () => texture('straw', 32, (g, n) => {
-  g.fillStyle = gray(240);
-  g.fillRect(0, 0, n, n);
-  for (let i = 0; i < n; i += 4) {
-    g.fillStyle = gray(200);
-    for (let k = 0; k < n; k++) g.fillRect((i + k) % n, k, 1, 1);
-    g.fillStyle = gray(255);
-    for (let k = 0; k < n; k++) g.fillRect((i + 2 - k + n * 2) % n, k, 1, 1);
-  }
+// woven straw, criss-cross, each strand its own shade, fibres along it
+const strawTex = () => texture('straw', 64, (g, n) => {
+  const rand = seeded(13);
+  const strand = threads(n / 8, rand, 236, 26);
+  shades(g, n, (x, y) => {
+    const a = (x + y) % n;
+    const b = (x - y + n) % n;
+    const up = ((a >> 3) + (b >> 3)) % 2;
+    const s = up ? strand[a >> 3] : strand[b >> 3] * 0.93;
+    const edge = (up ? a : b) % 8 === 0 ? 0.8 : 1;
+    return s * edge + (rand() - 0.5) * 18;
+  });
 });
 const CREAM = 0xfaf5ea;
-const stripesTex = (color) => texture(`stripes:${color}`, 16, (g, n) => {
+// a stripe and a cream one, the threads faintly through them
+const threadsOver = (g, n, rand) => {
+  for (let y = 0; y < n; y++) {
+    g.fillStyle = `rgba(0,0,0,${(0.03 + rand() * 0.06).toFixed(3)})`;
+    g.fillRect(0, y, n, 1);
+  }
+  g.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let x = 0; x < n; x += 2) g.fillRect(x, 0, 1, n);
+};
+const stripesTex = (color) => texture(`stripes:${color}`, 64, (g, n) => {
   g.fillStyle = css(color);
   g.fillRect(0, 0, n, n);
   g.fillStyle = css(CREAM);
   g.fillRect(0, n / 2, n, n / 2);
+  threadsOver(g, n, seeded(17));
 }, true);
-const dotsTex = (color) => texture(`dots:${color}`, 32, (g, n) => {
+const dotsTex = (color) => texture(`dots:${color}`, 64, (g, n) => {
   g.fillStyle = css(color);
   g.fillRect(0, 0, n, n);
   g.fillStyle = css(CREAM);
-  for (const [x, y] of [[8, 8], [24, 24]]) {
+  for (const [x, y] of [[16, 16], [48, 48]]) {
     g.beginPath();
-    g.arc(x, y, 4, 0, Math.PI * 2);
+    g.arc(x, y, 8, 0, Math.PI * 2);
     g.fill();
   }
+  threadsOver(g, n, seeded(19));
 }, true);
 
 // ---------- Materials every farmer shares ----------
+// (each its painted look, src/gfx/detail.js: leather's grain, the straw's
+// braid, wood grain on a handle, brushed steel, brass)
 const ink = noShadow(mat(0x2b1d16, { roughness: 0.35 })); // eyes, the smile
 const shine = noShadow(new THREE.MeshBasicMaterial({ color: 0xffffff })); // the glint in the eyes
-const brass = noShadow(mat(0xd9a441, { metalness: 0.55, roughness: 0.35 }));
-const leather = mat(0x4a3020, { roughness: 0.8 });
-const soleMat = mat(0x2e2520, { roughness: 0.9 });
-const whiteMat = mat(0xf4f0e6, { roughness: 0.85 });
-const strawMat = mat(0xe8c66a, { roughness: 0.95, map: strawTex() });
-const paleStrawMat = mat(0xf5e2b0, { roughness: 0.95, map: strawTex() });
+const brass = detail(noShadow(mat(0xd9a441, { metalness: 0.55, roughness: 0.35 })), 'tool');
+const leather = detail(mat(0x4a3020, { roughness: 0.8 }), 'leather');
+const soleMat = detail(mat(0x2e2520, { roughness: 0.9 }), 'leather');
+const whiteMat = detail(mat(0xf4f0e6, { roughness: 0.85 }), 'garment');
+const strawMat = detail(mat(0xe8c66a, { roughness: 0.95, map: strawTex() }), 'straw');
+const paleStrawMat = detail(mat(0xf5e2b0, { roughness: 0.95, map: strawTex() }), 'straw');
 const leafMat = mat(0x4f8f3a, { roughness: 0.8 });
 const yellowMat = noShadow(mat(0xf2c12e, { roughness: 0.6 }));
 const ribbonMat = noShadow(mat(0xc0392b));
 const frameMat = noShadow(mat(0x3a2a20, { roughness: 0.45 }));
 const lensMat = noShadow(mat(0x1c2230, { roughness: 0.12, metalness: 0.4 }));
-const handleMat = mat(0x8b5a2b);
-const gripMat = mat(0x6e3f1e); // (the bow's)
-const bladeMat = mat(0x9a9a9a, { metalness: 0.6, roughness: 0.4 });
-const edgeMat = mat(0xdfe5ec, { metalness: 0.7, roughness: 0.3 });
+const handleMat = detail(mat(0x8b5a2b), 'tool');
+const gripMat = detail(mat(0x6e3f1e), 'leather'); // (the bow's)
+const bladeMat = detail(mat(0x9a9a9a, { metalness: 0.6, roughness: 0.4 }), 'tool');
+const edgeMat = detail(mat(0xdfe5ec, { metalness: 0.7, roughness: 0.3 }), 'tool');
 
 const WHITE = new THREE.Color(0xffffff);
 const tint = (hex, toward, k) => new THREE.Color(hex).lerp(toward instanceof THREE.Color ? toward : new THREE.Color(toward), k);
@@ -418,10 +464,10 @@ const TOP_TILE = { shirt: 0.05, tee: 0.05, plaid: 0.22, stripes: 0.09, sweater: 
 export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LOOK } = {}) {
   // Their own materials, repainted (not remade) for a new look or color
   const own = {
-    skin: mat(0xffcc99, { roughness: 0.7 }),
+    skin: detail(mat(0xffcc99, { roughness: 0.7 }), 'skin'),
     blush: noShadow(mat(0xff9f8a, { roughness: 0.7 })),
     freckle: noShadow(mat(0xb0704a, { roughness: 0.7 })),
-    hair: mat(0x5a3a22, { roughness: 0.65 }),
+    hair: detail(mat(0x5a3a22, { roughness: 0.65 }), 'hair'),
     shirt: mat(0xffffff, { roughness: 0.85, map: clothTex() }),
     trim: mat(0xffffff, { roughness: 0.85, map: clothTex() }),
     bottoms: mat(0xffffff, { roughness: 0.9, map: twillTex() }),
@@ -433,7 +479,8 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     apron: mat(0xffffff, { roughness: 0.9, map: clothTex() }),
     apronTrim: mat(0xffffff, { roughness: 0.9, map: clothTex() }),
   };
-  const rod = { pole: mat(0xb0743a) };
+  for (const k of ['shirt', 'trim', 'bottoms', 'bottomsTrim', 'hat', 'hatTrim', 'neck', 'apron', 'apronTrim']) detail(own[k], 'garment');
+  const rod = { pole: detail(mat(0xb0743a), 'tool') };
 
   const root = new THREE.Group(); // positioned at the collision center
 
@@ -482,6 +529,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     own.bottomsTrim.color.copy(tint(L.bottomsColor, WHITE, 0.28));
     own.shoe.color.setHex(L.shoesColor);
     own.shoe.roughness = { wellies: 0.3, sneakers: 0.85 }[L.shoes] ?? 0.7;
+    detail(own.shoe, { wellies: 'horn', sneakers: 'garment' }[L.shoes] ?? 'leather'); // (rubber's sheen, canvas, leather)
     own.hat.map = L.hat === 'bandana' ? dotsTex(L.hatColor) : L.hat === 'beanie' ? knitTex() : clothTex();
     own.hat.color.set(L.hat === 'bandana' ? 0xffffff : L.hatColor);
     own.hat.roughness = L.hat === 'souwester' ? 0.35 : 0.85; // (oilskin)
@@ -849,13 +897,13 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
   // a crossguard, a grip: setSword makes it wood, steel or silver), and a
   // mallet with a padded stone head
   const sword = new THREE.Group();
-  const swordMat = mat(0xd9a066);
+  const swordMat = detail(mat(0xd9a066), 'tool');
   sword.add(part(new THREE.BoxGeometry(0.05, 0.62, 0.11), swordMat, 0, 0.5, 0));
   sword.add(part(new THREE.BoxGeometry(0.07, 0.05, 0.3), handleMat, 0, 0.18, 0));
   sword.add(part(new THREE.CylinderGeometry(0.03, 0.03, 0.2, 6), handleMat, 0, 0.06, 0));
   const mallet = new THREE.Group();
-  const stoneMat = mat(0x9c9a92);
-  const padMat = mat(0xe8c98f);
+  const stoneMat = detail(mat(0x9c9a92), 'tool');
+  const padMat = detail(mat(0xe8c98f), 'leather');
   mallet.add(part(new THREE.CylinderGeometry(0.035, 0.04, 0.75, 6), handleMat, 0, 0.25, 0));
   mallet.add(part(new THREE.BoxGeometry(0.2, 0.2, 0.32), stoneMat, 0, 0.64, 0));
   for (const side of [-1, 1]) mallet.add(part(new THREE.BoxGeometry(0.22, 0.22, 0.05), padMat, 0, 0.64, side * 0.17)); // (the padding)
@@ -900,7 +948,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
   // a swing tips it up to pour (setCan: the plain can's green, or the big
   // one's steel)
   const can = new THREE.Group();
-  const canMat = mat(0x5f9a63, { metalness: 0.4, roughness: 0.5 });
+  const canMat = detail(mat(0x5f9a63, { metalness: 0.4, roughness: 0.5 }), 'tool'); // (a dull sheen on the paint)
   can.add(part(new THREE.CylinderGeometry(0.12, 0.13, 0.24, 10), canMat, 0, -0.19, 0.03));
   const spout = part(new THREE.CylinderGeometry(0.02, 0.03, 0.3, 6), canMat, 0, -0.15, 0.2);
   spout.rotation.x = 1;
