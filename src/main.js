@@ -59,7 +59,7 @@ import { C, S, STATEF, PC, PS } from '../shared/protocol.js';
 import { STARTER_KIT, GIANT, UNMADE, unmake, SKILLS, DOUBLE_JUMP, GLIDE, BENCH_LEVELS, PEN_LEVELS, DISHES, MACHINES, AQUARIUM } from '../shared/balance.js';
 import { isMachine, loadFor, collectFor, isReady, fishIn, isFish, TANK } from '../shared/machines.js';
 import { SPOT_KINDS, RARE, TREE, ROCK, WEAPONS, SWORDS, SAFE_CIRCLE, mostWood, mostStone, woodFor, stoneFor, steelFor, GROUND_STAND_Y, FARM_CHEST, PIECES, MAX_PIECES, mostPieces, keptClear, chestHasRoom, pieceTiles, inHouseField, nextSite, siteMap, movedKey } from '../shared/level.js';
-import { CROPS, createCropView, BEAN_LEDGES } from './crops.js';
+import { CROPS, createCropView, BEAN_LEDGES, soilGeometry, SOIL_TOP } from './crops.js';
 import { createDayNight, DAY_LENGTH_SECONDS } from './daynight.js';
 import { createSeasons } from './seasons.js';
 import { createWeather } from './weather.js';
@@ -527,22 +527,30 @@ function letOutAnimal(kind) {
 const farmTiles = new Map(); // "gridX,gridZ" -> tilled tile mesh
 const soilLife = () => ((SOIL_BARE_HOURS[0] + Math.random() * (SOIL_BARE_HOURS[1] - SOIL_BARE_HOURS[0])) * DAY_LENGTH_SECONDS) / 24;
 
-// Tilled soil: a dark bed with three furrows ridged across it
-const soilBedGeo = new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.06, TILE_SIZE * 0.92);
-const soilRidgeGeo = new THREE.CylinderGeometry(0.075, 0.075, TILE_SIZE * 0.84, 6, 1)
-  .rotateZ(Math.PI / 2)
-  .scale(1, 0.45, 1);
-// (painted clods, a damp speckle and grit on all of them: src/gfx/detail.js)
-const soilMat = detail(new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 }), 'soil');
-const soilRidgeMat = detail(new THREE.MeshStandardMaterial({ color: 0x6e4826, roughness: 1, flatShading: true }), 'soil');
-// ...darker when watered, till its crop is picked
-const wetSoilMat = detail(new THREE.MeshStandardMaterial({ color: 0x33200f, roughness: 0.95 }), 'soil');
-const wetRidgeMat = detail(new THREE.MeshStandardMaterial({ color: 0x41291a, roughness: 0.95, flatShading: true }), 'soil');
+// Tilled soil: dark earth in three ridges, the whole tile wide, its open
+// sides (no tilled tile beside them) sloping down into the grass (crops.js
+// soilGeometry: one shared geometry for each set of open sides)
+// (painted clods, a damp speckle and grit: src/gfx/detail.js; the furrows'
+// light and dark and the grassy edge in the geometry's colours)
+const soilMat = detail(new THREE.MeshStandardMaterial({ color: 0x4a311f, roughness: 1, vertexColors: true }), 'soil');
+// ...darker and cooler when watered, with a damp sheen, till its crop is picked
+const wetSoilMat = detail(new THREE.MeshStandardMaterial({ color: 0x261a13, roughness: 0.45, vertexColors: true }), 'soil');
 function setWet(key, wet) {
   const mesh = farmTiles.get(key);
-  if (!mesh) return;
-  mesh.material = wet ? wetSoilMat : soilMat;
-  for (const ridge of mesh.children) ridge.material = wet ? wetRidgeMat : soilRidgeMat;
+  if (mesh) mesh.material = wet ? wetSoilMat : soilMat;
+}
+// the sides of a tilled tile with no tilled tile beside them (soilGeometry's
+// bits: 1 west, 2 east, 4 north, 8 south), and its geometry and its
+// neighbours' picked again (when it is tilled, or goes back to grass)
+const SOIL_SIDES = [[-1, 0, 1], [1, 0, 2], [0, -1, 4], [0, 1, 8]];
+function soilEdges(gx, gz) {
+  for (const [dx, dz] of [[0, 0], ...SOIL_SIDES]) {
+    const mesh = farmTiles.get(`${gx + dx},${gz + dz}`);
+    if (!mesh) continue;
+    let open = 0;
+    for (const [sx, sz, bit] of SOIL_SIDES) if (!farmTiles.has(`${gx + dx + sx},${gz + dz + sz}`)) open |= bit;
+    mesh.geometry = soilGeometry(open);
+  }
 }
 
 // bare: game seconds it has lain bare already, life: how long it may (soil tilled before we came)
@@ -551,19 +559,15 @@ function tillTileAt(x, z, bare = 0, life = soilLife()) {
   if (farmTiles.has(key)) return false; // already tilled
 
   const [gx, gz] = key.split(',').map(Number);
-  const mesh = new THREE.Mesh(soilBedGeo, soilMat);
-  mesh.position.set(gx * TILE_SIZE, 0.03, gz * TILE_SIZE);
+  const mesh = new THREE.Mesh(soilGeometry(), soilMat);
+  mesh.position.set(gx * TILE_SIZE, 0, gz * TILE_SIZE);
+  mesh.scale.setScalar(TILE_SIZE);
   mesh.receiveShadow = true;
   mesh.userData.bare = bare;
   mesh.userData.life = life;
-  for (const rz of [-0.27, 0, 0.27]) {
-    const ridge = new THREE.Mesh(soilRidgeGeo, soilRidgeMat);
-    ridge.position.set(0, 0.03, rz * TILE_SIZE);
-    ridge.receiveShadow = true;
-    mesh.add(ridge);
-  }
   scene.add(mesh);
   farmTiles.set(key, mesh);
+  soilEdges(gx, gz);
   worlds.home.clearFoliageOnTile(key);
   return true;
 }
@@ -577,7 +581,7 @@ function plantAt(x, z, cropId, age = 0) {
   if (!farmTiles.has(key) || crops.has(key)) return false;
 
   const view = createCropView(cropId);
-  view.group.position.copy(farmTiles.get(key).position).setY(0.06); // on top of the soil
+  view.group.position.copy(farmTiles.get(key).position).setY(SOIL_TOP - 0.01); // on the soil's middle ridge
   view.group.rotation.y = Math.random() * Math.PI * 2;
   if (cropId === 'sunflower' || CROPS[cropId].climb) view.group.rotation.y = 0; // keep the bloom facing the camera (and a beanstalk's leaves where its ledges are)
   scene.add(view.group);
@@ -595,6 +599,7 @@ function untillTile(key) {
   if (!mesh) return;
   scene.remove(mesh);
   farmTiles.delete(key);
+  soilEdges(...key.split(',').map(Number)); // (its neighbours' sides open)
 }
 
 // A ripe crop's ledges (a beanstalk's leaves, a platform plant's top) out of the world
@@ -770,6 +775,11 @@ function landOnPlant(box) {
 }
 
 function updateCrops(dt, growDt, t) {
+  // the wind (src/gfx/uniforms.js: its clock, a storm's wind, else a breeze from the west)
+  const windT = gfx.U.uTime.value;
+  const windLen = gfx.U.uWind.value.length();
+  const windX = windLen > 0.1 ? gfx.U.uWind.value.x / windLen : 0.8;
+  const windZ = windLen > 0.1 ? gfx.U.uWind.value.y / windLen : 0.6;
   // Bare soil goes back to grass in a while (on a farm with helpers the room says when: UNTILLED)
   if (!farmNet) {
     for (const [key, mesh] of farmTiles) {
@@ -789,11 +799,19 @@ function updateCrops(dt, growDt, t) {
         if (CROPS[crop.cropId].climb || CROPS[crop.cropId].platform) crop.ledges = stalkLedges(crop);
       }
     }
-    // Ripe crops pop once, then sway gently so they're easy to spot
+    // Ripe crops pop once; all of them sway gently in the wind (a wave
+    // across the field on the grass's clock, harder in a storm), ripe ones
+    // a little more so they're easy to spot; what is a ledge barely
     crop.pop += (0 - crop.pop) * damp(6, dt);
     const s = 1 + Math.sin(crop.pop * Math.PI) * 0.25;
-    crop.view.group.scale.set(s, s, s);
-    crop.view.group.rotation.z = crop.ripe ? Math.sin(t * 2 + crop.view.group.position.x) * 0.04 : 0;
+    const { group } = crop.view;
+    group.scale.set(s, s, s);
+    const { x, z } = group.position;
+    const still = CROPS[crop.cropId].climb || CROPS[crop.cropId].platform ? 0.15 : 1;
+    const lean = still * (crop.ripe ? 0.05 : 0.035) * (1 + Math.min(1, windLen / 6) * 1.5);
+    const sway = 0.3 + Math.sin(windT * 1.7 - x * 0.55 - z * 0.35) + 0.35 * Math.sin(windT * 3.1 + x * 1.3 + z * 0.9);
+    group.rotation.z = -sway * lean * windX;
+    group.rotation.x = sway * lean * windZ;
   }
 }
 
@@ -5870,7 +5888,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; }, field: { till: tillTileAt, plant: plantAt, water: markWatered, uproot: removeCrop, untill: untillTile } };
 }
 
 loadGame();

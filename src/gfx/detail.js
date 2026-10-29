@@ -28,11 +28,13 @@ import { NOISE, VORONOI } from './noise.js';
 //            tint, pale lichen on what faces up, moss on the shaded
 //            underside and low down, near the ground
 //   soil     clods (Voronoi cells) with dark gaps, a damp darker speckle,
-//            pale grit
+//            pale grit; wet (a glossy one, roughness under 0.8): a cool
+//            sheen at a grazing look, the grit glinting
 //   leaf     a soft blotchy canopy: leafy clumps with dark between, lighter
 //            and warmer dapples on top (continuous over a round blob)
-//   crop     leaves: a pale midrib and side veins, lighter to the tip;
-//            fruit: a soft blush, lighter on top, fine speckle
+//   crop     leaves: a pale midrib and side veins, lighter to the tip, a
+//            warm sunlit top and a dark underside; fruit: a soft blush,
+//            lighter on top, darker beneath, fine speckle
 //   reed     streaks along the blade, darker nodes, paler toward the tip
 //   fern     a frond: a dark midrib and leaflets slanting off it
 // and on what lives and what it holds (farmers, animals, mounts, tools;
@@ -401,6 +403,14 @@ const FRAGMENT_NATURE = /* glsl */ `
     float sDamp = smoothstep(0.58, 0.8, gfxNoise(dUV * 5.0 + dOff.yx)) * 0.6 + smoothstep(0.65, 0.85, gfxNoise(dUV * 17.0 + dOff)) * 0.4 * gfxShow(17.0, dPx);
     float sGrit = smoothstep(0.84, 0.94, gfxNoise(dUV * 26.0 + dOff.yx)) * gfxShow(26.0, dPx);
     dK *= mix(0.97, (0.88 + 0.24 * sc.y) * (0.88 + 0.16 * smoothstep(0.0, 0.25, sc.x)), sShow) * (1.0 - 0.35 * sGap) * (1.0 - 0.32 * sDamp) * (1.0 + 0.5 * sGrit);
+    #if defined(STANDARD) && !defined(FLAT_SHADED)
+      // wet (watered soil: a glossy material): the sky's cool sheen, more at
+      // a grazing look, and its grit glinting
+      float sWet = 1.0 - smoothstep(0.5, 0.8, roughness);
+      float sFres = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
+      dCol = mix(dCol, vec3(0.11, 0.12, 0.135), sWet * (0.04 + 0.3 * sFres));
+      dK *= 1.0 + sWet * 1.2 * sGrit;
+    #endif
   } else if (dLook > 14.5 && dLook < 15.5) {
     // leaf: leafy clumps (Voronoi cells) with dark between, a soft mottle,
     // lighter and warmer dapples on top
@@ -429,6 +439,13 @@ const FRAGMENT_NATURE = /* glsl */ `
     dK *= (0.9 + 0.2 * dSeed) * mix(0.86, 1.1, cTip) * (1.0 + (gfxNoise(dUV * 12.0 + dOff) - 0.5) * 0.22 * gfxShow(12.0, dPx)) * (1.0 - 0.18 * cSpeck);
     dCol = mix(dCol, dCol * vec3(1.25, 1.3, 0.8) + 0.015, cVein * 0.55);
     dCol *= mix(vec3(1.0), vec3(1.06, 0.9, 0.86), (1.0 - cGreen) * (1.0 - cTip) * 0.6);
+    #ifndef FLAT_SHADED
+      // a leaf's sunlit top warmer and lighter, its underside dark (by the
+      // smooth normal, the world's way up); a fruit a little darker beneath
+      float cUp = dot(normalize(vNormal), normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
+      dK *= mix(mix(0.8, 1.04, smoothstep(-0.6, 0.4, cUp)), mix(0.56, 1.1, smoothstep(-0.45, 0.65, cUp)), cGreen);
+      dCol *= mix(vec3(1.0), vec3(1.07, 1.05, 0.84), smoothstep(0.35, 0.95, cUp) * cGreen * 0.8);
+    #endif
   } else if (dLook > 16.5) {
     // reed, fern: streaks along the blade, darker low down, paler to the
     // tip; a reed's nodes and its tip dried warmer; a frond's dark midrib

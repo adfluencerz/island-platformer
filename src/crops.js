@@ -10,33 +10,36 @@ import { BEANSTALK, MORE_CROPS, PLATFORM_PLANTS } from '../shared/balance.js';
 // from primitives with shared geometry/materials, so removing a crop from the
 // scene is enough (nothing per-crop to dispose).
 
-// (painted detail, src/gfx/detail.js: a leaf's veins and a fruit's blush and speckle)
-const mat = (color, look = 'crop') => detail(new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true }), look);
-const leafMat = mat(0x4f9e3c);
-const darkLeafMat = mat(0x3f8a3a);
+// (painted detail, src/gfx/detail.js: a leaf's veins, its sunlit top and
+// dark underside, a fruit's blush and speckle; fruit glossier: `fruit`)
+const mat = (color, look = 'crop', roughness = 0.8) => detail(new THREE.MeshStandardMaterial({ color, roughness }), look);
+const fruit = (color) => mat(color, 'crop', 0.42);
+const leafMat = mat(0x52a53a);
+const darkLeafMat = mat(0x2f7d2e);
 const stemMat = mat(0x5f9e3a);
-const seedMat = mat(0x3b2412, 'soil');
+const sproutMat = mat(0x78c445); // (a seedling's fresh green, to read on the dark earth)
+const seedMat = mat(0xd8b67a); // (pale seeds on the dark earth)
 
-const leafGeo = new THREE.SphereGeometry(1, 6, 4); // scaled per use into flat leaves
-const coneGeo = new THREE.ConeGeometry(1, 1, 5);
-const seedGeo = new THREE.SphereGeometry(0.035, 5, 4);
+const leafGeo = new THREE.SphereGeometry(1, 8, 5); // scaled per use into flat leaves
+const coneGeo = new THREE.ConeGeometry(1, 1, 6);
+const seedGeo = new THREE.SphereGeometry(0.04, 6, 4);
 const sproutStemGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.14, 5);
 
 const turnipBulbGeo = new THREE.SphereGeometry(0.17, 8, 6);
 const turnipTopGeo = new THREE.SphereGeometry(0.175, 8, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
-const turnipBulbMat = mat(0xf2eef5);
-const turnipTopMat = mat(0x9b59b6);
+const turnipBulbMat = fruit(0xf4eef2);
+const turnipTopMat = fruit(0xa040c4);
 const goldBulbMat = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.35, metalness: 0.6, emissive: 0x6a4a00, flatShading: true });
 const goldTopMat = new THREE.MeshStandardMaterial({ color: 0xe0a800, roughness: 0.35, metalness: 0.6, emissive: 0x4a3200, flatShading: true });
 const carrotRootGeo = new THREE.CylinderGeometry(0.1, 0.07, 0.12, 7);
-const carrotMat = mat(0xff8c1a);
+const carrotMat = fruit(0xff7a0e);
 const sunflowerStemGeo = new THREE.CylinderGeometry(0.035, 0.05, 1.3, 6);
 const sunflowerDiscGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.06, 10);
-const petalMat = mat(0xffd23f);
+const petalMat = mat(0xffcc1e);
 const discMat = mat(0x6b3f17);
 const flaxStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1.0, 5);
 const bellGeo = new THREE.ConeGeometry(0.09, 0.16, 6);
-const bellMat = mat(0x6f8fd6);
+const bellMat = fruit(0x5f86e6);
 
 function mesh(geo, material, [x, y, z] = [0, 0, 0], [sx, sy, sz] = [1, 1, 1]) {
   const m = new THREE.Mesh(geo, material);
@@ -62,20 +65,20 @@ function buildTurnip(bulbMat = turnipBulbMat, topMat = turnipTopMat) {
   const g = new THREE.Group();
   g.add(mesh(turnipBulbGeo, bulbMat, [0, 0.08, 0], [1, 0.85, 1]));
   g.add(mesh(turnipTopGeo, topMat, [0, 0.085, 0], [1, 0.85, 1]));
-  for (let i = 0; i < 3; i++) g.add(leaf((i / 3) * Math.PI * 2, { y: 0.2, length: 0.2, lean: 0.4 }));
+  for (let i = 0; i < 5; i++) g.add(leaf((i / 5) * Math.PI * 2, { y: 0.18, length: 0.26, width: 0.11, lean: 0.55 + 0.25 * (i % 2), material: i % 2 ? darkLeafMat : leafMat }));
   return g;
 }
 
 function buildCarrot() {
   const g = new THREE.Group();
   g.add(mesh(carrotRootGeo, carrotMat, [0, 0.04, 0]));
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const frond = new THREE.Group();
     frond.position.y = 0.1;
-    frond.rotation.set(0, (i / 5) * Math.PI * 2, 0);
-    const c = mesh(coneGeo, i % 2 ? leafMat : darkLeafMat, [0, 0.2, 0], [0.035, 0.4, 0.035]);
+    frond.rotation.set(0, (i / 7) * Math.PI * 2, 0);
+    const c = mesh(coneGeo, i % 2 ? leafMat : darkLeafMat, [0, 0.24, 0], [0.06, 0.48, 0.04]);
     const tilt = new THREE.Group();
-    tilt.rotation.x = 0.35;
+    tilt.rotation.x = 0.3 + 0.2 * (i % 2);
     tilt.add(c);
     frond.add(tilt);
     g.add(frond);
@@ -135,7 +138,7 @@ export const BEAN_LEDGES = [
 export const BEAN_CROWN = BEAN_LEDGES.at(-1);
 const beanStalkMat = mat(0x4f8f2e);
 const beanLeafMat = mat(0x7ccf4a);
-const podMat = mat(0x8fd46a);
+const podMat = fruit(0x8fd46a);
 const beanLeafGeo = new THREE.SphereGeometry(0.5, 8, 5);
 const podGeo = new THREE.CapsuleGeometry(0.06, 0.22, 3, 6);
 
@@ -176,7 +179,7 @@ function buildBeanstalk() {
 // A tomato plant: a stake with the plant tied up it, leaves all the way up,
 // and its tomatoes (`userData.fruit`: only on it when it's ripe)
 const stakeMat = mat(0x8a5a2e, 'wood');
-const tomatoMat = mat(0xe0402a);
+const tomatoMat = fruit(0xec2f1c);
 const stakeGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.95, 5);
 const tomatoGeo = new THREE.SphereGeometry(0.075, 8, 6);
 
@@ -184,7 +187,7 @@ function buildTomato() {
   const g = new THREE.Group();
   g.add(mesh(stakeGeo, stakeMat, [0.06, 0.47, 0]));
   g.add(mesh(flaxStemGeo, stemMat, [0, 0.4, 0], [1.2, 0.8, 1.2]));
-  for (let i = 0; i < 6; i++) g.add(leaf(i * 2.1, { y: 0.15 + i * 0.12, length: 0.16, width: 0.08, lean: 1.0, material: i % 2 ? leafMat : darkLeafMat }));
+  for (let i = 0; i < 6; i++) g.add(leaf(i * 2.1, { y: 0.15 + i * 0.12, length: 0.19, width: 0.1, lean: 1.0, material: i % 2 ? leafMat : darkLeafMat }));
   const fruit = new THREE.Group();
   for (const [x, y, z] of [[0.13, 0.32, 0.06], [-0.1, 0.45, 0.1], [0.08, 0.6, -0.11], [-0.12, 0.26, -0.08], [0.02, 0.72, 0.12]]) {
     fruit.add(mesh(tomatoGeo, tomatoMat, [x, y, z], [1, 0.9, 1]));
@@ -195,7 +198,7 @@ function buildTomato() {
 }
 
 // A pumpkin: a fat ribbed orange ball on its vine, big leaves round it
-const pumpkinMat = mat(0xe8862a);
+const pumpkinMat = fruit(0xf47a14);
 const pumpkinStalkMat = mat(0x6b5a2a);
 const pumpkinRibGeo = new THREE.SphereGeometry(0.17, 8, 6);
 
@@ -208,14 +211,14 @@ function buildPumpkin() {
     g.add(rib);
   }
   g.add(mesh(sproutStemGeo, pumpkinStalkMat, [0, 0.36, 0], [2.5, 0.8, 2.5]));
-  for (let i = 0; i < 4; i++) g.add(leaf(i * 1.6 + 0.4, { y: 0.04, length: 0.24, width: 0.16, lean: 1.35, material: i % 2 ? leafMat : darkLeafMat }));
+  for (let i = 0; i < 4; i++) g.add(leaf(i * 1.6 + 0.4, { y: 0.04, length: 0.3, width: 0.2, lean: 1.3, material: i % 2 ? leafMat : darkLeafMat }));
   return g;
 }
 
 // A berry bush: a round leafy bush, red berries on it (`userData.fruit`)
 const bushMat = mat(0x3f8a3a, 'leaf');
 const bushLightMat = mat(0x5aa83f, 'leaf');
-const berryMat = mat(0xd8344f);
+const berryMat = fruit(0xe01f45);
 const berryGeo = new THREE.SphereGeometry(0.045, 6, 4);
 
 function buildBerryBush() {
@@ -329,6 +332,7 @@ const PLANT_AT = 0.55;
 
 export function createCropView(cropId) {
   const group = new THREE.Group();
+  group.rotation.order = 'ZXY'; // (its own turn first, then the wind's lean, x and z, the world's way: main.js)
 
   const seeds = new THREE.Group();
   for (const [x, z] of [[-0.12, -0.05], [0.08, -0.1], [0.02, 0.1], [0.13, 0.06]]) {
@@ -336,9 +340,8 @@ export function createCropView(cropId) {
   }
 
   const sprout = new THREE.Group();
-  sprout.add(mesh(sproutStemGeo, stemMat, [0, 0.07, 0]));
-  sprout.add(leaf(0, { y: 0.12, length: 0.09, width: 0.06, lean: 1.0 }));
-  sprout.add(leaf(Math.PI, { y: 0.12, length: 0.09, width: 0.06, lean: 1.0 }));
+  sprout.add(mesh(sproutStemGeo, sproutMat, [0, 0.07, 0]));
+  for (let i = 0; i < 3; i++) sprout.add(leaf((i / 3) * Math.PI * 2, { y: 0.12, length: 0.11, width: 0.07, lean: 1.05, material: sproutMat }));
 
   const plant = CROPS[cropId].build();
   group.add(seeds, sprout, plant);
@@ -356,4 +359,63 @@ export function createCropView(cropId) {
   setProgress(0);
 
   return { group, setProgress };
+}
+
+// ---------- Tilled soil ----------
+// One tile of tilled earth, the whole tile wide, so a patch is one field:
+// three rounded ridges running north-south (z), so the midday sun, a little
+// to the east (src/daynight.js MIDDAY_SIDE), lights their east faces and
+// leaves their west ones dark; damp, darker troughs between (in its vertex
+// colours, which the soil's material multiplies). `open`: the sides with no
+// tilled tile beside them (1 west, 2 east, 4 north, 8 south): there it slopes
+// down to the ground and fades to a grassy earth, along a wavering line, so
+// the patch melts into the grass. One shared geometry for each (16 at most).
+// Its y: metres over the ground; SOIL_TOP: the middle ridge's top, where a crop stands.
+export const SOIL_TOP = 0.085;
+const SOIL_X = 24; // (segments across: eight to a ridge)
+const SOIL_Z = 12;
+const SOIL_EDGE = 0.16; // (how far in from an open side it rises to its full height)
+const EDGE_TINT = [0.95, 1.75, 1.15]; // (the soil's colour times this: an olive, grassy earth)
+const soilGeos = new Map();
+// a wave along a side, the same at both its ends (so the next tile's carries on)
+const waver = (t, k) => 0.035 * Math.sin(Math.PI * 2 * t + k) + 0.018 * Math.sin(Math.PI * 6 * t + 2.3 * k);
+export function soilGeometry(open = 15) {
+  let geo = soilGeos.get(open);
+  if (geo) return geo;
+  const pos = [];
+  const col = [];
+  for (let j = 0; j <= SOIL_Z; j++) {
+    for (let i = 0; i <= SOIL_X; i++) {
+      const x = i / SOIL_X - 0.5;
+      const z = j / SOIL_Z - 0.5;
+      // how far in from the nearest open side (wavering)
+      let e = 1;
+      if (open & 1) e = Math.min(e, x + 0.5 + waver(z, 1.1));
+      if (open & 2) e = Math.min(e, 0.5 - x + waver(z, 2.7));
+      if (open & 4) e = Math.min(e, z + 0.5 + waver(x, 0.4));
+      if (open & 8) e = Math.min(e, 0.5 - z + waver(x, 3.9));
+      const t = THREE.MathUtils.clamp(e / SOIL_EDGE, 0, 1);
+      const f = t * t * (3 - 2 * t);
+      // the ridge (1 its top, 0 a trough), broad on top, and lumps (repeating each tile, so neighbours meet)
+      const ridge = Math.pow(0.5 + 0.5 * Math.cos(Math.PI * 6 * x), 0.75);
+      const lump = 0.006 * Math.sin(Math.PI * 2 * (3 * z + 2 * x) + 0.7) + 0.004 * Math.sin(Math.PI * 2 * (5 * z - x) + 2.1);
+      const y = 0.004 + f * (0.026 + 0.064 * ridge + lump);
+      pos.push(x, y, z);
+      // troughs darker (damp, in the ridges' shade), the tops drier and paler
+      const k = (0.4 + 0.75 * ridge) * (1 + 6 * lump);
+      for (let c = 0; c < 3; c++) col.push(THREE.MathUtils.lerp(EDGE_TINT[c], k * [1.0, 0.97, 0.94][c], f));
+    }
+  }
+  const index = [];
+  const at = (i, j) => j * (SOIL_X + 1) + i;
+  for (let j = 0; j < SOIL_Z; j++) {
+    for (let i = 0; i < SOIL_X; i++) index.push(at(i, j), at(i, j + 1), at(i + 1, j), at(i + 1, j), at(i, j + 1), at(i + 1, j + 1));
+  }
+  geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  soilGeos.set(open, geo);
+  return geo;
 }
