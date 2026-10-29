@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 35 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 36 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -47,6 +47,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 33 Grass as a carpet (big gap 3)
 - [x] 34 Trees, rocks and bushes reshaped (big gap 4)
 - 35+ polish rounds again
+- [x] 35 Heavier tree crowns
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -69,8 +70,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Soft forms (`src/world.js` softBall/lobed/levels): a round tree is one canopy, a cloud of 11 lobes melted by a soft max (near 500 tris, far 80), turned, tipped and stretched by hash2 of where it stands; pines 3 skirts (4 on 30 %) with a drooping scalloped rim and a rolled lip (80 / 28 a tier); rocks a ball cut by 7 soft planes, flat under (180 / 20); bushes one 4-lobe clump (180 / 20); the berry bush too. No rng change: fingerprints untouched.
-- Every decor geometry with a far level (userData.hi) is in `canopies`: far past canopyFar and on low (treeDetail 0); and its shadow always draws the far level (onBeforeShadow/onAfterShadow in makeInstancer): that is what pays for the near detail.
-- Crown shading: crownBump reads lobes (0.82..1.06 out) and darkens creases more (0.76 + 0.38); pink leaves (blossom) lose most of the yellow crown warmth and get white petal specks and a paler top in the 'leaf' detail look.
-- Budget now (plaza-noon / phones): high 756 calls / 751k tris; medium 701 / 652k of 700k, phone 574 / 502k, phone-forest-dusk 488k; low 362 / 351k.
-- Weakest shot now: phone-forest-dusk: the round trees read as soft balls on a stick (lobes show only at the outline; trunk long under a dark underside), and the far ones in the haze still look like mushroom caps; BotW's crowns sit lower and show lit clumps inside the outline.
+- Round crowns (`src/world.js` CANOPY_LAYOUTS, canopyGeos): four lobe layouts (round with hanging lobes, wide, a big low side lobe, lopsided), the layout going with the tree's leaf so each (leaf, square) set keeps one geometry: no new draws; crown middle 1.7-1.84 on a trunk 1.3 (was 2-2.15 on 1.5).
+- Clump normals (clumpNormals): the near level lit from 14 smaller leaf clumps sunk under the surface, the far level from its lobes; the crease between clumps rides in the normal's length (0.5..1), read by the tree hook in place of the radius `crownBump`; bushes get the same.
+- Tree hook: a per-pixel step (varying vCrownLit) from a clump's shaded foot to its lit, warm top, on the sun's side or toward the sky; dark creases; what faces down warm and lifted (+0.22), not black. Snow lies on each clump's top. Fade cylinder 1.45 wide, from 0.7 up.
+- Budget unchanged: high plaza-noon 747 calls / 750k; medium 686 / 650k, phone 574 / 502k, phone-forest-dusk 488k; low 346 / 349k.
+- Weakest shot now: phone-forest-dusk still, but for the ground and light, not the trees: backlit at dusk the meadow is a flat yellow-green haze with little depth between the near grass and the treeline, and the near crowns' shaded side is still soft (the clumps read best with the sun on them, as in lake-sunset and forest-noon).
