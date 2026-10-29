@@ -3865,8 +3865,9 @@ async function signUp(username, color = PLAYER_COLORS[3]) {
 }
 let botAuth = await signUp('Bot');
 
-// (farm: be on that farm instead; auth: whose browser it is, as "<id>.<token>")
-function client(code = '', key = `key${Math.random()}`, { farm = null, auth = botAuth } = {}) {
+// (farm: be on that farm instead; auth: whose browser it is, as "<id>.<token>";
+// local: a farmer at a split screen, src/net/connection.js seat)
+function client(code = '', key = `key${Math.random()}`, { farm = null, auth = botAuth, local = false } = {}) {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws${farm ? `?farm=${farm}` : code ? `?lobby=${code}` : ''}`);
   const inbox = [];
   const waiters = [];
@@ -3876,7 +3877,7 @@ function client(code = '', key = `key${Math.random()}`, { farm = null, auth = bo
     for (const w of [...waiters]) if (w.match(m)) waiters.splice(waiters.indexOf(w), 1) && w.done(m);
   });
   const closed = new Promise((done) => ws.on('close', (code) => done(code)));
-  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(auth && { auth }) })));
+  ws.on('open', () => ws.send(JSON.stringify({ t: C.JOIN, v: PROTOCOL_VERSION, name: 'Bot', key, ...(auth && { auth }), ...(local && { local }) })));
   return {
     ws,
     inbox,
@@ -3964,6 +3965,25 @@ try {
     const w = await fern.next(S.WELCOME);
     assert.deepEqual([w.name, w.color], ['Fern', PLAYER_COLORS[6]]);
     fern.ws.close(1000);
+  });
+
+  await test('a split screen in a lobby: each farmer at the screen on a line of their own, as their own account', async () => {
+    const { code } = await fetch(`${base}/api/lobbies`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => r.json());
+    const page = client(code, 'k-screen', { auth: await signUp('Hana', PLAYER_COLORS[2]) });
+    const pw = await page.next(S.WELCOME);
+    // (the second farmer at the screen: the same browser's key and theirs, src/net/connection.js)
+    const seat = client(code, 'k-screen:1', { auth: await signUp('Ivo', PLAYER_COLORS[4]), local: true });
+    const sw = await seat.next(S.WELCOME);
+    assert.deepEqual([sw.name, sw.color], ['Ivo', PLAYER_COLORS[4]]);
+    assert.notEqual(sw.id, pw.id);
+    await page.next(S.ROSTER, (m) => [pw.id, sw.id].every((id) => m.list.some((p) => p.id === id)));
+    // what the lobby says to one of them goes to them alone
+    seat.send({ t: C.TAKE, id: 99999 });
+    await seat.next(S.DENY, (m) => m.id === 99999);
+    await new Promise((done) => setTimeout(done, 300));
+    assert.ok(!page.inbox.some((m) => m.t === S.DENY), 'the page\'s own line hears nothing of it');
+    page.ws.close(1000);
+    seat.ws.close(1000);
   });
 
   await test('what a farmer wears goes by their account: in the welcome, the roster, and after new clothes (DRESS)', async () => {
