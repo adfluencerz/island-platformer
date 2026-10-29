@@ -194,7 +194,7 @@ export class Wardrobe {
       shade.rotation.x = -Math.PI / 2;
       shade.position.y = 0.002;
       scene.add(grass, earth, shade);
-      this.farmer = createFarmer({ shirt: this.color, look: this.look });
+      this.farmer = createFarmer({ shirt: this.color, look: this.look, shadow: false }); // (the stage has its own shade)
       this.farmer.hoe.visible = false;
       this.farmer.root.position.y = 0.8; // (feet on the grass)
       scene.add(this.farmer.root);

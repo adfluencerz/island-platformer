@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { FOE_R } from '../shared/dungeons.js';
-import { damp } from './character.js';
+import { damp, contactShadow } from './character.js';
 
 // ---------- The dungeons' foes, as they are drawn ----------
 // Each dungeon's own kind (src/dungeon.js has the dungeons): sproutlings
@@ -22,8 +22,7 @@ const box = new THREE.BoxGeometry(1, 1, 1);
 const ball = new THREE.IcosahedronGeometry(0.5, 1);
 const cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 8);
 const cone = new THREE.ConeGeometry(0.5, 1, 8);
-const shadowGeo = new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2);
-const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
+const SHADOW_R = 1.25; // (its contact shadow, soft-edged, a little past its feet)
 
 function part(parent, geo, material, x, y, z, w, h, d, rx = 0, ry = 0, rz = 0) {
   const mesh = new THREE.Mesh(geo, material);
@@ -43,8 +42,8 @@ export function createFoe(id, parent) {
   parent.add(root);
   const body = new THREE.Group(); // (what squashes and leans)
   root.add(body);
-  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-  shadow.scale.setScalar(FOE_R * 0.9);
+  const shadow = contactShadow(1); // (soft, the same as the farmers': character.js)
+  shadow.scale.setScalar(FOE_R * SHADOW_R);
   shadow.renderOrder = 1;
   root.add(shadow);
   const model = MODELS[id](body);
@@ -107,7 +106,7 @@ export function createFoe(id, parent) {
       yaw += diff * damp(10, dt);
       root.rotation.y = yaw;
       shadow.position.y = 0.02 - at.y;
-      shadow.scale.setScalar(FOE_R * 0.9 * Math.max(0.4, 1 - at.y * 0.2));
+      shadow.scale.setScalar(FOE_R * SHADOW_R * Math.max(0.4, 1 - at.y * 0.2));
       // how it stands: squashed down to wind up, stretched going for you, reeling when bopped
       let sy = 1 + Math.sin(t * 3 + root.position.x) * 0.03;
       let lean = 0;
