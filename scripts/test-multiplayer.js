@@ -18,8 +18,10 @@ import { C, S, farmNameKey, pinProblem } from '../shared/protocol.js';
 import { PROTOCOL_VERSION, HOLD_MS, CLOSE, PLAYER_COLORS, DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { GROUND_STAND_Y, SPOT_KINDS, RARE, TREE, ROCK, DROP_MS, DROP_OWN_MS, PIECES, WEAPONS, SWORDS, woodFor, stoneFor, steelFor, mostStone, mostWood } from '../shared/level.js';
 import { islandFor, checkIsland, normalizeSeed, randomSeed, mulberry32, genOf, CURRENT_GEN, distToPaths, STONE_CIRCLE, shuffled } from '../shared/worldgen.js';
-import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS, OLD_HALF, homeGround, oldHomeGround, farmBlocked, inLake, LAKE, NPC_HOMES, NPC_ROOMS, DOCK, SIGNPOSTS, ROADS, TRAILS, npcDoor } from '../shared/farmland.js';
-import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor, messagesFor, rewardText } from '../shared/npcs.js';
+import { HOME_HALF, HOME_KEEP_CLEAR, HOME_PLATFORMS, OLD_HALF, homeGround, oldHomeGround, farmBlocked, inLake, LAKE, NPC_HOMES, NPC_ROOMS, DOCK, SIGNPOSTS, ROADS, TRAILS, npcDoor, offLots } from '../shared/farmland.js';
+import { NPCS, NPC_IDS, MISSIONS, ERRANDS_BY_ID, freshNpcState, currentMission, isOpen, shelfLock, chainDone, errandFor, progress, heartsFor, messagesFor, rewardText } from '../shared/npcs.js';
+import { unlockProblem, blueprintCond, blueprintProblem, unlocksOf, UPGRADE_LEVELS } from '../shared/unlocks.js';
+import { BLUEPRINTS, ERRANDS, BUILD_COSTS } from '../shared/balance.js';
 import { TALK, nodesOf, holds, textOf, chatTopics, momentsDue, followUps, rewardFor, hear, hubOptions, cleanState } from '../shared/talk.js';
 import { ITEMS } from '../src/items.js';
 import { MERCHANT_STOCK, FRIENDSHIP, FARM_FORAGE } from '../shared/balance.js';
@@ -739,7 +741,7 @@ await test('the farm is a valley five times the old farm: the old farm in the mi
     assert.ok(room.x0 > HOUSE_ROOM.x0 + HOUSE_ROOM.w + 50, `${id}'s room is near the house's`);
     for (const arena of Object.values(ARENAS)) assert.ok(Math.hypot(arena.x - room.x0, arena.z - room.z0) > 2 * ARENA_R + 40, `${id}'s room is by an arena`);
   }
-  for (const [a, b] of [[NPC_ROOMS.rosa, NPC_ROOMS.basil], [NPC_ROOMS.basil, NPC_ROOMS.finn], [NPC_ROOMS.finn, NPC_ROOMS.mabel]]) assert.ok(Math.abs(a.z0 - b.z0) >= 70, 'the rooms\' dark round them would meet');
+  for (const [a, b] of [[NPC_ROOMS.rosa, NPC_ROOMS.basil], [NPC_ROOMS.basil, NPC_ROOMS.finn], [NPC_ROOMS.finn, NPC_ROOMS.mabel], [NPC_ROOMS.mabel, NPC_ROOMS.bram]]) assert.ok(Math.abs(a.z0 - b.z0) >= 70, 'the rooms\' dark round them would meet');
   // the house's room and the bosses' arenas are far enough out not to be seen from the farm's shore
   assert.ok(HOUSE_ROOM.x0 - 45 > HOME_HALF + 60, 'the house\'s room can be seen from the shore');
   for (const arena of Object.values(ARENAS)) assert.ok(Math.max(Math.abs(arena.x), Math.abs(arena.z)) - ARENA_R > HOME_HALF + 60, 'an arena can be seen from the shore');
@@ -785,6 +787,7 @@ await test('the neighbours: what they ask and give is all there is, their shops 
       }
       if (shelf.after) assert.equal(MISSIONS[shelf.after]?.npc, id, `${id}'s ${shelf.title} opens with someone else's request`);
       if (shelf.after) assert.equal(MISSIONS[shelf.after].gives.opens, shelf.title, `${shelf.after} doesn't say it opens ${shelf.title}`);
+      if (shelf.hearts != null) assert.ok(Number.isInteger(shelf.hearts) && shelf.hearts >= 1 && shelf.hearts <= FRIENDSHIP.hearts, `${id}'s ${shelf.title} waits for hearts nobody has`);
     }
     const ids = new Set();
     for (const m of npc.missions) {
@@ -796,7 +799,7 @@ await test('the neighbours: what they ask and give is all there is, their shops 
         if (need.item) assert.ok(ITEMS[need.item], `${m.id} needs ${need.item}`);
         else if (need.items) assert.ok(need.items.every((item) => ITEMS[item]));
         else if (need.deed) {
-          assert.ok(['pet', 'fish', 'harvest', 'chop', 'mine', 'cook', 'tell'].includes(need.deed), `${m.id}: nobody counts ${need.deed}`);
+          assert.ok(['pet', 'fish', 'harvest', 'chop', 'mine', 'cook', 'tell', 'make', 'loot', 'boss', 'dungeon', 'game'].includes(need.deed), `${m.id}: nobody counts ${need.deed}`);
           if (need.deed === 'tell') {
             assert.ok(NPCS[need.who] && need.who !== id && need.count === 1, `${m.id} tells ${need.who}`);
             assert.ok(m.message?.to === need.who && m.message.say && m.message.reply, `${m.id} has no message to tell`);
@@ -812,7 +815,9 @@ await test('the neighbours: what they ask and give is all there is, their shops 
         }
       }
     }
-    assert.ok(npc.missions.length >= 7, `${id} has few requests`);
+    assert.ok(npc.missions.length >= (id === 'bram' ? 8 : 12), `${id} has few requests`);
+    // (and a request that opens a shelf opens one of theirs)
+    for (const m of npc.missions) if (m.gives.opens && m.gives.opens !== 'shop') assert.ok(npc.shop.shelves.some((sh) => sh.title === m.gives.opens && sh.after === m.id), `${m.id} opens ${m.gives.opens}, which isn't theirs`);
     for (const text of ['intro', 'morning', 'day', 'evening', 'chat', 'asleep', 'locked', 'done', 'shop', 'bought', 'accepted', 'later', 'reward', 'open']) assert.ok(npc.lines[text]?.length, `${id} has nothing to say for ${text}`);
     assert.ok(npc.lines.choose && npc.lines.reward.every((line) => line.includes('%s')), `${id}'s lines for a reward`);
   }
@@ -865,16 +870,16 @@ await test('a neighbour\'s requests: one at a time, counted from when they asked
 
 await test('the neighbours pass messages round the valley: each tells one of the others something, and is told something', () => {
   const sends = {};
+  const told = new Set();
   for (const id of NPC_IDS) {
     const messages = NPCS[id].missions.filter((m) => m.message);
-    assert.equal(messages.length, 1, `${id} should send one message`);
-    sends[id] = messages[0].message.to;
+    assert.ok(messages.length >= 1, `${id} should send a message`);
+    for (const { message } of messages) {
+      assert.ok(message.to !== id && NPCS[message.to], `${id} tells ${message.to}`);
+      told.add(message.to);
+    }
   }
-  assert.deepEqual(Object.values(sends).sort(), [...NPC_IDS].sort(), 'everyone is told one');
-  // (and it goes right round: from anyone, through everyone, back to them)
-  let at = NPC_IDS[0];
-  for (let i = 0; i < NPC_IDS.length; i++) at = sends[at];
-  assert.equal(at, NPC_IDS[0]);
+  assert.deepEqual([...told].sort(), [...NPC_IDS].sort(), 'everyone is told something');
   // carrying one: asked, not yet told; told; told before it was asked doesn't count
   const states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
   const deeds = {};
@@ -1032,7 +1037,7 @@ await test('a save from before all this still loads: what is not known is left o
   assert.deepEqual(cleanState('rosa', 'rubbish'), freshNpcState());
   // (as the neighbours were first saved: no topics heard, nothing chosen)
   const old = { met: true, done: ['rosa_pet', 'rosa_breakfast', 'gone_since'], heard: ['rosa_wool'], since: { rosa_wool: { pet: 3 }, nope: { pet: 1 } }, points: 85, chatDay: 4 };
-  assert.deepEqual(cleanState('rosa', old), { met: true, done: ['rosa_pet', 'rosa_breakfast'], heard: ['rosa_wool'], since: { rosa_wool: { pet: 3 } }, points: 85, chatDay: 4, seen: [], chose: {} });
+  assert.deepEqual(cleanState('rosa', old), { met: true, done: ['rosa_pet', 'rosa_breakfast'], heard: ['rosa_wool'], since: { rosa_wool: { pet: 3 } }, points: 85, chatDay: 4, seen: [], chose: {}, errand: null, errandDay: -1, errands: 0 });
   // and a whole chain done is more to do now, not nothing
   const finished = cleanState('finn', { met: true, done: ['finn_dock', 'finn_catch', 'finn_bass', 'finn_shells'] });
   assert.equal(currentMission('finn', finished).id, 'finn_driftwood');
@@ -1043,8 +1048,145 @@ await test('a save from before all this still loads: what is not known is left o
   assert.deepEqual(kept.chose, { basil_plant: 'sunflower' });
   assert.deepEqual(cleanState('basil', { seen: 'garden', chose: ['basil_plant', 'sunflower'], points: -5, chatDay: 'x' }), freshNpcState());
   // saved and read back, a state is as it was
-  const state = { ...freshNpcState(), met: true, seen: ['ranch'], chose: { rosa_calf: 'buttercup' }, points: 120, chatDay: 9, done: ['rosa_pet'] };
+  const state = { ...freshNpcState(), met: true, seen: ['ranch'], chose: { rosa_calf: 'buttercup' }, points: 120, chatDay: 9, done: ['rosa_pet'], errand: { day: 12, id: 'rosa_e_milk', since: { pet: 4 } }, errandDay: 11, errands: 6 };
   assert.deepEqual(cleanState('rosa', JSON.parse(JSON.stringify(state))), state);
+  // an errand that isn't theirs, or is nonsense, is dropped
+  assert.equal(cleanState('rosa', { errand: { day: 3, id: 'finn_e_fish' } }).errand, null);
+  assert.equal(cleanState('rosa', { errand: { day: 'x', id: 'rosa_e_milk' }, errands: -2, errandDay: 'y' }).errand, null);
+  assert.equal(cleanState('rosa', { errands: 2.5 }).errands, 0);
+});
+
+await test('a neighbour who moves in takes their lot: what the farmer had there goes back in the chest', () => {
+  const lot = npcDoor(NPC_HOMES.bram);
+  const [x, z] = [Math.round(lot.x), Math.round(lot.z + 1)];
+  const farm = { built: [[`${x},${z}`, 'stone_well'], ['3,3', 'wood_fence']], tilled: [`${x + 1},${z}`, ['4,4', 0, 9]], crops: [[`${x + 1},${z}`, 'turnip', 5], ['4,4', 'turnip', 5]], hours: 7 };
+  const { farm: kept, refund } = offLots(farm);
+  assert.deepEqual(kept.built, [['3,3', 'wood_fence']]);
+  assert.deepEqual(kept.tilled, [['4,4', 0, 9]]);
+  assert.deepEqual(kept.crops, [['4,4', 'turnip', 5]]);
+  assert.deepEqual(refund, BUILD_COSTS.stone_well);
+  assert.equal(kept.hours, 7);
+  assert.deepEqual(offLots(null), { farm: null, refund: {} });
+});
+
+await test('a shelf can wait for hearts as well as a request, and says what it is waiting for', () => {
+  const state = { ...freshNpcState(), done: ['basil_turnips', 'basil_soup', 'basil_bluebells', 'basil_crows'], points: 2 * FRIENDSHIP.perHeart };
+  assert.ok(isOpen('basil', state, 'Rare seeds'));
+  assert.ok(!isOpen('basil', state, 'Treasures'), 'crows done, but only two hearts');
+  assert.match(shelfLock('basil', state, 'Treasures'), /♥♥♥/);
+  state.points = 3 * FRIENDSHIP.perHeart;
+  assert.ok(isOpen('basil', state, 'Treasures'));
+  assert.match(shelfLock('rosa', { ...freshNpcState(), done: ['rosa_pet'] }, 'Sheep'), /Breakfast at the ranch/);
+  for (const id of NPC_IDS) for (const { title } of NPCS[id].shop.shelves) assert.ok(shelfLock(id, freshNpcState(), title), `${id}'s ${title} is open to a stranger`);
+});
+
+await test('errands: once a neighbour\'s requests are done, one a day, picked by the day, every few with a little extra', () => {
+  const ids = new Set(Object.keys(MISSIONS));
+  for (const id of NPC_IDS) {
+    const { errands, bonus } = NPCS[id];
+    assert.ok(errands.length >= 5, `${id} has few errands`);
+    assert.ok(ITEMS[bonus[0]] && bonus[1] > 0, `${id}'s bonus`);
+    for (const e of errands) {
+      assert.ok(!ids.has(e.id), `${e.id} twice`);
+      ids.add(e.id);
+      assert.equal(ERRANDS_BY_ID[e.id], e);
+      assert.ok(e.npc === id && e.errand && e.gives.gold > 0 && !e.gives.opens && !e.gives.choose, `${e.id} gives only gold`);
+      for (const text of ['title', 'ask', 'intro', 'waiting', 'thanks']) assert.ok(e[text], `${e.id} has no ${text}`);
+      for (const need of e.needs) {
+        assert.ok(need.count > 0 && !need.built && need.deed !== 'tell', `${e.id}: an errand is a thing to bring or do`);
+        if (need.item) assert.ok(ITEMS[need.item], `${e.id} needs ${need.item}`);
+        if (need.items) assert.ok(need.items.every((item) => ITEMS[item]));
+      }
+    }
+    // the same all day, another the next; every one of them comes round
+    assert.equal(errandFor(id, 7), errandFor(id, 7));
+    assert.notEqual(errandFor(id, 7), errandFor(id, 8));
+    assert.equal(new Set(Array.from({ length: errands.length }, (_, d) => errandFor(id, d))).size, errands.length);
+    assert.ok(errands.includes(errandFor(id, -3)), 'a day before the first still has one');
+  }
+  assert.ok(ERRANDS.every > 1);
+  const state = freshNpcState();
+  assert.ok(!chainDone('finn', state));
+  state.done = NPCS.finn.missions.map((m) => m.id);
+  assert.ok(chainDone('finn', state));
+  // counted from when it was asked, as a request is
+  const errand = NPCS.finn.errands.find((e) => e.needs[0].deed === 'fish');
+  const deeds = { fish: 40 };
+  const asked = { since: { [errand.id]: { ...deeds } } };
+  deeds.fish += errand.needs[0].count - 1;
+  assert.ok(!progress(errand, asked, { have: () => 0, deeds, built: () => 0 })[0].ok);
+  deeds.fish += 1;
+  assert.ok(progress(errand, asked, { have: () => 0, deeds, built: () => 0 })[0].ok);
+});
+
+// What a farmer has done, for the unlocks: c, from a few lists
+const unlockView = ({ done = [], skills = {}, beaten = [], hearts = {} } = {}) => ({
+  done: (m) => done.includes(m), skill: (id) => skills[id] ?? 1, beaten: (b) => beaten.includes(b), hearts: (n) => hearts[n] ?? 0,
+});
+
+await test('blueprints: the finer pieces wait for a neighbour\'s request (or a skill), and what is needed built is open in time', () => {
+  for (const [piece, cond] of Object.entries(BLUEPRINTS)) {
+    assert.ok(PIECES[piece] && BUILD_COSTS[piece], `${piece} is not a piece`);
+    for (const m of [].concat(cond.done ?? [])) assert.ok(MISSIONS[m], `${piece} waits for ${m}`);
+    for (const id of Object.keys(cond.skills ?? {})) assert.ok(SKILLS.bonus[id] != null, `${piece} waits for ${id}`);
+    assert.ok(unlockProblem(cond, unlockView()), `${piece} says nothing of what it waits for`);
+  }
+  // nothing a farmer needs to get going waits
+  for (const piece of ['workbench', 'farm_chest', 'house', 'campfire', 'scarecrow', 'water_trough', 'hay_cart', 'beehive', 'birdhouse', 'wood_fence', 'wood_path', 'cheese_press', 'mayo_machine', 'loom', 'arcade']) {
+    assert.equal(blueprintCond(piece), null, `${piece} waits for a blueprint`);
+  }
+  // a piece a request wants built is open by then: from the start, or by an earlier request of theirs
+  for (const m of Object.values(MISSIONS)) {
+    const before = NPCS[m.npc].missions.slice(0, m.i).map((x) => x.id);
+    for (const need of m.needs) {
+      if (!need.built) continue;
+      assert.equal(blueprintProblem(need.built, unlockView({ done: before, skills: { mining: 10, woodcutting: 10, animals: 10 } })), '', `${m.id} wants ${need.built} built before it can be`);
+    }
+  }
+  // done, it opens; and a piece that was built before it needed a blueprint stays the farmer's
+  assert.match(blueprintProblem('pond', unlockView()), /Finn/);
+  assert.equal(blueprintProblem('pond', unlockView({ done: ['finn_catch'] })), '');
+  assert.equal(blueprintProblem('pond', unlockView(), new Set(['pond'])), '');
+  assert.match(blueprintProblem('mossy_stone_block', unlockView({ skills: { mining: 4 } })), /Mining level 5/);
+  assert.deepEqual(unlocksOf('bram_bench').blueprints.sort(), ['cobble_path', 'picket_fence', 'stone_arch', 'wood_arbor']);
+});
+
+await test('the bosses come one after another: each portal waits for the boss before it', () => {
+  const firsts = BOSS_IDS.filter((id) => !BOSSES[id].after);
+  assert.equal(firsts.length, 1, 'one boss comes first');
+  const order = [firsts[0]];
+  while (order.length < BOSS_IDS.length) {
+    const next = BOSS_IDS.find((id) => BOSSES[id].after === order.at(-1));
+    assert.ok(next, `nobody comes after ${order.at(-1)}`);
+    order.push(next);
+  }
+  assert.equal(new Set(order).size, BOSS_IDS.length);
+  for (const [i, id] of order.entries()) {
+    const portal = portalOf(id);
+    assert.ok(PIECES[portal], portal);
+    if (i === 0) assert.equal(blueprintProblem(portal, unlockView()), '');
+    else {
+      assert.match(blueprintProblem(portal, unlockView({ beaten: order.slice(0, i - 1) })), new RegExp(BOSSES[order[i - 1]].name));
+      assert.equal(blueprintProblem(portal, unlockView({ beaten: [order[i - 1]] })), '');
+    }
+  }
+});
+
+await test('the upgrades wait for Bram the carpenter (and a skill, at the top), and say what for', () => {
+  for (const [id, levels] of Object.entries(UPGRADE_LEVELS)) {
+    levels.forEach((level, i) => {
+      if (i === 0) return assert.equal(level.needs, undefined);
+      assert.ok(level.needs, `${id} level ${i + 1} waits for nothing`);
+      for (const m of [].concat(level.needs.done ?? [])) assert.equal(MISSIONS[m]?.npc, 'bram', `${id} level ${i + 1} waits for ${m}`);
+      for (const s of Object.keys(level.needs.skills ?? {})) assert.ok(SKILLS.bonus[s] != null, s);
+      assert.ok(unlockProblem(level.needs, unlockView()));
+      const all = unlockView({ done: Object.keys(MISSIONS), skills: Object.fromEntries(Object.keys(SKILLS.bonus).map((k) => [k, 10])) });
+      assert.equal(unlockProblem(level.needs, all), '');
+    });
+  }
+  assert.match(unlockProblem(UPGRADE_LEVELS.workbench[1].needs, unlockView()), /Bram.*Iron in the stone/);
+  assert.match(unlockProblem(UPGRADE_LEVELS.pasture[2].needs, unlockView({ done: ['bram_barn'], skills: { animals: 6 } })), /Animals level 7/);
+  assert.deepEqual(unlocksOf('bram_steel').upgrades, [['workbench', 2]]);
 });
 
 await test('a shuffle is the same everywhere: every number kept, the same order for the same draws', () => {

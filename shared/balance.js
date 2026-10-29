@@ -61,10 +61,11 @@ export const SHOP = {
   strawberry: { sell: 15 },
   gem: { sell: 200 },
   ...Object.fromEntries(RELICS.map((relic) => [relic, { sell: 250 }])), // (the sky isles' relics)
-  wood: { sell: 6 },
-  stone: { sell: 4 },
-  steel: { sell: 30 }, // (a lump of it now and then in a rock)
-  arrow: { sell: 3 }, // (made at the workbench, for the bow)
+  wood: { price: 15, sell: 6 }, // (Bram sells timber, and stone, once you've helped him)
+  stone: { price: 12, sell: 4 },
+  steel: { price: 90, sell: 30 }, // (a lump of it now and then in a rock)
+  arrow: { price: 10, sell: 3 }, // (made at the workbench, for the bow)
+  key: { price: 750 }, // (an old key: Bram cuts one, for a good friend)
   // animals, and what they give
   hen: { price: 150, sell: 20 },
   cow: { price: 500, sell: 100},
@@ -208,25 +209,27 @@ for (const [crop, { grow }] of Object.entries(PLATFORM_PLANTS)) CROP_GROW_TIME[c
 // The pens: `room`, how many of each kind live there (the fence goes out a
 // little each level: shared/farmland.js), and what they give: `largeEgg`,
 // the chance an egg is a large one; `second`, the chance a cow or sheep gives
-// two milk or wool instead of one.
+// two milk or wool instead of one. `needs`: what else it takes before a level
+// can be bought (shared/unlocks.js: a neighbour's request done, a skill's
+// level): Bram the carpenter does the building, once he trusts you with it.
 export const PEN_LEVELS = {
   yard: [
     { room: { hen: 8 }, largeEgg: 0 },
-    { room: { hen: 12 }, largeEgg: 0.35, cost: { gold: 1200, wood: 80, stone: 40 } },
-    { room: { hen: 16 }, largeEgg: 0.7, cost: { gold: 3000, wood: 160, stone: 100 } },
+    { room: { hen: 12 }, largeEgg: 0.35, cost: { gold: 1200, wood: 80, stone: 40 }, needs: { done: 'bram_fence' } },
+    { room: { hen: 16 }, largeEgg: 0.7, cost: { gold: 3000, wood: 160, stone: 100 }, needs: { done: 'bram_barn', skills: { animals: 5 } } },
   ],
   pasture: [
     { room: { cow: 4, sheep: 6 }, second: 0 },
-    { room: { cow: 6, sheep: 9 }, second: 0.5, cost: { gold: 2500, wood: 120, stone: 60 } },
-    { room: { cow: 8, sheep: 12 }, second: 1, cost: { gold: 6000, wood: 240, stone: 150 } },
+    { room: { cow: 6, sheep: 9 }, second: 0.5, cost: { gold: 2500, wood: 120, stone: 60 }, needs: { done: 'bram_fence' } },
+    { room: { cow: 8, sheep: 12 }, second: 1, cost: { gold: 6000, wood: 240, stone: 150 }, needs: { done: 'bram_barn', skills: { animals: 7 } } },
   ],
 };
 // The workbench: each level makes what the ones below it do and more (a
-// recipe's `level`, in RECIPES)
+// recipe's `level`, in RECIPES); `needs` as for the pens
 export const BENCH_LEVELS = [
   {},
-  { cost: { gold: 2000, wood: 100, stone: 100 } },
-  { cost: { gold: 5000, wood: 200, stone: 200, gem: 3 } },
+  { cost: { gold: 2000, wood: 100, stone: 100 }, needs: { done: 'bram_steel' } },
+  { cost: { gold: 5000, wood: 200, stone: 200, gem: 3 }, needs: { done: 'bram_fair', skills: { woodcutting: 5, mining: 5 } } },
 ];
 
 // ---------- Trees and rocks ----------
@@ -260,8 +263,9 @@ export const HOE_TILLS = { wide_hoe: [3, 1], silver_hoe: [5, 1], golden_hoe: [3,
 export const GIANT = { chance: 0.05, hits: 35, loot: 50, treeScale: 2.5, rockScale: 2.5, rockMin: 1.6, barSeconds: 4 };
 
 // ---------- Bosses ----------
-// Four big grumps live out past the sea, each behind a portal: fought in any
-// order, alone or with the friends on your farm (shared/bosses.js). Nobody
+// Five big grumps live out past the sea, each behind a portal: fought one
+// after another (`after`: the one that has to be beaten before its portal can
+// be built), alone or with the friends on your farm (shared/bosses.js). Nobody
 // gets hurt: a boss is bopped (WEAPONS) until it is dizzy and turns friendly.
 // Each needs its own set of `pieces` key pieces (the `key` item), found in
 // lobbies (LOBBY_SPOTS, a whole set's worth of luck) and up on the sky isles
@@ -284,7 +288,7 @@ export const BOSSES = {
     statue: 'parsnip_statue', mount: 'parsnip_mount',
   },
   lion: {
-    name: 'Super Lion', key: 'mane_tuft', pieces: 3, hp: 50, perPlayer: 0.7, pause: [1.1, 1.8], quicken: 0.12,
+    name: 'Super Lion', after: 'bee', key: 'mane_tuft', pieces: 3, hp: 50, perPlayer: 0.7, pause: [1.1, 1.8], quicken: 0.12,
     pounce: { windup: 0.55, air: 0.6, height: 2.2, reach: 9, hops: [1, 3], wave: 9, waveMax: 2.4 }, // a pounce at someone, and a puff of dust where it lands
     roar: { windup: 0.8, count: 3, gap: 0.55, speed: 6.5, max: 10 }, // rings of shockwave, out to the arena's edge
     walk: 2.2,
@@ -292,7 +296,7 @@ export const BOSSES = {
     statue: 'lion_statue', mount: 'lion_mount',
   },
   bee: {
-    name: 'Bee Queen', key: 'honey_drop', pieces: 3, hp: 45, perPlayer: 0.7, pause: [1.3, 2.0], quicken: 0.12,
+    name: 'Bee Queen', after: 'parsnip', key: 'honey_drop', pieces: 3, hp: 45, perPlayer: 0.7, pause: [1.3, 2.0], quicken: 0.12,
     swarm: { windup: 0.8, count: 3, perPlayer: 1, spread: 0.35, speed: 4.5, life: 3.5 }, // little swarms zig-zagging off at farmers
     roll: { windup: 0.7, speed: 11, time: 1.1, dizzy: 1.8 }, // a buzzing dash across the arena (as the parsnip's roll), then a sit-down, dizzy
     walk: 2.4,
@@ -300,7 +304,7 @@ export const BOSSES = {
     statue: 'bee_statue', mount: 'bee_mount',
   },
   crow: {
-    name: 'Giant Crow', key: 'crow_feather', pieces: 3, hp: 55, perPlayer: 0.7, pause: [1.2, 1.9], quicken: 0.12,
+    name: 'Giant Crow', after: 'lion', key: 'crow_feather', pieces: 3, hp: 55, perPlayer: 0.7, pause: [1.2, 1.9], quicken: 0.12,
     // up into the sky (`rise` s), a moment's aim (`aim`), then a swoop down through
     // where someone stood and on along the grass (`dive` s), `swoops` times running
     swoop: { rise: 0.6, aim: 0.8, dive: 1.2, height: 5, swoops: [1, 3] },
@@ -310,7 +314,7 @@ export const BOSSES = {
     statue: 'crow_statue', mount: 'crow_mount',
   },
   toad: {
-    name: 'Bog Toad', key: 'bog_pearl', pieces: 3, hp: 60, perPlayer: 0.7, pause: [1.2, 1.9], quicken: 0.12,
+    name: 'Bog Toad', after: 'crow', key: 'bog_pearl', pieces: 3, hp: 60, perPlayer: 0.7, pause: [1.2, 1.9], quicken: 0.12,
     hop: { windup: 0.6, air: 0.9, height: 5, reach: 8, hops: [2, 3], wave: 8, waveMax: 5 }, // great heavy hops, a splash of a shockwave where it lands
     swarm: { windup: 0.8, count: 3, perPlayer: 1, spread: 0.3, speed: 5, life: 3 }, // flies it puffs out, off at the farmers (as the bee queen's swarms)
     roar: { windup: 1.0, count: 2, gap: 0.8, speed: 5.5, max: 10 }, // a great croak: rings of it out to the edge (as the lion's roar)
@@ -457,9 +461,15 @@ export const MERCHANT_STOCK = ['turnip_seeds', 'carrot_seeds', 'flax_seeds', 'wa
 // How much a neighbour likes you: points for a chat (once a game day), for
 // each thing you do for them, for each new thing they tell you (`topic`, once
 // each) and for a moment of theirs that you shared (`moment`: one of the
-// heart events in shared/talk.js); a heart for every `perHeart` points, up
-// to `hearts`; each heart takes `discount` off what their shop asks
-export const FRIENDSHIP = { chat: 10, mission: 40, topic: 4, moment: 10, perHeart: 40, hearts: 5, discount: 0.02 };
+// heart events in shared/talk.js) and for each errand run (`errand`, once
+// their requests are all done); a heart for every `perHeart` points, up to
+// `hearts`; each heart takes `discount` off what their shop asks, and some of
+// their shelves wait for a few
+export const FRIENDSHIP = { chat: 10, mission: 25, errand: 10, topic: 4, moment: 10, perHeart: 40, hearts: 5, discount: 0.02 };
+// Once you have done everything a neighbour asked, they have an errand a game
+// day (shared/npcs.js errandFor): every `every`th one you run, they add a
+// little something of theirs (their `bonus`)
+export const ERRANDS = { every: 5 };
 
 // ---------- Forage in the valley ----------
 // What turns up in the farm's biomes, out in the valley round the old farm,
@@ -585,6 +595,40 @@ export const BUILD_COSTS = {
   // woven at the loom
   bunting: { wood: 2, cloth: 1 },
   market_awning: { wood: 4, cloth: 2 },
+};
+
+// The finer pieces wait for their blueprint: what it takes before one can be
+// built (shared/unlocks.js: a neighbour's request done, a skill's level).
+// Whatever isn't here can be built from the start. (A boss's portal waits for
+// the boss before it: BOSSES `after`.) Anything already standing on a farm
+// when this came in is that farmer's to build again.
+export const BLUEPRINTS = {
+  // Bram the carpenter's
+  picket_fence: { done: 'bram_bench' },
+  cobble_path: { done: 'bram_bench' },
+  stone_arch: { done: 'bram_bench' },
+  wood_arbor: { done: 'bram_bench' },
+  log_tower: { done: 'bram_steel' },
+  stone_pillar: { done: 'bram_steel' },
+  barrel_stack: { done: 'bram_tower' },
+  flagpole: { done: 'bram_tower' },
+  bunting: { done: 'bram_barn' },
+  market_awning: { done: 'bram_barn' },
+  // the other neighbours'
+  dovecote: { done: 'rosa_dovecote' },
+  birdbath: { done: 'basil_beans' },
+  sundial: { done: 'basil_beans' },
+  planter: { done: 'basil_market' },
+  box_hedge: { done: 'basil_market' },
+  pond: { done: 'finn_catch' },
+  aquarium: { done: 'finn_pond' },
+  garden_bench: { done: 'mabel_soup' },
+  stone_bench: { done: 'mabel_soup' },
+  lamp_post: { done: 'mabel_soup' },
+  stone_well: { done: 'mabel_hive' },
+  stone_lantern: { done: 'mabel_hive' },
+  // a mason's eye
+  mossy_stone_block: { skills: { mining: 5 } },
 };
 
 // ---------- The workbench ----------

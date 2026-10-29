@@ -939,9 +939,89 @@ function mabelRoom(g, s, { addCollider, anims, clocks, story }) {
   for (const [dx, dy, color] of [[-0.38, 0.22, 0xff7eb6], [-0.32, 0.26, 0xf2c230], [-0.3, 0.2, 0xffffff]]) part(flowers, ball, mat(color), [dx, dy, -0.1], [0.05, 0.05, 0.05]);
 }
 
+// Bram's: his own workbench along the left wall, its vice and its plane,
+// tools on a pegboard over it, planks stood in the corner, a chair
+// half made in the middle of the floor and shavings all round it. What he
+// makes with you shows: the chisels from your steel, the feather off his
+// tower in a jar, the two chairs (and the one you said was better).
+function bramRoom(g, s, { addCollider, clocks, story }) {
+  const { left, right, front, midX, midZ, counterZ } = s;
+  const when = (test, at) => story.group(g, test, at);
+  const wb = s.wall('back', 0, 0);
+
+  // ---- the shelves and the counter: planks, boxes of nails, a measuring rule
+  for (const y of [1.08, 1.78]) for (let i = 0; i < 5; i++) part(g, box, mat([0xc89a62, 0xb8864e, 0xd8aa72][i % 3]), s.shelf(-2.2 + i * 1.1, y), [0.9, 0.12, 0.3]);
+  for (let i = 0; i < 6; i++) part(g, box, mat(i % 2 ? 0x8a5a33 : 0x6e4a2b), s.shelf(-2.3 + i * 0.9, 2.42), [0.5, 0.22, 0.32]);
+  part(g, box, mat(0xe0b23a), [midX - 1.6, 1.07, counterZ], [1.2, 0.02, 0.08]).castShadow = false; // (the rule)
+  for (let i = 0; i < 3; i++) part(g, cyl, mat(0x9a9a92), [midX + 1.4 + i * 0.3, 1.12, counterZ], [0.1, 0.14, 0.1]); // (tins of nails)
+
+  // ---- his workbench along the left wall: a vice, a plane, shavings
+  const bx = left + 0.8;
+  const bz = midZ - 0.6;
+  part(g, box, woodMat, [bx, 0.9, bz], [1.0, 0.12, 3.0]);
+  for (const [dx, dz] of [[-0.4, -1.3], [0.4, -1.3], [-0.4, 1.3], [0.4, 1.3]]) part(g, box, darkWoodMat, [bx + dx, 0.42, bz + dz], [0.1, 0.84, 0.1]);
+  part(g, box, darkWoodMat, [bx, 0.25, bz], [0.8, 0.05, 2.7]);
+  part(g, box, ironMat, [bx + 0.45, 1.0, bz - 1.0], [0.2, 0.18, 0.3]); // the vice
+  part(g, box, mat(0xb8864e), [bx, 1.02, bz + 0.6], [0.12, 0.12, 0.45]); // the plane
+  part(g, box, ironMat, [bx, 1.1, bz + 0.6], [0.04, 0.06, 0.2]);
+  for (let i = 0; i < 10; i++) part(g, box, mat(0xe8d4a8), [bx + 0.5 + Math.sin(i * 2.1) * 0.5, 0.012, bz + Math.cos(i * 1.3) * 1.2], [0.14, 0.02, 0.06], [0, i, 0]).castShadow = false;
+  addCollider({ x: bx, y: 0.5, z: bz, w: 1.0, h: 1, d: 3.0 });
+
+  // ---- tools on a pegboard over the bench, the clock, and planks stood in the corner
+  const peg = s.wall('left', bz, 1.9);
+  part(peg, box, mat(0xc8a878), [0, 0, 0.03], [1.8, 1.0, 0.04]);
+  part(peg, box, ironMat, [-0.6, 0, 0.08], [0.08, 0.7, 0.03]); // a saw
+  part(peg, box, woodMat, [-0.6, -0.4, 0.08], [0.16, 0.16, 0.04]);
+  part(peg, box, woodMat, [-0.1, -0.1, 0.08], [0.06, 0.5, 0.04]); // a hammer
+  part(peg, box, ironMat, [-0.1, 0.18, 0.08], [0.26, 0.1, 0.05]);
+  for (let i = 0; i < 3; i++) part(peg, box, mat(0xd8c890), [0.35 + i * 0.16, -0.05, 0.08], [0.04, 0.4, 0.03]); // files and rasps
+  clocks.push(clock(wb, [right - 2.5, 1.95], 0.26, 0x4a3626));
+  for (let i = 0; i < 5; i++) part(g, box, mat([0xc89a62, 0xb8864e, 0xd8aa72][i % 3]), [right - 0.3, 1.3, front - 1.4 + i * 0.2], [0.12, 2.6, 0.18], [0, 0, 0.12]);
+
+  // ---- a chair half made, in the middle of the floor
+  const cx = midX + 1.2;
+  const cz = front - 2.6;
+  part(g, box, mat(0xc89a62), [cx, 0.45, cz], [0.5, 0.06, 0.5]);
+  for (const [dx, dz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2]]) part(g, box, mat(0xb8864e), [cx + dx, 0.22, cz + dz], [0.06, 0.44, 0.06]);
+  part(g, box, mat(0xb8864e), [cx + 0.35, 0.03, cz + 0.4], [0.06, 0.06, 0.44], [0, 0.5, 0]); // (its fourth leg, on the floor)
+  addCollider({ x: cx, y: 0.25, z: cz, w: 0.6, h: 0.5, d: 0.6 });
+
+  // ---- what you have brought, and what he is given
+  const chisels = when((c) => c.done('bram_steel'), [bx, 0.96, bz - 0.2]); // (the chisels from your steel, in a row)
+  for (let i = 0; i < 4; i++) {
+    part(chisels, box, ironMat, [0, 0.01, -0.2 + i * 0.12], [0.22, 0.02, 0.04]);
+    part(chisels, box, woodMat, [-0.16, 0.02, -0.2 + i * 0.12], [0.12, 0.04, 0.05]);
+  }
+  const feather = when((c) => c.done('bram_tower'), [midX + 2.3, 1.06, counterZ]); // (the feather off his tower, in a jar)
+  jar(feather, [0, 0, 0], 0xd8e8f0, { r: 0.09, h: 0.26 });
+  part(feather, box, mat(0x2a2a3a), [0, 0.32, 0], [0.04, 0.5, 0.12], [0, 0, 0.2]);
+  const chairs = when((c) => !!c.chose('bram_chair'), [left + 2.4, 0, front - 1.2]); // (the two chairs: and he kept the one you said)
+  chair2(chairs, [0, 0], 0.3);
+  chair2(chairs, [0.9, 0], -0.2);
+
+  // ---- the table: tea in a tin mug, a pencil, plans; a cup for you
+  const { x: tx, z: tz } = s.tableAt;
+  part(g, box, mat(0xf4efe4), [tx + 0.1, 0.84, tz], [0.7, 0.01, 0.5], [0, 0.2, 0]).castShadow = false;
+  part(g, box, mat(0x2f6fb5), [tx + 0.1, 0.845, tz], [0.5, 0.004, 0.02], [0, 0.6, 0]).castShadow = false;
+  mug(g, [tx - 0.35, 0.84, tz + 0.2], 0x9a9a92);
+  const yours = when((c) => c.hearts >= 3, [tx, 0.84, tz]);
+  mug(yours, [0.35, 0, -0.25], 0x3f8a46);
+}
+// A plain chair at [x, z] in g, turned yaw
+function chair2(g, [x, z], yaw) {
+  const c = new THREE.Group();
+  c.position.set(x, 0, z);
+  c.rotation.y = yaw;
+  g.add(c);
+  part(c, box, mat(0xc89a62), [0, 0.45, 0], [0.45, 0.05, 0.45]);
+  part(c, box, mat(0xb8864e), [0, 0.78, -0.2], [0.45, 0.6, 0.05]);
+  for (const [dx, dz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) part(c, box, mat(0xb8864e), [dx, 0.22, dz], [0.05, 0.44, 0.05]);
+}
+
 export const ROOMS = {
   rosa: { floor: 0x9a6a3a, wall: 0xf0e0c0, beam: 0x7a2a1a, blanket: 0xc0392b, door: 0x7a2a1a, props: rosaRoom },
   basil: { floor: 0x8a6a4a, wall: 0xe4ecd4, beam: 0x5a4632, blanket: 0x4f7a3a, door: 0x3f6b3a, rug: 0x4f7a3a, rugEdge: 0xd8c08a, bedSide: 'right', tableSide: 'left', props: basilRoom },
   finn: { floor: 0x7a6a5a, wall: 0xa8c0d0, beam: 0x3a4a5a, blanket: 0x2f4f7a, door: 0x3a4a5a, rug: 0x2f4f7a, rugEdge: 0xe8e0d0, counter: 0x5f7f9a, windows: 'round', bed: false, props: finnRoom },
   mabel: { floor: 0xb08a5a, wall: 0xfff2dc, beam: 0x6e4a2b, blanket: 0xe88aa8, door: 0x9c3a2e, rug: 0xe88aa8, rugEdge: 0xfff4e0, counterTop: 0xe8dcc8, props: mabelRoom },
+  bram: { floor: 0x9a7a52, wall: 0xe8dcc4, beam: 0x4a3626, blanket: 0x3f8a46, door: 0x5a3a22, rug: 0x3f8a46, rugEdge: 0xc8962a, counter: 0x8a6a48, counterTop: 0xc89a62, bedSide: 'right', tableSide: 'left', props: bramRoom },
 };

@@ -52,6 +52,7 @@ function portraitOf(id) {
     if (look.hair === 'ponytail') fill(13, 7, 14, 12, 'r');
     if (look.hair === 'bun') fill(6, 1, 9, 3, 'r');
   }
+  if (look.whiskers === 'mustache') fill(5, 10, 10, 10, 'd');
   if (beard) {
     fill(4, 10, 11, 11, 'd');
     fill(5, 12, 10, 12, 'd');
@@ -62,8 +63,9 @@ function portraitOf(id) {
   g[8][10] = 'e';
   g[9][4] = 'c';
   g[9][11] = 'c';
-  g[10][7] = beard ? 'D' : 'm';
-  g[10][8] = beard ? 'D' : 'm';
+  const mouth = beard ? 'D' : look.whiskers === 'mustache' ? 'd' : 'm'; // (under a mustache, only the mustache)
+  g[10][7] = mouth;
+  g[10][8] = mouth;
   const style = look.hat;
   if (style === 'straw') {
     fill(5, 1, 10, 3, 'h');
@@ -78,6 +80,10 @@ function portraitOf(id) {
     fill(2, 5, 13, 5, 'h');
     fill(2, 6, 3, 7, 'h');
     fill(12, 6, 13, 7, 'h');
+  } else if (style === 'beanie') {
+    fill(4, 1, 11, 4, 'h');
+    fill(3, 4, 12, 5, 'b');
+    fill(7, 0, 8, 0, 'b');
   } else if (style === 'bandana') {
     fill(4, 2, 11, 4, 'b');
     fill(3, 4, 12, 5, 'b');

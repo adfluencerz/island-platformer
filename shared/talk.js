@@ -94,12 +94,13 @@ const ROSA = [
   {
     id: 'others',
     text: 'What are the others like?',
-    if: { any: [{ met: 'basil' }, { met: 'finn' }, { met: 'mabel' }] },
+    if: { any: [{ met: 'basil' }, { met: 'finn' }, { met: 'mabel' }, { met: 'bram' }] },
     say: 'Oh, I could talk all day. Who do you want to hear about?',
     then: [
       { text: 'Basil?', if: { met: 'basil' }, say: 'Dear man. Forgets his own hat, mind. Marigold kept him in order, and now I send him eggs and he sends me sunflower heads for the hens. It works.' },
       { text: 'Finn?', if: { met: 'finn' }, say: 'A big child with a beard. His stories get taller, but the fish don\'t. Still, there\'s no one I\'d rather have on the end of a rope in a storm.' },
       { text: 'Mabel?', if: { met: 'mabel' }, say: 'Mabel! My oldest friend in the valley. Her honey cake could end wars. She knows everything about everyone, so mind what you say.' },
+      { text: 'Bram?', if: { met: 'bram' }, say: 'Grumbles like a gate in the wind, and fixes my coop every single week without being asked. Don\'t let him fool you, love. Soft as butter.' },
     ],
   },
   {
@@ -174,12 +175,13 @@ const BASIL = [
   {
     id: 'others',
     text: 'What are the others like?',
-    if: { any: [{ met: 'rosa' }, { met: 'finn' }, { met: 'mabel' }] },
+    if: { any: [{ met: 'rosa' }, { met: 'finn' }, { met: 'mabel' }, { met: 'bram' }] },
     say: 'Oh, I don\'t like to gossip. Well. A little. Who?',
     then: [
       { text: 'Rosa?', if: { met: 'rosa' }, say: 'A force of nature. She brings me manure for the beds: the best present a gardener can get, believe it or not.' },
       { text: 'Finn?', if: { met: 'finn' }, say: 'Finn brings me seaweed for the compost. Smells of the sea, and the beds adore it. He never stays for tea, mind. Says the land makes him dizzy.' },
       { text: 'Mabel?', if: { met: 'mabel' }, say: 'Mabel makes a pumpkin soup that would bring a scarecrow to tears. I leave her courgettes, to say thank you. She never says a word.' },
+      { text: 'Bram?', if: { met: 'bram' }, say: 'Bram built my greenhouse, for Marigold, the spring we married. He pretends he doesn\'t remember. He remembers.' },
     ],
   },
   {
@@ -253,12 +255,13 @@ const FINN = [
   {
     id: 'others',
     text: 'What are the others like?',
-    if: { any: [{ met: 'rosa' }, { met: 'basil' }, { met: 'mabel' }] },
+    if: { any: [{ met: 'rosa' }, { met: 'basil' }, { met: 'mabel' }, { met: 'bram' }] },
     say: 'The valley folk? Landlubbers, the lot, but good ones. Who d\'ye want to hear about?',
     then: [
       { text: 'Rosa?', if: { met: 'rosa' }, say: 'Salt of the earth. Always on at me to eat vegetables. I eat seaweed. That\'s a vegetable. She disagrees.' },
       { text: 'Basil?', if: { met: 'basil' }, say: 'Gentle as a lamb. Me seaweed makes his beds grow like mad, and he thinks it\'s magic. I let him.' },
       { text: 'Mabel?', if: { met: 'mabel' }, say: 'Her fish stew is the reason I come ashore. Don\'t tell her, but I tell everyone it\'s the sea air that makes it so good.' },
+      { text: 'Bram?', if: { met: 'bram' }, say: 'Built me first dock, and me boat, and he\'s never once been out on the water. Says wood belongs on land. Daft as a brush, and the best hands in the valley.' },
     ],
   },
   {
@@ -332,12 +335,13 @@ const MABEL = [
   {
     id: 'others',
     text: 'What are the others like?',
-    if: { any: [{ met: 'rosa' }, { met: 'basil' }, { met: 'finn' }] },
+    if: { any: [{ met: 'rosa' }, { met: 'basil' }, { met: 'finn' }, { met: 'bram' }] },
     say: 'Oh, I know everybody\'s business, dear, it comes with the ovens. Who shall it be?',
     then: [
       { text: 'Rosa?', if: { met: 'rosa' }, say: 'My oldest friend! We\'ve shared a stall at the fair for twenty years. She brings the cheese, I bring the cake, and we eat half of it before we sell it.' },
       { text: 'Basil?', if: { met: 'basil' }, say: 'Basil leaves courgettes on my doorstep. Every week! I can\'t tell him I\'m drowning in courgettes, he\'d be heartbroken. Sweet man.' },
       { text: 'Finn?', if: { met: 'finn' }, say: 'I put extra pepper in his stew. He thinks it\'s the sea air. I\'ve never had the heart to tell him.' },
+      { text: 'Bram?', if: { met: 'bram' }, say: 'Bram made every shelf in this bakery, dear, and he won\'t take a penny. So I leave a pie on his bench every Friday, and he pretends he doesn\'t know who.' },
     ],
   },
   {
@@ -374,11 +378,94 @@ const MABEL = [
   },
 ];
 
+// ---------- Bram ----------
+const BRAM = [
+  {
+    id: 'workshop',
+    text: 'What are you working on?',
+    say: (c) => (c.chose('bram_sign') === 'joinery'
+      ? 'A chair. It\'s always a chair. And a sign for over the door, now, the plain one you said. Bram\'s Joinery. No fuss.'
+      : 'A chair. It\'s always a chair. Everybody in this valley sits on something I made and none of them notice. That\'s how you know it\'s good.'),
+    then: [
+      { text: 'Why chairs?', say: 'A chair is honest. Four legs, a seat, a back. Get one wrong and you\'re on the floor. Wood doesn\'t lie.' },
+      { text: 'Can I watch?', say: 'You can sweep. Watching\'s for people who don\'t sweep.' },
+    ],
+  },
+  {
+    id: 'wood',
+    text: 'Any tips for building?',
+    say: 'Upgrade your workbench. A bigger bench makes better tools: silver, then gold. Better tools fell trees and break rocks quicker. Quicker means more timber. More timber means bigger pens. It all goes round.',
+    then: [
+      { text: 'What does the bench need?', say: 'Gold, timber and stone. And for the top, gems, and hands that know an axe and a pickaxe. I don\'t put a top bench in for anybody.' },
+      { text: 'And the pens?', say: 'Rosa will tell you animals need room. She\'s right, don\'t tell her I said so. I\'ll put your fences out when you\'re ready for it.' },
+    ],
+  },
+  {
+    id: 'houses',
+    text: 'You built all the houses?',
+    if: { done: 'bram_bench' },
+    say: 'Every one. Rosa\'s porch, Basil\'s greenhouse, Mabel\'s shelves, Finn\'s first dock. The sea had the dock. I don\'t talk about the dock.',
+    then: [
+      { text: 'Which is your favourite?', say: 'Basil\'s greenhouse. Built it for Marigold. Every pane by hand. He still keeps it spotless. That\'s the best thanks there is.' },
+      { text: 'And your own?', say: 'Mine leaks. A joiner\'s roof always leaks. No time to fix your own.' },
+    ],
+  },
+  {
+    id: 'apprentice',
+    text: 'Did you ever have an apprentice?',
+    if: { hearts: 1 },
+    say: 'One. Good hands. Went to the city. Said the valley was too quiet. It is too quiet. That\'s the point of it.',
+    then: [
+      { text: 'Do you miss them?', say: 'Hm. I kept their stool. Don\'t read anything into it.' },
+      { text: 'Am I your apprentice now?', say: 'You\'re a farmer who borrows my plans. Ask me again when you\'ve built a barn.' },
+    ],
+  },
+  {
+    id: 'others',
+    text: 'What are the others like?',
+    if: { any: [{ met: 'rosa' }, { met: 'basil' }, { met: 'finn' }, { met: 'mabel' }] },
+    say: 'I\'ve fixed all their doors. You learn a lot about people from how they shut a door.',
+    then: [
+      { text: 'Rosa?', if: { met: 'rosa' }, say: 'Slams it. Every time. Big heart, strong arms, no patience for hinges.' },
+      { text: 'Basil?', if: { met: 'basil' }, say: 'Leaves it open, for the bees. Never shuts it. Never will.' },
+      { text: 'Finn?', if: { met: 'finn' }, say: 'Hasn\'t got one. Hangs a sail over the gap. Says doors are for landlubbers.' },
+      { text: 'Mabel?', if: { met: 'mabel' }, say: 'Props it with a loaf so the smell gets out. Clever. Annoying. Clever.' },
+    ],
+  },
+  {
+    id: 'bram_chair',
+    event: true,
+    text: 'Two chairs, Bram?',
+    if: { hearts: 2 },
+    gives: { items: [['steel', 3]] },
+    say: 'Same wood, same plans, two chairs. One of them\'s better. I can\'t tell which. Sit in both and tell me. Honestly, mind.',
+    then: [
+      { text: 'The left one.', keep: ['bram_chair', 'left'], say: 'The left. I thought so. I shaved the back a hair thinner. Nobody else would ever notice. You did.' },
+      { text: 'The right one.', keep: ['bram_chair', 'right'], say: 'The right. Hm. That\'s the one I made first, before I got clever. Maybe I shouldn\'t get clever.' },
+      { text: 'They\'re the same.', keep: ['bram_chair', 'same'], say: 'They are not. But you\'re honest about it, and that\'s worth more than an eye for chairs.' },
+    ],
+  },
+  {
+    id: 'bram_sign',
+    event: true,
+    text: 'Carving something, Bram?',
+    if: { hearts: 4 },
+    gives: { items: [['arrow', 10]] },
+    say: 'A new sign, for over the door. Forty years with no sign. Everybody knows where I am. But Mabel says a proper business has a sign. What should it say?',
+    then: [
+      { text: '"Bram\'s Joinery". Keep it plain.', keep: ['bram_sign', 'joinery'], say: 'Plain. Good. Plain lasts.' },
+      { text: '"Measure twice".', keep: ['bram_sign', 'measure'], say: 'Ha. Yes. And underneath, smaller: "then again". I\'ll carve it tonight.' },
+      { text: '"Mind the shavings".', keep: ['bram_sign', 'shavings'], say: 'That\'s all I ever say, isn\'t it. Fine. Fine. It\'s true.' },
+    ],
+  },
+];
+
 export const TALK = {
   rosa: { topics: ROSA },
   basil: { topics: BASIL },
   finn: { topics: FINN },
   mabel: { topics: MABEL },
+  bram: { topics: BRAM },
 };
 
 // Each node knows whose it is, where it hangs (`parent`, and the `root` topic
@@ -424,8 +511,16 @@ export function cleanState(id, saved) {
     chatDay: Number.isFinite(saved.chatDay) ? saved.chatDay : -1,
     seen: Array.isArray(saved.seen) ? [...new Set(saved.seen.filter((n) => typeof n === 'string' && nodes[n]))] : [],
     chose: Object.fromEntries(plain(saved.chose).filter(([key, answer]) => answers.has(`${key}:${answer}`))),
+    errand: cleanErrand(id, saved.errand),
+    errandDay: Number.isFinite(saved.errandDay) ? saved.errandDay : -1,
+    errands: Number.isInteger(saved.errands) && saved.errands > 0 ? saved.errands : 0,
   };
 }
+
+// The errand they asked of you as saved, or null: one of theirs, on a day
+const cleanErrand = (id, e) => (e && typeof e === 'object' && NPCS[id].errands.some((x) => x.id === e.id) && Number.isFinite(e.day)
+  ? { day: e.day, id: e.id, since: e.since && typeof e.since === 'object' && !Array.isArray(e.since) ? e.since : {} }
+  : null);
 
 // ---------- What there is to say ----------
 // The topics of their Chat menu that are open to you: [{ node, isNew }], the

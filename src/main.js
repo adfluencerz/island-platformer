@@ -71,7 +71,7 @@ import { arenaMap, buildCrown } from './arenas.js';
 import { spawnPoint } from '../shared/level.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { CAST_REACH, waterOn } from '../shared/fishing.js';
-import { HOME_HALF, OLD_HALF, farmBlocked, inLake, LAKE, DOCK } from '../shared/farmland.js';
+import { HOME_HALF, OLD_HALF, farmBlocked, offLots, inLake, LAKE, DOCK } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
@@ -1487,7 +1487,7 @@ createDevTools({
   hearts() {
     for (const id of NPC_IDS) npcs.befriend(id);
     saveGame();
-    return 'Five hearts with all four';
+    return 'Five hearts with them all';
   },
   forget() {
     npcs.reset();
@@ -4845,10 +4845,14 @@ function captureFarm() {
 }
 
 // (a farm from before there were animals gets the ones a new farm comes with)
-function showFarm(farm) {
+function showFarm(saved) {
   resetFarm();
+  // (nothing on a neighbour's lot: one who moved in after it was built on;
+  // what was built there goes back in the chest)
+  const { farm, refund } = offLots(saved);
   farmFinds.restoreDropped(farm?.dropped);
   ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
+  for (const [item, n] of Object.entries(refund)) ownChest[item] = (ownChest[item] ?? 0) + n;
   useLevels(farm?.levels);
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
