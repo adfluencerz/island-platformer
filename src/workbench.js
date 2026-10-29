@@ -59,8 +59,8 @@ const UPGRADES = [
 // be upgraded right now ('' if it can: the farm's side of it), upgrade(id) }
 // chest: { stock(): { item: count } of what the chest has to make things
 // with, spend({ item: count }): a promise of whether it was all there, and
-// is used up now }
-export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { stock: () => ({}), spend: async () => false }, parent = document.body, active = () => true }) {
+// is used up now }. onMade(recipe): something was made (for the neighbours' requests)
+export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { stock: () => ({}), spend: async () => false }, onMade = () => {}, parent = document.body, active = () => true }) {
   let open = false;
   let busy = false; // (waiting to hear whether the chest had it)
 
@@ -203,6 +203,7 @@ export function createWorkbench({ inventory, onOpenChange, upgrades, chest = { s
     } else {
       inventory.add(recipe.makes, recipe.count ?? 1);
     }
+    if (paid) onMade(recipe);
     if (open) render();
   }
 

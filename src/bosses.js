@@ -422,6 +422,7 @@ export function createBosses(ctx) {
       }
       hud.flash('Treasure!');
       inventory.notify(`In the chest: ${words.join(', ')}`);
+      sctx.onChest?.(); // (for the neighbours' requests)
       sctx.save();
     }
 
@@ -438,6 +439,7 @@ export function createBosses(ctx) {
         ? `You beat the ${name(id)}! Its statue and the ${ITEMS[def.mount].name.toLowerCase()} are yours, and a shiny golden ${kind} is off to your farm`
         : `You beat the ${name(id)} again! A shiny golden ${kind} is off to your farm`);
       payAt = now + 2.5; // (once that has been read)
+      sctx.onWon?.(id); // (for the neighbours' requests)
       sctx.save();
     }
 

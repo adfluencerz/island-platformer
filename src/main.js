@@ -9,7 +9,8 @@ import { createNpcs } from './npcs.js';
 import { createDialog } from './dialog.js';
 import { renderQuests, renderMap } from './quests.js';
 import { npcHomes } from './npchomes.js';
-import { NPCS, NPC_IDS } from '../shared/npcs.js';
+import { NPCS, NPC_IDS, MISSIONS } from '../shared/npcs.js';
+import { unlockProblem, blueprintCond, blueprintProblem } from '../shared/unlocks.js';
 import { createRequests } from './requests.js';
 import { createChest, createChestModel } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
@@ -75,7 +76,7 @@ import { arenaMap, buildCrown } from './arenas.js';
 import { spawnPoint } from '../shared/level.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { CAST_REACH, waterOn } from '../shared/fishing.js';
-import { HOME_HALF, OLD_HALF, farmBlocked, inLake, LAKE, DOCK } from '../shared/farmland.js';
+import { HOME_HALF, OLD_HALF, farmBlocked, offLots, inLake, LAKE, DOCK } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
@@ -113,7 +114,7 @@ let me = null; // the seat the code works for now
 // (each seat's own, in place for the seat the code works for: become)
 let camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock;
 let glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade;
-let workbench, arcade, cooking, readyNoted, learned, pettedOn;
+let workbench, arcade, cooking, readyNoted, learned, kept, pettedOn;
 let fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote;
 let airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown;
 let readyCheck, meal;
@@ -164,7 +165,7 @@ function become(seat) {
   me = seat;
   ({ camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock } = seat);
   ({ glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade } = seat);
-  ({ workbench, arcade, cooking, readyNoted, learned, pettedOn } = seat);
+  ({ workbench, arcade, cooking, readyNoted, learned, kept, pettedOn } = seat);
   ({ fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = seat.vals);
   ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = seat.vals);
   ({ readyCheck, meal } = seat.vals);
@@ -450,6 +451,7 @@ const newInventory = (seat) => createInventory(forSeat(seat, {
   onEat: (id) => eat(id, false),
   onDrop: ({ id, count }) => dropFromBackpack(id, count),
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : farmVisit?.visitor ? 'You\'re looking round: only the farm\'s helpers build here.' : indoors() ? 'You build outside: head out of the house first.' : ''),
+  locked: (piece) => blueprintProblem(piece, unlockView(), kept), // (its blueprint: shared/unlocks.js)
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
   renderSkills: (el) => skills.render(el),
@@ -1524,7 +1526,7 @@ createDevTools({
   hearts() {
     for (const id of NPC_IDS) npcs.befriend(id);
     saveGame();
-    return 'Five hearts with all four';
+    return 'Five hearts with them all';
   },
   forget() {
     npcs.reset();
@@ -2967,6 +2969,8 @@ function buildProblemAt(key) {
     return '';
   }
   const piece = PIECES[building];
+  const blueprint = blueprintProblem(building, unlockView(), kept);
+  if (blueprint) return blueprint;
   if (piece.one && buildings.find(building)) return `The farm has a ${piece.name.toLowerCase()}: take it down to move it`;
   if (buildings.findAll(building).length >= mostPieces(building, farmHelpers())) return `One house, and one more for each helper: invite a friend to build another`;
   // (every tile it would stand on: a house has 20)
@@ -3037,6 +3041,7 @@ function buildAt(key, { quiet = false } = {}) {
     }
   }
   buildings.place(key, building);
+  if (blueprintCond(building)) kept.add(building); // (built once, theirs to build again)
   if (!farmNet) machines.built(key, building, farmHours()); // (a beehive gets going: on a farm with helpers, the room says)
   placeChest();
   if (farmNet) {
@@ -3387,6 +3392,8 @@ const newBosses = (seat) => ({
       // (their own farm: for a farmer who joined at the screen, not this one)
       farmIsOurs: () => seat === first && place === 'home' && farmOnScreen && (!farmVisit || farmVisit.mine),
       addShiny: (kind) => !!animals.addShiny(kind),
+      onWon: () => npcs.did('boss'),
+      onChest: () => npcs.did('dungeon'),
       save: () => saveGame(),
     }),
   }),
@@ -3419,7 +3426,7 @@ shop = first.shop = newShop(first);
 const npcWorld = createNpcs({ parent: worlds.home.root });
 const newNpcs = (seat) => ({
   ...npcWorld,
-  ...npcWorld.standing({ inventory: seat.inventory, ctx: seated(seat, () => missionCtx()), onMends: () => showMends(), story: seat === first }),
+  ...npcWorld.standing({ inventory: seat.inventory, ctx: seated(seat, () => missionCtx()), onMends: () => showMends(), story: seat === first, day: () => dayNight.day() }),
 });
 // Finn's dock is mended if it is for anyone at the screen
 const showMends = () => npcHomes.dock.mend(seats.some((seat) => seat.npcs?.mended()));
@@ -3453,11 +3460,12 @@ const newDialog = (seat) => createDialog({
 dialog = first.dialog = newDialog(first);
 // A neighbour's shop (src/shop.js): their shelves, those not open to you
 // yet locked, at their prices less a friend's discount
+const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1); // ("After …" -> "after …")
 function openNpcShop(id) {
   const npc = NPCS[id];
   shop.open({
     title: npc.title,
-    shelves: npc.shop.shelves.map(({ title, items }) => ({ title, items, locked: !npcs.shopOpen(id, title), lockText: `do more for ${npc.name}` })),
+    shelves: npc.shop.shelves.map(({ title, items }) => ({ title, items, locked: !npcs.shopOpen(id, title), lockText: lowerFirst(npcs.shelfLock(id, title)) })),
     lines: { hello: npc.lines.shop, bought: npc.lines.bought },
     request: false,
     discount: npcs.discount(id),
@@ -3723,6 +3731,7 @@ const newWorkbench = (seat) => createWorkbench({
     parent: seat.root,
     active: () => me === seat,
     onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+    onMade: () => npcs.did('make'),
   }),
   upgrades: forSeat(seat, { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade }),
   chest: forSeat(seat, { stock: chestStock, spend: spendFromChest }),
@@ -3786,9 +3795,25 @@ function useLevels(saved) {
   buildings.setBenchLevel(farmLevels.workbench);
 }
 
+// What this farmer has done, as the unlocks are checked against
+// (shared/unlocks.js): their neighbours' requests, their skills, their bosses
+const unlockView = () => ({
+  done: (m) => !!MISSIONS[m] && npcs.state(MISSIONS[m].npc).done.includes(m),
+  skill: (id) => skills.level(id),
+  beaten: (boss) => bosses.record().won[boss] > 0,
+  hearts: (id) => npcs.hearts(id),
+});
+// The pieces in `built` ([[key, piece]], a farm's) that wait for a blueprint
+// are this farmer's to build again
+function keepBuilt(built) {
+  for (const [, piece] of Array.isArray(built) ? built : []) if (blueprintCond(piece)) kept.add(piece);
+}
+
 // Why the farm can't have the next level of id right now ('': it can, what it costs aside)
 function upgradeProblem(id) {
   if (visiting()) return 'Only the farmer can upgrade their farm';
+  const gate = unlockProblem(LEVELS_OF[id][farmLevels[id]]?.needs, unlockView()); // (Bram builds it, once he trusts you with it)
+  if (gate) return gate;
   if (id === 'workbench') return '';
   // a bigger pen: nothing built or farmed where its fence goes out to
   const [now, next] = [penRect(id, farmLevels[id]), penRect(id, farmLevels[id] + 1)];
@@ -3829,6 +3854,9 @@ function upgrade(id) {
 const machines = createMachines({ buildings, root: worlds.home.root });
 const pendingLoads = new Map(); // tiles we loaded a machine on that the farm's room hasn't said yes to yet -> what came out of the backpack for it
 learned = first.learned = new Set(); // the kitchen's recipes read into the recipe book (each seat's own)
+// The pieces that wait for a blueprint (shared/unlocks.js) that this farmer
+// had built before they did: theirs to build again (each seat's own)
+kept = first.kept = new Set();
 const known = (dish) => DISHES[dish]?.learn === 'start' || learned.has(dish);
 const newCooking = (seat) => createCooking({
   inventory: seat.inventory,
@@ -4459,6 +4487,7 @@ function showRoomFarm(m) {
     tillTileAt(...keyXZ(key), bare, life);
   }
   buildings.placeAll(m.built ?? []);
+  if (farmVisit?.mine) keepBuilt(m.built); // (our own farm: what stands on it is ours to build again)
   machines.restore(m.machines, m.hours);
   placeChest();
   showFarmWilds(m);
@@ -4751,6 +4780,7 @@ function partyOver(m) {
     for (const [item, count] of m.prizes.find(([who]) => who === id)?.[1] ?? []) if (ITEMS[item]) inventory.add(item, count);
     if (!playedBy(id)) return;
     played = true;
+    npcs.did('game'); // (for Finn's request)
     if ((m.winners ?? [m.winner]).includes(id)) {
       sound.play('cheer');
       hud.flash('You won!');
@@ -4858,6 +4888,7 @@ function joinLobby({ name, code }) {
       showSpot(spot);
     }
     const by = seatBy(m.by); // (one of the farmers at this screen: into their backpack)
+    if (by) within(by, () => npcs.did('loot')); // (a spot or chest picked on the wild islands: for Basil's request)
     if (by && m.items) within(by, () => openedChest(spot, m.items));
     else if (by) {
       within(by, () => {
@@ -5040,10 +5071,14 @@ function captureFarm() {
 }
 
 // (a farm from before there were animals gets the ones a new farm comes with)
-function showFarm(farm) {
+function showFarm(saved) {
   resetFarm();
+  // (nothing on a neighbour's lot: one who moved in after it was built on;
+  // what was built there goes back in the chest)
+  const { farm, refund } = offLots(saved);
   farmFinds.restoreDropped(farm?.dropped);
   ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
+  for (const [item, n] of Object.entries(refund)) ownChest[item] = (ownChest[item] ?? 0) + n;
   useLevels(farm?.levels);
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
@@ -5082,7 +5117,7 @@ function currentSave() {
 
 // What a farmer carries wherever they go, for their save: the backpack and the rest (the seat's)
 function character() {
-  return { backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize() };
+  return { backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize(), blueprints: [...kept] };
 }
 
 // Everyone's at the screen: the farm and the first seat's farmer, and each
@@ -5143,6 +5178,9 @@ function useCharacter(save) {
   bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
   learned.clear();
   for (const dish of Array.isArray(save.recipes) ? save.recipes : []) if (DISHES[dish]?.cook === 'kitchen') learned.add(dish);
+  kept.clear();
+  for (const piece of Array.isArray(save.blueprints) ? save.blueprints : []) if (blueprintCond(piece)) kept.add(piece);
+  keepBuilt(save.farm?.built); // (a save from before the blueprints: what stands on the farm is the farmer's to build again)
   const [dish, left] = Array.isArray(save.meal) ? save.meal : [];
   meal = DISHES[dish] && Number.isFinite(left) && left > 0 ? { dish, ...boostFrom(dish), left: Math.min(left, boostFrom(dish).left) } : null;
   if (save.v < 2) gift('flax_seeds', 5);
@@ -5350,6 +5388,7 @@ function makeSeat(seat) {
   seat.workbench = newWorkbench(seat);
   seat.arcade = newArcade(seat);
   seat.learned = new Set();
+  seat.kept = new Set();
   seat.cooking = newCooking(seat);
   seat.tag = el('div', 'seat-tag', seat.root);
   seat.panel = new SeatPanel({
@@ -6010,7 +6049,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, logInPlayer, startJoin, get session() { return session; }, get myId() { return myId; }, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, upgradeProblem, blueprintLock: (piece) => blueprintProblem(piece, unlockView(), kept), get kept() { return kept; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, logInPlayer, startJoin, get session() { return session; }, get myId() { return myId; }, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
 }
 
 loadGame();

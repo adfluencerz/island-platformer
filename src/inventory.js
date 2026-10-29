@@ -112,7 +112,7 @@ function iconImg(parent) {
 // onEat(id): a dish double-clicked in the backpack, to eat one.
 // parent: where its toolbar and windows go (a farmer's part of a split
 // screen, src/main.js). active(): the keys pressed now are its farmer's.
-export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {}, renderBook = () => {}, renderQuests = () => {}, renderMap = () => {}, parent = document.body, active = () => true } = {}) {
+export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = () => false, buildProblem = () => '', locked = () => '', building = () => null, inChest = () => 0, renderSkills = () => {}, renderFish = () => {}, renderBook = () => {}, renderQuests = () => {}, renderMap = () => {}, parent = document.body, active = () => true } = {}) {
   const slots = new Array(COLS * ROWS).fill(null); // { id, count } | null
   let selected = 0;
   let gold = 0;
@@ -285,13 +285,15 @@ export function createInventory({ onOpenChange, onBuild, onAdd, onEat, onDrop = 
       const def = PIECES[id];
       const short = def ? Object.entries(def.cost).find(([item, n]) => toBuild(item) < n) : null;
       const made = ITEMS[id]?.piece === id; // (a decoration, made at the workbench)
-      const card = el('button', 'inv-build-card' + (building() === id ? ' on' : ''), cards);
+      const lock = def ? locked(id) : ''; // (its blueprint not yours yet: shared/unlocks.js)
+      const card = el('button', 'inv-build-card' + (building() === id ? ' on' : '') + (lock ? ' locked' : ''), cards);
       card.type = 'button';
-      card.disabled = !!problem || !!short;
+      card.disabled = !!problem || !!short || !!lock;
       iconImg(card).src = spriteURL(PIECE_ICONS[id] ?? ITEMS[id]);
       el('b', '', card).textContent = def ? def.name : 'Take down';
       const sub = el('span', 'inv-build-cost' + (short ? ' short' : ''), card);
       if (!def) sub.textContent = 'and get it back';
+      else if (lock) sub.textContent = lock;
       else if (made) sub.textContent = short ? 'Make one at a workbench' : inChest(id) ? `${toBuild(id)} in backpack and chest` : `${have(id)} in your backpack`;
       else sub.textContent = costText(def.cost);
       if (short && !made) card.title = `Not enough ${ITEMS[short[0]].name.toLowerCase()}: you have ${toBuild(short[0])}`;

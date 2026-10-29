@@ -9,9 +9,10 @@ import { box, ball, cyl, cone, mat, part, live, flat, model, beam, prismGeo, hou
 // farm's set pieces (src/maps.js): Rosa's red ranch house with its porch,
 // paddock and coop; Basil's whitewashed cottage with its greenhouse, arbor
 // and vegetable beds; Finn's fishing hut on the dunes with his lighthouse and
-// his dock out over the sea; and Mabel's timbered bakery with its terrace and
-// oven. Each faces south, a sign by the road, its door in the middle of its
-// front. Each takes the group `g` it is drawn in (at the home's middle), the
+// his dock out over the sea; Mabel's timbered bakery with its terrace and
+// oven; and Bram's joinery, by the wood, with its lean-to of planks. Each
+// faces south, a sign by the road, its door in the middle of its front.
+// Each takes the group `g` it is drawn in (at the home's middle), the
 // home (shared/farmland.js), and what src/npchomes.js gives them: { addCollider,
 // anims (what moves, by time), story (what shows as you do things for them, or
 // they like you more: src/homekit.js), glows (what lights up at night) }.
@@ -614,4 +615,81 @@ function mabelHome(g, home, { addCollider, anims, glows, story }) {
   roadSign(g, NPCS.mabel.title, 3.4, 5.2, { paper: '#fff0e0', ink: '#9c3a2e' });
 }
 
-export const YARDS = { rosa: rosaHome, basil: basilHome, finn: finnHome, mabel: mabelHome };
+// Bram's joinery: a timber workshop of dark boards, a lean-to of seasoned
+// planks along its west side, a sawhorse with a plank half cut, a chopping
+// block with its axe in it. What he makes with you shows: an anvil, once
+// there's steel; a run of picket fence; a barn's frame going up out the back;
+// bunting for the fair.
+function bramHome(g, home, { addCollider, anims, glows, story }) {
+  const { trimMat } = house(g, home, { wall: 0x8a6a48, trim: 0x4a3626, roof: 0x3f4a3a, door: 0x5a3a22, rise: 1.6 }, addCollider);
+  const front = home.d / 2 + 0.03;
+  // boards up the front, and a sign of a saw over the door
+  for (const x of [-2.6, -2.0, 2.0, 2.6]) part(g, box, trimMat, [x, 1.2, front], [0.08, 2.4, 0.03]);
+  part(g, box, mat(0xd8c8a0), [0, 2.25, front + 0.06], [1.2, 0.3, 0.04]);
+  part(g, box, ironMat, [0, 2.25, front + 0.09], [0.8, 0.08, 0.02]);
+  for (let i = 0; i < 6; i++) part(g, cone, ironMat, [-0.35 + i * 0.14, 2.18, front + 0.09], [0.04, 0.06, 0.02], [Math.PI, 0, 0]);
+  lantern(g, glows, [1.1, 2.1, front + 0.25]);
+  // a stove pipe, and its smoke
+  part(g, cyl, ironMat, [-1.6, 3.2, -0.8], [0.14, 1.8, 0.14]);
+  smoke(g, [-1.6, 4.15, -0.8], anims, { rise: 1.8, puffs: 4 });
+  // the lean-to of seasoned planks along the west wall
+  const lx = -home.w / 2 - 0.8;
+  part(g, box, mat(0x3f4a3a), [lx, 1.9, 0], [1.8, 0.08, home.d + 0.4], [0, 0, -0.25]);
+  for (const z of [-2.2, 2.2]) pole(g, [lx - 0.75, z], 1.7);
+  for (let i = 0; i < 7; i++) part(g, box, mat([0xc89a62, 0xb8864e, 0xd8aa72][i % 3]), [lx - 0.1 + (i % 2) * 0.12, 0.2 + i * 0.16, 0], [0.9, 0.12, home.d - 0.2]);
+  addCollider({ x: home.x + lx, y: 0.7, z: home.z, w: 1.8, h: 1.4, d: home.d });
+  // a sawhorse with a plank on it, half cut, and the saw in it
+  const sh = [4.2, 0.4];
+  for (const dz of [-0.45, 0.45]) {
+    for (const dx of [-0.25, 0.25]) part(g, box, darkWoodMat, [sh[0] + dx, 0.35, sh[1] + dz], [0.07, 0.75, 0.07], [0, 0, dx > 0 ? -0.3 : 0.3]);
+    part(g, box, darkWoodMat, [sh[0], 0.7, sh[1] + dz], [0.6, 0.08, 0.08]);
+  }
+  part(g, box, mat(0xd8aa72), [sh[0], 0.79, sh[1]], [0.3, 0.06, 2.0]);
+  part(g, box, ironMat, [sh[0], 0.92, sh[1] + 0.5], [0.02, 0.22, 0.7], [0.4, 0, 0]);
+  part(g, box, woodMat, [sh[0], 1.08, sh[1] + 0.85], [0.06, 0.14, 0.2]);
+  addCollider({ x: home.x + sh[0], y: 0.4, z: home.z + sh[1], w: 0.7, h: 0.8, d: 2.0 });
+  // a chopping block with its axe in it, and shavings round it
+  const cb = [-3.8, 3.0];
+  part(g, cyl, mat(0x8a6a4a), [cb[0], 0.3, cb[1]], [0.38, 0.6, 0.38]);
+  part(g, cyl, mat(0xd8c8a0), [cb[0], 0.61, cb[1]], [0.34, 0.02, 0.34]);
+  part(g, box, woodMat, [cb[0] + 0.1, 0.95, cb[1]], [0.05, 0.7, 0.05], [0, 0, -0.5]);
+  part(g, box, ironMat, [cb[0] - 0.05, 0.66, cb[1]], [0.2, 0.12, 0.03], [0, 0, -0.5]);
+  for (let i = 0; i < 8; i++) part(g, box, mat(0xe8d4a8), [cb[0] + Math.sin(i * 2.3) * 0.7, 0.012, cb[1] + Math.cos(i * 1.7) * 0.6], [0.14, 0.02, 0.06], [0, i, 0]).castShadow = false;
+  addCollider({ x: home.x + cb[0], y: 0.3, z: home.z + cb[1], w: 0.8, h: 0.6, d: 0.8 });
+  // a log pile out the east side, for the stove
+  for (let i = 0; i < 9; i++) part(g, cyl, mat(0x7a5a3a), [3.9 + (i % 3) * 0.32 - Math.floor(i / 3) * 0.0, 0.16 + Math.floor(i / 3) * 0.28, -1.9], [0.15, 1.1, 0.15], [Math.PI / 2, 0, 0]);
+  addCollider({ x: home.x + 4.2, y: 0.45, z: home.z - 1.9, w: 1.1, h: 0.9, d: 1.1 });
+  // an anvil by the door, once there's steel to work
+  const anvil = story.group(g, (c) => c.done('bram_steel'), [2.3, 0, front + 1.3]);
+  part(anvil, box, mat(0x6e5a42), [0, 0.22, 0], [0.4, 0.44, 0.4]);
+  part(anvil, box, ironMat, [0, 0.52, 0], [0.6, 0.16, 0.26]);
+  part(anvil, cone, ironMat, [0.4, 0.55, 0], [0.09, 0.22, 0.09], [0, 0, -Math.PI / 2]);
+  // a run of picket fence, the way he showed you
+  const pickets = story.group(g, (c) => c.done('bram_fence'), [-5.0, 0, 1.0]);
+  part(pickets, box, mat(0xf4efe4), [0, 0.45, 0], [0.06, 0.08, 2.4]);
+  part(pickets, box, mat(0xf4efe4), [0, 0.75, 0], [0.06, 0.08, 2.4]);
+  for (let i = 0; i < 8; i++) {
+    part(pickets, box, mat(0xf4efe4), [0, 0.5, -1.05 + i * 0.3], [0.06, 1.0, 0.12]);
+    part(pickets, cone, mat(0xf4efe4), [0, 1.06, -1.05 + i * 0.3], [0.06, 0.12, 0.06]);
+  }
+  // the barn's frame, going up out the back, for Rosa
+  const barn = story.group(g, (c) => c.done('bram_barn'), [0, 0, -4.4]);
+  for (const x of [-2.2, 0, 2.2]) for (const z of [-0.6, 0.6]) part(barn, box, mat(0xc89a62), [x, 1.3, z], [0.16, 2.6, 0.16]);
+  for (const z of [-0.6, 0.6]) part(barn, box, mat(0xc89a62), [0, 2.6, z], [4.6, 0.16, 0.16]);
+  for (const x of [-2.2, 0, 2.2]) {
+    part(barn, box, mat(0xb8864e), [x - 0.35, 3.0, 0], [0.12, 0.12, 1.5], [0.6, 0, 0]);
+    part(barn, box, mat(0xb8864e), [x, 3.0, 0], [0.12, 1.0, 0.12]);
+  }
+  // bunting for the fair, from the eaves out to two poles
+  const fair = story.group(g, (c) => c.done('bram_fair'), [0, 0, 0]);
+  for (const sx of [-1, 1]) {
+    pole(fair, [sx * 4.6, 5.0], 2.3, darkWoodMat, 0.1);
+    bunting(fair, [sx * 2.9, 2.35, front + 0.1], [sx * 4.6, 2.2, 5.0], [0xd8452f, 0xf2c230, 0x3f8a46, 0xfff4e0, 0x2f6fb5], { sag: 0.4, n: 8 });
+  }
+  // a chair out front, for you, once he's glad of the company
+  const seat = story.group(g, (c) => c.hearts >= 2, [-1.6, 0, front + 1.0]);
+  chair(seat, [0, 0], Math.PI * 0.1, 0xb8864e);
+  roadSign(g, NPCS.bram.title, -3.4, 5.4, { paper: '#f4e4c4', ink: '#4a3626' });
+}
+
+export const YARDS = { rosa: rosaHome, basil: basilHome, finn: finnHome, mabel: mabelHome, bram: bramHome };

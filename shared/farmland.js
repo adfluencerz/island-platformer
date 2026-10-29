@@ -12,8 +12,11 @@
 // east, Basil's seed cottage by a sunflower field and a pumpkin patch to the
 // south-east, a strawberry bank, and shell dunes along the south shore, where
 // Finn's hut stands at the head of his dock. Mabel bakes at the forest's edge,
-// to the north-east. Roads go out from the old farm's paths to each of them.
-import { SPAWN } from './level.js';
+// to the north-east, and Bram has his joinery at the wood's edge to the
+// north-west, up past the meadow. Roads go out from the old farm's paths to
+// each of them.
+import { SPAWN, pieceTiles, movedKey } from './level.js';
+import { BUILD_COSTS } from './balance.js';
 import { distToPaths } from './worldgen.js';
 
 export const STALL = { x: 5.5, z: 6.5 }; // the merchant's stall
@@ -53,6 +56,7 @@ export const NPC_HOMES = {
   basil: { x: 44, z: 22, w: 6, d: 5, lot: 8 }, // Basil's Seeds
   finn: { x: -16, z: 59.5, w: 6, d: 4, lot: 6.5 }, // Finn's Tackle, on the dunes
   mabel: { x: 37, z: -28, w: 6, d: 5, lot: 7.5 }, // Mabel's Bakery
+  bram: { x: -55, z: -23, w: 6, d: 5, lot: 6.5 }, // Bram's Joinery
 };
 // where a home's door is, on its front (and where you stand to go in: a step out from it)
 export const npcDoor = (home) => ({ x: home.x, z: home.z + home.d / 2 });
@@ -65,6 +69,7 @@ export const NPC_ROOMS = {
   basil: { x0: 400, z0: -45, w: 12, d: 9 },
   finn: { x0: 400, z0: 35, w: 12, d: 9 },
   mabel: { x0: 400, z0: 115, w: 12, d: 9 },
+  bram: { x0: 400, z0: 195, w: 12, d: 9 },
 };
 // Finn's dock: planks from the front of his hut out over the sea
 export const DOCK = { x: NPC_HOMES.finn.x, z0: NPC_HOMES.finn.z + NPC_HOMES.finn.d / 2 + 1.5, z1: HOME_HALF + 11, w: 2.2 };
@@ -80,6 +85,8 @@ export const ROADS = [
   [[1, 27], [1, 38], [-4, 47], [-10, 54], [-11.5, 61], [-13, 63.4], door('finn', 1.3)],
   // north-east, from under the high platforms to Mabel's bakery
   [[11, -12], [12, -10.2], [29, -9.9], [32, -13], [34, -20], door('mabel')],
+  // north-west, off the ranch road up the trail past the meadow, and over to Bram's joinery
+  [[-38, 5], [-37, -12], [-45, -16], [-51, -18.4], door('bram')],
 ];
 export const TRAILS = [
   [[34, -20], [30, -30], [32, -38], [38, -45], [42, -48]], // into the forest, to the bluebell glade
@@ -103,6 +110,7 @@ export const SIGNPOSTS = [
   { x: 31, z: 13.6, text: 'Basil\'s Seeds', dir: 'right' },
   { x: 3.2, z: 31, text: 'Finn\'s Tackle', dir: 'down' },
   { x: 30.6, z: -7.8, text: 'Mabel\'s Bakery', dir: 'up' },
+  { x: -35.4, z: -4, text: 'Bram\'s Joinery', dir: 'up' },
 ];
 
 // ---------- The biomes ----------
@@ -196,4 +204,25 @@ export function farmBlocked(gx, gz) {
   for (const h of Object.values(NPC_HOMES)) if (Math.hypot(gx - h.x, gz - (h.z + 0.5)) < h.lot) return 'home';
   if (Math.abs(gx - DOCK.x) < DOCK.w && gz > DOCK.z0 - 3) return 'home';
   return '';
+}
+
+// A farm as saved, with nothing left on a neighbour's lot (a neighbour who
+// moved into the valley after the farmer had built or dug there: Bram):
+// { farm, refund }, the farm without the soil, crops and pieces on a lot, and
+// what those pieces cost ({ item: count }, for the chest)
+export function offLots(farm) {
+  const onLot = (key) => {
+    const [gx, gz] = String(movedKey(key)).split(',').map(Number);
+    return farmBlocked(gx, gz) === 'home';
+  };
+  const refund = {};
+  const built = (farm?.built ?? []).filter(([key, piece]) => {
+    if (!BUILD_COSTS[piece] || !pieceTiles(piece, key).some(onLot)) return true;
+    for (const [item, n] of Object.entries(BUILD_COSTS[piece])) refund[item] = (refund[item] ?? 0) + n;
+    return false;
+  });
+  if (!farm) return { farm, refund };
+  const tilled = (farm.tilled ?? []).filter((t) => !onLot(Array.isArray(t) ? t[0] : t));
+  const crops = (farm.crops ?? []).filter(([key]) => !onLot(key));
+  return { farm: { ...farm, built, tilled, crops }, refund };
 }
