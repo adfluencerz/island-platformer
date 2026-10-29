@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { swap, define } from './chunks.js';
 import { use } from './uniforms.js';
 import { NOISE } from './noise.js';
+import { DUSK_GLSL, DUSK_UNIFORMS } from './atmos.js';
 
 // ---------- Painterly light ----------
 // Every lit material's (a base hook, src/gfx/shading.js), in two parts a
@@ -72,7 +73,8 @@ const WRAP_GLSL = /* glsl */ `
   }
 `;
 
-export const LIGHT_UNIFORMS = ['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith'];
+export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith', ...DUSK_UNIFORMS])];
+const DUSK_FILL = '0.55'; // (how much of the sky's light the near field loses at dusk, in the shade)
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -109,6 +111,9 @@ export function lightChunks() {
               gfxC = gfxCloudShadow( vGfxWorld.xz );
             #endif
             directLight.color *= gfxC;
+            #ifdef GFX_SUN_GLOW
+              directLight.color *= 1.0 + vGfxSunGlow; // (a grass tip, a crown's edge catching a low sun: the hook's own, shadowed as the sun is)
+            #endif
             gfxCloud = gfxC;
             gfxSunLit = gfxC * smoothstep( -0.05, 0.35, dot( geometryNormal, directLight.direction ) );
           }
@@ -134,6 +139,12 @@ export function lightChunks() {
         `#if defined( RE_IndirectDiffuse )
           irradiance *= 1.0 - ${CLOUD_SKY} * ( 1.0 - gfxCloud ); // (under a cloud the sky's light is dimmer too)
           irradiance *= mix( vec3( 1.0 ), uShadowTint, ( 1.0 - gfxSunLit ) * ( 1.0 - uUnder ) ); // (cool where the sun is shaded)
+          #if defined( USE_FOG ) && !defined( FOG_EXP2 )
+            // (at dusk, less of the sky's light near the camera, back in full by the far field: a darker,
+            // richer foreground the long shadows read across, the far one paler: atmos.js)
+            // (more in the shade than in the sun: the shadows deep, the lit grass not dimmed much)
+            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * ( 1.0 - smoothstep( 0.7, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.45 * gfxSunLit );
+          #endif
         #endif
         ${INDIRECT_END}`,
       ],
@@ -227,7 +238,7 @@ export function light(shader, renderer, material) {
   use(shader, LIGHT_UNIFORMS, 'f');
   let f = swap(shader.fragmentShader, 'lights_fragment_begin', own.lights_fragment_begin, 'GFX_LIGHT');
   const pars = PARS.find((name) => f.includes(`#include <${name}>`));
-  f = swap(f, pars, `${CLOUD_GLSL}\n${RIPPLE_GLSL}\n${WRAP_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
+  f = swap(f, pars, `${CLOUD_GLSL}\n${RIPPLE_GLSL}\n${WRAP_GLSL}\n${DUSK_GLSL}\n${own[pars]}`, 'GFX_LIGHT');
   f = swap(f, 'lights_fragment_end', `${THREE.ShaderChunk.lights_fragment_end}\n${GREY_GLSL}\n${SHEEN_GLSL}`, 'GFX_LIGHT');
   shader.fragmentShader = f;
 }

@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 36 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 37 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -48,6 +48,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 34 Trees, rocks and bushes reshaped (big gap 4)
 - 35+ polish rounds again
 - [x] 35 Heavier tree crowns
+- [x] 36 Dusk light with depth
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -70,8 +71,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Round crowns (`src/world.js` CANOPY_LAYOUTS, canopyGeos): four lobe layouts (round with hanging lobes, wide, a big low side lobe, lopsided), the layout going with the tree's leaf so each (leaf, square) set keeps one geometry: no new draws; crown middle 1.7-1.84 on a trunk 1.3 (was 2-2.15 on 1.5).
-- Clump normals (clumpNormals): the near level lit from 14 smaller leaf clumps sunk under the surface, the far level from its lobes; the crease between clumps rides in the normal's length (0.5..1), read by the tree hook in place of the radius `crownBump`; bushes get the same.
-- Tree hook: a per-pixel step (varying vCrownLit) from a clump's shaded foot to its lit, warm top, on the sun's side or toward the sky; dark creases; what faces down warm and lifted (+0.22), not black. Snow lies on each clump's top. Fade cylinder 1.45 wide, from 0.7 up.
-- Budget unchanged: high plaza-noon 747 calls / 750k; medium 686 / 650k, phone 574 / 502k, phone-forest-dusk 488k; low 346 / 349k.
-- Weakest shot now: phone-forest-dusk still, but for the ground and light, not the trees: backlit at dusk the meadow is a flat yellow-green haze with little depth between the near grass and the treeline, and the near crowns' shaded side is still soft (the clumps read best with the sun on them, as in lake-sunset and forest-noon).
+- One dusk amount (`src/gfx/atmos.js` gfxDusk: a low sun in the west, by day, dry, in the open); 0 in the morning, at noon, at night, in rain, so those shots are unchanged (pixel diffs under 1.3 of 255).
+- Near field at dusk (`src/gfx/light.js`): the sky's fill cut by distance (DUSK_FILL 0.55 in the shade, about half that in the sun, back in full by 1.9 fog-nears); the haze starts 0.5 fog-nears further out and goes pale gold far off; the carpet's roots 35% darker.
+- Sun glow (GFX_SUN_GLOW, varying vGfxSunGlow): the hooks scale the sun's own light, after shadow and cloud: grass tips (more looking toward the sun) and the crowns' edge toward the sun (round and pines).
+- Shadow box: in the wide view it reaches less far ahead round a low sun (x0.7), so the near field stays inside it; phone-forest-dusk calls 279 -> 333 (more casters in the box); budgets unchanged: high plaza-noon 695 / 743k / 49, medium 730 / 656k, phone 574 / 502k, low 346 / 349k.
+- Weakest shot now: plaza-morning: the mist lays one flat pink-beige veil over the whole frame, near and far at the same value with soft, faint shadows; the dusk's near/far separation is gated to the evening and never reaches it.
