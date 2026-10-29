@@ -7,7 +7,8 @@ Stylized painterly, in the spirit of Breath of the Wild, not realism:
 - a real sky: a gradient dome, drifting clouds, sun, moon and stars, and cloud shadows on the ground;
 - atmospheric depth: far land melts into the sky, a low haze over the sea;
 - bloom on lamps, glints and the sun, and a light color grade (a touch of saturation, a soft vignette);
-- the low-poly shapes and flat-color charm stay: it is the light and air that change.
+- smooth, soft forms (no faceted flat shading), cloud-like canopies, rounded rocks:
+  since phase 31 the low-poly facets are gone; the flat-color palette stays.
 It must stay playable in a browser and on phones: the Graphics setting (tiers,
 below) is the escape hatch, and every phase keeps the low tier cheap.
 

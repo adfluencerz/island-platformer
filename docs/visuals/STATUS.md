@@ -1,6 +1,13 @@
 # Visuals: status
 
-Current phase: 31 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 31 (big gap: `phases/31-smooth-shading.md`)
+
+## Course correction (after round 30)
+A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
+dark at dusk, with sparse grass, the sky never in frame and a green ghost where a
+canopy fades in front of the player. Polish rounds were tuning details on top of
+that. Four "big gap" phases come first now; polish rounds resume after 34.
+After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`.
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -35,6 +42,11 @@ Current phase: 31 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 28 The plaza stone
 - [x] 29 The HUD
 - [x] 30 The tree crowns
+- [ ] 31 Smooth painterly shading (big gap 1)
+- [ ] 32 Camera: a lower, wider view (big gap 2)
+- [ ] 33 Grass as a carpet (big gap 3)
+- [ ] 34 Trees, rocks and bushes reshaped (big gap 4)
+- 35+ polish rounds again
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
