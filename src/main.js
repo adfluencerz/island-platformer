@@ -43,6 +43,7 @@ import { createStats } from './gfx/stats.js';
 import { toneMap } from './gfx/tonemap.js';
 import { createSky } from './gfx/sky.js';
 import { createPost } from './gfx/post.js';
+import { waterLook } from './gfx/water.js';
 import * as gfx from './gfx/uniforms.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
@@ -390,11 +391,12 @@ function enterWorld(name, seed, wire) {
 
 let wildIsland = null; // the wild island we are on, in a lobby (shared/worldgen.js: where its water is)
 
-// The sea around every island; it fades into the fog toward the horizon
+// The sea around every island, deep blue-green; it mirrors the sky as the
+// view grazes it and fades into the fog toward the horizon
 const WATER_Y = SEA_LEVEL;
 const water = new THREE.Mesh(
   new THREE.PlaneGeometry(1000, 1000), // (out to the bosses' arenas and the neighbours' rooms, and beyond)
-  addRipples(new THREE.MeshStandardMaterial({ color: 0x2f8fbf, roughness: 0.2, metalness: 0.1 }))
+  waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x1f7f9e, roughness: 0.2, metalness: 0.1 })), 'sea') // (sky, glitter: src/gfx/water.js)
 );
 water.rotation.x = -Math.PI / 2;
 water.position.y = WATER_Y;

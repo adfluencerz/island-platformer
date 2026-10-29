@@ -6,6 +6,7 @@ import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { use } from './gfx/uniforms.js';
 import { groundDetail } from './gfx/ground.js';
+import { waterLook } from './gfx/water.js';
 import { knobs, onApply } from './gfx/quality.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
@@ -304,7 +305,8 @@ export function addRipples(material) {
 export const SEA_LEVEL = -0.6;
 const SHALLOWS_WIDTH = 2.4;
 const SHALLOWS_COLOR = new THREE.Color(0x6fd6d0);
-const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.45, depthWrite: false });
+const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false });
+waterLook(addRipples(shallowsMat), 'shallows'); // (rocking with the sea, mirroring the sky as it does: src/gfx/water.js)
 const FOAM_WIDTH = 0.8;
 const FOAM_COLOR = new THREE.Color(0xffffff);
 const foamMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
