@@ -343,6 +343,7 @@ quality.onApply((k) => {
   gfx.U.uCloudShadows.value = k.cloudShadows ? 1 : 0; // (the clouds' shadows on the land: src/gfx/light.js)
   sun.castShadow = shadows; // (which also has every lit material's shader made again, with or without them)
   weather.setParticles(k.particles);
+  dayNight.setParticles(k.particles); // (the motes in the sunlight: src/gfx/motes.js)
 });
 quality.applyTier();
 
