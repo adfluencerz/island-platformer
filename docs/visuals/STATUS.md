@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 45 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 46 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -57,6 +57,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 42 Noon light with depth
 - [x] 43 The autumn island
 - [x] 44 Torchlight in the dungeon
+- [x] 45 Forest shade and dappled light
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -79,8 +80,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Torch pools: the dungeon's lamps (`UNDER_GLOW` in `src/build.js`: power 26, reach 3.4, decay 2) hang 0.95 out from their lamp (`LAMP_OUT`; the cellar's at 1.6 high), so two lamps along a wall light two pools on the floor with dark between; the farmer's own light underground small (`CAVE` glow 1.5, reach 3.5), the additive floor pools a heart only (`POOL` 0.25).
-- Cool fill: the cave's hemisphere a brighter, bluer sky (`CAVE_FILL` 0x5a78c8, `hemiI` 1.7), so what no torch reaches reads blue-grey; fog, `CAVE_DARK` and `uUnder` as they were.
-- Stone: the cellar's (parsnip) floor flagstones and its wall courses in the `stone` look, grey-brown, boardwalk in `wood`, trodden earth as round dark patches.
-- Dark in the corners: a `dungeon:shade` hook on the dungeon's matte pieces and cavern floor (`src/dungeon.js`: the shown dungeon's room, bridge and hall rects as a uniform array): darker by the walls near the floor (most in corners), on what faces down, and out on the cavern's rock. Dungeon 428 calls, 63 programs (+1: the cavern floor); the overworld shots unchanged.
-- Weakest shot now: forest-noon (high, last polished in round 21, before the low camera): the wood at noon is pale, even crowns over a bright, flat floor, with no dappled shade or dark under the canopies against the references' deep, cool forest shade with sunlit gaps.
+- Canopy cover: each world builds a coarse cover map on the CPU (`src/world.js` coverCanopy: 2 texels a tile, R8, from the standing trees, `COVER_REACH` 2.1 times their floor-shade reach, a lone tree 0.3 of a wood's), rebuilt when a tree falls or grows; `viewFrom` hands it to the shaders as `uCanopyMap`/`uCanopyBox` (`src/gfx/uniforms.js`, `NO_COVER` when none).
+- The sun under it (`src/gfx/light.js` CANOPY_GLSL, in the base light hook: no new programs): the sun cut by the cover with soft gaps (two octaves of value noise drifting with `uCloudOffset` and a slow sway), a gap's sun a little warm (`CANOPY_GAP`), the sky's fill dimmer and blue-green (`CANOPY_SKY` 0.24, 0.4, 0.56); only with a high sun (none at dusk, night, underground); not on leaves (`uTreeLeaf`) or water; trunks, carpet, tufts, rocks and the farmer take it.
+- Crowns at noon (hookTree, `crownNoon` = gfxDay): what faces down darker (to 0.42) and cool, not lifted by the warm bounce; tops as bright.
+- Unchanged: the open meadow in `plaza-noon` (only the edge trees' floor and crowns differ), `phone-forest-dusk`, `lake-sunset`, the night; calls, triangles and programs as before on every tier; the low tier now gets dappled shade under its trees too (no shadow map there).
+- Weakest shot now: lobby (high, never polished as its own round): a flat olive-brown floor with sparse grass under big, flat orange blob crowns (the near one fills a quarter of the frame), grey standing stones as blobs, no light and shade on the ground against the references' rich autumn wood.

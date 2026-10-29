@@ -140,9 +140,12 @@ export const glassMat = new THREE.MeshStandardMaterial({ color: 0xcfe9ff, roughn
 export const hayMat = mat(0xd9b24a, undefined, 'thatch');
 export const soilMat = mat(0x5b3a1e);
 export const leafMat = mat(0x4f9e3c);
-// lit at night (setNight in src/npchomes.js): lanterns, and windows, pale by day
+// lit at night (setNight in src/npchomes.js): lanterns, and windows, glass
+// by day (the sky in it, the room dark behind: the 'glass' look)
 export const lanternMat = new THREE.MeshStandardMaterial({ color: 0xffe7a3, emissive: 0xffb84a, emissiveIntensity: 0 });
-export const windowMat = new THREE.MeshStandardMaterial({ color: 0xbfe3ff, emissive: 0xffb84a, emissiveIntensity: 0, roughness: 0.3 });
+export const windowMat = detail(new THREE.MeshStandardMaterial({ color: 0xbfe3ff, emissive: 0xffb84a, emissiveIntensity: 0, roughness: 0.3 }), 'glass');
+// the dark gap round a door, so it reads as set into the wall
+const revealMat = mat(0x2a1e14, undefined, 'none');
 export const fireMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
 export const darkMat = new THREE.MeshBasicMaterial({ color: 0x1b140e }); // (the dark round a room, and inside an oven)
 
@@ -380,10 +383,12 @@ export function house(g, home, { wallH = 2.4, rise = 1.6, ridge = 'x', wall, tri
   for (const s of [-1, 1]) {
     part(roofG, box, roofMat, [0, rise - Math.sin(slope) * run / 2 + thick / 2, s * Math.cos(slope) * run / 2], [len + overhang * 2, thick, run], [s * slope, 0, 0]);
   }
-  part(roofG, box, roofMat, [0, rise + thick * 0.6, 0], [len + overhang * 2 + 0.04, thick * 1.2, thick * 2.2]); // the ridge
+  const ridgeMat = mat(new THREE.Color(roof).multiplyScalar(0.62), undefined, roofMat.userData.gfx.detail); // (capped darker: a ridge line against the sky)
+  part(roofG, box, ridgeMat, [0, rise + thick * 0.6, 0], [len + overhang * 2 + 0.04, thick * 1.4, thick * 2.4]); // the ridge
   // the door, and a window either side of it
   const front = d / 2 + 0.03;
   part(g, box, trimMat, [0, 1.0, front], [1.2, 2.0, 0.06]);
+  part(g, box, revealMat, [0, 0.96, front + 0.035], [1.04, 1.92, 0.05]);
   part(g, box, mat(door, undefined, 'plank'), [0, 0.95, front + 0.03], [0.96, 1.86, 0.06]);
   part(g, ball, ironMat, [0.32, 0.95, front + 0.08], [0.05, 0.05, 0.05]);
   part(g, box, stoneMat, [0, 0.06, front + 0.45], [1.4, 0.12, 0.7]); // a step

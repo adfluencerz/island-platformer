@@ -10,6 +10,7 @@ import './daynight.css';
 import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { light as shaderLight, U } from './gfx/uniforms.js';
 import { createMotes } from './gfx/motes.js';
+import { createBirds } from './gfx/birds.js';
 
 export { DAY_LENGTH_SECONDS };
 
@@ -202,6 +203,9 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   // ...and by day, pollen and dust drifting in the sunlight (src/gfx/motes.js)
   const motes = createMotes();
   scene.add(motes.points);
+  // ...and a few birds crossing the sky (src/gfx/birds.js)
+  const birds = createBirds();
+  scene.add(birds.mesh);
   // how much sun there is for them: none at night, under clouds or rain, or underground
   const sunlit = (night) => (1 - night) * Math.max(0, 1 - cloud * 1.6) * (1 - under);
 
@@ -330,6 +334,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       const night = apply();
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
       motes.update(elapsed, dt, focus, sunlit(night));
+      birds.update(sunlit(night));
     },
     /** A split screen's farmer's own view (src/main.js): the light as far underground as they are (amount, color), the fireflies round them (focus), and no lightning seen under a roof (sheltered). */
     view(focus, amount, color = 0xffffff, sheltered = false) {
@@ -341,6 +346,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       const night = apply(false);
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
       motes.update(elapsed, 0, focus, sunlit(night));
+      birds.update(sunlit(night));
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {

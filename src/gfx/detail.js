@@ -21,6 +21,14 @@ import { NOISE, VORONOI } from './noise.js';
 //   metal    brushed streaks, rust spots on iron (not on tin or brass)
 //   plaster  a soft mottle, a little grime at the foot of a wall
 //   endgrain a log's cut end: rings
+//   glass    a window: the room dark behind, the sky in its upper part, a
+//            pale streak of sheen, the frame's shade along its top; at night
+//            its glow (the material's emissive) brighter in the middle
+// and every built look (not a dungeon's instanced pieces, which have their
+// own shade) a cheap ambient occlusion: darker where a face looks down (eaves,
+// an awning's underside), at the foot of what stands on the ground (near
+// world y 0: a contact shadow in the grass), and, on a tall wall of plaster or
+// boards, along its top, under the eaves
 // and on what grows (the pieces' own y their axis, as a trunk stands):
 //   bark     ridges up the trunk round its axis, darker furrows between, the
 //            plates broken across now and then, moss round its foot
@@ -78,7 +86,7 @@ import { NOISE, VORONOI } from './noise.js';
 
 export const LOOKS = ['none', 'wood', 'plank', 'stone', 'brick', 'cobble', 'thatch', 'tile', 'cloth', 'metal', 'plaster', 'endgrain',
   'bark', 'rock', 'soil', 'leaf', 'crop', 'reed', 'fern',
-  'skin', 'hair', 'garment', 'straw', 'leather', 'fur', 'wool', 'horn', 'tool'];
+  'skin', 'hair', 'garment', 'straw', 'leather', 'fur', 'wool', 'horn', 'tool', 'glass'];
 
 // a material's look from its name (first match wins)
 const BY_NAME = [
@@ -275,6 +283,12 @@ const FRAGMENT_BUILT = /* glsl */ `
     float endg = dKnown * step(1.3 * max(dExt.x, dExt.y), dDeep);
     float rings = smoothstep(0.5, 0.95, abs(fract(length(dUV) * 14.0 + gfxNoise(dUV * 6.0 + dOff) * 1.2) * 2.0 - 1.0)) * gfxShow(14.0, dPx);
     dK *= mix(1.0, 0.8 * (1.0 - 0.18 * rings), endg);
+    // a prop's edges worn paler and greyer (a crate's, a bench's, a sign's:
+    // pieces of a known size, not too thin, none longer than 1.7)
+    vec2 wEd = min(dAt, dExt - dAt);
+    float wSmall = dKnown * step(max(max(dS.x, dS.y), dS.z), 1.7) * step(0.12, min(dExt.x, dExt.y));
+    float worn = wSmall * (1.0 - smoothstep(0.012, 0.05, min(wEd.x, wEd.y))) * smoothstep(0.3, 0.6, gfxNoise(dUV * 6.0 + dOff.yx)) * gfxShow(20.0, dPx);
+    dCol = mix(dCol, vec3(dLum) * vec3(1.45, 1.38, 1.25) + 0.03, worn * 0.45);
   } else if (dLook > 2.5 && dLook < 4.5) {
     // stone, brick: blocks with mortar between
     float brick = step(3.5, dLook);
@@ -309,8 +323,11 @@ const FRAGMENT_BUILT = /* glsl */ `
     dK *= mix(1.06, 0.74, smoothstep(0.62, 1.0, layer) * gfxShow(3.3, dPx * 0.5)) * (1.0 - 0.22 * eave);
   } else if (dLook > 6.5 && dLook < 7.5) {
     // tile: rows up the slope, each tile rounded, each row in the shade of the one over it
-    float rh = 0.2;
-    float tw = 0.24;
+    // (rows sized for a roof seen from the side, at the low camera: each
+    // row's lower lip catching the light, its top in the next row's shade;
+    // grime and a little moss toward the eave, streaked down the slope)
+    float rh = 0.24;
+    float tw = 0.27;
     float r = dAt.y / rh;
     float row = floor(r);
     float f = r - row;
@@ -318,9 +335,15 @@ const FRAGMENT_BUILT = /* glsl */ `
     float ti = floor(tx);
     float tf = tx - ti;
     float ht = gfxHash(vec2(ti, row) + dSeed * 17.0);
-    float show = gfxShow(1.0 / rh, dPx * 0.5);
-    float gap = gfxDetailLine(min(tf, 1.0 - tf) * tw, 0.008, dPx);
-    dK *= (0.86 + 0.24 * ht) * mix(1.0, mix(1.08, 0.6, smoothstep(0.55, 1.0, f)) * (0.84 + 0.2 * sin(3.14159 * tf)) * (1.0 - 0.35 * gap), show);
+    float show = gfxShow(1.0 / rh, dPx * 0.35);
+    float gap = gfxDetailLine(min(tf, 1.0 - tf) * tw, 0.01, dPx);
+    float lip = 1.0 - smoothstep(0.0, 0.16, f);
+    dK *= (0.86 + 0.28 * ht) * mix(1.0, mix(1.1, 0.62, smoothstep(0.5, 1.0, f)) * (1.0 + 0.16 * lip) * (0.88 + 0.18 * sin(3.14159 * tf)) * (1.0 - 0.4 * gap), show);
+    float tLow = dKnown * dWall * (1.0 - smoothstep(0.15, min(1.3, 0.45 * dExt.y), dAt.y));
+    float tStreak = gfxNoise(vec2(dUV.x * 3.5, dUV.y * 0.5) + dOff);
+    float tMoss = tLow * smoothstep(0.55, 0.8, gfxNoise(dUV * 1.8 + dOff.yx) + 0.25 * tStreak);
+    dK *= 1.0 - 0.26 * tLow * tStreak;
+    dCol = mix(dCol, GFX_DETAIL_MOSS * (0.7 + 2.0 * dLum), tMoss * 0.3); // (as dark as the tiles it grows on)
   } else if (dLook > 7.5 && dLook < 8.5) {
     // cloth: a weave, soft folds and fading
     float folds = gfxNoise(dUV * vec2(1.4, 0.7) + dOff);
@@ -328,6 +351,13 @@ const FRAGMENT_BUILT = /* glsl */ `
     float speck = smoothstep(0.7, 0.9, gfxNoise(dUV * 13.0 + dOff)) * gfxShow(13.0, dPx);
     dK *= (0.84 + 0.3 * folds) * (1.0 + 0.16 * weave) * (1.0 - 0.1 * speck);
     dCol = mix(dCol, vec3(dLum) * 1.1 + 0.02, 0.12 * smoothstep(0.5, 0.8, folds)); // (faded in the sun)
+    // a panel of known size (an awning's stripe, a banner): hemmed darker
+    // along its edges, sagging a little (shaded) along its middle, rippled across
+    vec2 cEd = min(dAt, dExt - dAt);
+    float cHem = dKnown * (1.0 - smoothstep(0.015, 0.06, min(cEd.x, cEd.y))) * step(0.15, min(dExt.x, dExt.y));
+    float cSag = dKnown * sin(3.14159 * clamp(dAt.x / max(dExt.x, 1e-3), 0.0, 1.0));
+    float cRipple = sin(dAt.x * 9.0 + gfxNoise(dUV * 1.7 + dOff) * 3.0) * gfxShow(1.5, dPx);
+    dK *= (1.0 - 0.26 * cHem) * (1.0 - 0.15 * cSag) * (1.0 + 0.09 * cRipple);
   } else if (dLook > 8.5 && dLook < 9.5) {
     // metal: brushed, and rust where it is iron (dark and grey)
     float brushed = gfxNoise(vec2(dUV.x * 2.0, dUV.y * 40.0) + dOff) * gfxShow(40.0, dPx);
@@ -338,15 +368,47 @@ const FRAGMENT_BUILT = /* glsl */ `
     float rust = smoothstep(0.6, 0.78, gfxNoise(dUV * 4.5 + dOff) + 0.3 * (gfxNoise(dUV * 14.0 + dOff.yx) - 0.5) * gfxShow(14.0, dPx));
     dCol = mix(dCol, vec3(0.3, 0.1, 0.035), rust * rusty * 0.8);
   } else if (dLook > 9.5 && dLook < 10.5) {
-    // plaster: a soft mottle, grime at a wall's foot
-    float grime = dKnown * dWall * (1.0 - smoothstep(0.0, 0.45, dAt.y));
-    dK *= 1.0 + (gfxNoise(dUV * 2.6 + dOff.yx) - 0.5) * 0.1 * gfxShow(2.6, dPx) + (gfxNoise(dUV * 8.0) - 0.5) * 0.06 * gfxShow(8.0, dPx);
-    dK *= 1.0 - 0.1 * grime;
+    // plaster: a broad soft mottle (big gentle patches, a wall seen side-on),
+    // a finer one near; a damp, darker foot, its top ragged, with streaks
+    float pBroad = gfxNoise(dUV * 0.9 + dOff.yx) - 0.5;
+    float pFine = gfxNoise(dUV * 2.6 + dOff) - 0.5;
+    dK *= 1.0 + pBroad * 0.2 + pFine * 0.13 * gfxShow(2.6, dPx) + (gfxNoise(dUV * 8.0) - 0.5) * 0.07 * gfxShow(8.0, dPx);
+    float pTop = 0.6 + 0.4 * (gfxNoise(vec2(dUV.x * 2.2, 1.7) + dOff) - 0.5) + 0.14 * pFine;
+    float damp = dKnown * dWall * (1.0 - smoothstep(pTop - 0.3, pTop + 0.04, dAt.y));
+    dCol = mix(dCol, dCol * vec3(0.66, 0.63, 0.53), damp * (0.7 + 0.3 * gfxNoise(vec2(dUV.x * 9.0, dUV.y * 1.5) + dOff.yx)));
   } else if (dLook > 10.5 && dLook < 11.5) {
     // end grain: rings round the middle
     float rings = smoothstep(0.5, 0.95, abs(fract(length(dUV) * 14.0 + gfxNoise(dUV * 6.0 + dOff) * 1.2) * 2.0 - 1.0)) * gfxShow(14.0, dPx);
     dK *= 1.0 - 0.2 * rings;
-  }`;
+  } else if (dLook > 27.5) {
+    // glass: the room dark behind, the sky in its upper part and a pale
+    // diagonal sheen (by day), the frame's shade along its top; at night the
+    // room's glow (its emissive), brighter in the middle, dimmer under the top
+    vec2 gq = clamp(dAt / max(dExt, vec2(1e-3)), 0.0, 1.0);
+    float gTop = smoothstep(0.2, 1.0, gq.y);
+    float gD = gq.x - gq.y * 0.75;
+    float gSheen = max(smoothstep(0.1, 0.0, abs(gD - 0.05)), 0.6 * smoothstep(0.05, 0.0, abs(gD - 0.28))) * gfxShow(8.0, dPx);
+    float gLintel = 1.0 - smoothstep(0.0, 0.22, 1.0 - gq.y);
+    vec3 gRoom = dCol * vec3(0.2, 0.22, 0.27);
+    vec3 gSky = mix(dCol, vec3(0.82, 0.9, 1.0), 0.35);
+    dCol = mix(gRoom, gSky, 0.18 + 0.6 * gTop) + vec3(0.32, 0.34, 0.36) * gSheen;
+    dK = 1.0 - 0.5 * gLintel;
+    totalEmissiveRadiance *= (1.0 - 0.45 * gLintel) * (0.8 + 0.35 * (1.0 - smoothstep(0.15, 0.75, length(gq - vec2(0.5, 0.45)))));
+  }
+  #ifndef GFX_DETAIL_INSTANCED
+  if (dLook > 0.5 && dLook < 11.5) {
+    // a cheap ambient occlusion: darker where a face looks down (eaves, an
+    // awning's underside), at the foot of what stands on the ground (a
+    // contact shadow, near world y 0), and along the top of a tall wall of
+    // plaster or boards, under its eaves
+    float aoUp = dot(dN, dUp);
+    float aoUnder = smoothstep(-0.25, -0.75, aoUp);
+    float aoFoot = (1.0 - smoothstep(0.0, 0.45, vGfxWorld.y)) * (1.0 - abs(aoUp));
+    float aoTall = step(abs(dLook - 2.0), 0.5) + step(abs(dLook - 10.0), 0.5); // (plank, plaster)
+    float aoEave = dKnown * dWall * step(1.5, dExt.y) * aoTall * smoothstep(dExt.y - 1.0, dExt.y - 0.05, dAt.y);
+    dK *= (1.0 - 0.3 * aoUnder) * (1.0 - 0.4 * aoFoot) * (1.0 - 0.5 * aoEave * (0.6 + 0.4 * aoEave));
+  }
+  #endif`;
 
 const FRAGMENT_NATURE = /* glsl */ `
   // for what grows: how high up the piece (metres above its middle, and in
@@ -545,6 +607,7 @@ export const familyOf = (look) => (NATURE.has(look) ? 'nature' : LIVING.has(look
 function compile(from, family = 'built') {
   return (shader, renderer, material) => {
     define(shader, 'GFX_DETAIL');
+    if (family === 'built') define(shader, 'GFX_WORLD'); // (vGfxWorld: the contact shade near the ground)
     if (from === 'baked') define(shader, 'GFX_DETAIL_BAKED');
     else if (from === 'instanced') define(shader, 'GFX_DETAIL_INSTANCED');
     else shader.uniforms.gfxDetailLook = uniformOf(material);
