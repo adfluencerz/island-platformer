@@ -75,6 +75,7 @@ const WRAP_GLSL = /* glsl */ `
 
 export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith', ...DUSK_UNIFORMS])];
 const DUSK_FILL = '0.55'; // (how much of the sky's light the near field loses at dusk, in the shade)
+const MORNING_FILL = '0.5'; // (and in the misty morning)
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -112,7 +113,7 @@ export function lightChunks() {
             #endif
             directLight.color *= gfxC;
             #ifdef GFX_SUN_GLOW
-              directLight.color *= 1.0 + vGfxSunGlow; // (a grass tip, a crown's edge catching a low sun: the hook's own, shadowed as the sun is)
+              directLight.color *= 1.0 + vGfxSunGlow; // (a grass tip, a crown's edge catching a low sun, dew: the hook's own color, shadowed as the sun is)
             #endif
             gfxCloud = gfxC;
             gfxSunLit = gfxC * smoothstep( -0.05, 0.35, dot( geometryNormal, directLight.direction ) );
@@ -143,7 +144,11 @@ export function lightChunks() {
             // (at dusk, less of the sky's light near the camera, back in full by the far field: a darker,
             // richer foreground the long shadows read across, the far one paler: atmos.js)
             // (more in the shade than in the sun: the shadows deep, the lit grass not dimmed much)
-            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * ( 1.0 - smoothstep( 0.7, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.45 * gfxSunLit );
+            // (in the morning less so, and the near shade cooler: clear, cool, the long shadows blue)
+            float gfxNearShade = ( 1.0 - smoothstep( 0.7, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.45 * gfxSunLit );
+            float gfxMorn = gfxMorning() * gfxNearShade;
+            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * gfxNearShade - ${MORNING_FILL} * gfxMorn;
+            irradiance *= mix( vec3( 1.0 ), vec3( 0.9, 0.98, 1.12 ), gfxMorn );
           #endif
         #endif
         ${INDIRECT_END}`,

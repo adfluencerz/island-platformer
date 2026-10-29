@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 37 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 38 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -49,6 +49,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - 35+ polish rounds again
 - [x] 35 Heavier tree crowns
 - [x] 36 Dusk light with depth
+- [x] 37 Morning light with depth
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -71,8 +72,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- One dusk amount (`src/gfx/atmos.js` gfxDusk: a low sun in the west, by day, dry, in the open); 0 in the morning, at noon, at night, in rain, so those shots are unchanged (pixel diffs under 1.3 of 255).
-- Near field at dusk (`src/gfx/light.js`): the sky's fill cut by distance (DUSK_FILL 0.55 in the shade, about half that in the sun, back in full by 1.9 fog-nears); the haze starts 0.5 fog-nears further out and goes pale gold far off; the carpet's roots 35% darker.
-- Sun glow (GFX_SUN_GLOW, varying vGfxSunGlow): the hooks scale the sun's own light, after shadow and cloud: grass tips (more looking toward the sun) and the crowns' edge toward the sun (round and pines).
-- Shadow box: in the wide view it reaches less far ahead round a low sun (x0.7), so the near field stays inside it; phone-forest-dusk calls 279 -> 333 (more casters in the box); budgets unchanged: high plaza-noon 695 / 743k / 49, medium 730 / 656k, phone 574 / 502k, low 346 / 349k.
-- Weakest shot now: plaza-morning: the mist lays one flat pink-beige veil over the whole frame, near and far at the same value with soft, faint shadows; the dusk's near/far separation is gated to the evening and never reaches it.
+- One morning amount beside the dusk's (`src/gfx/atmos.js` gfxMorning: the mist, uMist, with the sun in the east, by day, dry, in the open); 0 at noon, dusk, night and in rain (their shots' pixel diffs under 1.5 of 255, the rain's and dungeon's particles the most).
+- The mist ramped by distance: the air and the low haze start about 0.5 fog-nears further out in the morning and a little thicker far off; the near fill cut as at dusk (MORNING_FILL 0.5, `src/gfx/light.js`), the near shade leaning cool.
+- vGfxSunGlow is a vec3 now (the morning's cool-bright): grass tips, a sparse dew sparkle on the carpet, the crowns' edge toward the sun; the carpet's unshadowed dew lift halved so the long shadows stay deep.
+- Shadow box at 8:00 (x0.85 round a low sun) covers the plaza's near field (the stall's and platforms' long shadows on the grass); no box change. Budgets unchanged: high plaza-morning 663 / 751k / 49, plaza-noon 760 / 752k, medium phone 574 / 502k, low 346 / 349k.
+- Weakest shot now: rain-noon: one flat grey-green veil, the near field as pale as the far, the rain streaks thin; untouched since round 22.

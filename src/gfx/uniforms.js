@@ -59,6 +59,7 @@ const declaration = (name) => {
 // set, and declared in the stages asked for ('v', 'f' or 'vf'), once (two
 // hooks may both use one)
 export function use(shader, names, stages = 'vf') {
+  names = [...new Set(names)];
   const declare = (source) => names.map(declaration).filter((line) => !source.includes(line)).join('') + source;
   for (const name of names) shader.uniforms[name] = U[name];
   if (stages.includes('v')) shader.vertexShader = declare(shader.vertexShader);
