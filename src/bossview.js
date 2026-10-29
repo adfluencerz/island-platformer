@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BOSSES } from '../shared/balance.js';
 import { seedAt, seedsOver, waveOver, SEED_Y, ARENA_R, ARENAS, swarmAt, swarmsOver, SWARM_Y } from '../shared/bosses.js';
 import { damp } from './character.js';
+import { detail } from './gfx/detail.js';
 
 // ---------- A boss, as it is drawn ----------
 // Each boss (shared/bosses.js has what it does; src/bosses.js says where it
@@ -21,7 +22,7 @@ const waveGeo = new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2);
 const shadowGeo = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
 const seedMat = mat(0xf2e2b0, { emissive: 0xc8a050, emissiveIntensity: 0.55 }); // (pale, with a glow of their own: seen on a dark floor, down in the boss's hall)
 // a little bee, of a swarm: buzzing round where its swarm is
-const BEE = { yellow: mat(0xffd23f), black: mat(0x2a1a10), wing: new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, roughness: 0.3 }) };
+const BEE = { yellow: detail(mat(0xffd23f), 'fur'), black: detail(mat(0x2a1a10), 'fur'), wing: new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, roughness: 0.3 }) };
 function littleBee(parent) {
   const g = new THREE.Group();
   parent.add(g);
@@ -31,7 +32,7 @@ function littleBee(parent) {
   return g;
 }
 // ...or a fly, of the bog toad's swarms
-const FLY = { body: mat(0x2a2f2a), wing: new THREE.MeshStandardMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.6, roughness: 0.3 }) };
+const FLY = { body: detail(mat(0x2a2f2a), 'fur'), wing: new THREE.MeshStandardMaterial({ color: 0xdfe8ff, transparent: true, opacity: 0.6, roughness: 0.3 }) };
 function littleFly(parent) {
   const g = new THREE.Group();
   parent.add(g);
@@ -100,8 +101,8 @@ export function dizzyStars(count = 3, radius = 0.4, size = 0.3) {
 
 // The evil parsnip. parent: where it goes (the farm's world)
 function buildParsnip() {
-  const skin = mat(0xf0e2b0);
-  const skinDark = mat(0xd4bd84);
+  const skin = detail(mat(0xf0e2b0), 'skin');
+  const skinDark = detail(mat(0xd4bd84), 'skin');
   const leaf = mat(0x4f9e3c);
   const leafLight = mat(0x7cc95a);
   const white = mat(0xffffff, { roughness: 0.4 });
@@ -200,11 +201,11 @@ function buildParsnip() {
 // its head. It walks on four paws, crouches and pounces, rears up to roar
 // (its mane puffing out), lies down to sleep, and wags its tail once friendly.
 function buildLion() {
-  const coat = mat(0xe8a83e);
-  const coatLight = mat(0xf6d08a);
-  const mane = mat(0xb85c1e);
-  const maneLight = mat(0xd9792b);
-  const cape = mat(0xd6453a);
+  const coat = detail(mat(0xe8a83e), 'fur');
+  const coatLight = detail(mat(0xf6d08a), 'fur');
+  const mane = detail(mat(0xb85c1e), 'hair');
+  const maneLight = detail(mat(0xd9792b), 'hair');
+  const cape = detail(mat(0xd6453a), 'garment');
   const white = mat(0xffffff, { roughness: 0.4 });
   const dark = mat(0x2a1a10, { roughness: 0.4 });
   const blushMat = mat(0xf28cb1);
@@ -310,10 +311,10 @@ function buildLion() {
 // buzzing wings. She shakes and buzzes louder to send her swarms, leans in to
 // dash across the arena, sits down dizzy after, and sleeps sat on the grass.
 function buildBee() {
-  const fuzz = mat(0xffc93c);
-  const fuzzLight = mat(0xffe08a);
+  const fuzz = detail(mat(0xffc93c), 'fur');
+  const fuzzLight = detail(mat(0xffe08a), 'fur');
   const stripe = mat(0x3a2a14);
-  const gold = mat(0xffd84a, { metalness: 0.5, roughness: 0.35, emissive: 0x6b4a00, emissiveIntensity: 0.2 });
+  const gold = detail(mat(0xffd84a, { metalness: 0.5, roughness: 0.35, emissive: 0x6b4a00, emissiveIntensity: 0.2 }), 'tool');
   const wingMat = new THREE.MeshStandardMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.6, roughness: 0.2 });
   const white = mat(0xffffff, { roughness: 0.4 });
   const dark = mat(0x2a1a10, { roughness: 0.4 });
@@ -397,10 +398,10 @@ function buildBee() {
 // flapping wings, swoops down with them swept back, beats them wide to raise
 // a gust, and sleeps with its head tucked in.
 function buildCrow() {
-  const plume = mat(0x2a2f45);
-  const plumeLight = mat(0x445078);
-  const beakMat = mat(0xf2a516);
-  const scarf = mat(0xd6453a);
+  const plume = detail(mat(0x2a2f45), 'fur');
+  const plumeLight = detail(mat(0x445078), 'fur');
+  const beakMat = detail(mat(0xf2a516), 'horn');
+  const scarf = detail(mat(0xd6453a), 'garment');
   const white = mat(0xffffff, { roughness: 0.4 });
   const dark = mat(0x111111, { roughness: 0.4 });
   const blushMat = mat(0xf28cb1);
@@ -502,11 +503,11 @@ function buildCrow() {
 // springs in great hops; it puffs its throat up into a balloon to croak, and
 // out to puff its flies; asleep its throat goes in and out.
 function buildToad() {
-  const skin = mat(0x5f9a3a);
-  const skinDark = mat(0x4a7f2c);
-  const belly = mat(0xd8e8a0);
-  const throatMat = mat(0xf2d8b0);
-  const gold = mat(0xf2c23a, { roughness: 0.4 });
+  const skin = detail(mat(0x5f9a3a), 'skin');
+  const skinDark = detail(mat(0x4a7f2c), 'skin');
+  const belly = detail(mat(0xd8e8a0), 'skin');
+  const throatMat = detail(mat(0xf2d8b0), 'skin');
+  const gold = detail(mat(0xf2c23a, { roughness: 0.4 }), 'tool');
   const dark = mat(0x111111, { roughness: 0.4 });
   const pad = mat(0x3f8a3a);
   const petal = mat(0xf7a6c8);

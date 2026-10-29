@@ -369,10 +369,13 @@ export const penRect = (pen, level) => rectOf(PEN_RECTS[pen][level - 1]);
 // [{ pivot, phase, front }], and pose(a, t), which moves its own parts (head,
 // wings, tail, fleece) from the animal's state.
 const mat = (color, opts = {}) => rimmed(new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...opts })); // (the farmers' rim: they stand out the same way)
+// a hide, feathers or a fleece by its color, each with its painted look
+// (src/gfx/detail.js: a short-fur speckle, wool's curls, darker underneath)
 const matCache = new Map();
-const matOf = (color) => {
-  if (!matCache.has(color)) matCache.set(color, mat(color));
-  return matCache.get(color);
+const matOf = (color, look = 'fur') => {
+  const key = `${color}:${look}`;
+  if (!matCache.has(key)) matCache.set(key, detail(mat(color), look));
+  return matCache.get(key);
 };
 const ballGeo = new THREE.SphereGeometry(1, 12, 9);
 const ball = (parent, material, at, scale) => piece(parent, ballGeo, material, at, scale);
@@ -390,8 +393,8 @@ function limb(parent, [x, y, z], geo, material, length, foot, footMat, phase, fr
 // A hen: round body, tail up, little wings, red comb
 const HEN_COLORS = [0xf6f1e4, 0xa45a2a, 0xd9a24a, 0x3d3735];
 const combMat = mat(0xe0362c, { roughness: 0.6 });
-const beakMat = mat(0xf2a516, { roughness: 0.6 });
-const henLegMat = mat(0xe8962a, { roughness: 0.6 });
+const beakMat = detail(mat(0xf2a516, { roughness: 0.38 }), 'horn'); // (beaks and hooves a little glossy)
+const henLegMat = detail(mat(0xe8962a, { roughness: 0.5 }), 'horn');
 const beakGeo = new THREE.ConeGeometry(0.035, 0.08, 5);
 const henLegGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.14, 4);
 const henFootGeo = new THREE.BoxGeometry(0.06, 0.012, 0.08);
@@ -446,10 +449,10 @@ function buildHen(color) {
 
 // A cow: a long body with patches, a pink muzzle, little horns, a bell and a swishing tail
 const COW_COLORS = [[0xf7f3ea, 0x2b2b2b], [0xc68a52, 0xf7f3ea], [0x6b3f22, 0x4a2a16]];
-const muzzleMat = mat(0xf2a7a7, { roughness: 0.6 });
-const hoofMat = mat(0x3a2a20);
-const hornMat = mat(0xf0e4c8, { roughness: 0.5 });
-const bellMat = mat(0xd9a520, { roughness: 0.35, metalness: 0.6 });
+const muzzleMat = detail(mat(0xf2a7a7, { roughness: 0.6 }), 'skin');
+const hoofMat = detail(mat(0x3a2a20, { roughness: 0.38 }), 'horn');
+const hornMat = detail(mat(0xf0e4c8, { roughness: 0.4 }), 'horn');
+const bellMat = detail(mat(0xd9a520, { roughness: 0.35, metalness: 0.6 }), 'tool');
 const cowLegGeo = new THREE.CylinderGeometry(0.075, 0.065, 0.5, 7);
 const hoofGeo = new THREE.CylinderGeometry(0.075, 0.08, 0.08, 7);
 const cowBodyGeo = new THREE.CapsuleGeometry(0.36, 0.7, 6, 14).rotateX(Math.PI / 2);
@@ -513,14 +516,14 @@ function buildCow(color) {
 
 // A sheep: a dark face peeping out of a cloud of fleece, which you can shear
 const WOOL_COLORS = [0xf4f0e6, 0xe8dcc0, 0x9c968e, 0x3d3735];
-const faceMat = mat(0x3a3330);
-const skinMat = mat(0xe9d8c4);
+const faceMat = detail(mat(0x3a3330), 'fur');
+const skinMat = detail(mat(0xe9d8c4), 'skin');
 const sheepLegGeo = new THREE.CylinderGeometry(0.04, 0.035, 0.38, 6);
 const woolGeo = new THREE.IcosahedronGeometry(1, 1);
 const FLEECE = [[0, 0, 0, 0.36, 0.32, 0.46], [0.2, 0.17, 0.22, 0.2], [-0.2, 0.17, 0.2, 0.2], [0.22, 0.14, -0.2, 0.21], [-0.21, 0.15, -0.22, 0.21], [0, 0.26, 0, 0.22], [0, 0.22, -0.28, 0.19], [0.27, -0.05, 0, 0.19], [-0.27, -0.05, 0, 0.19], [0, 0.18, 0.3, 0.17]];
 
 function buildSheep(color) {
-  const woolMat = matOf(WOOL_COLORS[color] ?? WOOL_COLORS[0]);
+  const woolMat = matOf(WOOL_COLORS[color] ?? WOOL_COLORS[0], 'wool');
   const root = new THREE.Group();
   root.userData.noSnow = true;
   const rig = new THREE.Group();

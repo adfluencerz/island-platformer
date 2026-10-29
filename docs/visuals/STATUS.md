@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 18 (`phases/18-detail-characters.md`)
+Current phase: 19 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -21,7 +21,7 @@ Current phase: 18 (`phases/18-detail-characters.md`)
 - [x] 15 Perf and polish
 - [x] 16 Surface detail: built things and buildings
 - [x] 17 Surface detail: nature
-- [ ] 18 Surface detail: characters, animals and held things
+- [x] 18 Surface detail: characters, animals and held things
 - 19+ polish rounds (`phases/19-polish-rounds.md`)
 
 ## Baseline (phase 0)
@@ -45,7 +45,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- New looks in `src/gfx/detail.js`: bark, rock, soil, leaf, crop, reed, fern (a second program family, hook key 'detail:nature', so built things' shaders stay as small; `familyOf(look)`); plaza-noon 50 programs, lobby 91. `PLAIN` keeps only grass, flowers, water, food and light; leaf/hedge/moss, rock, soil/earth, reed, fern match by name.
-- Nature helpers in the head of `FRAGMENT_NATURE`: `dHt`/`dHRel` (height up the piece), `dFace` (1 facing up), `dQ` (a seamless place over round pieces) and one shared Voronoi `dVc`. For 18, fur, wool and cloth on round bodies want `dQ`/`dHRel` (darker belly, lighter back); leather can reuse rock's cell tint without the cracks; a third family ('detail:living') keeps each program small.
-- Cliffs (`ground:cliff`) read `gfxCliff` per vertex (metres under the lip, over the water: moss tongues, wet band); sand ripples across the wind (0.92, 0.38), as the shallows' sandy floor (`src/gfx/water.js`).
-- Startup in SwiftShader is near the 8 s fetch timeout (src/net/farm.js): bigger shaders pushed the farm's open past it and the page lost its account; a timed-out answer now throws instead of wiping it. Keep 18's shaders lean.
+- A third family, 'detail:living' (`src/gfx/detail.js`): skin, hair, garment, straw, leather, fur, wool, horn, tool; no seed (it moves), patterns on `dQ`/`dR` (soft, seamless) and `dW` (the face's nearest plane: cells, strokes). plaza-noon 51 programs, lobby 93; `detailLiving(table)` paints a mount's or a boss's table by name.
+- Farmers' cloth canvases are 64-128 px, thread by thread; cloth, twill and knit use `repeat` 0.25 (four tiles a picture). Garment seams sit at z = 0 of each part's frame; worn patches 0.25 under a limb's pivot.
+- What reads from the play camera is only what is 8 cm or bigger (a farmer is ~60 px in plaza-morning): the straw braid, the denim's streaks, wool curls, fur strokes; finer detail shows only zoomed in.
+- Weakest against the references: night-lamps (Mabel and the farmer are dark smudges under the lamps; the people want more of the rim or a lamp-lit warmth) and the farmers' pale halo of rim on dark hair.
