@@ -10,6 +10,7 @@ const GATES = [
   ['build', ['run', 'build']],
   ['browser-lowgfx', ['run', 'browser', '--silent', '--', '-e', STEP]],
   ['browser-full', ['run', 'browser', '--silent', '--', '--full', '-e', STEP]],
+  ['shots-low-check', ['run', 'shots', '--', '--tier', 'low', '--check']], // (the low tier's budgets; then the default, whose shots stay in shots/)
   ['shots-check', ['run', 'shots', '--', '--check']],
 ];
 
