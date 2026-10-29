@@ -1952,7 +1952,11 @@ function lookFrom(split) {
     water.visible = cave.k < 0.5;
     playerMesh.add(dayNight.glow);
   }
-  if (lookYaw === null) return followSun(camTarget, SUN_AHEAD * (1 + 1.5 * camWide) * Math.max(1, camZoom)); // (the wide view sees further up the screen, and from the farmer down to its bottom edge only a few steps)
+  // (the wide view sees further up the screen, and from the farmer down to its bottom edge only a few
+  // steps; round a low sun less far ahead: the box reaches far along the sun's way anyway, and the near
+  // field, striped by the long shadows of a dusk, stays inside it)
+  const lowSun = 1 - THREE.MathUtils.smoothstep(_sunOffset.subVectors(sun.position, sun.target.position).normalize().y, 0.12, 0.6);
+  if (lookYaw === null) return followSun(camTarget, SUN_AHEAD * (1 + 1.5 * camWide) * Math.max(1, camZoom) * (1 - 0.3 * lowSun));
   // (first person: the shadows' box reaches half its width ahead of where we look)
   followSun(_lookAhead.set(camera.position.x + Math.sin(lookYaw) * sunReach / 2, 0, camera.position.z + Math.cos(lookYaw) * sunReach / 2), 0);
 }

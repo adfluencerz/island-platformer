@@ -10,6 +10,7 @@ import { groundDetail } from './gfx/ground.js';
 import { detail } from './gfx/detail.js';
 import { waterLook } from './gfx/water.js';
 import { NOISE } from './gfx/noise.js';
+import { DUSK_GLSL, DUSK_UNIFORMS } from './gfx/atmos.js';
 import { knobs, onApply } from './gfx/quality.js';
 
 // (the islands' geometry helpers live with the islands, for the server too)
@@ -159,10 +160,11 @@ function hookTree(material, pine = false) {
   return hook(material, `tree:${sway ? 'sway' : ''}${pine ? 'pine' : ''}`, (shader) => {
     define(shader, 'GFX_TREE');
     define(shader, 'GFX_SHADOW_LIFT');
+    define(shader, 'GFX_SUN_GLOW');
     if (pine) define(shader, 'GFX_PINE');
     if (sway) define(shader, 'GFX_SWAY');
     if (sway) use(shader, ['uTime', 'uWind', 'uCloudOffset'], 'v');
-    use(shader, ['uSunDir', 'uNight'], 'v');
+    use(shader, DUSK_UNIFORMS, 'v');
     shader.uniforms.uTreeLeaf = leaf; // (its own: leaves and bark share the program)
     shader.vertexShader = patch(shader.vertexShader, 'common', `
       #ifdef USE_INSTANCING
@@ -171,7 +173,9 @@ function hookTree(material, pine = false) {
       varying float vTreeFade;
       varying vec4 vCanopyShade;
       varying float vCrownLit;
+      varying float vGfxSunGlow;
       uniform float uTreeLeaf;
+      ${DUSK_GLSL}
       #ifdef GFX_SWAY
         ${GRASS_WIND_GLSL}
       #endif`, 'GFX_TREE');
@@ -194,6 +198,10 @@ function hookTree(material, pine = false) {
       float crownLit = dot(crownN, normalize(uSunDir + vec3(0.0, 0.8, 0.0)));
       float crownRim = pow(1.0 - clamp(dot(crownN, normalize(cameraPosition - crownAt)), 0.0, 1.0), 2.0)
         * smoothstep(-0.1, 0.7, crownN.y) * (1.0 - 0.8 * uNight);
+      // (at dusk the leaves' edge toward the low sun catches it: a warm rim, on the sun's own light, light.js)
+      vGfxSunGlow = uTreeLeaf > 0.5 ? 3.0 * gfxDusk()
+        * (1.0 - clamp(dot(crownN, normalize(cameraPosition - crownAt)), 0.0, 1.0))
+        * smoothstep(0.0, 0.7, dot(crownN, normalize(vec3(uSunDir.x, 0.0, uSunDir.z)))) : 0.0;
       vec3 crownH = fract(floor(crownM[3].xyz * 2.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973));
       crownH += dot(crownH, crownH.yzx + 33.33);
       float crownSeed = fract((crownH.x + crownH.y) * crownH.z);
@@ -265,7 +273,8 @@ function hookTree(material, pine = false) {
     shader.fragmentShader = patch(shader.fragmentShader, 'common', `
       varying float vTreeFade;
       varying vec4 vCanopyShade;
-      varying float vCrownLit;`, 'GFX_TREE');
+      varying float vCrownLit;
+      varying float vGfxSunGlow;`, 'GFX_TREE');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
       if (vTreeFade > 0.001) {
         // (interleaved gradient noise: an even scatter of the pixels to drop)
@@ -984,8 +993,10 @@ function addCarpet(material) {
   material.userData.noSnow = true; // (the farm's own snow: src/seasons.js)
   hook(material, 'carpet', (shader) => {
     define(shader, 'GFX_CARPET');
-    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', 'uCarpet', 'uCarpetFar', 'uGrassSpread'], 'v');
-    shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL + CARPET_GLSL, 'GFX_CARPET');
+    define(shader, 'GFX_SUN_GLOW');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', 'uCarpet', 'uCarpetFar', 'uGrassSpread', ...DUSK_UNIFORMS], 'v');
+    shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL + CARPET_GLSL + DUSK_GLSL + 'varying float vGfxSunGlow;', 'GFX_CARPET');
+    shader.fragmentShader = patch(shader.fragmentShader, 'common', 'varying float vGfxSunGlow;', 'GFX_CARPET');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       // (the tile's turn of the one layout: mirrored, then a quarter turn or more)
       highp vec2 cId = aCell.xy;
@@ -1034,6 +1045,15 @@ function addCarpet(material) {
       float cUp = transformed.y - 0.02;
       transformed.xz += grassBend * grassH * cUp;
       transformed.y = 0.02 + cUp * (1.0 - 0.42 * dot(grassBend, grassBend) * grassH);
+      // (at dusk the tips catch the low sun, more looking toward it: on the sun's own light, so a
+      // blade in shadow stays dark, light.js; and the roots darker, the near field deep and rich)
+      float cDusk = gfxDusk();
+      vec2 cLook = grassRoot.xz - cameraPosition.xz;
+      float cBack = smoothstep(-0.3, 0.9, dot(cLook, uSunDir.xz) * inversesqrt(max(dot(cLook, cLook) * dot(uSunDir.xz, uSunDir.xz), 1e-6)));
+      vGfxSunGlow = cDusk * grassH * grassH * (0.7 + 1.1 * cBack);
+      #ifdef USE_COLOR
+        vColor.rgb *= 1.0 - 0.35 * cDusk * (1.0 - grassH);
+      #endif
       #ifdef USE_COLOR
         vec2 cUV = cR + 0.5;
         vColor.rgb *= mix(mix(aC0, aC1, cUV.x), mix(aC2, aC3, cUV.x), cUV.y); // (the ground's color under it)
