@@ -5821,7 +5821,12 @@ function updateWorld(dt) {
     fastForward,
     focus: player.position,
   });
-  sound.music(dayNight.isNight() ? 'night' : 'day'); // (sound.js: the tune, by the time of day)
+  // the tune, by the time of day; a party game a minute long (coin rush, king
+  // of the hill, last one standing) to Desert Carousel Chase, a minute long
+  // too: from its start as the game starts (sound.js)
+  const chase = arenaId && partyGame?.phase === 'playing' && GAMES[partyGame.kind]?.ms === 60_000;
+  if (chase) sound.music('chase', (60_000 - (partyHud.endsAt - performance.now())) / 1000);
+  else sound.music(dayNight.isNight() ? 'night' : 'day');
   if (farmVisit?.mine) sendFarmClock(fastForward, t);
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
