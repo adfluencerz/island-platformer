@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { detail } from './gfx/detail.js';
 import { CROP_GROW_TIME } from '../shared/level.js';
 import { BEANSTALK, MORE_CROPS, PLATFORM_PLANTS } from '../shared/balance.js';
 
@@ -9,11 +10,12 @@ import { BEANSTALK, MORE_CROPS, PLATFORM_PLANTS } from '../shared/balance.js';
 // from primitives with shared geometry/materials, so removing a crop from the
 // scene is enough (nothing per-crop to dispose).
 
-const mat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true });
+// (painted detail, src/gfx/detail.js: a leaf's veins and a fruit's blush and speckle)
+const mat = (color, look = 'crop') => detail(new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true }), look);
 const leafMat = mat(0x4f9e3c);
 const darkLeafMat = mat(0x3f8a3a);
 const stemMat = mat(0x5f9e3a);
-const seedMat = mat(0x3b2412);
+const seedMat = mat(0x3b2412, 'soil');
 
 const leafGeo = new THREE.SphereGeometry(1, 6, 4); // scaled per use into flat leaves
 const coneGeo = new THREE.ConeGeometry(1, 1, 5);
@@ -173,7 +175,7 @@ function buildBeanstalk() {
 
 // A tomato plant: a stake with the plant tied up it, leaves all the way up,
 // and its tomatoes (`userData.fruit`: only on it when it's ripe)
-const stakeMat = mat(0x8a5a2e);
+const stakeMat = mat(0x8a5a2e, 'wood');
 const tomatoMat = mat(0xe0402a);
 const stakeGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.95, 5);
 const tomatoGeo = new THREE.SphereGeometry(0.075, 8, 6);
@@ -211,8 +213,8 @@ function buildPumpkin() {
 }
 
 // A berry bush: a round leafy bush, red berries on it (`userData.fruit`)
-const bushMat = mat(0x3f8a3a);
-const bushLightMat = mat(0x5aa83f);
+const bushMat = mat(0x3f8a3a, 'leaf');
+const bushLightMat = mat(0x5aa83f, 'leaf');
 const berryMat = mat(0xd8344f);
 const berryGeo = new THREE.SphereGeometry(0.045, 6, 4);
 

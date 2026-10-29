@@ -3,6 +3,7 @@ import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples, leafMats, pineMats } from './world.js';
 import { waterLook } from './gfx/water.js';
+import { detail } from './gfx/detail.js';
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
 import { buildSkyIsles } from './skyisles.js';
@@ -217,6 +218,8 @@ export function wildMap(island) {
 }
 
 // ---------- The wild island's set pieces ----------
+// (painted detail on what grows, src/gfx/detail.js: streaks up the reeds and
+// stems, a frond's leaflets, veins on the leaves, bark and rings on the logs)
 const stalkMat = new THREE.MeshStandardMaterial({ color: 0xf1e6cc, roughness: 0.8 });
 const gillMat = new THREE.MeshStandardMaterial({ color: 0xe8d2b0, roughness: 0.9 });
 // reeds on the marsh (generation 4): a thin stalk 2 tall (scaled to its height) and a brown velvet head
@@ -224,33 +227,33 @@ const marshReedGeo = new THREE.CylinderGeometry(0.018, 0.035, 2, 5);
 const marshSpikeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 7);
 const gladeStemGeo = new THREE.CylinderGeometry(0.012, 0.018, 0.4, 4);
 const gladeBellGeo = new THREE.SphereGeometry(0.04, 6, 5);
-const gladeStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const gladeStemMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 }), 'reed');
 const gladeBellMat = new THREE.MeshStandardMaterial({ color: 0x5a6fd8, roughness: 0.5 });
 const patchVineGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.5, 4).rotateZ(Math.PI / 2);
 const patchPumpkinGeo = new THREE.SphereGeometry(0.22, 8, 6);
-const patchVineMat = new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 });
-const patchPumpkinMat = new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 });
+const patchVineMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.8 }), 'crop');
+const patchPumpkinMat = detail(new THREE.MeshStandardMaterial({ color: 0xe8821e, roughness: 0.6 }), 'crop');
 // fern fronds in the glen (generation 8): a leaning blade, a few to a clump
 const glenFrondGeo = new THREE.ConeGeometry(0.09, 1, 4).translate(0, 0.5, 0);
-const glenFrondMat = new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 });
+const glenFrondMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f9a3e, roughness: 0.8 }), 'fern');
 // dune grass (generation 9): a pale, narrow plume; and driftwood, 1 long (scaled to its length)
 const plumeGeo = new THREE.ConeGeometry(0.07, 1, 5).translate(0, 0.5, 0);
-const plumeMat = new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 });
+const plumeMat = detail(new THREE.MeshStandardMaterial({ color: 0xc9bd7a, roughness: 0.85 }), 'reed');
 const driftGeo = new THREE.CylinderGeometry(0.13, 0.15, 1, 7).rotateZ(Math.PI / 2);
 // strawberry plants on the bank (generation 11): a low clump of leaves with a berry or two
 const bankLeafGeo = new THREE.SphereGeometry(0.16, 6, 4);
-const bankLeafMat = new THREE.MeshStandardMaterial({ color: 0x3f8f3a, roughness: 0.8 });
+const bankLeafMat = detail(new THREE.MeshStandardMaterial({ color: 0x3f8f3a, roughness: 0.8 }), 'crop');
 const bankBerryGeo = new THREE.ConeGeometry(0.05, 0.09, 6).rotateX(Math.PI);
-const bankBerryMat = new THREE.MeshStandardMaterial({ color: 0xe0303a, roughness: 0.5 });
-const driftMat = foliageMat(0xb8a58a);
-const driftEndMat = foliageMat(0xd9cdb4);
+const bankBerryMat = detail(new THREE.MeshStandardMaterial({ color: 0xe0303a, roughness: 0.5 }), 'crop');
+const driftMat = detail(foliageMat(0xb8a58a), 'wood');
+const driftEndMat = detail(foliageMat(0xd9cdb4), 'endgrain');
 const fieldStemGeo = new THREE.CylinderGeometry(0.02, 0.03, 1, 5);
 const fieldHeadGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.04, 10).rotateX(Math.PI / 2);
 const fieldHeartGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 8).rotateX(Math.PI / 2);
-const fieldStemMat = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 });
+const fieldStemMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8 }), 'reed');
 const fieldHeadMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.5 });
-const fieldHeartMat = new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 });
-const marshReedMat = new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 });
+const fieldHeartMat = detail(new THREE.MeshStandardMaterial({ color: 0x5a3a1a, roughness: 0.8 }), 'crop');
+const marshReedMat = detail(new THREE.MeshStandardMaterial({ color: 0x6f8f3e, roughness: 0.8 }), 'reed');
 const marshSpikeMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
 // a ring of toadstools' look (its `look` in shared/worldgen.js): red with white
 // dots, a brown cep, violet, and golden
@@ -261,11 +264,11 @@ const TOAD_LOOKS = [[0xd8452f, 0xfff8ec], [0x8a5a34, 0xf1dcb4], [0x8e5bb8, 0xf4e
 const dotGeo = new THREE.SphereGeometry(0.16, 8, 6);
 export const LOBBY_POND_Y = -0.12; // the lobby pond's surface (where a bobber floats: src/fishing.js)
 const pondWaterMat = waterLook(addRipples(new THREE.MeshStandardMaterial({ color: 0x3a9a9a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.72 })), 'pond');
-const padMat = new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 });
+const padMat = detail(new THREE.MeshStandardMaterial({ color: 0x4f9e3c, roughness: 0.7 }), 'crop');
 const lotusMat = new THREE.MeshStandardMaterial({ color: 0xff9fcf, roughness: 0.6, flatShading: true });
-const reedMat = foliageMat(0x6b8a3a);
-const logMat = foliageMat(0x7a5432);
-const logEndMat = foliageMat(0xc49a6c);
+const reedMat = detail(foliageMat(0x6b8a3a), 'reed');
+const logMat = detail(foliageMat(0x7a5432), 'bark');
+const logEndMat = detail(foliageMat(0xc49a6c), 'endgrain');
 // (one geometry each, 1 tall or long, scaled: all of them drawn in a few draws)
 const pondReedGeo = new THREE.ConeGeometry(0.035, 1, 4);
 const logGeo = new THREE.CylinderGeometry(0.3, 0.32, 1, 9);
