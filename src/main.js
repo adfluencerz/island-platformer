@@ -1033,7 +1033,7 @@ function clearSpots() {
 // Ask the lobby for what is on a spot. It vanishes at once so it feels
 // instant; TAKEN (into the backpack) or DENY (it comes back) settles it.
 function takeSpot(spot) {
-  if (!spot.item || spot.pending || performance.now() < spot.retryAt) return;
+  if (!spot.item || spot.pending || performance.now() < spot.retryAt || !lobbyLine()) return; // (a farmer at a split screen: not before their own line is there)
   if (!canLoot()) {
     inventory.notify(partyGame ? 'Wait for the loot run to start' : 'The loot run is over');
     spot.retryAt = performance.now() + 1500;
@@ -1790,7 +1790,7 @@ function updateDrops(dt, t) {
     const near = Math.hypot(drop.x - player.position.x, drop.y - player.position.y, drop.z - player.position.z) < TOUCH_RADIUS + 0.4;
     const theirs = !!drop.from && drop.from === seatId(); // (the farmer it came out of, not yet off it)
     if (theirs && !drop.away) drop.away = !near;
-    if (!near || (theirs && !drop.away) || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor) continue; // (a visitor leaves it be)
+    if (!near || (theirs && !drop.away) || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor || !line()) continue; // (a visitor leaves it be)
     drop.pending = true;
     line()?.send({ t: C.PICKUP, id: drop.id });
   }
@@ -4696,7 +4696,7 @@ function updateArena() {
     crown.position.set(pos.x, pos.y + 0.95 + Math.sin(t * 3) * 0.04, pos.z);
     crown.rotation.y = t;
   }
-  if (countDown() || partyGame?.phase !== 'playing') return;
+  if (countDown() || partyGame?.phase !== 'playing' || !lobbyLine()) return;
   const now = performance.now();
   world.coins.forEach((coin, id) => {
     const at = coinPending.get(id);
@@ -4952,7 +4952,9 @@ function connectLobbySeat(seat, code) {
     if (seat.lobby !== conn) return;
     seat.lobby = null;
     seat.netId = undefined;
-    if (seats.includes(seat)) dropSeat(seat, `${seatName(seat)} got up: ${reason}`);
+    // (turned away, or their line lost: they get up. The lobby gone for everyone,
+    // the page's own line hears it too, a moment apart, and they go home together)
+    setTimeout(() => place === 'lobby' && net && !seat.lobby && seats.includes(seat) && dropSeat(seat, `${seatName(seat)} got up: ${reason}`), 1000);
   });
 }
 
