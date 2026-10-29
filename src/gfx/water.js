@@ -78,7 +78,13 @@ const COLOR = {
     float waterSandPx = gfxFootprint(waterSandP);
     float waterEdge = waterShore + (gfxNoise(waterSandP * 0.9) - 0.5) * 0.25 * gfxShow(0.9, waterSandPx) + (gfxNoise(waterSandP * 0.23 + 9.0) - 0.5) * 0.3;
     diffuseColor.a = opacity * (0.4 * smoothstep(0.0, 0.2, waterEdge) + 0.6 * smoothstep(0.18, 0.45, waterEdge));
+    // (clearer right by the waterline, where the beach's own slope shows
+    // through: src/world.js; the band's hue wandering along the shore, here
+    // greener and sandier, there bluer, not one even ribbon)
+    float waterAlong = gfxNoise(waterSandP * 0.09 + 31.0);
+    diffuseColor.a *= 1.0 - 0.5 * smoothstep(0.78, 1.0, waterShore + (gfxNoise(waterSandP * 0.7 + 4.0) - 0.5) * 0.12);
     diffuseColor.rgb *= mix(vec3(0.55, 0.8, 1.0), vec3(1.0), smoothstep(0.15, 0.55, waterShore));
+    diffuseColor.rgb *= mix(mix(vec3(0.8, 0.95, 1.12), vec3(1.12, 0.98, 0.8), waterAlong), vec3(1.0), 0.35 + 0.35 * (1.0 - waterShore));
     diffuseColor.rgb *= 0.92 + 0.16 * gfxNoise(waterSandP * 0.35 + vec2(uTime * 0.03, 3.0));
     // the sandy floor showing through toward the shore, in ripples across the
     // wind (as the beach's: src/gfx/ground.js), and a light caustic net
@@ -89,7 +95,7 @@ const COLOR = {
     float waterSand = smoothstep(0.3, 0.9, waterShore);
     float waterNet = smoothstep(0.62, 0.8, gfxNoise(waterSandP * 1.6 + vec2(uTime * 0.25, -uTime * 0.18)) + gfxNoise(waterSandP * 1.9 - vec2(uTime * 0.2, uTime * 0.23)) * 0.4) * gfxShow(1.9, waterSandPx * 0.5);
     diffuseColor.rgb *= 1.0 + waterSand * (0.8 * waterFloor - 0.25 + 0.3 * waterNet);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.78, 0.5), waterSand * (0.08 + 0.2 * waterFloor));`,
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.78, 0.5), waterSand * (0.14 + 0.24 * waterFloor));`,
   pond: `diffuseColor.rgb *= 0.94 + 0.12 * gfxNoise(vGfxWorld.xz * 0.35);`,
 };
 
