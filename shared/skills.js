@@ -29,6 +29,9 @@ export function levelOf(xp) {
   return { level, into: level < SKILLS.max ? left : 0, need: level < SKILLS.max ? SKILLS.next[level - 1] : 0 };
 }
 
+// The XP a level starts at (1 to SKILLS.max)
+export const xpAt = (level) => SKILLS.next.slice(0, Math.max(1, Math.min(SKILLS.max, level)) - 1).reduce((a, b) => a + b, 0);
+
 // A saved { skill: xp } as one with every skill, keeping only sensible numbers
 export function cleanSkills(saved) {
   const out = {};
