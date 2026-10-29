@@ -53,7 +53,7 @@ const MATS = {
   honey: mat(0xf0a020),
   dark: new THREE.MeshBasicMaterial({ color: 0x1b140e }),
 };
-detailAll(MATS, { floorGap: 'none' }); // (painted detail by name: boards, plaster, stone... src/gfx/detail.js)
+detailAll(MATS, { floorGap: 'none', window: 'glass' }); // (painted detail by name: boards, plaster, stone... src/gfx/detail.js)
 const box = new THREE.BoxGeometry(1, 1, 1);
 
 // world: the farm's (world.js buildWorld): the room goes on it, and its walls

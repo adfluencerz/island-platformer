@@ -58,7 +58,7 @@ const MATS = {
   plaster: mat(0xf0e2c4),
   roofTile: mat(0xa8492f),
   roofDark: mat(0x83361f),
-  window: mat(0xffe7a3, { emissive: 0xffb84a, emissiveIntensity: 0 }), // (the house's, lit at night with the lamps)
+  window: mat(0xc4def0, { emissive: 0xffb84a, emissiveIntensity: 0 }), // (the house's, lit at night with the lamps; glass by day: its look)
   hedge: mat(0x3f7f34),
   hedgeLight: mat(0x5a9a42),
   hedgeDark: mat(0x2f6128),
@@ -101,7 +101,7 @@ const MATS = {
   lichen: mat(0xb8b46a),
   petals: [mat(0xe0475b), mat(0xffd84a), mat(0xf28ad8), mat(0xffffff)],
 };
-detailAll(MATS); // (painted detail, each by its name: wood, planks, stone, thatch, tiles... src/gfx/detail.js)
+detailAll(MATS, { window: 'glass' }); // (painted detail, each by its name: wood, planks, stone, thatch, tiles... src/gfx/detail.js)
 // a boss's portal's swirl, by its boss: [deep, light]
 const PORTAL_MATS = { parsnip: [MATS.portal, MATS.portalLight], lion: [MATS.lionPortal, MATS.lionPortalLight], bee: [MATS.beePortal, MATS.beePortalLight], crow: [MATS.crowPortal, MATS.crowPortalLight], toad: [MATS.toadPortal, MATS.toadPortalLight] };
 const ball = new THREE.IcosahedronGeometry(0.5, 0);
@@ -242,6 +242,7 @@ function house(g, solids) {
   part(g, box, MATS.stone, 1.4, WALL_TOP + RIDGE * 0.55, z0 - 0.75, 0.55, RIDGE * 1.3 + 0.5, 0.55);
   part(g, box, MATS.stoneDark, 1.4, WALL_TOP + RIDGE * 1.2 + 0.32, z0 - 0.75, 0.65, 0.14, 0.65);
   // the door, a step up to it, and a lamp over it
+  part(g, box, MATS.hole, 0, FOOT_H + 0.79, front + 0.035, 0.98, 1.62, 0.05).castShadow = false; // (the dark gap round it: set into the wall)
   part(g, box, MATS.plankB, 0, FOOT_H + 0.78, front + 0.04, 0.9, 1.56, 0.06);
   for (const x of [-0.22, 0, 0.22]) part(g, box, MATS.plankA, x, FOOT_H + 0.78, front + 0.075, 0.18, 1.5, 0.02).castShadow = false;
   part(g, box, MATS.iron, 0.3, FOOT_H + 0.78, front + 0.1, 0.07, 0.07, 0.05);
