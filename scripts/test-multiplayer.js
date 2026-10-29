@@ -3710,6 +3710,20 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   assert.notEqual(key(clear), key(new THREE.MeshStandardMaterial()), 'and a program of its own');
 });
 
+await test('post: three still tone maps and encodes into a target flagged as XR, as the screen (src/gfx/post.js SeatsPass)', () => {
+  // The post chain draws the scene into its target as it would draw it to the
+  // screen by flagging the target isXRRenderTarget for the seats' pass. That
+  // rests on these lines of three's WebGLRenderer (r180): if a three upgrade
+  // moves them, the post tiers would draw untoned and linear, and look washed
+  // out against the low tier, so fail here instead.
+  const src = readFileSync(new URL(import.meta.resolve('three')), 'utf8');
+  const has = (re, what) => assert.ok(re.test(src), `three's renderer: ${what}`);
+  has(/if \( currentRenderTarget === null \|\| currentRenderTarget\.isXRRenderTarget === true \) \{\s*toneMapping = renderer\.toneMapping;/, 'a program is tone mapped for an XR target (WebGLPrograms)');
+  has(/outputColorSpace: \( currentRenderTarget === null \) \? renderer\.outputColorSpace : \( currentRenderTarget\.isXRRenderTarget === true \? currentRenderTarget\.texture\.colorSpace : LinearSRGBColorSpace \)/, "a program encodes in an XR target's texture color space (WebGLPrograms)");
+  has(/const colorSpace = \( _currentRenderTarget === null \) \? _this\.outputColorSpace : \( _currentRenderTarget\.isXRRenderTarget === true \? _currentRenderTarget\.texture\.colorSpace : LinearSRGBColorSpace \);/, "the program's color space is checked the same way when drawing (setProgram)");
+  has(/if \( _currentRenderTarget === null \|\| _currentRenderTarget\.isXRRenderTarget === true \) \{\s*toneMapping = _this\.toneMapping;/, 'and its tone mapping (setProgram)');
+});
+
 await test('the farm\'s seasons: a week each, spring to winter and round again, turning on a season\'s last day', () => {
   const at = (day, hour) => {
     const { now, next, blend } = seasonAt(day, hour);

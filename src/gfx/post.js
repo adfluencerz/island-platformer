@@ -77,7 +77,23 @@ class SeatsPass extends Pass {
     // As the screen is drawn: three tone maps, and writes in the screen's
     // color space, only what is drawn to the screen or to an XR target (whose
     // texture's color space it takes), so for the seats the target says it is
-    // one (a half-float target: no sRGB format, the values are stored as written)
+    // one (a half-float target: no sRGB format, the values are stored as written).
+    // Kept (phase 15's audit) over the plain route (a linear target, then
+    // OutputPass to tone map and encode once at the end) because:
+    // - the sky dome and the fog are made for the screen: the dome is not tone
+    //   mapped and the fog is mixed in after tone mapping and encoding (sky.js,
+    //   atmos.js), so in a linear target they would come out tone mapped
+    //   twice or not encoded, and the far land would no longer meet the sky;
+    // - every program is the one the low tier draws to the screen with (three
+    //   keys a program on its tone mapping and color space): no second set
+    //   compiled for the post tiers, no hitch when the tier changes, and the
+    //   tiers look the same before the post;
+    // - the bloom's thresholds and the grade work on what the screen shows
+    //   (0..1), which is what they are tuned by.
+    // It rests on three r180's WebGLRenderer and WebGLPrograms choosing tone
+    // mapping and color space by isXRRenderTarget: `npm test` checks those
+    // lines are still there (scripts/test-multiplayer.js), so an upgrade that
+    // moves them fails there, not as a washed-out picture.
     target.texture.colorSpace = renderer.outputColorSpace;
     target.isXRRenderTarget = true;
     try {
