@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Chewy&display=swap');
 /* Menus and HUD for games and rounds. Uses the inventory's palette and frame
    (inventory.css: --inv-* and .inv-frame) so it all reads as one game. */
 
@@ -91,29 +92,113 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
 .ui-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--inv-outline); flex: none; }
 
 /* ---------- The menu: the title screen, and Esc in game ---------- */
+/* The title screen (and the welcome, before it): the live farm behind it
+   (src/main.js TITLE_CAM), the logo over its sky and the card beside it on a
+   wide screen, the logo at the top and the card at the bottom held upright;
+   darker only toward the card's side, so the world stays clear */
 .ui-splash {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
-  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 30%, rgba(10, 20, 40, 0.45));
   z-index: 30;
 }
-.ui-splash.in-game { background: rgba(0, 0, 0, 0.35); } /* (the game shows through, dimmed) */
+.ui-splash:not(.in-game) {
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  place-items: start center;
+  gap: 0 28px;
+  padding: 20px 28px;
+  box-sizing: border-box;
+  background:
+    linear-gradient(90deg, rgba(42, 24, 8, 0.4), rgba(42, 24, 8, 0.2) 36%, rgba(42, 24, 8, 0) 60%),
+    radial-gradient(ellipse 110% 95% at 66% 42%, rgba(30, 16, 4, 0) 58%, rgba(30, 16, 4, 0.36));
+}
+.ui-splash:not(.in-game) > .ui-title-row { grid-column: 2; grid-row: 1; margin-top: 3vh; }
+.ui-splash:not(.in-game) > .ui-card {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 100%;
+  max-height: 100%;
+}
+/* Upright (a phone): the logo at the top, the card at the bottom, the farm between */
+@media (orientation: portrait) {
+  .ui-splash:not(.in-game) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    background:
+      linear-gradient(180deg, rgba(42, 24, 8, 0.22), rgba(42, 24, 8, 0) 24%, rgba(42, 24, 8, 0) 46%, rgba(42, 24, 8, 0.42)),
+      radial-gradient(ellipse 120% 80% at 50% 38%, rgba(30, 16, 4, 0) 60%, rgba(30, 16, 4, 0.3));
+  }
+  .ui-splash:not(.in-game) > .ui-title-row { grid-column: 1; grid-row: 1; margin-top: 2vh; }
+  .ui-splash:not(.in-game) > .ui-card {
+    grid-column: 1;
+    grid-row: 3;
+    align-self: end;
+    width: min(440px, 100%);
+    max-height: 62vh;
+    max-height: 62dvh;
+  }
+}
+/* In game: the card in the middle, a small logo over it, the world dimmed softly round it */
+.ui-splash.in-game { background: radial-gradient(ellipse at center, rgba(30, 16, 4, 0.2) 35%, rgba(30, 16, 4, 0.5)); }
+.ui-splash.in-game:not(.seat-panel) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  box-sizing: border-box;
+}
+.ui-splash.in-game:not(.seat-panel) > .ui-card { flex: 0 1 auto; min-height: 0; max-height: 100%; }
+.ui-splash.in-game > .ui-title-row .ui-logo { font-size: 46px; flex-direction: row; gap: 0.25em; }
 .ui-title-row {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
+  pointer-events: none;
 }
+/* The logo: hand-lettered (a playful rounded face), a warm gold fill, a dark
+   brown outline (a copy of each word behind it, stroked) and a soft drop
+   shadow, the words tilted a little each way */
 .ui-logo {
   margin: 0;
-  font-size: 56px;
-  line-height: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font: 400 84px/0.9 'Chewy', 'Lilita One', 'Arial Rounded MT Bold', var(--inv-font);
+  letter-spacing: 0.02em;
   text-align: center;
-  color: #fff;
-  text-shadow: 0 3px 0 var(--inv-outline), 3px 0 0 var(--inv-outline), -3px 0 0 var(--inv-outline), 0 -3px 0 var(--inv-outline), 0 6px 0 rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  filter: drop-shadow(0 4px 0 #3a2210) drop-shadow(0 10px 14px rgba(24, 12, 2, 0.45));
 }
+.ui-logo-word {
+  position: relative;
+  display: block;
+  padding: 0 0.08em;
+  background: linear-gradient(180deg, #fff7d0 6%, #ffd968 40%, #f6a63c 68%, #de6b28 96%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ui-logo-word::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  z-index: -1;
+  color: #4a2c14;
+  -webkit-text-stroke: 0.15em #4a2c14;
+}
+.ui-logo-word:first-child { transform: rotate(-5deg) translateX(-0.12em); }
+.ui-logo-word:last-child { font-size: 0.8em; transform: rotate(-1.5deg) translate(0.18em, -0.06em); }
+.ui-splash.in-game .ui-logo-word { transform: none; }
+.ui-splash.in-game .ui-logo-word:first-child { transform: rotate(-3deg); }
+.ui-splash.in-game .ui-logo-word:last-child { font-size: 0.85em; transform: rotate(-1deg); }
+.ui-splash.in-game .ui-logo { filter: drop-shadow(0 3px 0 #3a2210) drop-shadow(0 6px 10px rgba(24, 12, 2, 0.45)); }
 .ui-dev-badge {
   display: inline-block;
   padding: 4px 8px;
@@ -125,21 +210,45 @@ body.in-menu .inv-menu, body.in-menu .dn-clock, body.in-menu .ui-hud { display: 
   letter-spacing: 0.1em;
   text-shadow: 0 1px 0 var(--inv-outline);
 }
+/* The card: round 29's parchment, a touch see-through over a soft blur, lifted off the world */
+.ui-splash > .ui-card.inv-frame {
+  background: radial-gradient(ellipse at 50% 30%, rgba(253, 245, 227, 0.95), rgba(246, 230, 200, 0.92) 75%);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--frame-shadow), 0 14px 34px rgba(28, 14, 2, 0.35);
+}
+.ui-splash .ui-status:empty { min-height: 0; }
 /* "Playing as niels", or the box to change it */
 .ui-who { display: flex; justify-content: center; margin-top: -2px; }
 .ui-who .ui-link { margin: 0; padding: 2px 8px; font-size: 20px; color: var(--ui-soft); }
 .ui-who .ui-input { flex: 1; text-align: center; }
-/* the one part of the main page that changes: where you are, and the way on */
-.ui-context {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 4px;
-  background: var(--inv-slot-bg);
-  box-shadow: inset 2px 2px 0 var(--inv-slot-shade), inset -2px -2px 0 var(--inv-slot-light);
-}
+/* the one part of the main page that changes: where you are, and the way on (the big warm button) */
+.ui-context { display: flex; flex-direction: column; gap: 8px; }
 .ui-context-text { text-align: center; font-size: 21px; line-height: 1.15; }
+.ui-context .ui-context-text { color: var(--ui-soft); }
+.ui-splash .ui-btn-big {
+  border-radius: 12px 10px 12px 10px;
+  background: linear-gradient(180deg, #df8a4b, var(--inv-wood) 55%, #b9622f);
+  box-shadow: inset 0 3px 0 rgba(255, 214, 160, 0.75), inset 0 -4px 0 var(--inv-wood-dark), 0 3px 8px rgba(60, 30, 8, 0.3);
+}
+.ui-splash .ui-btn-big:hover:not(:disabled) { background: linear-gradient(180deg, #e8975a, #d6844b 55%, #c06a35); }
+/* the main page: the way on, the pages two by two, the settings small at the bottom */
+.ui-page[data-page='main'] { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ui-page[data-page='main'] > :not(.ui-nav), .ui-page[data-page='main'] > .ui-nav-wide { grid-column: 1 / -1; }
+.ui-page[data-page='main'] > .ui-context { margin-bottom: 2px; }
+.ui-page[data-page='main'] > .ui-nav { text-align: center; padding: 7px 26px 7px 10px; font-size: 21px; }
+.ui-page[data-page='main'] > .ui-nav::after { right: 10px; opacity: 0.55; }
+.ui-settings {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 2px solid rgba(200, 164, 120, 0.45);
+}
+.ui-settings > .ui-row { display: contents; }
+.ui-settings .ui-btn { flex: 0 1 auto; padding: 2px 10px; border-radius: 999px; font-size: 17px; border-width: 1.5px; }
 /* a way to a page */
 .ui-nav { position: relative; text-align: left; padding-left: 16px; padding-right: 36px; }
 .ui-nav::after { content: '▸'; position: absolute; right: 14px; }

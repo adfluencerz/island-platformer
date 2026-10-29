@@ -6,7 +6,9 @@
 //   openFarm(browser, o)   a new context and page, logged in (a test account is
 //                          made once and its login kept in
 //                          node_modules/.cache/browser-test), on the farm and
-//                          frozen. o: { query, full, size: [w, h], touch, live, log }.
+//                          frozen. o: { query, full, size: [w, h], touch, live, log, onTitle }
+//                          (onTitle(page): called once logged in, on the title screen,
+//                          before Go to my farm: scripts/shots.mjs's title shots).
 //                          Returns { context, page, errors } (errors: the page's, as they come)
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -43,7 +45,7 @@ export function launch() {
   });
 }
 
-export async function openFarm(browser, { query = '', full = false, size = [480, 320], touch = false, live = false, log = () => {} } = {}) {
+export async function openFarm(browser, { query = '', full = false, size = [480, 320], touch = false, live = false, log = () => {}, onTitle = null } = {}) {
   const [width, height] = size;
   // (full graphics opens small and grows once on the farm: the page's first,
   // synchronous draw at a big size can keep the farm's login check waiting
@@ -89,6 +91,9 @@ export async function openFarm(browser, { query = '', full = false, size = [480,
     mkdirSync(dirname(STATE), { recursive: true });
     await context.storageState({ path: STATE });
   }
+
+  // ---- the title screen, as the page opened on it ----
+  if (onTitle) await onTitle(page);
 
   // ---- onto the farm ----
   if (full) await page.evaluate(() => (window.__harnessHold = false));

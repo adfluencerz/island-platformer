@@ -77,10 +77,11 @@ export class Splash {
     this.pages = {};
     this.codeInputs = [];
     const root = (this.root = el('div', 'ui-splash', parent));
-    const card = (this.card = el('div', 'ui-card inv-frame', root));
-    const titleRow = el('div', 'ui-title-row', card);
-    el('h1', 'ui-logo', titleRow, 'Island Platformer');
+    // the logo over the world, above the card (ui.css lays them out)
+    const titleRow = el('div', 'ui-title-row', root);
+    logo(titleRow);
     if (devMode()) el('div', 'ui-dev-badge', titleRow, 'DEV');
+    const card = (this.card = el('div', 'ui-card inv-frame', root));
 
     // On an iPhone or iPad, the game from the home screen has the whole screen,
     // with none of the browser's bars: say how, once
@@ -109,15 +110,17 @@ export class Splash {
     nav('Play online', 'online');
     nav('Friends', 'friends');
     this.farmerNav = nav('Your farmer', 'farmer'); // (with an account)
-    this.addBtn = button('ui-btn ui-btn-ghost ui-nav', main, 'Add a player (split screen)', () => {
+    this.addBtn = button('ui-btn ui-btn-ghost ui-nav ui-nav-wide', main, 'Add a player (split screen)', () => {
       const problem = this.onAddPlayer?.() ?? 'Not here';
       if (problem) this.setStatus(problem, true);
       else this.hide();
     });
     this.addBtn.title = 'Another farmer joins you at this screen, on a controller of their own';
     nav('Controls', 'controls');
+    // the settings, small, together at the bottom:
+    const settings = el('div', 'ui-settings', main);
     // sound effects and music, on or off (M in game does both), and the graphics
-    const soundRow = el('div', 'ui-row', main);
+    const soundRow = el('div', 'ui-row', settings);
     const toggle = (label, key, set) => {
       const b = button('ui-btn ui-btn-small ui-btn-ghost', soundRow, '', () => {
         set(!sound.settings()[key]);
@@ -148,7 +151,7 @@ export class Splash {
     showCam();
     this.showSound = () => shows.forEach((show) => show());
     // the camera: from above, or in first person (V in game does the same)
-    const viewRow = el('div', 'ui-row', main);
+    const viewRow = el('div', 'ui-row', settings);
     const showView = () => (viewBtn.textContent = `View: ${view.firstPerson() ? 'first person' : 'overhead'}`);
     const viewBtn = button('ui-btn ui-btn-small ui-btn-ghost', viewRow, '', () => {
       view.toggle();
@@ -244,8 +247,8 @@ export class Splash {
     // ---- The welcome: logging in, or making an account (a window of its own) ----
     this.welcome = el('div', 'ui-splash', parent);
     this.welcome.hidden = true;
+    logo(el('div', 'ui-title-row', this.welcome));
     const welcomeCard = el('div', 'ui-card inv-frame', this.welcome);
-    el('h1', 'ui-logo', el('div', 'ui-title-row', welcomeCard), 'Island Platformer');
     el('div', 'ui-context-text', welcomeCard, 'Welcome, farmer! Grow a little farm, then hop online to forage with other farmers.');
     this.accountPage = el('form', 'ui-page', welcomeCard);
     const tabs = el('div', 'ui-row', this.accountPage);
@@ -297,6 +300,7 @@ export class Splash {
   // A page of the menu; with a title, it has a Back button to its parent page
   page(name, title = '', parent = 'main', tag = 'div') {
     const node = el(tag, 'ui-page', this.card);
+    node.dataset.page = name;
     if (title) {
       const head = el('div', 'ui-page-head', node);
       button('ui-btn ui-btn-small ui-btn-ghost', head, '‹ Back', () => this.back());
@@ -929,6 +933,18 @@ export class Splash {
       }
     });
   }
+}
+
+// The game's name, hand-lettered: each word on its own (ui.css tilts them),
+// with a copy of itself behind it for the outline
+function logo(parent) {
+  const h1 = el('h1', 'ui-logo', parent);
+  h1.setAttribute('aria-label', 'Island Platformer');
+  for (const word of ['Island', 'Platformer']) {
+    el('span', 'ui-logo-word', h1, word).dataset.text = word;
+    h1.append(' ');
+  }
+  return h1;
 }
 
 // How long ago a friend was last online: 'offline 5 min', ... 'offline > 7 days'

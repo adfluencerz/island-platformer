@@ -287,7 +287,15 @@ body.in-menu .tc { display: none; }
   padding: 18px 18px;
   -webkit-overflow-scrolling: touch;
 }
-:root.compact .ui-logo { font-size: 46px; }
+:root.compact .ui-logo { font-size: 64px; }
+:root.compact .ui-splash.in-game > .ui-title-row .ui-logo { font-size: 34px; }
+@media (orientation: landscape) {
+  :root.compact .ui-splash:not(.in-game) .ui-logo { font-size: 48px; }
+}
+/* (the title held upright: the card in the bottom part, the farm in view above it, ui.css) */
+@media (orientation: portrait) {
+  :root.compact .ui-splash:not(.in-game) > .ui-card { max-height: 60vh; max-height: 60dvh; padding: 14px 16px; gap: 8px; }
+}
 :root.compact .ui-page-head h2 { font-size: 26px; }
 :root.compact .ui-keys { font-size: 18px; }
 :root.compact .ui-key { font-size: 17px; }

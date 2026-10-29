@@ -176,6 +176,10 @@ const CAVE = { hemiI: 1.7, lightI: 0.06, fill: 0.92, glow: 1.5, reach: 3.5 }; //
 export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let hour = THREE.MathUtils.euclideanModulo(startHour, 24);
   let day = 1;
+  // An hour to light the world at instead of the clock's (showHour: the
+  // title screen's golden afternoon), or null; the clock itself is untouched
+  let shown = null;
+  const litHour = () => shown ?? hour;
   let elapsed = 0;
 
   const ui = createClockUI();
@@ -242,6 +246,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
   // clock: the clock's panel too (not for a split screen's other views: view())
   function apply(clock = true) {
+    const hour = litHour(); // (the clock's, unless showHour says otherwise)
     const s = sample(hour);
     if (cloud > 0) for (const p of COLOR_PROPS) overcast(s[p]);
     if (flash > 0) s.horizon.lerp(FLASH, flash * 0.7);
@@ -360,14 +365,18 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     },
     hour: () => hour,
     day: () => day,
-    isNight: () => nightAmount(hour) > 0.5,
+    isNight: () => nightAmount(litHour()) > 0.5,
+    /** Light the world as at `hours` (0 to 24) from the next update, the clock running on as it does; null: by the clock again. */
+    showHour(hours) {
+      shown = hours ?? null;
+    },
     /** A word after the day (the farm's season), or none. */
     setNote(text) {
       if ((text ?? '') === note) return;
       note = text ?? '';
       apply();
     },
-    night: () => nightAmount(hour), // 0 by day, 1 at night
+    night: () => nightAmount(litHour()), // 0 by day, 1 at night
     /** How far underground we are (0 to 1), and the cave's light (a color): from the next update. */
     setUnderground(amount, color = 0xffffff) {
       under = amount;

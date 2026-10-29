@@ -1918,8 +1918,18 @@ function wideGoal() {
 function lookFrom(split) {
   gfx.look(camera); // (the shaders' view: src/gfx/uniforms.js)
   if (place === 'title') {
-    viewFrom(GRASS_FAR[0] * 3, GRASS_FAR[1] * 3); // (the island from round about: all of it)
-    return followSun(MENU_CAM.look, 0);
+    // (the title's camera, from further back: the haze from the farm's far side on, the
+    // grass out past the middle, the shadows' box a little bigger, round what is in front)
+    scene.fog.near = FOG_NEAR * TITLE_CAM.fog;
+    scene.fog.far = FOG_FAR * TITLE_CAM.fog;
+    const far = scene.fog.far + 1;
+    if (camera.far !== far) {
+      camera.far = far;
+      camera.updateProjectionMatrix();
+    }
+    reachSun(TITLE_CAM.zoom);
+    viewFrom(GRASS_FAR[0] * TITLE_CAM.zoom * 1.6, GRASS_FAR[1] * TITLE_CAM.zoom * 1.6);
+    return followSun(_titleFocus.lerpVectors(TITLE_CAM.center, camera.position, 0.35), 0);
   }
   if (split && place !== 'lobby') npcs.showSigns(npcs.signs(), player.position); // (the neighbours' signs: what they have for this farmer)
   for (const seat of seats) if (seat.nameTag) seat.nameTag.visible = seat !== me; // (the others' names: not your own)
@@ -1985,18 +1995,47 @@ function snapCamera() {
   updateCamera(0);
 }
 
-// While the title screen is up the camera circles the island slowly
-const MENU_CAM = { radius: 24, height: 13, speed: 0.06, look: new THREE.Vector3(0, 1.5, -5) };
+// While the title screen is up the camera drifts slowly to and fro on the
+// south side of the old farm, looking north over the plaza and the platforms
+// to the forest and the horizon: the wide camera's angle (the horizon high, the
+// sky behind the logo), from higher up and further back, above the trees and
+// the platforms, at a golden late afternoon (dayNight.showHour: the farm's own
+// clock waits behind the menu). The menu's card is on the left of a wide
+// screen (ui.css), so there the farm sits right of the middle; on an upright
+// one, between the logo at the top and the card at the bottom.
+const TITLE_CAM = {
+  center: new THREE.Vector3(2, 0, -3), // what it looks at, round about
+  radius: 24, // how far off
+  height: 9.5, // and up
+  yaw: 0.12, // where it drifts round (radians: 0 straight south)...
+  sweep: 0.42, // ...how far each way...
+  speed: 0.035, // ...and how slowly (radians a second)
+  hFov: 46, // degrees across at least (an upright screen's)
+  vFov: 50, // and up and down
+  horizon: [0.48, 0.56], // how high the horizon sits, of the top half: a wide screen's, an upright one's
+  shift: [0.32, 0], // the middle that far right, of the half width: wide, upright
+  hour: 17.4, // the light's hour
+  zoom: 1.3, // the grass and the shadows' reach (of the farm's camera's)
+  fog: 1.15, // the haze, further off
+};
+const _titleFocus = new THREE.Vector3();
+const _titleLook = new THREE.Vector3();
 function updateMenuCamera(t) {
   lookYaw = null;
-  setLens(LENS);
-  const a = t * MENU_CAM.speed;
-  camera.position.set(
-    MENU_CAM.look.x + Math.sin(a) * MENU_CAM.radius,
-    MENU_CAM.height,
-    MENU_CAM.look.z + Math.cos(a) * MENU_CAM.radius
-  );
-  camera.lookAt(MENU_CAM.look);
+  const { degToRad, radToDeg, clamp, lerp } = THREE.MathUtils;
+  const aspect = camera.aspect;
+  const upright = clamp((1.2 - aspect) / 0.7, 0, 1);
+  setLens({ fov: Math.max(TITLE_CAM.vFov, radToDeg(2 * Math.atan(Math.tan(degToRad(TITLE_CAM.hFov / 2)) / aspect))), near: LENS.near });
+  const { center, radius } = TITLE_CAM;
+  const a = TITLE_CAM.yaw + Math.sin(t * TITLE_CAM.speed) * TITLE_CAM.sweep;
+  camera.position.set(center.x + Math.sin(a) * radius, TITLE_CAM.height, center.z + Math.cos(a) * radius);
+  // facing the middle, turned left so it sits right of the screen's middle,
+  // looking down so the horizon sits high
+  const half = Math.tan(degToRad(camera.fov / 2));
+  const heading = Math.atan2(center.x - camera.position.x, center.z - camera.position.z) + Math.atan(lerp(TITLE_CAM.shift[0], TITLE_CAM.shift[1], upright) * half * aspect);
+  const pitch = Math.atan(lerp(TITLE_CAM.horizon[0], TITLE_CAM.horizon[1], upright) * half);
+  _titleLook.set(Math.sin(heading) * Math.cos(pitch), -Math.sin(pitch), Math.cos(heading) * Math.cos(pitch)).add(camera.position);
+  camera.lookAt(_titleLook);
 }
 
 // ---------- Input ----------
@@ -5692,6 +5731,7 @@ function updateWorld(dt) {
   presence.where(place === 'lobby' ? 'lobby' : farmVisit ? 'farm' : 'home'); // (for friends' lists)
   // (anyone at the screen holding T; and the clock stops only while everyone is in a menu)
   const fastForward = seats.some((seat) => seat.keys.has('KeyT')) && place !== 'lobby' && (!farmVisit || (farmVisit.mine && farmVisit.alone));
+  dayNight.showHour(place === 'title' ? TITLE_CAM.hour : null); // (the title's golden afternoon: the light only)
   const allInMenus = seats.every((seat) => within(seat, () => menuOpen() || (seat === first && !splash.hidden)));
   const hoursBefore = dayNight.day() * 24 + dayNight.hour() - devJump; // (and the developer tools' jump, as if it passed now)
   devJump = 0;

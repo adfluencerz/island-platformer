@@ -1,8 +1,10 @@
-// `npm run shots -- [--tier low|medium|high] [--check]`: twelve fixed screenshots
+// `npm run shots -- [--tier low|medium|high] [--check]`: fifteen fixed screenshots
 // of the game at full graphics, to judge its look by (docs/visuals/), with
 // what the renderer drew for each, and a contact sheet of them all:
 //
-//   shots/NAME.png      each shot (960x600; the phone's 390x844, touch)
+//   shots/NAME.png      each shot (960x600; the phone's 390x844, touch); title and
+//                       title-phone the page as it first opens (logged in, before
+//                       Go to my farm), menu the menu in game (Esc) over the plaza
 //   shots/stats.json    { NAME: { calls, triangles, programs, geometries,
 //                       textures, tier, pixelRatio } }, counted after its frame
 //   shots/contact.png   all of them on one page, labelled
@@ -63,6 +65,13 @@ const SHOTS = [
     await g.seatFarmer(seat, g.newGuest('Second', 0x4a90d9));
     g.layout();
   }],
+  ['menu', (g) => { // (the menu in game, Esc, over the plaza; Esc again after)
+    g.warp('plaza');
+    g.dayNight.setTime(12);
+    const esc = () => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' }));
+    esc();
+    g.__after = esc;
+  }],
   ['lobby', async (g) => {
     for (const seat of [...g.seats].slice(1)) g.dropSeat(seat);
     g.joinLobby({ name: 'shots', code: 'SNAPSZ' });
@@ -99,24 +108,46 @@ async function shoot(page, name, set) {
     return g.stats();
   });
   await page.screenshot({ path: `${OUT}/${name}.png` });
+  await page.evaluate(() => {
+    window.__game.__after?.();
+    delete window.__game.__after;
+  });
   log(name, JSON.stringify(stats[name]));
 }
 
+// The title screen as the page first opens (openFarm's onTitle: logged in,
+// before Go to my farm), at that size: its camera drifting, drawn once
+const shootTitle = (name, [width, height]) => async (page) => {
+  await page.evaluate(() => (window.__harnessHold = false));
+  await page.setViewportSize({ width, height });
+  await page.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [width, height]);
+  stats[name] = await page.evaluate(async () => {
+    const g = window.__game;
+    g.step(0.5);
+    g.draw();
+    await document.fonts.ready;
+    return g.stats();
+  });
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+  await page.evaluate(() => window.__game.freeze(false)); // (on to the farm as before)
+  log(name, JSON.stringify(stats[name]));
+};
+
 try {
-  const desk = await openFarm(browser, { query, full: true, size: SIZE, log });
+  const desk = await openFarm(browser, { query, full: true, size: SIZE, log, onTitle: shootTitle('title', SIZE) });
   for (const [name, set] of SHOTS) await shoot(desk.page, name, set);
   errors.push(...desk.errors.map((e) => `desktop: ${e}`));
   await desk.context.close();
 
-  const phone = await openFarm(browser, { query, full: true, size: PHONE, touch: true, log });
+  const phone = await openFarm(browser, { query, full: true, size: PHONE, touch: true, log, onTitle: shootTitle('title-phone', PHONE) });
   for (const [name, set] of PHONE_SHOTS) await shoot(phone.page, name, set);
   errors.push(...phone.errors.map((e) => `phone: ${e}`));
 
   writeFileSync(`${OUT}/stats.json`, JSON.stringify(stats, null, 2) + '\n');
 
   // ---- the contact sheet: a blank page of the shots, labelled ----
-  const names = [...SHOTS, ...PHONE_SHOTS].map(([n]) => n);
-  const tall = new Set(PHONE_SHOTS.map(([n]) => n));
+  const names = [...SHOTS.filter(([n]) => n !== 'menu'), ...PHONE_SHOTS].map(([n]) => n).concat(['title', 'title-phone', 'menu']);
+  const tall = new Set([...PHONE_SHOTS.map(([n]) => n), 'title-phone']);
   const cell = (n) => {
     const s = stats[n];
     const src = `data:image/png;base64,${readFileSync(`${OUT}/${n}.png`).toString('base64')}`;
