@@ -76,6 +76,7 @@ export const HOME = {
   leafMats: leafMats.map((m) => m.clone()),
   pineMats: pineMats.map((m) => m.clone()),
   tuftMat: new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }),
+  carpetMat: new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true }), // (the grass carpet's: src/world.js makeCarpet)
   groundMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
   turfMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), // (on its platforms)
   cliffMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }), // (the lips of its cliffs)

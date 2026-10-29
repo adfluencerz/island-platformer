@@ -12,7 +12,8 @@ import { NOISE, VORONOI } from './noise.js';
 //          mixed at the tiles' edges as the colors are): a dark speckle on
 //          the greens, moss in the gaps of stone next to grass, paths worn
 //          lighter down their middles with a few pale pebbles, faint ripples
-//          on the sand; and (gfxShore: how near the open sea) the sand
+//          on the sand; darker under the grass carpet near the camera
+//          and lighter past it (the tiers with one); and (gfxShore: how near the open sea) the sand
 //          wet and darker at the waterline, a lace of foam over its edge;
 //          the stone's own ground (world.js gives it its neighbors' color)
 //          a warm mortar out to a crisp, wavering edge, moss in its joints
@@ -75,6 +76,13 @@ const FRAGMENT = {
     float groundLee = smoothstep(0.76, 0.84, groundRf) * (1.0 - smoothstep(0.9, 1.0, groundRf));
     groundK *= 1.0 + vGroundKind.w * gfxShow(2.9, groundPx * 0.5) * (0.16 * (groundRise - 0.5) - 0.12 * groundLee);
     diffuseColor.rgb *= groundK;
+    // under the grass carpet (src/world.js makeCarpet, the tiers that have
+    // one): a little darker and cooler between its blades near the camera;
+    // past where it thins, lighter and warmer, as its lit blade tips are
+    // seen from afar, so no ring shows where it ends
+    float groundCarpet = 1.0 - 0.5 * smoothstep(uCarpetFar.x - 3.0, uCarpetFar.x + 3.0, distance(vGfxWorld, cameraPosition))
+      - 0.5 * smoothstep(uCarpetFar.y - 6.0, uCarpetFar.y, distance(vGfxWorld, cameraPosition));
+    diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(1.05, 1.05, 0.99), vec3(0.84, 0.86, 0.9), groundCarpet), vGroundKind.x * step(0.001, uCarpet));
     highp vec2 groundSc = groundP * 2.2;
     highp vec2 groundSi = floor(groundSc);
     vec2 groundSf = groundSc - groundSi - 0.5 - (gfxHash2(groundSi + 7.0) - 0.5) * 0.6;
@@ -196,7 +204,7 @@ export function groundDetail(material, kind) {
     define(shader, 'GFX_WORLD');
     define(shader, 'GFX_GROUND');
     if (kind === 'tiles' || kind === 'slab') define(shader, 'GFX_PUDDLE');
-    if (kind === 'tiles') use(shader, ['uTime'], 'f'); // (the swash on the wet sand)
+    if (kind === 'tiles') use(shader, ['uTime', 'uCarpet', 'uCarpetFar'], 'f'); // (the swash on the wet sand; the grass carpet over it)
     const vertex = VERTEX[kind];
     if (vertex) {
       shader.vertexShader = patch(shader.vertexShader, 'common', vertex[0], 'GFX_GROUND');
