@@ -21,9 +21,11 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // Set for the filmic tone mapping (src/gfx/tonemap.js, exposure 1.15): a warm
 // sun a little stronger than the sky, a cool blue sky light and a blue-violet
 // ground bounce, so lit sides are warm and shade is cool; dusk's sun and sky
-// are lifted so a sunset glows, and night is moonlit blue. The sky (src/gfx/sky.js)
-// runs from `zenith` overhead to `horizon`, which is the fog's color too (the
-// far land melts into it); neither is tone mapped.
+// are lifted so a sunset glows (its sun golden and strong for its low angle,
+// its sky light lavender, so the long shadows go cool), and night is moonlit
+// blue. The sky (src/gfx/sky.js) runs from `zenith` overhead to `horizon`,
+// which is the fog's color too (the far land melts into it); neither is tone
+// mapped.
 const KEYS = [
   { h: 0, horizon: 0x0b1026, zenith: 0x02040e, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
   { h: 4.5, horizon: 0x111a3a, zenith: 0x040816, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
@@ -31,7 +33,7 @@ const KEYS = [
   { h: 7, horizon: 0xf2b27a, zenith: 0x6a8cc4, light: 0xffc488, lightI: 1.25, hemiSky: 0xf0dce0, hemiGround: 0x464468, hemiI: 0.9 },
   { h: 8.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
   { h: 17, horizon: 0x87ceeb, zenith: 0x3f88d2, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
-  { h: 18.3, horizon: 0xf0955a, zenith: 0x4c5c9e, light: 0xffa060, lightI: 1.9, hemiSky: 0xf4b8c0, hemiGround: 0x4a4070, hemiI: 1.25 },
+  { h: 18.5, horizon: 0xf4945a, zenith: 0x5a5ca2, light: 0xffa458, lightI: 2.3, hemiSky: 0xbcb0e0, hemiGround: 0x4a3c6c, hemiI: 1.1 },
   { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
   { h: 20.5, horizon: 0x1a2048, zenith: 0x060a20, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
 ];
@@ -230,13 +232,16 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     sun.intensity = THREE.MathUtils.lerp(s.lightI * (1 - cloud * 0.65), CAVE.lightI, under);
 
     // The sun arcs east (+X) to west (-X) between sunrise and sunset; at
-    // night the same light becomes the moon on the opposite side. It never
-    // drops below ~20° up, so low light still reaches flat ground and shadows
-    // don't stretch to infinity at the horizon.
+    // night the same light becomes the moon on the opposite side. The sun
+    // sits low round sunrise and sunset (about 16° up at 18:30, so a golden
+    // hour throws long shadows) but never below ~10°, so low light still
+    // reaches flat ground and shadows don't stretch to infinity; the moon
+    // keeps above ~20°.
     const angle = ((hour - SUNRISE) / (SUNSET - SUNRISE)) * Math.PI;
     const isDay = hour >= SUNRISE && hour < SUNSET;
     const sign = isDay ? 1 : -1;
-    sunDir.set(Math.cos(angle) * sign, 0.4 + 0.6 * Math.abs(Math.sin(angle)), 0.45).normalize();
+    const up = Math.abs(Math.sin(angle));
+    sunDir.set(Math.cos(angle) * sign, isDay ? 0.22 + 0.78 * up : 0.4 + 0.6 * up, 0.45).normalize();
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
