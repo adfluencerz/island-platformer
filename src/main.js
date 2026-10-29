@@ -5922,14 +5922,32 @@ function draw() {
   }
 }
 
+// What a farmer holds (each hidden but the one in hand), and the rest of
+// them shown now: the meshes to hide for a view out of their own eyes
+const FIRST_TOOL_AHEAD = 0.6; // (first person: how far ahead of the eyes the tool in hand is drawn)
+const heldTools = (f) => [f.hoe, f.axe, f.pick, f.sword, f.mallet, f.bow, f.rod, f.can];
+function bodyParts(obj, tools, out = []) {
+  if (!obj.visible || obj.isLight || tools.includes(obj)) return out;
+  if (obj.isMesh || obj.isSkinnedMesh) out.push(obj);
+  for (const child of obj.children) bodyParts(child, tools, out);
+  return out;
+}
+
 // One seat's view, into the part of the screen (or of the post chain's target) set for it
 function seatView(seat, split) {
   within(seat, () => {
     lookFrom(split);
-    // (first person: not their own body in their eyes; its night light stays)
-    const body = lookYaw === null ? [] : playerMesh.children.filter((part) => part.visible && !part.isLight);
+    // (first person: not their own body in their eyes, but the tool in their
+    // hand stays, drawn a little ahead so a swing comes down in view, not
+    // under it; not the rod, its line hangs from where it is; its night light stays)
+    const body = lookYaw === null ? [] : bodyParts(playerMesh, heldTools(farmer));
     for (const part of body) part.visible = false;
+    const ahead = lookYaw !== null && !farmer.rod.visible ? FIRST_TOOL_AHEAD : 0;
+    playerMesh.position.x += Math.sin(lookYaw) * ahead;
+    playerMesh.position.z += Math.cos(lookYaw) * ahead;
     renderer.render(scene, camera);
+    playerMesh.position.x -= Math.sin(lookYaw) * ahead;
+    playerMesh.position.z -= Math.cos(lookYaw) * ahead;
     for (const part of body) part.visible = true;
   });
 }
