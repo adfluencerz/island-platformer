@@ -147,10 +147,15 @@ function createFireflies(count) {
   return { points, update };
 }
 
-// Underground (a boss's dungeon): black all round, the hemisphere and the sun
-// down low in the cave's color, and the warm light round the farmer up
+// Underground (a boss's dungeon): black all round; the hemisphere a dim,
+// cool blue-grey fill (a little of the cave's color in it), so what no lamp
+// reaches reads cool, not brown; the overhead light low, in the cave's
+// color; and a small, soft light round the farmer (the lamps' own light:
+// src/build.js, the dungeon's lamps)
 const CAVE_DARK = new THREE.Color(0x040306);
-const CAVE = { hemiI: 0.7, lightI: 0.32, glow: 16 };
+const CAVE_FILL = new THREE.Color(0x4c68b0); // (the hemisphere's sky...)
+const CAVE_FLOOR = new THREE.Color(0x161a2a); // (...and its ground)
+const CAVE = { hemiI: 0.6, lightI: 0.06, fill: 0.85, glow: 6, reach: 7 };
 
 export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   let hour = THREE.MathUtils.euclideanModulo(startHour, 24);
@@ -213,6 +218,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     color.lerp(_grey.setRGB(grey * 0.86, grey * 0.96, grey * 1.16), cloud * 0.8);
   }
   const _grey = new THREE.Color();
+  const _fill = new THREE.Color();
   const FLASH = new THREE.Color(0xe6ecff);
 
   // clock: the clock's panel too (not for a split screen's other views: view())
@@ -224,8 +230,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     if (under > 0) {
       s.horizon.lerp(CAVE_DARK, under);
       s.zenith.lerp(CAVE_DARK, under);
-      s.hemiSky.lerp(caveLight, under);
-      s.hemiGround.lerp(CAVE_DARK, under);
+      s.hemiSky.lerp(_fill.copy(caveLight).lerp(CAVE_FILL, CAVE.fill), under);
+      s.hemiGround.lerp(CAVE_FLOOR, under);
       s.light.lerp(caveLight, under);
     }
     scene.background.copy(s.horizon);
@@ -251,7 +257,8 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
     const night = nightAmount(hour);
     shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash, wet, rain }); // (the shaders' copy: src/gfx/uniforms.js)
-    glow.intensity = Math.max(night * 10, under * CAVE.glow); // (underground: a lamp's light round us)
+    glow.intensity = Math.max(night * 10 * (1 - under), under * CAVE.glow); // (underground: a little light round us)
+    glow.distance = THREE.MathUtils.lerp(14, CAVE.reach, under);
     if (!clock) return night;
 
     // Clock panel: dial sky color and the sun/moon riding the arc

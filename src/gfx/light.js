@@ -196,12 +196,12 @@ const SHEEN_GLSL = /* glsl */ `
 // the low tier, and in the grade on the others: src/gfx/post.js)
 export const MOON = '0.78, 0.97, 1.45';
 
-// At night on the low tier: the diffuse light, toward grey (its brightness
+// At night (and underground) on the low tier: the diffuse light, toward grey (its brightness
 // kept, as the grade does: greying the color it lights instead would let the
 // blue moon light more of it), less where it is bright (a lamp's)
 const GREY_GLSL = /* glsl */ `
   {
-    float gfxGrey = uNightGrey * uNight * ( 1.0 - uUnder );
+    float gfxGrey = uNightGrey * max( uNight * ( 1.0 - uUnder ), uUnder ); // (underground too: what no lamp lights, cool)
     if ( gfxGrey > 0.0 ) {
       const vec3 gfxLuma = vec3( 0.2126, 0.7152, 0.0722 );
       float gfxD = dot( reflectedLight.directDiffuse, gfxLuma );
