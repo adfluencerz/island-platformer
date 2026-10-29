@@ -30,7 +30,7 @@ const CLOUD_SKY = '0.6'; // (how much of a cloud's shade the sky's light takes: 
 export const CLOUD_GLSL = /* glsl */ `
 ${NOISE}
   float gfxCloudShadow(highp vec2 xz) {
-    float strength = uCloudShadows * (1.0 - uUnder) * (1.0 - 0.5 * uNight) * mix(0.7, 0.35, uCloudAmount); // (overcast: under cloud nearly everywhere, each patch less dark)
+    float strength = uCloudShadows * (1.0 - uUnder) * (1.0 - 0.5 * uNight) * mix(0.8, 0.38, uCloudAmount); // (overcast: under cloud nearly everywhere, each patch less dark)
     if (strength <= 0.0) return 1.0;
     highp vec2 p = (xz - uCloudOffset) * ${CLOUD_SCALE.toFixed(4)} + vec2(5.5, 19.5); // (away from the noise's origin, a sunny hole)
     float n = (2.0 * gfxNoise(p) + gfxNoise(mat2(1.6, 1.2, -1.2, 1.6) * p + 7.1)) / 3.0; // (two octaves)
@@ -99,6 +99,9 @@ export function lightChunks() {
           float gfxS = ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;
           // (a face turned from the light is in its own shadow anyway: the wrap darkens it, smoothly, not the map)
           gfxS = mix( gfxS, 1.0, smoothstep( 0.0, -0.12, dot( geometryNormal, directLight.direction ) ) );
+          #ifdef GFX_SHADOW_LIFT
+            gfxS = mix( gfxS, 1.0, gfxShadowLift ); // (a pine's rim, in the shade of the tier above: world.js hookTree)
+          #endif
           directLight.color *= gfxS;
           #if ( UNROLLED_LOOP_INDEX == 0 )
             gfxSunLit *= gfxS;
