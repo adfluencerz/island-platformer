@@ -300,6 +300,11 @@ export const hash2 = (x, z) => {
 
 // Ripples for still or open water, in the fragment shader: the surface normal
 // rocks to and fro (so the sun glints off it) and the color drifts a little.
+// Under the fine ripples, broad slow swells a few metres long, crossing
+// (warped a little, so they don't march in rows): they tilt the normal
+// enough that the sky's gradient in the mirror shifts over them, and shade
+// the color, crests lighter and troughs darker. Their height (-1..1) is
+// rippleWave, for the water's look (src/gfx/water.js).
 export function addRipples(material) {
   material.userData.noSnow = true;
   return hook(material, 'ripples', (shader) => {
@@ -310,9 +315,15 @@ export function addRipples(material) {
       float rippleA = vGfxWorld.x * 1.3 + uTime * 1.1;
       float rippleB = vGfxWorld.z * 1.7 - uTime * 0.9;
       float rippleC = (vGfxWorld.x - vGfxWorld.z) * 2.6 + uTime * 1.7;
-      diffuseColor.rgb *= 0.95 + 0.07 * sin(rippleA * 0.4 + rippleB * 0.3);`, 'GFX_RIPPLES');
+      vec2 swellP = vGfxWorld.xz + 0.7 * sin(vGfxWorld.zx * vec2(0.37, 0.29) + uTime * vec2(0.11, 0.08));
+      float swell1 = dot(swellP, vec2(0.91, 0.68)) - uTime * 0.42;
+      float swell2 = dot(swellP, vec2(-0.78, 1.47)) - uTime * 0.55;
+      float swell3 = dot(swellP, vec2(2.2, -0.75)) - uTime * 0.8;
+      float rippleWave = (sin(swell1) + 0.75 * sin(swell2) + 0.45 * sin(swell3)) * 0.45;
+      vec2 swellSlope = (vec2(0.91, 0.68) * cos(swell1) + 0.75 * vec2(-0.78, 1.47) * cos(swell2) + 0.45 * vec2(2.2, -0.75) * cos(swell3)) * 0.45;
+      diffuseColor.rgb *= (0.95 + 0.07 * sin(rippleA * 0.4 + rippleB * 0.3)) * (1.0 + 0.16 * rippleWave);`, 'GFX_RIPPLES');
     shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_begin', `
-      vec3 rippleNormal = normalize(vec3(cos(rippleA) * 0.07 + cos(rippleC) * 0.04, 1.0, cos(rippleB) * 0.07 - cos(rippleC) * 0.04));
+      vec3 rippleNormal = normalize(vec3(cos(rippleA) * 0.07 + cos(rippleC) * 0.04 - swellSlope.x * 0.16, 1.0, cos(rippleB) * 0.07 - cos(rippleC) * 0.04 - swellSlope.y * 0.16));
       normal = normalize((viewMatrix * vec4(rippleNormal, 0.0)).xyz);`, 'GFX_RIPPLES');
   });
 }

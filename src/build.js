@@ -160,7 +160,7 @@ const gable = new THREE.ExtrudeGeometry(gableShape, { depth: HOUSE_W, bevelEnabl
 export const POND_WATER_Y = 0.14; // the water's surface, where a bobber floats
 const POND_Z = -1; // its middle, from the middle of the tile it was built on
 const POND_IN = 1.25; // half the water's width
-const waterMat = waterLook(addRipples(mat(0x3a96a8, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: false })), 'pond'); // (as the lake's: src/gfx/water.js)
+const waterMat = waterLook(addRipples(mat(0x318ea0, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: false })), 'pond'); // (as the lake's: src/gfx/water.js)
 const padMat = mat(0x4f9e3c);
 // ---------- The aquarium ----------
 // Where in it the fish swim, from the middle of its tile: [x, y, z] of the

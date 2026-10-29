@@ -18,6 +18,11 @@ import { NOISE } from './noise.js';
 //     little wave facets that catch the sun from any side, added
 //     on top of the tone-mapped color, so its brightest sparkles pass the
 //     bloom's threshold (src/gfx/post.js) and glow, without a white smear;
+//     and a scatter of broad flashes on the swells' crests, big enough to
+//     read from the play camera;
+//   - the broad swells' shade (rippleWave), kept over the mirror;
+//   - (the lake's, a pond that knows its bank: gfxBank) by the bank less
+//     mirror, and a dark wet band where the water meets it;
 //   - in the rain (uRain), drops ringing on it (gfxRipples, src/gfx/light.js);
 //   - a slow mottle in the color (the sea's), or (the shallows') a soft,
 //     broken edge out at sea, turquoise deepening away from the shore, and
@@ -28,11 +33,15 @@ import { NOISE } from './noise.js';
 // Per kind: fresnel (how much sky at grazing), glint (sparkle strength),
 // solid (how far the fresnel makes translucent water opaque), dusk (how much
 // more of the sky it mirrors round a low sun, looking down on it: a golden
-// hour's peach and mauve in the still water)
+// hour's peach and mauve in the still water), shade (how much the broad
+// swells light their crests and darken their troughs over the mirror)
 export const WATER = {
-  sea: { fresnel: 0.9, glint: 1.0, solid: 0, dusk: 0.15 },
-  shallows: { fresnel: 0.7, glint: 0.8, solid: 0, dusk: 0 },
-  pond: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45 },
+  sea: { fresnel: 0.9, glint: 1.0, solid: 0, dusk: 0.15, shade: 0.12 },
+  shallows: { fresnel: 0.7, glint: 0.8, solid: 0, dusk: 0, shade: 0.08 },
+  pond: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45, shade: 0.14 },
+  // a pond that knows where its bank is (src/maps.js buildPond): the pond's
+  // look, and by the bank less mirror and a dark wet edge
+  lake: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45, shade: 0.14, bank: true },
 };
 
 const f = (v) => v.toFixed(3);
@@ -58,8 +67,9 @@ const COLOR = {
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.8, 0.56) * (1.0 + 0.25 * waterNet), waterSand * 0.55);`,
   pond: `diffuseColor.rgb *= 0.94 + 0.12 * gfxNoise(vGfxWorld.xz * 0.35);`,
 };
+COLOR.lake = COLOR.pond;
 
-const SURFACE = ({ fresnel, glint, solid, dusk }) => `
+const SURFACE = ({ fresnel, glint, solid, dusk, shade }) => `
   {
     vec3 waterN = normalize((vec4(normal, 0.0) * viewMatrix).xyz); // (view to world)
     vec3 waterV = normalize(cameraPosition - vGfxWorld);
@@ -76,6 +86,23 @@ const SURFACE = ({ fresnel, glint, solid, dusk }) => `
     waterSky = mix(waterSky, uSkyZenith, smoothstep(0.05, 0.8, waterR.y) * (1.0 - 0.4 * waterLow));
     gl_FragColor.rgb = mix(gl_FragColor.rgb, linearToOutputTexel(vec4(waterSky, 1.0)).rgb, waterF);
     gl_FragColor.a = mix(gl_FragColor.a, 1.0, waterF * ${f(solid)});
+    // the broad swells' shade, kept over the mirror: crests lighter, troughs darker
+    #ifdef GFX_RIPPLES
+      float waterWave = rippleWave;
+    #else
+      float waterWave = 0.0;
+    #endif
+    gl_FragColor.rgb *= 1.0 + ${f(shade)} * waterWave;
+    #ifdef GFX_WATER_BANK
+      // by the bank (vWaterBank: 1 there, 0 a metre and a half out, its edge
+      // wavering): the shallows mirror less, so the water's own color and
+      // its floor show, and a dark wet band where it meets the bank
+      float waterBank = clamp(vWaterBank + (gfxNoise(vGfxWorld.xz * 1.3) - 0.5) * 0.25, 0.0, 1.0);
+      gl_FragColor.rgb *= mix(vec3(1.0), vec3(0.74, 0.84, 0.78), smoothstep(0.15, 0.75, waterBank));
+      float waterWet = smoothstep(0.62, 0.93, waterBank);
+      gl_FragColor.rgb *= 1.0 - 0.48 * waterWet;
+      gl_FragColor.a = max(gl_FragColor.a, 0.92 * waterWet);
+    #endif
 
     // the glitter, on two scales, both a tight highlight (pow 180) of the sun:
     // the sun's own path, on a finer shimmer than the ripples, cut into
@@ -106,6 +133,19 @@ const SURFACE = ({ fresnel, glint, solid, dusk }) => `
     float waterFacet = pow(max(dot(waterFN, waterH), 0.0), 180.0) * waterDot * 4.0 * waterAge * (1.0 - waterAge);
     waterSpec += waterFacet * gfxShow(WATER_FACETS, waterPx);
 
+    // and a scatter of broad flashes on the crests, a few pixels across from
+    // the play camera: one cell in a few lit at a time, dealt anew as it fades
+    highp vec2 waterBigP = waterP * WATER_BIG;
+    highp vec2 waterBigCell = floor(waterBigP);
+    float waterBigLife = uTime * 0.8 + gfxHash(waterBigCell + 3.7) * 7.0;
+    float waterBigAge = fract(waterBigLife);
+    highp vec2 waterBigDeal = waterBigCell + mod(floor(waterBigLife), 61.0) * vec2(5.17, 9.31);
+    vec2 waterBigAt = waterBigP - waterBigCell - 0.5 - (gfxHash2(waterBigDeal) - 0.5) * 0.5;
+    float waterBigDot = 1.0 - smoothstep(0.03, 0.2, length(waterBigAt * vec2(1.0, 1.6)));
+    float waterBigOn = step(0.75, gfxHash(waterBigDeal + 11.0)) * smoothstep(-0.3, 0.6, waterWave);
+    float waterBigLobe = 0.35 + 0.65 * smoothstep(0.55, 1.0, dot(waterN, waterH));
+    waterSpec += waterBigDot * waterBigOn * waterBigLobe * 4.0 * waterBigAge * (1.0 - waterBigAge) * 1.1 * gfxShow(WATER_BIG, waterPx);
+
     float waterUp = smoothstep(0.0, 0.06, waterL.y) * (1.0 - 0.85 * uCloudAmount) * (1.0 - 0.6 * uNight) * (1.0 + 0.6 * waterLow);
     vec3 waterGlint = uSunColor * (waterSpec * waterUp * ${f(glint * 2.4)});
     gl_FragColor.rgb += min(waterGlint, vec3(1.6));
@@ -129,7 +169,14 @@ export function waterLook(material, kind) {
     use(shader, UNIFORMS, 'f');
     shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}
 #define WATER_FACETS 6.0
-#define WATER_TILT 3.0`, 'GFX_WATER');
+#define WATER_TILT 3.0
+#define WATER_BIG 1.3`, 'GFX_WATER');
+    if (look.bank) {
+      define(shader, 'GFX_WATER_BANK');
+      shader.vertexShader = patch(shader.vertexShader, 'common', 'attribute float gfxBank;\nvarying float vWaterBank;', 'GFX_WATER_BANK');
+      shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', 'vWaterBank = gfxBank;', 'GFX_WATER_BANK');
+      shader.fragmentShader = patch(shader.fragmentShader, 'common', 'varying float vWaterBank;', 'GFX_WATER_BANK');
+    }
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', COLOR[kind], 'GFX_WATER');
     shader.fragmentShader = patch(shader.fragmentShader, 'colorspace_fragment', SURFACE(look), 'GFX_WATER');
   });
