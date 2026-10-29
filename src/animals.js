@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { damp } from './character.js';
+import { damp, rimmed } from './character.js';
 import { foliageMat } from './world.js';
 import { ITEMS } from './items.js';
 import { ANIMALS, LAY_HOURS, EGGS_PER_HEN, PEN_LEVELS } from '../shared/balance.js'; // (what they give, and how often; the pens' levels)
@@ -366,7 +366,7 @@ export const penRect = (pen, level) => rectOf(PEN_RECTS[pen][level - 1]);
 // A model gives: root, rig (scaled for squash & stretch from the feet), legs
 // [{ pivot, phase, front }], and pose(a, t), which moves its own parts (head,
 // wings, tail, fleece) from the animal's state.
-const mat = (color, opts = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...opts });
+const mat = (color, opts = {}) => rimmed(new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...opts })); // (the farmers' rim: they stand out the same way)
 const matCache = new Map();
 const matOf = (color) => {
   if (!matCache.has(color)) matCache.set(color, mat(color));
@@ -576,13 +576,13 @@ function gild(root) {
     if (!goldMats.has(obj.material)) {
       const { r, g, b } = obj.material.color;
       const light = 0.35 + 0.65 * Math.min(1, 0.3 * r + 0.59 * g + 0.11 * b + 0.25); // (dark parts stay a darker gold)
-      goldMats.set(obj.material, new THREE.MeshStandardMaterial({
+      goldMats.set(obj.material, rimmed(new THREE.MeshStandardMaterial({
         color: new THREE.Color(1, 0.8, 0.25).multiplyScalar(light),
         emissive: 0x6b4a00,
         emissiveIntensity: 0.35,
         metalness: 0.55,
         roughness: 0.35,
-      }));
+      })));
     }
     obj.material = goldMats.get(obj.material);
   });

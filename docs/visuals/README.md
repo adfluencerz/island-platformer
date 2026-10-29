@@ -27,6 +27,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
 | particles     | 300  | 600           | 900  |
+| character outline | off | off       | on   |
 
 ## Budgets (farm, `plaza-noon` in `npm run shots`)
 - Draw calls: not more than the previous phase (the baseline is in STATUS.md); ≤ 900 from phase 09 on.

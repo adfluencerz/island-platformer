@@ -5641,7 +5641,7 @@ function updateWorld(dt) {
   npcHomes.setNight(dayNight.night());
   houseRoom.update(t, farmersHere().map((seat) => seat.player.position));
   seasons.frame(dt, { home: place !== 'lobby', focus: indoors() || cave.k > 0.5 ? null : player.position });
-  lightFarmers(hemi.color, 0.13 * hemi.intensity); // (their edges catch the sky's light)
+  lightFarmers(hemi.color, 0.3 * hemi.intensity); // (their edges catch the sky's light)
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),
