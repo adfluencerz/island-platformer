@@ -13,7 +13,7 @@ A cozy 3D farming game built with [Three.js](https://threejs.org/) and [Vite](ht
 - Seasons on the farm: spring, summer, autumn and winter, a week each, turn its trees, grass and ground (`src/seasons.js`)
 - A glider leaf from the workbench: hold Jump on the way down to float
 - A day/night cycle with a sun and moon, fireflies and a clock
-- Sound effects and a gentle tune that changes at night, all made on the spot with the Web Audio API (`src/sound.js`, no sound files); `M` or the menu turns them off
+- Sound effects made on the spot with the Web Audio API, and music: the song *Whispers In The Greenwood* (`src/music/`), played round and round, with "Now playing" at the top of the screen each time it starts (`src/sound.js`, `src/ui/nowplaying.js`); `M` or the menu turns them off
 - A merchant at a market stall on the farm who sells the basics (turnip, carrot and flax seeds, a watering can, bait) and buys what you grow and find, and asks for something each day, for good gold (`src/requests.js`)
 - A collection book (`O`): the crops, wild finds, rare finds, dishes, fish and relics you've had, and the bosses you've beaten
 - Five bosses (the evil parsnip, the super lion, the bee queen, the giant crow and the bog toad), each through a portal on the farm, at the end of a dungeon of its own little foes, with a mount to win: riding one is faster and jumps higher

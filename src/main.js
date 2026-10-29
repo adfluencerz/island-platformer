@@ -36,6 +36,7 @@ import { PresenceLink } from './net/presence.js';
 import { InvitePopups } from './ui/invite.js';
 import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
+import { createNowPlaying } from './ui/nowplaying.js';
 import { Hud } from './ui/hud.js';
 import { Guide } from './ui/guide.js';
 import { TouchControls, isTouch, fitPart } from './ui/touch.js';
@@ -89,6 +90,8 @@ import { createGlider } from './glider.js';
 import { createTrade } from './ui/trade.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
+
+sound.onSong(createNowPlaying()); // ("Now playing" whenever the song starts)
 
 // ---------- The farmers at this screen ----------
 // One seat for each farmer playing at this screen. The first is the page's
