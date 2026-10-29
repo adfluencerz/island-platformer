@@ -1,4 +1,5 @@
 import { hook } from './shading.js';
+import { use } from './uniforms.js';
 import { patch, define } from './chunks.js';
 import { NOISE, VORONOI } from './noise.js';
 
@@ -11,7 +12,8 @@ import { NOISE, VORONOI } from './noise.js';
 //          mixed at the tiles' edges as the colors are): a dark speckle on
 //          the greens, moss in the gaps of stone next to grass, paths worn
 //          lighter down their middles with a few pale pebbles, faint ripples
-//          on the sand
+//          on the sand; and (gfxShore: how near the open sea) the sand
+//          wet and darker at the waterline, a lace of foam over its edge
 //   slab   a stone tile's slab: cracks (Voronoi edges, some of them), each
 //          piece and each slab its own tint, and moss creeping in from the
 //          sides that face grass (gfxMoss, per slab: -x, +x, -z, +z)
@@ -44,7 +46,7 @@ const MOSS = 'vec3(0.075, 0.2, 0.04)'; // (linear)
 const PUDDLE = (p, seed, more = 0) => `smoothstep(0.0, 0.04, 0.75 * gfxNoise(${p} * 0.55 + ${seed}) + 0.25 * gfxNoise(${p} * 1.7 + ${seed} * 0.3) - ${(0.76 - more).toFixed(2)} + 0.08 * uWet)`;
 
 const VERTEX = {
-  tiles: ['attribute vec4 gfxKind;\nvarying vec4 vGroundKind;', 'vGroundKind = gfxKind;'],
+  tiles: ['attribute vec4 gfxKind;\nattribute float gfxShore;\nvarying vec4 vGroundKind;\nvarying float vGroundShore;', 'vGroundKind = gfxKind;\nvGroundShore = gfxShore;'],
   slab: ['attribute vec4 gfxMoss;\nvarying vec4 vGroundMoss;', 'vGroundMoss = gfxMoss;'],
   cliff: ['attribute vec2 gfxCliff;\nvarying vec2 vGroundCliff;', 'vGroundCliff = gfxCliff;'],
 };
@@ -70,6 +72,18 @@ const FRAGMENT = {
     vec2 groundSf = groundSc - groundSi - 0.5 - (gfxHash2(groundSi + 7.0) - 0.5) * 0.6;
     float groundShell = step(0.82, gfxHash(groundSi + 3.1)) * (1.0 - smoothstep(0.1, 0.15, length(groundSf * vec2(1.0, 1.6)))) * gfxShow(6.0, groundPx);
     diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.92, 0.88, 0.8), vec3(0.92, 0.6, 0.55), gfxHash(groundSi + 11.0)), groundShell * smoothstep(0.5, 0.9, vGroundKind.w) * 0.85);
+    // the waterline on sand (vGroundShore: 1 at a side facing the open sea):
+    // wet, darker and a little cooler, its inner edge wavering and breathing
+    // with the swash, a faint damp line at its top, and a lace of foam
+    // washing in and out over its outer edge
+    float groundSwash = sin(uTime * 0.85 + dot(groundP, vec2(0.23, 0.31)));
+    float groundWetAt = vGroundShore + (gfxNoise(groundP * 1.1 + 41.0) - 0.5) * 0.24 + 0.05 * groundSwash;
+    float groundWet = smoothstep(0.36, 0.58, groundWetAt) * vGroundKind.w;
+    float groundDamp = smoothstep(0.2, 0.38, groundWetAt) * (1.0 - smoothstep(0.38, 0.5, groundWetAt)) * vGroundKind.w;
+    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.62, 0.54, 0.44), groundWet) * (1.0 - 0.1 * groundDamp);
+    float groundLaceAt = vGroundShore + 0.07 * groundSwash + (gfxNoise(groundP * 2.3 + vec2(uTime * 0.12, 7.0)) - 0.5) * 0.12;
+    float groundLace = smoothstep(0.8, 0.9, groundLaceAt) * mix(0.55, smoothstep(0.3, 0.62, gfxNoise(groundP * 4.4 - vec2(0.0, uTime * 0.09))), gfxShow(4.4, groundPx));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.9), groundLace * 0.75 * vGroundKind.w);
     // moss where stone meets grass
     float groundMoss = clamp(vGroundKind.y * vGroundKind.x * 4.0, 0.0, 1.0) * smoothstep(0.3, 0.7, mix(0.5, gfxNoise(groundP * 1.9 + 3.3), gfxShow(1.9, groundPx)));
     diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK, groundMoss * 0.7);
@@ -154,12 +168,13 @@ export function groundDetail(material, kind) {
     define(shader, 'GFX_WORLD');
     define(shader, 'GFX_GROUND');
     if (kind === 'tiles' || kind === 'slab') define(shader, 'GFX_PUDDLE');
+    if (kind === 'tiles') use(shader, ['uTime'], 'f'); // (the swash on the wet sand)
     const vertex = VERTEX[kind];
     if (vertex) {
       shader.vertexShader = patch(shader.vertexShader, 'common', vertex[0], 'GFX_GROUND');
       shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', vertex[1], 'GFX_GROUND');
     }
-    const varying = vertex ? vertex[0].split('\n')[1] : '';
+    const varying = vertex ? vertex[0].split('\n').filter((line) => line.startsWith('varying')).join('\n') : '';
     shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${['slab', 'rough', 'cliff'].includes(kind) ? VORONOI : ''}${varying}`, 'GFX_GROUND');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     highp vec2 groundP = ${AT[kind]};
