@@ -36,7 +36,7 @@ import { MOON } from './light.js';
 
 // The look (uniforms: tweak live through window.__game.post.grade.uniforms)
 export const POST = {
-  bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.8 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
+  bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
   saturation: 1.08,
   nightSaturation: 0.62, // (at night the dark parts go grey-blue, as the eye sees by moonlight; what a lamp lights keeps its color. The low tier: src/gfx/light.js)
   vignette: 0.2,
@@ -46,6 +46,10 @@ export const POST = {
   skyTintLow: 0.16, // (and round a low sun, by day: a golden hour's warmth)
   rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
   rainSaturation: 0.1,
+  // underground: what no lamp lights goes grey-blue as by moonlight (the night's
+  // own look, how much of it), only the darkest of it (the brightness it starts
+  // to keep its color at, and keeps all of it by: a lamp's pool keeps its warmth)
+  cave: { shade: 0.75, dark: [0.03, 0.2] },
 };
 
 const MAX_SEATS = 4;
@@ -139,6 +143,7 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     uNightSaturation: { value: POST.nightSaturation },
     uNight: { value: 0 }, // (how much night there is to see: none underground)
     uVignette: { value: POST.vignette },
+    uDark: { value: new THREE.Vector2(0.25, 0.7) }, // (how dark is dark enough for the moon's grey-blue, and how light keeps its color)
     uTint: { value: new THREE.Color(1, 1, 1) },
     uSeats: { value: Array.from({ length: MAX_SEATS }, () => new THREE.Vector4(0, 0, 1, 1)) }, // (each view: x, y, w, h in 0..1, from the bottom left)
     uSeatCount: { value: 1 },
@@ -156,6 +161,7 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     uniform float uNightSaturation;
     uniform float uNight;
     uniform float uVignette;
+    uniform vec2 uDark;
     uniform vec3 uTint;
     uniform vec4 uSeats[${MAX_SEATS}];
     uniform int uSeatCount;
@@ -163,7 +169,7 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     void main() {
       vec4 col = texture2D(tDiffuse, vUv);
       float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-      float moonlit = uNight * (1.0 - smoothstep(0.25, 0.7, luma)); // (dark: by moonlight, grey-blue; what a lamp lights keeps its color)
+      float moonlit = uNight * (1.0 - smoothstep(uDark.x, uDark.y, luma)); // (dark: by moonlight, grey-blue; what a lamp lights keeps its color)
       float sat = uSaturation * mix(1.0, uNightSaturation, moonlit);
       col.rgb = max(mix(luma * mix(vec3(1.0), vec3(${MOON}), moonlit), col.rgb, sat), 0.0) * uTint;
       // the vignette, round the view this pixel is in
@@ -263,7 +269,9 @@ export function createPost(renderer, { seats, view, gap }) {
       tint.multiply(rainTint.copy(WHITE).lerp(POST.rain, U.uCloudAmount.value * (1 - U.uUnder.value)));
       grade.uniforms.uTint.value.copy(tint);
       grade.uniforms.uSaturation.value = POST.saturation + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value);
-      grade.uniforms.uNight.value = U.uNight.value * (1 - U.uUnder.value);
+      const under = U.uUnder.value;
+      grade.uniforms.uNight.value = Math.max(U.uNight.value * (1 - under), under * POST.cave.shade);
+      grade.uniforms.uDark.value.set(THREE.MathUtils.lerp(0.25, POST.cave.dark[0], under), THREE.MathUtils.lerp(0.7, POST.cave.dark[1], under));
       seatParts();
       renderer.setScissorTest(false); // (the screen's own, for the output: a split screen drawn straight leaves it on)
       renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);

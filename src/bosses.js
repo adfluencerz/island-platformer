@@ -72,6 +72,7 @@ export function createBosses(ctx) {
   const bosses = new Map(BOSS_IDS.map((id) => [id, { s: null, at: 0, shown: null, view: createBossView(ctx.world.root, id) }]));
   const alone = new Map(); // boss -> its BossFight, on a farm played alone
   const dungeonView = createDungeons(ctx.world);
+  ctx.buildings?.addLamps(dungeonView.lamps, { key: 'cave', under: true }); // (lit underground, whatever the hour)
   // boss -> { s: its dungeon as the room (or our own run) last had it (dungeonFromWire), shown: where each foe is drawn }
   const dungeons = new Map(BOSS_IDS.map((id) => [id, { s: null, shown: [] }]));
   const aloneRuns = new Map(); // boss -> its DungeonRun, on a farm played alone
@@ -176,7 +177,7 @@ export function createBosses(ctx) {
     let sendBack = null; // (...by this)
     let lastArena = null; // (the arena we were in last frame, and the dungeon's room)
     let lastRoom = null;
-    const cave = { k: 0, light: 0xffffff }; // how far underground we are (in a dungeon), and its light (underground())
+    const cave = { k: 0, light: 0xffffff, hall: 0 }; // how far underground we are (in a dungeon), its light, and how far into a boss's hall (underground())
     let bopReady = 0;
     let payAt = 0;
     let riding = null; // the mount we are on (a boss's id)
@@ -605,6 +606,7 @@ export function createBosses(ctx) {
         const down = way ?? inArena;
         cave.k += ((down ? 1 : 0) - cave.k) * Math.min(1, dt * 3);
         if (down) cave.light = DUNGEON_LOOKS[down].cave;
+        cave.hall += ((inArena && !way ? 1 : 0) - cave.hall) * Math.min(1, dt * 3);
         // into a room with foes up: what to do
         const room = way ? roomAt(way, x, z) : -1;
         const roomKey = way && room >= 0 ? `${way}:${room}` : null;
