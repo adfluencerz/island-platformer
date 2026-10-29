@@ -82,3 +82,19 @@ notes for next phase: ≤ 5 lines
   `snapCamera()`, `dayNight.setTime(h)`, `step(s)`, `draw()`; the devtools Info tab shows the stats.
 - `?cam=wide|classic`: the camera's angle from above (the menu's Camera button, kept as `tp.cam`; wide by default, classic underground and indoors).
 - `npm run shots [-- --tier low|medium|high] [--check]`: `scripts/shots.mjs`, launcher in `scripts/lib/page.mjs`.
+
+## Parallel workers (several polish rounds at once)
+Each round gets its own branch `claude/festive-goldberg-tcdcpc-rNN` and its own
+git worktree with a copy of `node_modules` (`cp -a` it from the main checkout).
+Run every npm command there with its own ports so the harnesses do not collide:
+`GAME_PORT=31NN VITE_PORT=51NN BROWSER_URL=http://localhost:51NN npm run gates`
+(same three variables for `npm run shots`, `npm run browser` and `npm run dev`).
+Rounds running side by side take disjoint areas (one on lighting and the world,
+one on characters and animals, one on buildings and props, one on sky and air)
+and avoid editing the shared gfx core (`src/gfx/uniforms.js`, `shading.js`,
+`light.js`, `atmos.js`) unless the round needs it, keeping such edits small and
+additive. Before the final gates and before opening the PR, merge `origin/main`
+into the round's branch; when the orchestrator asks after another round merges,
+merge `origin/main` again, rerun the gates and push. Parallel rounds do not
+edit `STATUS.md` (the orchestrator ticks it after each wave); they write their
+notes at the end of their own `phases/NN-*.md`.
