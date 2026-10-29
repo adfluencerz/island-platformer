@@ -67,6 +67,7 @@ const SEGMENTS = 36; // what stops a farmer at its walls: short pieces all round
 const LIFT_TIME = 1.2; // seconds the dark over a room takes to lift, once the gate into it opens
 const FADE = [0.45, 0.35, 0.25, 0.15]; // the sheets of dark the cavern fades through into it, nearest it first
 const DARK = 0x040306; // (as black as it is all round, underground: daynight.js)
+const LAMP_Y = { parsnip: 1.9, lion: 1.4, bee: 1.5, crow: 1.7, toad: 0.9 }; // (how high a lamp's light hangs, by its flame)
 
 // What a piece is made of: white, each piece its own color (instance colors)
 const KINDS = {
@@ -220,6 +221,7 @@ export function createDungeons(world) {
   root.name = 'boss-dungeons';
   world.root.add(root);
   const dungeons = new Map(); // id -> { group, gates, swirl, flames, flies, motes, pools, foes }
+  const lamps = []; // every dungeon's lamps (and its hall's): { at, color, flicker }, for real lights
 
   function solid({ x, y, z, w, h, d }, extra = {}) {
     const aabb = {
@@ -1042,6 +1044,9 @@ export function createDungeons(world) {
   function lamp(d, wallX, z, sx) {
     const { th, b, id, rand } = d;
     const x = wallX - sx * 0.35; // (by the wall)
+    // (a real light too, a little out from the wall at its flame's height:
+    // the farm's pooled lamp lights, src/build.js addLamps, nearest first)
+    lamps.push({ at: b.at(x - sx * 0.45, LAMP_Y[id], z), color: th.light, flicker: id === 'parsnip' || id === 'lion' });
     if (id === 'parsnip') {
       // a lantern hanging off the beam on a chain
       b.add(cyl, 'metal', 0x3a3632, x, SIDE_H - 0.35, z, 0.02, 0.5, 0.02);
@@ -1476,6 +1481,8 @@ export function createDungeons(world) {
   }
 
   return {
+    // Where every dungeon's lamps are (in the farm: { at, color, flicker }): they light the rooms round them (src/bosses.js)
+    lamps,
     // Every frame, for each dungeon: `near` (we are in it or its hall: it
     // is drawn), `inside` (in it: it is dark past its first shut gate), `run`
     // (as dungeonFromWire has it, the foes drawn where `shown` has them: { x,

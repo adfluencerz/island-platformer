@@ -135,6 +135,8 @@ const GLOWS = {
 const FLICKERS = new Set(['torch', 'campfire']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
 const GLOW_REACH = 10;
+const GLOW_COLOR = 0xffc35a;
+const UNDER_GLOW = { power: 14, reach: 6.5, decay: 1.6 }; // (a dungeon's lamps: bright close by, a short reach, so each lights a pool and the dark between stays)
 
 // ---------- The house ----------
 // 5 tiles across and 4 deep (PIECES.house.size), built from the middle of its
@@ -1961,7 +1963,7 @@ export function createBuildings(world) {
   const relics = new Map(); // key -> the relic floating over its pedestal (it turns)
   const swirls = new Map(); // key -> a boss's portal's swirl (it turns too)
   const glowLights = Array.from({ length: GLOW_LIGHTS }, () => {
-    const light = new THREE.PointLight(0xffc35a, 0, GLOW_REACH, 1.25); // (a soft falloff: a pool of light on the ground under a lamp, not only a bright spot by it)
+    const light = new THREE.PointLight(GLOW_COLOR, 0, GLOW_REACH, 1.25); // (a soft falloff: a pool of light on the ground under a lamp, not only a bright spot by it)
     light.castShadow = false;
     world.root.add(light);
     return light;
@@ -2137,13 +2139,16 @@ export function createBuildings(world) {
 
     // Lamps that are not built pieces (the neighbours' lanterns: src/npchomes.js
     // lamps, Vector3s in the farm) share the same few lights at night
-    addLamps(points) {
-      points.forEach((at, i) => glows.set(`lamp:${i}`, { at, flicker: false, flame: null, seed: i }));
+    // (or, under: a dungeon's, src/dungeon.js, { at, color, flicker } each:
+    // lit while we are underground, whatever the hour)
+    addLamps(points, { key = 'lamp', under = false } = {}) {
+      points.forEach((p, i) => glows.set(`${key}:${i}`, p.isVector3 ? { at: p, flicker: false, flame: null, seed: i } : { ...p, flame: null, seed: i, under }));
     },
 
     // night: 0 by day, 1 at night (the lamps' glow, and the light they
-    // give the lamps nearest focus, the player)
-    setNight(night, focus) {
+    // give the lamps nearest focus, the player); under: how far underground
+    // (a dungeon's lamps' light)
+    setNight(night, focus, under = 0) {
       // (bright enough at night, ~2.5 linear, that the bloom lifts them softly: src/gfx/post.js)
       MATS.lantern.emissiveIntensity = night * 2.5;
       MATS.window.emissiveIntensity = night * 2.0;
@@ -2160,8 +2165,9 @@ export function createBuildings(world) {
         relic.position.y = 1.25 + Math.sin(t * 1.6 + relic.parent.position.z) * 0.06;
       }
       for (const swirl of swirls.values()) swirl.rotation.z = -t * 2.2;
-      const nearest = night > 0.01 && focus
-        ? [...glows.values()].sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
+      const lit = (glow) => (glow.under ? under : night);
+      const nearest = (night > 0.01 || under > 0.01) && focus
+        ? [...glows.values()].filter((glow) => lit(glow) > 0.01).sort((a, b) => a.at.distanceToSquared(focus) - b.at.distanceToSquared(focus))
         : [];
       glowLights.forEach((light, i) => {
         // (spare ones stay on, just dark: switching a light off and on makes
@@ -2169,7 +2175,10 @@ export function createBuildings(world) {
         const glow = nearest[i];
         if (!glow) return void (light.intensity = 0);
         const flicker = glow.flicker ? 0.85 + 0.1 * Math.sin(t * 11 + glow.seed) + 0.05 * Math.sin(t * 27 + glow.seed * 2) : 1;
-        light.intensity = night * 6 * flicker;
+        light.intensity = lit(glow) * (glow.under ? UNDER_GLOW.power : 6) * flicker;
+        light.color.setHex(glow.color ?? GLOW_COLOR);
+        light.distance = glow.under ? UNDER_GLOW.reach : GLOW_REACH;
+        light.decay = glow.under ? UNDER_GLOW.decay : 1.25;
         light.position.copy(glow.at);
       });
     },

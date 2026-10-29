@@ -222,7 +222,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 const FOG_NEAR = 30;
 const FOG_FAR = 90;
-const CAVE_FOG = [15, 36]; // (near and far, down in a boss's dungeon)
+const CAVE_FOG = [12, 23]; // (near and far, down in a boss's dungeon: the far side of a room goes dark...)
+const HALL_FOG = [15, 36]; // (...and in its boss's hall, wider: the boss across it stays in sight)
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
 gfx.U.uFogHeight.value.x = SEA_LEVEL; // (the low haze over the sea lies on it: src/gfx/atmos.js)
 // The sky round every view, its horizon the fog's color (src/gfx/sky.js; the
@@ -1884,8 +1885,9 @@ function lookFrom(split) {
   // Pushed back with the camera, so zooming out shows more island, not more fog
   // (underground, in a boss's dungeon, closer: the dark all round)
   const zoom = lookYaw !== null ? 1 : camZoom; // (in first person, there is no zooming out)
-  scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, CAVE_FOG[0], underground) * Math.max(1, zoom);
-  scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, CAVE_FOG[1], underground) * Math.max(1, zoom);
+  const hall = bosses?.underground().hall ?? 0;
+  scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, THREE.MathUtils.lerp(CAVE_FOG[0], HALL_FOG[0], hall), underground) * Math.max(1, zoom);
+  scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, THREE.MathUtils.lerp(CAVE_FOG[1], HALL_FOG[1], hall), underground) * Math.max(1, zoom);
   reachSun(zoom);
   if (split) {
     const cave = bosses.underground();
@@ -1894,7 +1896,7 @@ function lookFrom(split) {
     if (place !== 'lobby') seasons.relight();
     weather.place(player.position, inside);
     seasons.place(inside ? null : player.position);
-    buildings.setNight(dayNight.night(), player.position);
+    buildings.setNight(dayNight.night(), player.position, cave.k);
     water.visible = cave.k < 0.5;
     playerMesh.add(dayNight.glow);
   }
@@ -5637,7 +5639,7 @@ function updateWorld(dt) {
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
   updateCrops(dt, gameDt, t);
   if (place === 'home') rainOnCrops(hoursBefore - 24, farmHours()); // (hoursBefore counts from day 1's end)
-  buildings.setNight(dayNight.night(), player.position);
+  buildings.setNight(dayNight.night(), player.position, cave.k);
   const season = place !== 'lobby' ? seasons.update(dayNight.day(), dayNight.hour(), dayNight.night()) : null; // (a lobby's island keeps its own)
   const sky = weather.update(dt, { hours: place !== 'lobby' ? farmHours() : null, focus: player.position, snowy: season === 'Winter', indoors: indoors() || cave.k > 0.5 });
   dayNight.setNote(season && (sky ? `${season} · ${sky}` : season));
