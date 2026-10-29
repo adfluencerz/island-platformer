@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PIECES, pieceTiles } from '../shared/level.js';
 import { TILE_SIZE, mulberry32, addRipples } from './world.js';
-import { waterLook } from './gfx/water.js';
+import { waterLook, WATER_BANK_REACH } from './gfx/water.js';
 import { detailAll } from './gfx/detail.js';
 import { chestModel, CHEST_W } from './chest.js';
 import { createItemMesh } from './itemmesh.js';
@@ -163,12 +163,13 @@ const POND_IN = 1.25; // half the water's width
 const waterMat = waterLook(addRipples(mat(0x318ea0, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: false })), 'pond'); // (as the lake's: src/gfx/water.js)
 const padMat = mat(0x4f9e3c);
 // its water: a square, 1 across (scaled), in a grid whose corners know how
-// near the stones they are (gfxBank, as the lake's: src/maps.js pondWaterGeo)
+// near the stones they are (gfxBank, as the lake's: src/maps.js pondWaterGeo;
+// never deep, a metre and a quarter at most)
 const pondWaterGeo = (() => {
   const geo = new THREE.PlaneGeometry(1, 1, 6, 6).rotateX(-Math.PI / 2);
   const p = geo.attributes.position;
   const bank = [];
-  for (let i = 0; i < p.count; i++) bank.push(1 - Math.min(1, ((0.5 - Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)))) * POND_IN * 2) / 1.5));
+  for (let i = 0; i < p.count; i++) bank.push(1 - Math.min(1, ((0.5 - Math.max(Math.abs(p.getX(i)), Math.abs(p.getZ(i)))) * POND_IN * 2) / WATER_BANK_REACH));
   geo.setAttribute('gfxBank', new THREE.Float32BufferAttribute(bank, 1));
   return geo;
 })();
