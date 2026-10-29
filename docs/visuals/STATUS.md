@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 39 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 40 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -51,6 +51,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 36 Dusk light with depth
 - [x] 37 Morning light with depth
 - [x] 38 Rain with depth
+- [x] 39 Water at sunset
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -73,9 +74,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- One rain amount beside the dusk's and the morning's (`src/gfx/atmos.js` gfxRain: uRain by day, out in the open; in DUSK_UNIFORMS now, and the sky dome's); 0 when dry, so noon, morning, dusk and night are as they were (their shots' pixel diffs under 1.6 of 255, grass and water sway).
-- The veil ramped by distance (air and low haze start ~0.35 fog-nears further out, thicker and bluer far off); near the camera the overcast fill cut (RAIN_FILL 0.5, `src/gfx/light.js`) and less blue, the wet colors richer there; the carpet wets as grass does (it was taking the full ground sheen: the teal near field).
-- The ground's sheen is mostly Fresnel now (little looking down, more at a glance); puddles have a damp dark shore and a sky mirror in the core (gfxMirror), rings in both.
-- Rain streaks 1.5 long, tapered (vertex alpha), leaning along the cloud drift even without a storm; one drop in 22 falls near the camera, longer and doubled (same line batch, the tier's count). Sky darker overhead in the rain, its low clouds' undersides heavy.
-- Budgets unchanged: high rain-noon 736 / 749k / 52, plaza-noon 751 / 750k / 48; medium phone 574 / 502k / 44; low plaza-noon 362 / 351k / 33, phone 181 / 234k.
-- Weakest shot now: lake-sunset: the pond reads as a flat grey-lilac disc with a pale rim, no sky glow or depth in the water at the wide camera; last touched in round 26.
+- One sunset amount in the water (`src/gfx/water.js` waterSun, from the old waterLow: a low sun, by day, clear): the mirror goes gold toward the sun, the horizon's peach, then blue-lilac away (by the reflection's heading against `uSunDir`); 0 at noon, at night and in rain (their pixel diffs 0.1-0.6 of 255, ripples).
+- Its fresnel by grazing (waterFar: NV 0.5 to 0.15): a strong mirror on the far side, the water's body near the camera; glints moved to the far side and the warm side; the swells' shade doubled at sunset so the ripples read.
+- gfxBank reaches 6 m now (`WATER_BANK_REACH`, rings in `src/maps.js`, the fish pond's in `src/build.js`); the old 1.5 m shallows measure is derived from it, so noon is as it was. At sunset: dark, opaque deep middle, clearer shallows warmed to the mud (no teal ring), a dark band under the far bank (vWaterOut, from the mesh's own middle).
+- The sea and the shallows strip share it: at sunset the sea toward the sun is gold, cool away. No new calls or programs: high lake-sunset 347 / 633k / 48, plaza-noon 755 / 750k / 46; medium phone 604 / 505k / 43.
+- Weakest shot now: shore-noon: at the low camera the beach is a flat, pale, straight ribbon with a hard edge to the grass and a cyan shallows band, no dune grass or wet-sand gradient; last touched in round 26 at the top-down camera.
