@@ -75,9 +75,9 @@ export function createSkills({ onLevelUp } = {}) {
     swings: (base, id) => swingsAt(base, level(id)),
     render,
     serialize: () => ({ ...xps }),
-    // (the developer tools) every skill at the start of `by` levels up or down
-    shift(by) {
-      xps = cleanSkills(Object.fromEntries(Object.keys(xps).map((id) => [id, xpAt(level(id) + by)])));
+    // (the developer tools) every skill, or just `only`, at the start of `by` levels up or down
+    shift(by, only) {
+      xps = cleanSkills(Object.fromEntries(Object.keys(xps).map((id) => [id, !only || id === only ? xpAt(level(id) + by) : xps[id]])));
     },
     restore(saved) {
       xps = cleanSkills(saved);

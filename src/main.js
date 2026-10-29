@@ -1506,9 +1506,12 @@ createDevTools({
     saveGame();
     return `Overall level ${skills.overall()}${skills.canDoubleJump() ? ', with the double jump' : ''}`;
   },
-  levels(by) {
-    skills.shift(by);
+  skillList: () => SKILL_LIST.map(({ id, name }) => [id, name]),
+  level: (id) => skills.level(id),
+  levels(by, id) {
+    skills.shift(by, id);
     saveGame();
+    if (id) return `${SKILL_LIST.find((s) => s.id === id).name} level ${skills.level(id)} · Overall level ${skills.overall()}`;
     return `Overall level ${skills.overall()}${skills.canDoubleJump() ? ', with the double jump' : ''}`;
   },
   clock: (hour) => devLater((((hour - dayNight.hour()) % 24) + 24) % 24 || 24),

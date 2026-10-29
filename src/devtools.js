@@ -15,8 +15,9 @@ import { devToolsOn } from '../shared/constants.js';
 // (or nothing). giant(kind), skyFoot(), skyStyle(), find(), regrow();
 // items(): [[id, name]] of everything there is; give(id, count), gold(n),
 // oldKey(), bossKeys(); speed(n) (1: normal; and speed() what it is),
-// plaza(), skills(xp) (to each skill; Infinity: the top), levels(by) (every
-// skill that many levels up, or down); clock(hour) (on to
+// plaza(), skills(xp) (to each skill; Infinity: the top), levels(by, id) (every
+// skill, or the one, that many levels up, or down); skillList(): [[id, name]],
+// level(id); clock(hour) (on to
 // the next time it is that hour), later(hours); info(): [[label, value]].
 // The valley: places(): [[id, name]] to go to, goTo(id); neighbours():
 // [[id, name]], finish(id) (their request now, done), hearts() (all five, with
@@ -121,6 +122,7 @@ export function createDevTools(api) {
 
   // Player
   let speedBtns = [];
+  let levelEls = [];
   {
     const p = page('Player');
     const row = section(p, 'Walking speed');
@@ -140,7 +142,20 @@ export function createDevTools(api) {
     btn(sk, 'Level up', () => api.levels(1), 'Every skill one level up');
     btn(sk, 'Level down', () => api.levels(-1), 'Every skill one level down (to its start)');
     btn(sk, 'Top every skill', () => api.skills(Infinity), 'And the double jump with it');
+    const each = section(p, 'Each skill', 'One level up or down (to its start)');
+    each.classList.add('dev-skills');
+    levelEls = api.skillList().map(([id, name]) => {
+      el('span', 'dev-skill', each, name);
+      const lv = el('span', 'dev-lv', each);
+      lv.dataset.id = id;
+      btn(each, '−', () => api.levels(-1, id), `${name} one level down`);
+      btn(each, '+', () => api.levels(1, id), `${name} one level up`);
+      return lv;
+    });
+    sk.parentNode.addEventListener('click', () => showLevels());
+    each.addEventListener('click', () => showLevels());
   }
+  const showLevels = () => levelEls.forEach((lv) => (lv.textContent = `Level ${api.level(lv.dataset.id)}`));
   const showSpeed = () => speedBtns.forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === api.speed()));
 
   // Farm
@@ -201,6 +216,7 @@ export function createDevTools(api) {
     tabBtns.forEach((b) => b.classList.toggle('on', b.textContent === name));
     for (const [n, pg] of Object.entries(pages)) pg.hidden = n !== name;
     say('');
+    showLevels();
     showInfo();
   }
   setTab(tab);
@@ -220,6 +236,7 @@ export function createDevTools(api) {
     if (!open) return;
     place(kept.x ?? 12, kept.y ?? Math.round(window.innerHeight / 2 - panel.offsetHeight / 2));
     showSpeed();
+    showLevels();
     showInfo();
     requestAnimationFrame(countFrames);
   }
