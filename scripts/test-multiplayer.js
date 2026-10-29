@@ -3718,7 +3718,7 @@ await test('painted detail: every look shares one program, materials get looks b
   assert.equal(key(plank), 'gfx1||detail');
   assert.equal(key(plank), key(stone), 'the look is a uniform, not a define: one program');
   assert.equal(key(detail(made(0x4f9e3c))), 'gfx1||', 'no look (green): no hook, its program as before');
-  for (const [name, look] of [['post', 'wood'], ['plankA', 'plank'], ['stoneDark', 'stone'], ['flagstone', 'stone'], ['roofTile', 'tile'], ['straw', 'thatch'], ['iron', 'metal'], ['cloth', 'cloth'], ['plaster', 'plaster'], ['gravel', 'cobble'], ['hedge', 'none'], ['leaf', 'none']]) {
+  for (const [name, look] of [['post', 'wood'], ['plankA', 'plank'], ['stoneDark', 'stone'], ['flagstone', 'stone'], ['roofTile', 'tile'], ['straw', 'thatch'], ['iron', 'metal'], ['cloth', 'cloth'], ['plaster', 'plaster'], ['gravel', 'cobble'], ['hedge', 'leaf'], ['leaf', 'leaf'], ['rockMoss', 'rock'], ['soil', 'soil'], ['earth', 'soil'], ['reed', 'reed'], ['fern', 'fern'], ['grass', 'none'], ['water', 'none'], ['lichen', 'none']]) {
     assert.equal(defaultLook(made(), name), look, `${name}: ${look}`);
   }
   assert.equal(defaultLook(made(0x8a6a3a)), 'wood', 'a brown: wood');
@@ -3726,6 +3726,8 @@ await test('painted detail: every look shares one program, materials get looks b
   assert.equal(defaultLook(made(0x8a3a2a)), 'brick', 'a dark red-brown: brick');
   assert.equal(defaultLook(made(0xffe7a3, { emissive: 0xffc35a })), 'none', 'a lamp: none');
   assert.equal(LOOKS[lookIndex('tile')], 'tile');
+  assert.equal(key(detail(made(), 'bark')), 'gfx1||detail:nature', 'nature\'s looks: a program of their own');
+  assert.equal(key(detail(made(), 'bark')), key(detail(made(), 'leaf')), 'and one for all of them');
   const geo = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
   const matrix = new THREE.Matrix4().compose(new THREE.Vector3(1, 2, 3), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), new THREE.Vector3(2, 0.5, 4));
   const baked = bakeDetail(geo.clone().applyMatrix4(matrix), geo, stone, matrix);
