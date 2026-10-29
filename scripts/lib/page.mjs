@@ -74,7 +74,7 @@ export async function openFarm(browser, { query = '', full = false, size = [480,
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   const q = [!full && 'lowgfx', query].filter(Boolean).join('&');
-  await page.goto(`${BASE}/?${q}`);
+  await page.goto(`${BASE}/?${q}`, { timeout: 120000 });
   const farmButton = page.getByText('Go to my farm');
   await Promise.race([farmButton.waitFor(), page.getByPlaceholder('What farmers call you').waitFor()]);
 
