@@ -307,7 +307,7 @@ const SHALLOWS_WIDTH = 2.4;
 const SHALLOWS_COLOR = new THREE.Color(0x6fd6d0);
 const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false });
 waterLook(addRipples(shallowsMat), 'shallows'); // (rocking with the sea, mirroring the sky as it does: src/gfx/water.js)
-const FOAM_WIDTH = 0.8;
+const FOAM_WIDTH = 1.1; // (its solid line wider than the cliffs reach out over it: The cliffs)
 const FOAM_COLOR = new THREE.Color(0xffffff);
 const foamMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
 foamMat.userData.noSnow = true;
@@ -418,6 +418,13 @@ earthGeo.setAttribute('color', new THREE.Float32BufferAttribute(
     return [k, k, k];
   }).flat(), 3));
 
+// The cliffs round the island's shore, and down from a higher floor to a
+// lower one (the lake's bank): see The cliffs, in buildWorld. Flat shaded,
+// colored by its vertices: a grassy lip, earth, and wet rock by the water.
+const cliffMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true });
+const CLIFF_EARTH = new THREE.Color(0x8a6646);
+const CLIFF_ROCK = new THREE.Color(0x4f4b47);
+
 // The ground's surface is drawn in squares this many tiles across
 const GROUND_CHUNK = 47;
 // The ground's surface sits this far above its floor (tilled soil is above it)
@@ -432,6 +439,7 @@ groundDetail(turfMat, 'turf');
 groundDetail(slabMat, 'slab');
 groundDetail(earthMat, 'earth');
 groundDetail(roughMat, 'rough');
+groundDetail(cliffMat, 'cliff');
 // which of the ground's detail a kind of ground takes (its gfxKind, see
 // src/gfx/ground.js): 0 green, 1 stone, 2 path, 3 sand; -1 just the noise
 const detailOf = (type, style) =>
@@ -567,6 +575,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const c = new THREE.Color();
   if (map.groundMat) groundDetail(map.groundMat, 'tiles');
   if (map.turfMat) groundDetail(map.turfMat, 'turf');
+  if (map.cliffMat) groundDetail(map.cliffMat, 'cliff');
 
   // What stands in the way of decorations while the world is built (not the
   // ground, nor the trees and rocks, which move as they grow back), by
@@ -1103,6 +1112,22 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
 
     // (in squares of GROUND_CHUNK tiles, a mesh each, so the ones out of
     // view aren't drawn: the whole island is most of a view's triangles)
+    // (a tile's side has a cliff down from it where the sea or a lower
+    // floor is next to it: dropAt gives -Infinity for the sea, the floor it
+    // drops to, or null; the tiles that have one keep their vertices' colors,
+    // for the cliff's lip)
+    const dropAt = (gx, gz, floor) => {
+      const next = tileGrid.get(`${gx},${gz}`);
+      if (next === undefined) return -Infinity;
+      return floorOf(next) < floor - 1e-3 ? floorOf(next) : null;
+    };
+    const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const lipColors = new Map(); // "gx,gz" -> its 5x5 vertices' colors (rgb)
+    for (const [key, type] of tileGrid) {
+      const [gx, gz] = key.split(',').map(Number);
+      if (SIDES.some(([dx, dz]) => dropAt(gx + dx, gz + dz, floorOf(type)) !== null)) lipColors.set(key, new Float32Array(75));
+    }
+
     const chunks = new Map(); // "cx,cz" -> { pos, col, kind, index }
     const tint = new THREE.Color();
     const slabs = [];
@@ -1113,6 +1138,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], index: [] });
       const { pos, col, kind: kindOf, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
+      const lip = lipColors.get(key);
       for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
           const ox = (j - 2) / 4;
@@ -1140,6 +1166,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           tint.multiplyScalar(shade * (1 - 0.4 * contactShade(x, floor, z)));
           pos.push(x, floor + GROUND_LIFT, z);
           col.push(tint.r, tint.g, tint.b);
+          lip?.set([tint.r, tint.g, tint.b], (i * 5 + j) * 3);
           for (const d of detail) kindOf.push(Math.round(d * 255));
         }
       }
@@ -1181,6 +1208,133 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       stones.setColorAt(i, color);
     });
     root.add(stones);
+
+    // ---------- The cliffs ----------
+    // Down every side of a tile that the sea or a lower floor is next to: a
+    // strip four quads along and three down, from just under a lip of the
+    // tile's own ground to below the water (to the lower floor, for a bank),
+    // its corners pushed out from the side by 0.05 to 0.25 (by their place
+    // alone, so neighbors agree and it stays closed; round a corner of the
+    // coast, out along the corner's own way). The lip leans out over it: the
+    // tile's last row of vertices (its colors too), out a little and down,
+    // and back in under to the cliff. The earth boxes stay, behind (they are
+    // what you stand on), and the shallows and foam start at the tile's side,
+    // so they meet the rock wherever it is. A mesh a chunk of the ground.
+    const CLIFF_ROWS = [0, 0.38, 0.72, 1]; // (down the strip, from its top to its foot)
+    const solidAt = (gx, gz, level) => {
+      const type = tileGrid.get(`${gx},${gz}`);
+      return type !== undefined && floorOf(type) >= level - 1e-3;
+    };
+    // which way a point on a tile's side is pushed: straight out, or at a
+    // corner the way the four tiles round it say (away from the higher ones)
+    const outAt = (px, pz, level, dx, dz, corner) => {
+      if (!corner) return [dx, dz];
+      const ax = Math.floor(px);
+      const az = Math.floor(pz);
+      let ox = 0;
+      let oz = 0;
+      for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const k = solidAt(ax + i, az + j, level) ? -1 : 1;
+        ox += k * (i - 0.5);
+        oz += k * (j - 0.5);
+      }
+      const len = Math.hypot(ox, oz);
+      return len < 1e-6 ? [dx, dz] : [ox / len, oz / len];
+    };
+    const cliffChunks = new Map(); // "cx,cz" -> { pos, col }
+    const earthTint = new THREE.Color();
+    const shade = new THREE.Color();
+    for (const [key, type] of tileGrid) {
+      const lip = lipColors.get(key);
+      if (!lip) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      const floor = floorOf(type);
+      const chunkKey = `${Math.floor((gx + H) / GROUND_CHUNK)},${Math.floor((gz + H) / GROUND_CHUNK)}`;
+      if (!cliffChunks.has(chunkKey)) cliffChunks.set(chunkKey, { pos: [], col: [] });
+      const { pos, col } = cliffChunks.get(chunkKey);
+      // the earth under sand is sandier
+      earthTint.copy(CLIFF_EARTH);
+      if (kindDetail[type] === 3) earthTint.lerp(kindColors[type], 0.45);
+      for (const [dx, dz] of SIDES) {
+        const drop = dropAt(gx + dx, gz + dz, floor);
+        if (drop === null) continue;
+        const sea = drop === -Infinity;
+        const lipDrop = sea ? 0.1 : 0.06;
+        const top = floor - lipDrop;
+        const foot = sea ? Math.min(floor - 1, SEA_LEVEL - 0.4) : drop - 0.05;
+        const water = sea ? SEA_LEVEL : drop + 0.33; // (a pond's water, over its floor)
+        const [tx, tz] = [-dz, dx]; // along the side
+        // the points: rows (lip, lip's edge, under it, then the cliff's rows) by five along
+        const rows = [[], [], [], [], [], [], []];
+        const rowColor = [[], [], []];
+        for (let k = 0; k <= 4; k++) {
+          const along = k / 4 - 0.5;
+          const px = gx + dx / 2 + tx * along;
+          const pz = gz + dz / 2 + tz * along;
+          const [ox, oz] = outAt(px, pz, floor, dx, dz, k === 0 || k === 4);
+          const at = (out, y) => [(px + ox * out) * TILE_SIZE, y, (pz + oz * out) * TILE_SIZE];
+          const pushOf = (y, min, range) => min + range * hash2(px * 3.17 + y * 1.73, pz * 2.31 - y * 1.37);
+          const d0 = pushOf(top, 0.04, 0.08);
+          const lean = d0 + 0.1 + 0.06 * hash2(pz * 5.3 + 1.1, px * 4.7 - 2.3);
+          // the tile's own vertex here (its 5x5, j along x, i along z)
+          const j = Math.round((px - gx) * 4 + 2);
+          const i = Math.round((pz - gz) * 4 + 2);
+          const r = lip[(i * 5 + j) * 3];
+          const g = lip[(i * 5 + j) * 3 + 1];
+          const b = lip[(i * 5 + j) * 3 + 2];
+          rows[0].push(at(0, floor + GROUND_LIFT));
+          rows[1].push(at(lean, floor + GROUND_LIFT - 0.015));
+          rows[2].push(at(lean - 0.02, top + 0.02));
+          for (let row = 0; row < 4; row++) {
+            const y = top + (foot - top) * CLIFF_ROWS[row];
+            rows[3 + row].push(at(row === 0 ? d0 : pushOf(y, 0.05, 0.2), y));
+          }
+          rowColor[0].push([r, g, b]);
+          rowColor[1].push([r * 0.9, g * 0.9, b * 0.9]);
+          rowColor[2].push([r * 0.7, g * 0.72, b * 0.66]);
+        }
+        for (let row = 0; row < 6; row++) {
+          for (let k = 0; k < 4; k++) {
+            const A = rows[row][k];
+            const B = rows[row][k + 1];
+            const C = rows[row + 1][k];
+            const D = rows[row + 1][k + 1];
+            // (the quad's diagonal one way or the other, so the facets don't saw along in step)
+            const split = hash2(gx * 7.1 + k * 1.9, gz * 5.3 + row * 3.7 + dx * 2.1 + dz * 1.3) < 0.5;
+            for (const tri of split ? [[A, B, C], [B, D, C]] : [[A, B, D], [A, D, C]]) {
+              for (const p of tri) pos.push(...p);
+              if (row < 2) {
+                // the lip: its vertices' colors, as the ground's
+                for (const p of tri) {
+                  const [ri, ki] = p === A ? [row, k] : p === B ? [row, k + 1] : p === C ? [row + 1, k] : [row + 1, k + 1];
+                  col.push(...rowColor[ri][ki]);
+                }
+                continue;
+              }
+              // under the lip and the cliff: a color a face, by how high it is
+              const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+              const n = hash2(tri[0][0] * 1.9 + tri[1][2] * 0.7, tri[2][2] * 1.3 - tri[0][0] * 0.4 + cy);
+              if (row === 2) shade.copy(earthTint).multiplyScalar(0.62);
+              else if (cy < water + 0.12) shade.copy(CLIFF_ROCK).multiplyScalar(0.85 + 0.25 * n);
+              else {
+                const down = Math.min(1, (top - cy) / Math.max(0.3, top - water));
+                shade.copy(earthTint).multiplyScalar(1.02 - 0.25 * down + Math.sin(cy * 9) * 0.04 + (n - 0.5) * 0.16);
+              }
+              for (let v3 = 0; v3 < 3; v3++) col.push(shade.r, shade.g, shade.b);
+            }
+          }
+        }
+      }
+    }
+    for (const { pos, col } of cliffChunks.values()) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.computeVertexNormals(); // (one a face: flat shaded anyway)
+      const cliff = new THREE.Mesh(geo, map.cliffMat ?? cliffMat);
+      cliff.receiveShadow = true;
+      root.add(cliff);
+    }
   }
 
   // ---------- Shallows and foam along the shore ----------

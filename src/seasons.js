@@ -154,14 +154,14 @@ function snowOn(obj) {
   for (const child of obj.children) snowOn(child);
 }
 
-// map: the farm's map (its leafMats, pineMats, tuftMat, groundMat, turfMat
+// map: the farm's map (its leafMats, pineMats, tuftMat, groundMat, turfMat, cliffMat
 // and flower materials)
 export function createSeasons(map) {
   const a = new THREE.Color();
   const b = new THREE.Color();
   const tint = new THREE.Color();
   const mix = (from, to, t, out) => out.copy(a.setHex(from)).lerp(b.setHex(to), t);
-  for (const m of [map.groundMat, map.turfMat]) if (m) seasonal(m, { grass: true });
+  for (const m of [map.groundMat, map.turfMat, map.cliffMat]) if (m) seasonal(m, { grass: true });
   for (const m of [map.flowerHeadMat, map.flowerStemMat]) m?.userData && (m.userData.base = m.color.clone());
 
   let state = null; // the last update's: { now, next, blend, into, night }

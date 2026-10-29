@@ -77,6 +77,7 @@ export const HOME = {
   tuftMat: new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }),
   groundMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }),
   turfMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), // (on its platforms)
+  cliffMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }), // (the lips of its cliffs)
   flowerStemMat: new THREE.MeshStandardMaterial({ color: 0x3f7a2a, roughness: 1 }),
   flowerHeadMat: new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true }),
   build(ctx) {

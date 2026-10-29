@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 12 (`phases/12-cliffs.md`)
+Current phase: 13 (`phases/13-characters.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -15,7 +15,7 @@ Current phase: 12 (`phases/12-cliffs.md`)
 - [x] 09 Bushes, rocks, biome decor instanced
 - [x] 10 Ground detail
 - [x] 11 Water
-- [ ] 12 Cliff skirts
+- [x] 12 Cliff skirts
 - [ ] 13 Characters
 - [ ] 14 Ambience
 - [ ] 15 Perf and polish
@@ -33,8 +33,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- plaza-noon 741-750 calls (unchanged), 1.22M tris, programs 42 -> 44; lake-sunset 322 calls, 45 programs.
-- `src/gfx/water.js` `waterLook(material, kind)`: the hook `water:<kind>` (sea, shallows, pond), after `addRipples`. Fresnel toward the sky (atmos.js `gfxHorizon`, toward `uSkyZenith` as the reflection looks up) and glitter are added after tone mapping (new needle `colorspace_fragment`), so glints pass bloom's threshold; capped at 1.6.
-- The camera always has the sun behind it (daynight.js: sunDir z 0.45), so a mirror-true sun path is never in a shot: the glitter comes from little wave facets (WATER_FACETS a unit, WATER_TILT) that catch the sun from any side.
-- Phase 12's cliff skirts meet the sea at `SEA_LEVEL` (-0.6, world.js); the shallows strip (2.4 wide, y +0.035) and foam (0.8, y +0.04) lie on it along each tile edge facing open water (`shoreStrip`): skirts should drop from the tile edge to below `SEA_LEVEL` so the strips start right at their foot.
-- None of the shots shows the open sea (lobby and plaza-noon frame only land): judge water with `npm run browser -- --full --size 960x600 --shot FILE -e 'g.warp({x:-66,z:4}); g.dayNight.setTime(18.5); g.step(0.5); g.snapCamera(); g.draw()'` (the west shore at sunset).
+- plaza-noon 757 calls (+6, drift), 1.24M tris (+12k), programs 42 -> 45; lake-sunset 325 calls, lobby 454.
+- Cliffs: `world.js` "The cliffs" (in the ground block): one non-indexed mesh a GROUND_CHUNK chunk, down every tile side facing the sea or a lower floor (the lake's bank); the lip reuses the tile's edge vertices and colors. Earth boxes and colliders unchanged.
+- Material `cliffMat` (flat shaded, vertex colors), hook kind `ground:cliff` in `src/gfx/ground.js` (the earth mottle for now): phase 17's surface detail for cliffs goes there. The farm brings its own `map.cliffMat` so the seasons turn its grassy lip (`seasons.js`).
+- Foam is 1.1 wide now (was 0.8) so its solid line shows past rock pushed out up to 0.25. Terraces (`roughBox`) already had rough banded sides and an overhanging moss cap: left as they are.
+- A view of the cliffs from the sea: after a warp, `g.camera.position.set(...); g.camera.lookAt(...); g.draw()` (snapCamera first; draw doesn't move it back).
