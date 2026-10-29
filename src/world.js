@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { damp } from './character.js';
 import { mulberry32 } from '../shared/worldgen.js';
 import { giantScale } from '../shared/giants.js';
@@ -219,14 +220,14 @@ function hookTree(material, pine = false) {
         if (uTreeLeaf > 0.5) {
           // (a round canopy's blob, a bush: a bright, warm crown on the sun's
           // side, a touch yellow-green, cooler blue-green in its shade, the
-          // underside dark and warm; a few lobes lighter and darker, from its
-          // corners pushed out or in (canopyGeo) and a slow pattern of its
-          // own; a soft rim toward the sky)
+          // underside dark and warm; its lobes lighter, the creases between
+          // them darker (by how far out a point is: canopyGeo, bushGeo) and a
+          // slow pattern of its own; a soft rim toward the sky)
           float crownTop = smoothstep(-0.55, 0.85, crownLit);
           float crownUnder = smoothstep(0.0, -0.75, crownN.y);
-          float crownBump = smoothstep(0.9, 1.08, length(position));
+          float crownBump = smoothstep(0.82, 1.06, length(position));
           float crownLobe = sin(position.x * 2.7 + crownSeed * 6.28) * sin(position.z * 2.4 - position.y * 1.6 + crownSeed * 11.0);
-          float crownK = mix(0.62, 1.45, crownTop) * (0.84 + 0.26 * crownBump + 0.16 * crownLobe);
+          float crownK = mix(0.62, 1.45, crownTop) * (0.76 + 0.38 * crownBump + 0.14 * crownLobe);
           crownK = mix(crownK, 0.95, 0.5 * uNight);
           vec3 crownCol = mix(vec3(0.82, 0.93, 1.12), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
           crownCol = mix(crownCol, vec3(1.0, 0.9, 0.74), 0.6 * crownUnder);
@@ -264,7 +265,9 @@ function hookTree(material, pine = false) {
         highp float treeDither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         if (treeDither < vTreeFade) discard;
       }
-      diffuseColor.rgb *= vCanopyShade.rgb;
+      // (a blossom's pink lit without the green crown's yellow warmth)
+      float treePink = clamp((diffuseColor.r - diffuseColor.g) * 5.0, 0.0, 1.0) * clamp((diffuseColor.b - diffuseColor.g) * 8.0 + 0.5, 0.0, 1.0);
+      diffuseColor.rgb *= mix(vCanopyShade.rgb, vec3(dot(vCanopyShade.rgb, vec3(0.3, 0.45, 0.25))) * vec3(1.06, 0.97, 1.0), 0.4 * treePink);
       float gfxShadowLift = vCanopyShade.a;`, 'GFX_TREE');
   });
 }
@@ -331,13 +334,28 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
         const n = set.slots.length;
         const geo = set.geometry.clone(); // (its own, for its own aFade)
         geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(n), 1));
-        if (set.geometry === canopyGeo || set.geometry === pineGeo) {
+        if ([canopyGeo, pineGeo, bushGeo, rockGeo].includes(set.geometry)) {
           const [sx, sz] = set.square.split(',').map(Number);
           geo.userData.box = [sx * chunk, sz * chunk, (sx + 1) * chunk, (sz + 1) * chunk]; // (its square, seen from above: viewFrom)
           canopies.add(geo);
           canopyRange(geo, knobs());
         }
         const mesh = new THREE.InstancedMesh(geo, set.material, n);
+        if (geo.userData.box) {
+          // (its shadow from the far level, near or not: blurred in the
+          // shadow map, it looks the same, for a quarter of the triangles)
+          const was = [0, 0];
+          mesh.onBeforeShadow = () => {
+            was[0] = geo.drawRange.start;
+            was[1] = geo.drawRange.count;
+            geo.drawRange.start = geo.userData.hi;
+            geo.drawRange.count = Infinity;
+          };
+          mesh.onAfterShadow = () => {
+            geo.drawRange.start = was[0];
+            geo.drawRange.count = was[1];
+          };
+        }
         mesh.castShadow = set.shadow;
         mesh.receiveShadow = true;
         set.mesh = mesh;
@@ -450,41 +468,86 @@ export const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
 export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map((c) => detail(foliageMat(c), 'rock')); // (cracks, lichen, moss low down: src/gfx/detail.js)
 
 const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6, 1, true).translate(0, 0.5, 0); // (no ends: in the canopy, and in the ground)
-export const blobGeo = new THREE.IcosahedronGeometry(1, 0);
-// A round tree's canopy blob: an icosahedron, once subdivided (80
-// triangles), its corners pushed in or out a little (by where they are, so
-// the faces stay joined) and its normals a ball's, so it lights softly round.
-// After it, the same blob not subdivided (20), for the tiers whose
-// treeDetail is 0: which one is drawn is the geometry's draw range
-// (canopyRange, as the tier changes).
-const CANOPY_HI = 240; // (vertices: not indexed)
-export const canopyGeo = (() => {
-  const pos = [];
-  const normal = [];
-  const q = (v) => Math.round(v * 1000);
-  for (const detail of [1, 0]) {
-    const p = new THREE.IcosahedronGeometry(1, detail).attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const k = 1 + (mulberry32((q(x) * 73856093) ^ (q(y) * 19349663) ^ (q(z) * 83492791))() - 0.5) * 0.24;
-      pos.push(x * k, y * k, z * k);
-      normal.push(x, y, z);
-    }
+// ---------- Soft forms: canopies, pines' skirts, rocks, bushes ----------
+// A ball of `detail` (an icosahedron's, subdivided), each point pushed out
+// along its direction d to radius(d), its normals smooth (one at each point,
+// shared by its corners: src/gfx/smooth.js leaves them be): soft and round,
+// no facets, no polygon outline but the ball's own
+function softBall(detail, radius) {
+  const geo = mergeVertices(new THREE.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv'));
+  const p = geo.attributes.position;
+  const d = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    d.fromBufferAttribute(p, i).normalize();
+    d.multiplyScalar(radius(d));
+    p.setXYZ(i, d.x, d.y, d.z);
   }
+  geo.computeVertexNormals();
+  return geo.toNonIndexed();
+}
+// A cloud of lobes (each [x, y, z, r]: a ball round that point, the middle
+// inside it): how far out its outermost lobe is, along d, the lobes melted
+// together where they meet (a soft max, SOFT: the higher the sharper the
+// creases between them)
+const SOFT = 16;
+const lobed = (lobes) => (d) => {
+  let sum = 0;
+  for (const [x, y, z, r] of lobes) {
+    const b = d.x * x + d.y * y + d.z * z;
+    sum += Math.exp(SOFT * (b + Math.sqrt(b * b - x * x - y * y - z * z + r * r)));
+  }
+  return Math.log(sum) / SOFT;
+};
+// Two levels of a thing in one geometry: near (drawn from 0 to userData.hi)
+// and far, cheap (from hi on); which one an instanced copy draws is its draw
+// range (canopyRange: the tier's treeDetail, and how far its square is); a
+// plain mesh draws the near one
+function levels(near, far) {
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  for (const name of ['position', 'normal']) {
+    geo.setAttribute(name, new THREE.Float32BufferAttribute([...near.attributes[name].array, ...far.attributes[name].array], 3));
+  }
+  geo.userData.hi = near.attributes.position.count;
+  geo.setDrawRange(0, geo.userData.hi);
   return geo;
-})();
-// A pine's tier, in place of a plain cone (its tip where the cone's was, as wide, 1):
-// round from the tip down a steep top to a shoulder, out over a flatter, drooping
-// skirt to the rim, and back in under it, hollow, to the trunk. Its rim
-// serrated (tips out and down, notches in and up) where the tier's
-// treeDetail is on: ten sides, 60 triangles; else seven, plain, 28 (by draw
-// range, as the round canopy). Smooth-shaded round, its rim a crease
-// (src/gfx/smooth.js); the tree hook lights the rim and
-// shades the underside by where a vertex is (hookTree).
-// (each profile: [radius, y] from the tip down, and a rim's [radius, y] for notches)
+}
+// A round tree's canopy: a soft cloud of lobes round a heart, one on top,
+// a ring of three above its middle and four round it, two filling in under
+// it, so it reads round from any side, lumpy all round its outline; each
+// tree turns, stretches and tips it its own way (addTree); near 500
+// triangles, far 80 (and its shadow the far one: makeInstancer). The tree hook lights its lobes brighter and the
+// creases between them darker (by how far out a point is: hookTree).
+const CANOPY_LOBES = [
+  [0, 0, 0, 0.52], // (the heart)
+  [0.05, 0.42, 0.05, 0.55], // (its top)
+  [0.38, 0.25, 0.12, 0.5],
+  [-0.28, 0.28, 0.3, 0.5],
+  [-0.1, 0.3, -0.4, 0.52],
+  [0.5, -0.02, -0.18, 0.56],
+  [0.2, 0, 0.5, 0.56],
+  [-0.5, 0.02, 0.05, 0.55],
+  [-0.15, -0.04, -0.5, 0.55],
+  [0.25, -0.3, 0.15, 0.46],
+  [-0.2, -0.32, -0.1, 0.46],
+];
+const canopyShape = (d) => lobed(CANOPY_LOBES)(d) * (d.y < 0 ? 1 - 0.1 * d.y * d.y : 1);
+export const canopyGeo = levels(softBall(4, canopyShape), softBall(1, canopyShape));
+// A bush: four lobes, low and wide, flat underneath (near 180 triangles, far 20)
+const BUSH_LOBES = [
+  [0, 0, 0, 0.7],
+  [0.5, -0.08, 0.12, 0.6],
+  [-0.42, -0.1, -0.2, 0.55],
+  [0.05, 0.28, -0.1, 0.55],
+];
+const bushShape = (d) => Math.min(lobed(BUSH_LOBES)(d), d.y < -0.2 ? 0.55 / -d.y : Infinity);
+export const bushGeo = levels(softBall(2, bushShape), softBall(0, bushShape));
+// A pine's tier (its tip where a cone's would be, as wide, 1): a soft skirt,
+// round from the tip down over a shoulder, drooping steeper to its rim, the
+// rim scalloped (every other point in and up) and rolled under in a thick
+// round lip, back in under it, hollow, to the trunk. Ten sides near (80
+// triangles), seven far (28). Smooth normals; the tree hook lights the rim
+// and shades the underside by where a point is (hookTree).
+// (each profile: [radius, y] from the tip down, and a rim's [radius, y] for its notches)
 const pineTier = (n, profile, notch) => {
   const rings = profile.map(([r, y], k) => Array.from({ length: n }, (_, i) => {
     const a = (i / n) * Math.PI * 2;
@@ -501,27 +564,39 @@ const pineTier = (n, profile, notch) => {
       if (profile[k + 1][0] > 0) pos.push(...P[i], ...Q[j], ...Q[i]);
     }
   }
-  return pos;
-};
-const PINE_HI = pineTier(10, [[0, 0.7], [0.45, -0.05], [1, -0.5], [0.3, -0.3], [0, -0.24]], { ring: 2, at: [0.8, -0.36] }).length / 3;
-export const pineGeo = (() => {
-  const pos = [
-    ...pineTier(10, [[0, 0.7], [0.45, -0.05], [1, -0.5], [0.3, -0.3], [0, -0.24]], { ring: 2, at: [0.8, -0.36] }),
-    ...pineTier(7, [[0, 0.7], [0.45, -0.05], [1, -0.46], [0, -0.3]]),
-  ];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.computeVertexNormals(); // (not indexed: each face's own, smoothed where it is set on a mesh: src/gfx/smooth.js)
-  geo.userData.hi = PINE_HI;
-  return geo;
-})();
-canopyGeo.userData.hi = CANOPY_HI;
-// (a square of them far from the view, userData.far: the plain one whatever the tier: viewFrom)
+  const soft = mergeVertices(geo);
+  soft.computeVertexNormals();
+  return soft.toNonIndexed();
+};
+export const pineGeo = levels(
+  pineTier(10, [[0, 0.74], [0.32, 0.4], [0.66, 0.02], [1, -0.5], [0.86, -0.62], [0, -0.36]], { ring: 3, at: [0.86, -0.4] }),
+  pineTier(7, [[0, 0.74], [0.6, -0.02], [1, -0.48], [0, -0.32]]),
+);
+// (a square of them far from the view, userData.far: the far one whatever the tier: viewFrom)
 const canopyRange = (geo, k) => (k.treeDetail && !geo.userData.far ? geo.setDrawRange(0, geo.userData.hi) : geo.setDrawRange(geo.userData.hi, Infinity));
-const canopies = new Set(); // (each world's copies of it: makeInstancer)
+const canopies = new Set(); // (each world's copies of them: makeInstancer)
 onApply((k) => canopies.forEach((geo) => canopyRange(geo, k)));
-export const rockGeo = new THREE.DodecahedronGeometry(1, 0);
-rockGeo.userData.crease = THREE.MathUtils.degToRad(75); // (its faces meet at 63 degrees: smoothed round, src/gfx/smooth.js)
+// A rock: a ball cut by a few planes (a boulder's broad faces) and flat
+// underneath, the cuts melted round where they meet (a soft min), smooth:
+// rounded, not a polyhedron (near 180 triangles, far 20, as a canopy's). The 'rock' look paints its
+// cracks and moss (src/gfx/detail.js).
+const ROCK_CUTS = [
+  [0, -1, 0, 0.55], // (its bottom)
+  [0.2, 0.95, 0.1, 0.78],
+  [0.9, 0.25, 0.3, 0.8],
+  [-0.75, 0.35, 0.55, 0.82],
+  [-0.4, 0.2, -0.9, 0.78],
+  [0.45, -0.3, -0.85, 0.85],
+  [-0.85, -0.35, -0.3, 0.86],
+].map(([x, y, z, h]) => [new THREE.Vector3(x, y, z).normalize(), h]);
+const rockShape = (d) => {
+  let sum = Math.exp(-9);
+  for (const [n, h] of ROCK_CUTS) sum += Math.exp(-9 * h / Math.max(d.dot(n), 1e-3));
+  return -Math.log(sum) / 9;
+};
+export const rockGeo = levels(softBall(2, rockShape), softBall(0, rockShape));
 
 export function addDecor(geo, material, x, y, z, sx, sy = sx, sz = sx, parent) {
   const mesh = new THREE.Mesh(geo, material);
@@ -1330,20 +1405,28 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     tree.scale.setScalar(k);
     root.add(tree);
 
+    // (its own proportions, by where it stands: the same on every page)
+    const own = (i, min, max) => min + hash2(x + i * 3.7, z - i * 5.3) * (max - min);
     if (kind === 'pine') {
-      // Pine: stacked cones
+      // Pine: soft skirts stacked, each tier's scallops between the last's;
+      // a tall one has four
       const leaf = pickOwn(needles);
       addDecor(trunkGeo, trunkMat, 0, 0, 0, 1, 1.1, 1, tree);
-      addDecor(pineGeo, leaf, 0, 1.3, 0, 1.05, 1, 1.05, tree);
-      addDecor(pineGeo, leaf, 0, 2.0, 0, 0.8, 0.9, 0.8, tree).rotation.y = 0.33; // (each tier's tips between the last's)
-      addDecor(pineGeo, leaf, 0, 2.6, 0, 0.55, 0.8, 0.55, tree).rotation.y = 0.9;
+      const w = own(1, 0.92, 1.08);
+      const tiers = own(2, 0, 1) > 0.7
+        ? [[1.2, 1.08, 0.95], [1.78, 0.88, 0.85], [2.3, 0.68, 0.78], [2.78, 0.46, 0.72]]
+        : [[1.3, 1.05, 1], [2.0, 0.8, 0.9], [2.6, 0.55, 0.8]];
+      tiers.forEach(([y, r, h], i) => {
+        addDecor(pineGeo, leaf, 0, y, 0, r * w, h, r * w, tree).rotation.y = i * 0.33 + (i > 1 ? 0.24 : 0);
+      });
     } else {
-      // Round tree: a cluster of soft leafy blobs
+      // Round tree: one soft cloud of lobes, turned, stretched and tipped
+      // its own way
       const leaf = pickOwn(leaves);
       addDecor(trunkGeo, trunkMat, 0, 0, 0, 1.1, 1.5, 1.1, tree);
-      addDecor(canopyGeo, leaf, 0, 2.1, 0, 1.0, 0.9, 1.0, tree);
-      addDecor(canopyGeo, leaf, 0.55, 1.8, 0.3, 0.7, 0.65, 0.7, tree);
-      addDecor(canopyGeo, leaf, -0.45, 1.85, -0.35, 0.75, 0.7, 0.75, tree);
+      const wide = own(1, 1.25, 1.48);
+      const crown = addDecor(canopyGeo, leaf, 0, own(2, 1.98, 2.15), 0, wide * own(3, 0.88, 1.08), own(4, 1.15, 1.35), wide, tree);
+      crown.rotation.set(own(5, -0.18, 0.18), own(6, 0, Math.PI * 2), own(7, -0.18, 0.18));
     }
     // (each tree a shade of its own: lighter or darker, a touch warmer or cooler)
     const shade = 0.95 + hash2(x, z) * 0.17;
@@ -1375,9 +1458,12 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const shade = 0.95 + hash2(x, z) * 0.12;
     const warm = (hash2(z + 3.1, x - 7.7) - 0.5) * 0.06;
     const tint = new THREE.Color(shade + warm, shade, shade - warm);
-    addDecor(blobGeo, leaf, x, k * 0.6, z, k, k * 0.8, k, root).userData.tint = tint;
-    addDecor(blobGeo, leaf, x + k * 0.7, k * 0.45, z + rand(-0.3, 0.3), k * 0.7, k * 0.6, k * 0.7, root).userData.tint = tint;
-    if (rng() < 0.5) addDecor(blobGeo, leaf, x - k * 0.6, k * 0.4, z + rand(-0.3, 0.3), k * 0.6, k * 0.5, k * 0.6, root).userData.tint = tint;
+    // (one soft clump of lobes, turned and stretched its own way)
+    const turn = rand(-0.3, 0.3) * 10;
+    const long = rng() < 0.5 ? 1.15 + rand(-0.3, 0.3) * 0.3 : 1;
+    const bush = addDecor(bushGeo, leaf, x, k * 0.42, z, k * 1.15 * long, k * 0.78, k, root);
+    bush.rotation.y = turn;
+    bush.userData.tint = tint;
   }
 
   // { id, mesh, parts, x, z, scale, radius, collider, state, ... }: mesh:
@@ -2460,8 +2546,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // Before a view is drawn, from its camera (at, a Vector3): each patch of
     // grass draws only the tufts the grass hook keeps at its nearest to the
     // camera (grassFar: [half by, none by], as uGrassFar; none past the end),
-    // the trees' canopies in squares further than canopyFar are the plain
-    // ones (20 triangles a blob), and the ground's surface in squares further
+    // the trees' canopies, pines, rocks and bushes in squares further than
+    // canopyFar their far level (levels), and the ground's surface in squares further
     // than groundFar its coarse triangles (8 a tile, not 32): far off, in the
     // haze, they look the same (the ground's painted detail is per pixel)
     viewFrom(at, { grassFar, canopyFar, groundFar, camera = null }) {

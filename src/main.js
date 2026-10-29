@@ -66,7 +66,7 @@ import { createWeather } from './weather.js';
 import { rainSince } from '../shared/weather.js';
 import * as sound from './sound.js';
 import * as viewMode from './view.js';
-import { buildWorld, tileKeyFor, TILE_SIZE, leafMats, blobGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
+import { buildWorld, tileKeyFor, TILE_SIZE, leafMats, bushGeo, addDecor, addRipples, SEA_LEVEL } from './world.js';
 import { HOME, wildMap, LOBBY_POND_Y } from './maps.js';
 import { islandFor } from '../shared/worldgen.js';
 import { arenaFor, GAMES } from '../shared/arenas.js';
@@ -852,8 +852,7 @@ function makeSpotView(spot) {
   if (spot.kind === 'bush') {
     // The bush always stands; only its berries come and go
     const leaf = leafMats[spot.id % leafMats.length];
-    addDecor(blobGeo, leaf, 0, 0.42, 0, 0.55, 0.45, 0.55, group);
-    addDecor(blobGeo, leaf, 0.38, 0.3, 0.12, 0.36, 0.3, 0.36, group);
+    addDecor(bushGeo, leaf, 0.1, 0.3, 0, 0.55, 0.5, 0.5, group); // (a soft clump: src/world.js)
     content = new THREE.Group();
     for (let i = 0; i < 8; i++) {
       const a = i * 2.4;

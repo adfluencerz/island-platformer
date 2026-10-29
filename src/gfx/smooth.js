@@ -8,15 +8,15 @@ import * as THREE from 'three';
 //    no program is compiled FLAT_SHADED (a look that wants each facet its own
 //    shade defines its own: world.js hookTree's GFX_PINE);
 //  - a mesh given a faceted geometry (not indexed, each triangle's normals
-//    its own face's: a polyhedron of detail 0, a pine's tier, the merged kits
+//    its own face's: a polyhedron of detail 0, the merged kits
 //    of maps.js, homekit.js, build.js, the cliffs) has its normals smoothed
 //    where it is set on the mesh, once a geometry (and its clones: a flag
 //    in userData), creased: across an edge where two faces meet at more
-//    than CREASE the edge stays hard (a box's, a roof's ridge, a pine's
-//    rim); across the others the corners at a point share one normal. Only the faceted triangles
+//    than CREASE the edge stays hard (a box's, a roof's ridge); across the others the corners at a point share one normal. Only the faceted triangles
 //    change: normals made smooth already (a cylinder's, a sphere's, the
 //    grass's own) stay as they were. A geometry may set its own crease
-//    (userData.crease, radians: world.js rockGeo).
+//    (userData.crease, radians). (The trees, rocks and bushes are made
+//    smooth already: world.js softBall.)
 export const SMOOTH = true;
 export const CREASE = THREE.MathUtils.degToRad(52);
 
