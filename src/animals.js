@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { damp, rimmed } from './character.js';
+import { damp, rimmed, contactShadow } from './character.js';
 import { foliageMat } from './world.js';
 import { detail } from './gfx/detail.js';
 import { ITEMS } from './items.js';
@@ -407,7 +407,7 @@ function buildHen(color) {
   root.userData.noSnow = true; // (snow keeps off the animals: src/seasons.js)
   const rig = new THREE.Group();
   rig.scale.setScalar(HEN_SCALE);
-  root.add(rig);
+  root.add(rig, contactShadow(0.4, 0.48)); // (sat in the grass: character.js)
   const legs = [-1, 1].map((sx, i) => limb(rig, [sx * 0.065, 0.15, 0.02], henLegGeo, henLegMat, 0.14, henFootGeo, henLegMat, i * Math.PI, true));
 
   const body = new THREE.Group();
@@ -467,7 +467,7 @@ function buildCow(color) {
   const root = new THREE.Group();
   root.userData.noSnow = true;
   const rig = new THREE.Group();
-  root.add(rig);
+  root.add(rig, contactShadow(0.8, 1.25)); // (sat in the grass: character.js)
   const legs = [[-1, 1, 0], [1, 1, Math.PI], [-1, -1, Math.PI], [1, -1, 0]].map(([sx, sz, phase]) =>
     limb(rig, [sx * 0.2, 0.55, sz * 0.42], cowLegGeo, hideMat, 0.5, hoofGeo, hoofMat, phase, sz > 0));
 
@@ -527,7 +527,7 @@ function buildSheep(color) {
   const root = new THREE.Group();
   root.userData.noSnow = true;
   const rig = new THREE.Group();
-  root.add(rig);
+  root.add(rig, contactShadow(0.6, 0.78)); // (sat in the grass: character.js)
   const legs = [[-1, 1, 0], [1, 1, Math.PI], [-1, -1, Math.PI], [1, -1, 0]].map(([sx, sz, phase]) =>
     limb(rig, [sx * 0.14, 0.4, sz * 0.24], sheepLegGeo, faceMat, 0.38, null, null, phase, sz > 0));
 
@@ -577,7 +577,7 @@ const MOST_SHINY = 12; // of a kind
 const goldMats = new Map(); // a material -> its gold one
 function gild(root) {
   root.traverse((obj) => {
-    if (!obj.isMesh || !obj.material?.color) return;
+    if (!obj.isMesh || !obj.material?.color || obj.material.userData.contact) return; // (not the contact shadow)
     if (!goldMats.has(obj.material)) {
       const { r, g, b } = obj.material.color;
       const light = 0.35 + 0.65 * Math.min(1, 0.3 * r + 0.59 * g + 0.11 * b + 0.25); // (dark parts stay a darker gold)

@@ -4,6 +4,7 @@ import { DEFAULT_LOOK } from '../shared/looks.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { knobs, onApply } from './gfx/quality.js';
+import { use } from './gfx/uniforms.js';
 import { detail } from './gfx/detail.js';
 
 // ---------- Character model ----------
@@ -58,26 +59,46 @@ export const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
 
 // ---------- Light ----------
 // A soft light on the edges of the farmers (and the neighbours, the animals
-// and the mounts: rimmed()), so they stand out from the grass under the
-// overhead camera. main.js keeps it with the time of day (lightFarmers): the
-// sky's color, warmed a little toward the sun's, so it reads as light on them
-// and not as a blue haze. A narrow band right at the silhouette (tuned under
-// the tone mapping and the wrap light: src/gfx/tonemap.js, light.js). As
+// and the mounts: rimmed()), so they stand out from the grass under the low
+// camera. Two parts. The sky's: main.js keeps it with the time of day
+// (lightFarmers), the sky's color warmed a little toward the sun's, a narrow
+// band right at the silhouette all round. The sun's (the moon's at night,
+// src/gfx/uniforms.js uSunDir, uSunColor): on the edges that face it, and
+// most when it is behind them, so at dusk a farmer walking into the low sun
+// is outlined in warm light and at noon the hat and shoulders catch it. As
 // much as the surface would give back (its own color, lifted): light cloth
 // and skin keep it all, dark hair only a faint edge, not a pale halo.
-const RIM = { warm: new THREE.Color(1, 0.9, 0.76), warmth: 0.45, from: 0.35 };
+// The same hook darkens what faces the ground (under a brim, a chin, an
+// animal's belly), so a figure reads as a solid with a lit top and a shaded
+// underside, and puts a small glint of the sun on metal (a blade, brass, a
+// bell) that the bloom picks up.
+const RIM = { warm: new THREE.Color(1, 0.9, 0.76), warmth: 0.45, from: 0.35, sunFrom: 0.1, sun: 0.55, under: 0.32, glint: 1.1 };
 const rim = { value: new THREE.Color(0.12, 0.12, 0.12) };
 const _warm = new THREE.Color();
 export function lightFarmers(color, strength) {
   const luma = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b; // (as bright as the sky, in a warmer hue)
   rim.value.copy(color).lerp(_warm.copy(RIM.warm).multiplyScalar(luma), RIM.warmth).multiplyScalar(strength);
 }
+const f2 = (v) => v.toFixed(2);
 function rimShader(shader) {
   define(shader, 'GFX_RIM');
   shader.uniforms.uFarmerRim = rim;
+  use(shader, ['uSunDir', 'uSunColor'], 'f');
   shader.fragmentShader = 'uniform vec3 uFarmerRim;\n' + patch(shader.fragmentShader, 'emissivemap_fragment', `
-    float farmerEdge = smoothstep(${RIM.from.toFixed(2)}, 1.0, 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0));
-    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge) * min(vec3(1.0), 0.2 + 1.6 * diffuseColor.rgb);`, 'GFX_RIM');
+    vec3 rimV = normalize(vViewPosition);
+    vec3 rimL = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+    float farmerEdge = smoothstep(${f2(RIM.from)}, 1.0, 1.0 - max(dot(normal, rimV), 0.0));
+    vec3 rimGive = min(vec3(1.0), 0.2 + 1.6 * diffuseColor.rgb);
+    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge) * rimGive;
+    float rimSun = smoothstep(-0.15, 0.55, dot(normal, rimL)) * (0.35 + 0.65 * smoothstep(0.3, -0.6, dot(rimV, rimL)));
+    float sunEdge = smoothstep(${f2(RIM.sunFrom)}, 1.0, 1.0 - max(dot(normal, rimV), 0.0));
+    totalEmissiveRadiance += uSunColor * (${f2(RIM.sun)} * sunEdge * sunEdge * rimSun) * rimGive;
+    float rimDown = dot(normal, normalize((viewMatrix * vec4(0.0, -1.0, 0.0, 0.0)).xyz));
+    diffuseColor.rgb *= 1.0 - ${f2(RIM.under)} * smoothstep(0.4, 1.0, rimDown); // (what faces well down: not a face seen from above)
+    #ifdef STANDARD
+      float rimGlint = pow(max(dot(reflect(-rimV, normal), rimL), 0.0), 36.0);
+      totalEmissiveRadiance += uSunColor * (${f2(RIM.glint)} * rimGlint * metalnessFactor);
+    #endif`, 'GFX_RIM');
 }
 // The rim on a lit material (the same for all: one shader program a kind of material)
 export const rimmed = (m) => hook(m, 'rim', rimShader);
@@ -89,6 +110,44 @@ const mat = (color, opts = {}) => {
 };
 // too small to cast a shadow worth drawing
 const noShadow = (m) => ((m.userData.noShadow = true), m);
+
+// ---------- The contact shadow ----------
+// A soft dark blob on the ground under a farmer, an animal or a foe, so they
+// sit in the grass instead of floating over it (the sun's own shadow falls
+// long and to one side at dusk, and the low tier has none). One plane and
+// one material shared by all of them: one draw each, no light, no shadow.
+// Drawn after the ground, under the grass carpet's blades in front of it.
+const CONTACT = { color: 0x10141c, opacity: 0.6, y: 0.06, r: 0.62 };
+let contactMat = null;
+const contactGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+function contactMaterial() {
+  if (contactMat) return contactMat;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const g = canvas.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  for (const [at, v] of [[0, 1], [0.4, 0.85], [0.75, 0.35], [1, 0]]) grad.addColorStop(at, gray(Math.round(v * 255)));
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const alphaMap = new THREE.CanvasTexture(canvas);
+  alphaMap.colorSpace = THREE.NoColorSpace;
+  contactMat = new THREE.MeshBasicMaterial({
+    color: CONTACT.color, alphaMap, transparent: true, opacity: CONTACT.opacity,
+    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  contactMat.userData.noSnow = contactMat.userData.contact = true;
+  return contactMat;
+}
+// rx across, rz along (the +z the model faces), at y over the feet
+export function contactShadow(rx, rz = rx, y = CONTACT.y) {
+  const mesh = new THREE.Mesh(contactGeo, contactMaterial());
+  mesh.name = 'contact';
+  mesh.scale.set(rx, 1, rz);
+  mesh.position.y = y;
+  mesh.castShadow = mesh.receiveShadow = false;
+  mesh.userData.noShadow = true;
+  return mesh;
+}
 
 // ---------- Cloth ----------
 // Little tiling pictures for the cloth, drawn once. Most are shades of gray
@@ -136,18 +195,19 @@ const threads = (n, rand, base, spread) => Array.from({ length: n }, () => base 
 // a plain weave, two pixels a thread: over, under
 const clothTex = () => texture('cloth', 64, (g, n) => {
   const rand = seeded(7);
-  const warp = threads(n / 2, rand, 246, 14);
-  const weft = threads(n / 2, rand, 224, 18);
+  const warp = threads(n / 2, rand, 248, 20);
+  const weft = threads(n / 2, rand, 214, 26);
   shades(g, n, (x, y) => {
     const over = ((x >> 1) + (y >> 1)) % 2;
-    const edge = (over ? x : y) % 2 ? 0.94 : 1; // (each thread rounded)
-    return (over ? warp[x >> 1] : weft[y >> 1]) * edge + (rand() - 0.5) * 6;
+    const edge = (over ? x : y) % 2 ? 0.9 : 1; // (each thread rounded)
+    const mottle = 1 + 0.06 * Math.sin((x / n) * Math.PI * 4 + 1.1) * Math.sin((y / n) * Math.PI * 2 + 0.4); // (a painterly unevenness that still reads from the play camera)
+    return (over ? warp[x >> 1] : weft[y >> 1]) * edge * mottle + (rand() - 0.5) * 6;
   });
 }, false, 0.25);
 // denim's diagonal twill, the blue warp heathered up and down, paler streaks
 const twillTex = () => texture('twill', 64, (g, n) => {
   const rand = seeded(11);
-  const warp = threads(n / 2, rand, 200, 26);
+  const warp = threads(n / 2, rand, 186, 30);
   const fade = Array.from({ length: n }, (_, x) => 1 + 0.08 * Math.sin(x * 0.4 + 1.3) + (rand() < 0.08 ? 0.12 : 0));
   shades(g, n, (x, y) => {
     const over = ((x >> 1) + (y >> 1)) % 3 < 2;
@@ -162,8 +222,8 @@ const knitTex = () => texture('knit', 64, (g, n) => {
     const lx = Math.abs((x % 8) - 3.5) / 4; // (0 the column's middle, 0.9 its edge)
     const ly = (y % 8) / 8;
     const leg = 1 - Math.min(1, Math.abs(lx - 0.3 - (0.5 - ly) * 0.45) * 3.2);
-    const ridge = lx > 0.8 ? 0.72 : 1;
-    return (150 + (yarn[x >> 3] - 150) * leg) * ridge * (y % 8 === 0 ? 0.9 : 1) + (rand() - 0.5) * 8;
+    const ridge = lx > 0.8 ? 0.6 : 1;
+    return (130 + (yarn[x >> 3] - 130) * leg) * ridge * (y % 8 === 0 ? 0.86 : 1) + (rand() - 0.5) * 8;
   });
 }, false, 0.25);
 // a buffalo check: bands across and down, darker where they cross, fine
@@ -171,8 +231,8 @@ const knitTex = () => texture('knit', 64, (g, n) => {
 const plaidTex = () => texture('plaid', 128, (g, n) => {
   const rand = seeded(3);
   shades(g, n, (x, y) => {
-    const band = (x < n / 2 ? 0.62 : 1) * (y < n / 2 ? 0.62 : 1);
-    const line = Math.abs(x - n * 0.74) < 3 || Math.abs(y - n * 0.74) < 3 ? 0.78 : 1;
+    const band = (x < n / 2 ? 0.52 : 1) * (y < n / 2 ? 0.52 : 1);
+    const line = Math.abs(x - n * 0.74) < 3 || Math.abs(y - n * 0.74) < 3 ? 0.66 : 1;
     const twill = ((x >> 1) + (y >> 1)) % 4 < 2 ? 0.93 : 1;
     return 255 * band * line * twill + (rand() - 0.5) * 8;
   });
@@ -348,16 +408,26 @@ class Parts {
 }
 
 // ---------- The outline ----------
-// On the high tier (knobs().outline) a farmer has a thin dark edge, like the
-// ink round a painted figure: a hull of their pieces pushed out along the
-// normals and drawn inside out (its back faces only), so it shows just past
-// the silhouette. It is one mesh for the whole farmer, each piece skinned to
-// the part it moves with (the torso with the head, each arm, each leg) with
-// those parts' groups for bones, so it follows the walk and the swings in one
-// draw. The little bits (eyes, cheeks, glasses: noShadow) and the eyes'
-// group are left out. It casts no shadow.
-const OUTLINE = { push: 0.018, color: 0x3a281c };
-const hullMat = new THREE.MeshBasicMaterial({ color: OUTLINE.color, side: THREE.BackSide });
+// On the high and medium tiers (knobs().outline) a farmer has a thin dark
+// edge, like the ink round a painted figure: a hull of their pieces pushed out
+// along the normals and drawn inside out (its back faces only), so it shows
+// just past the silhouette. It is one mesh for the whole farmer, each piece
+// skinned to the part it moves with (the torso with the head, each arm, each
+// leg) with those parts' groups for bones, so it follows the walk and the
+// swings in one draw. The little bits (eyes, cheeks, glasses: noShadow) and
+// the eyes' group are left out. It casts no shadow. Pushed out in the vertex
+// shader, across the view, a little further the further off it is (perUnit,
+// a unit of distance), so it stays about a pixel wide at the low wide camera and as
+// thin as ever close up (the wardrobe, indoors).
+const OUTLINE = { push: 0.016, perUnit: 0.0012, color: 0x2e2018 };
+const hullMat = hook(new THREE.MeshBasicMaterial({ color: OUTLINE.color, side: THREE.BackSide }), 'hull', (shader) => {
+  // (across the view only, not toward or away from it: a thin brim's hull
+  // doesn't thicken into a dark band over the face)
+  shader.vertexShader = patch(shader.vertexShader, 'project_vertex', `
+    vec3 hullN = normalize(normalMatrix * objectNormal);
+    mvPosition.xy += normalize(hullN.xy + vec2(1e-4)) * (${OUTLINE.push.toFixed(4)} + ${OUTLINE.perUnit.toFixed(4)} * max(-mvPosition.z, 0.0));
+    gl_Position = projectionMatrix * mvPosition;`);
+});
 hullMat.userData.noSnow = true;
 let outlineOn = null; // (the tier's, once applied: src/gfx/quality.js)
 onApply((k) => (outlineOn = k.outline));
@@ -375,12 +445,6 @@ function buildHull(meshes, bones) {
       const pos = src.attributes.position;
       const nrm = src.attributes.normal;
       const n = pos.count;
-      const out = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) {
-        out[i * 3] = pos.getX(i) + nrm.getX(i) * OUTLINE.push;
-        out[i * 3 + 1] = pos.getY(i) + nrm.getY(i) * OUTLINE.push;
-        out[i * 3 + 2] = pos.getZ(i) + nrm.getZ(i) * OUTLINE.push;
-      }
       const skinIndex = new Uint16Array(n * 4);
       const skinWeight = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) {
@@ -388,7 +452,8 @@ function buildHull(meshes, bones) {
         skinWeight[i * 4] = 1;
       }
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(out, 3));
+      geo.setAttribute('position', pos.clone());
+      geo.setAttribute('normal', nrm.clone()); // (pushed out along it in the shader: hullMat)
       geo.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4));
       geo.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
       geo.setIndex(src.index ? Array.from(src.index.array) : [...Array(n).keys()]);
@@ -463,7 +528,7 @@ const TOP_TILE = { shirt: 0.05, tee: 0.05, plaid: 0.22, stripes: 0.09, sweater: 
 // shirt: the shirt's color. look: what they wear (shared/looks.js; any part
 // left out is the default's). The merchant wears colors of their own, out of
 // the wardrobe's palettes.
-export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LOOK } = {}) {
+export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LOOK, shadow = true } = {}) {
   // Their own materials, repainted (not remade) for a new look or color
   const own = {
     skin: detail(mat(0xffcc99, { roughness: 0.7 }), 'skin'),
@@ -489,6 +554,11 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
   const rig = new THREE.Group(); // origin at the feet
   rig.position.y = -height / 2;
   root.add(rig);
+  // the contact shadow (not on the wardrobe's stage: it has its own), kept on
+  // the ground under a jump: smaller the higher they go, gone past a fall
+  const contact = shadow ? contactShadow(CONTACT.r) : null;
+  if (contact) root.add(contact);
+  let groundY = null; // root's y when last on the ground
 
   const torso = new THREE.Group();
   torso.position.y = HIP_Y;
@@ -1073,6 +1143,15 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     const sy = 1 - anim.squash + breathe;
     const sxz = 1 + anim.squash * 0.5;
     rig.scale.set(sxz, sy, sxz);
+
+    if (contact) {
+      if (onGround || groundY === null) groundY = root.position.y;
+      const up = Math.max(0, root.position.y - groundY);
+      const r = (mount ? mount.shadow ?? 0.85 : CONTACT.r) / (1 + up * 0.6);
+      contact.visible = up < 3 && root.rotation.x === 0; // (not lying in bed: src/npcs.js)
+      contact.position.y = -height / 2 + CONTACT.y - up;
+      contact.scale.set(r, 1, mount ? r * 1.6 : r);
+    }
   }
 
   return {
