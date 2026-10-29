@@ -43,6 +43,7 @@ export const POST = {
   warm: new THREE.Color(1.02, 1.0, 0.97), // (the day's tint)
   cool: new THREE.Color(0.95, 0.98, 1.05), // (the night's)
   skyTint: 0.08, // (how far the tint leans toward the sky's horizon color)
+  skyTintLow: 0.16, // (and round a low sun, by day: a golden hour's warmth)
 };
 
 const MAX_SEATS = 4;
@@ -254,7 +255,8 @@ export function createPost(renderer, { seats, view, gap }) {
       sky.r = Math.min(sky.r, 1.6);
       sky.g = Math.min(sky.g, 1.6);
       sky.b = Math.min(sky.b, 1.6);
-      tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, POST.skyTint).lerp(WHITE, U.uUnder.value);
+      const low = (1 - THREE.MathUtils.smoothstep(U.uSunDir.value.y, 0.12, 0.6)) * (1 - U.uNight.value) * (1 - U.uCloudAmount.value);
+      tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, THREE.MathUtils.lerp(POST.skyTint, POST.skyTintLow, low)).lerp(WHITE, U.uUnder.value);
       grade.uniforms.uTint.value.copy(tint);
       grade.uniforms.uNight.value = U.uNight.value * (1 - U.uUnder.value);
       seatParts();

@@ -25,11 +25,13 @@ import { NOISE } from './noise.js';
 // it mirrors the sky. Cheap enough for every tier.
 
 // Per kind: fresnel (how much sky at grazing), glint (sparkle strength),
-// solid (how far the fresnel makes translucent water opaque)
+// solid (how far the fresnel makes translucent water opaque), dusk (how much
+// more of the sky it mirrors round a low sun, looking down on it: a golden
+// hour's peach and mauve in the still water)
 export const WATER = {
-  sea: { fresnel: 0.9, glint: 1.0, solid: 0 },
-  shallows: { fresnel: 0.7, glint: 0.8, solid: 0 },
-  pond: { fresnel: 0.85, glint: 0.9, solid: 0.5 },
+  sea: { fresnel: 0.9, glint: 1.0, solid: 0, dusk: 0.15 },
+  shallows: { fresnel: 0.7, glint: 0.8, solid: 0, dusk: 0 },
+  pond: { fresnel: 0.85, glint: 0.9, solid: 0.5, dusk: 0.45 },
 };
 
 const f = (v) => v.toFixed(3);
@@ -56,19 +58,21 @@ const COLOR = {
   pond: `diffuseColor.rgb *= 0.94 + 0.12 * gfxNoise(vGfxWorld.xz * 0.35);`,
 };
 
-const SURFACE = ({ fresnel, glint, solid }) => `
+const SURFACE = ({ fresnel, glint, solid, dusk }) => `
   {
     vec3 waterN = normalize((vec4(normal, 0.0) * viewMatrix).xyz); // (view to world)
     vec3 waterV = normalize(cameraPosition - vGfxWorld);
     float waterNV = clamp(dot(waterN, waterV), 0.0, 1.0);
-    float waterF = ${f(fresnel)} * (0.16 + 0.84 * pow(1.0 - waterNV, 3.0));
+    // round a low sun (not at night, nor under rain clouds): more mirror, and the warm low sky in it
+    float waterLow = (1.0 - smoothstep(0.12, 0.6, uSunDir.y)) * (1.0 - smoothstep(0.02, 0.3, uNight)) * (1.0 - uCloudAmount);
+    float waterF = ${f(fresnel)} * (0.16 + ${f(dusk)} * waterLow + 0.84 * pow(1.0 - waterNV, 3.0));
     vec3 waterR = reflect(-waterV, waterN);
     #ifdef GFX_ATMOS
       vec3 waterSky = gfxHorizon(waterR);
     #else
       vec3 waterSky = uSkyHorizon;
     #endif
-    waterSky = mix(waterSky, uSkyZenith, smoothstep(0.05, 0.8, waterR.y));
+    waterSky = mix(waterSky, uSkyZenith, smoothstep(0.05, 0.8, waterR.y) * (1.0 - 0.4 * waterLow));
     gl_FragColor.rgb = mix(gl_FragColor.rgb, linearToOutputTexel(vec4(waterSky, 1.0)).rgb, waterF);
     gl_FragColor.a = mix(gl_FragColor.a, 1.0, waterF * ${f(solid)});
 
@@ -101,7 +105,7 @@ const SURFACE = ({ fresnel, glint, solid }) => `
     float waterFacet = pow(max(dot(waterFN, waterH), 0.0), 180.0) * waterDot * 4.0 * waterAge * (1.0 - waterAge);
     waterSpec += waterFacet * gfxShow(WATER_FACETS, waterPx);
 
-    float waterUp = smoothstep(0.0, 0.06, waterL.y) * (1.0 - 0.85 * uCloudAmount) * (1.0 - 0.6 * uNight);
+    float waterUp = smoothstep(0.0, 0.06, waterL.y) * (1.0 - 0.85 * uCloudAmount) * (1.0 - 0.6 * uNight) * (1.0 + 0.6 * waterLow);
     vec3 waterGlint = uSunColor * (waterSpec * waterUp * ${f(glint * 2.4)});
     gl_FragColor.rgb += min(waterGlint, vec3(1.6));
     gl_FragColor.a = max(gl_FragColor.a, min(dot(waterGlint, vec3(0.33)), 1.0));
