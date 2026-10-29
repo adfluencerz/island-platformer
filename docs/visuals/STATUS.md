@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 14 (`phases/14-ambience.md`)
+Current phase: 15 (`phases/15-polish.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -17,7 +17,7 @@ Current phase: 14 (`phases/14-ambience.md`)
 - [x] 11 Water
 - [x] 12 Cliff skirts
 - [x] 13 Characters
-- [ ] 14 Ambience
+- [x] 14 Ambience
 - [ ] 15 Perf and polish
 - [ ] 16 Surface detail: built things and buildings
 - [ ] 17 Surface detail: nature
@@ -33,8 +33,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- plaza-noon 754 calls (+9, the hulls and drift), 1.26M tris (+22k), programs 45 -> 43 (animals and mounts now share the farmers' rim program); plaza-morning 782.
-- Rim: `character.js` `RIM` (sky color warmed toward 0xffe6c2 at its own brightness, smoothstep from 0.35, squared), `rimmed(m)` for any lit material (animals' `mat`, gold ones, `mounts.js`); main.js `lightFarmers(hemi.color, 0.3 * hemi.intensity)`.
-- Outline: `buildHull` in `character.js`, knob `outline` (high only, `quality.js`): one `SkinnedMesh` a farmer, pieces pushed 0.018 along normals, bones = torso, arms, legs groups; `hullMat` 0x3a281c `BackSide`, no shadow; noShadow and non-FrontSide pieces left out; rebuilt with the look, made or dropped as the tier changes.
-- Cloth maps (phase 18 builds on these, all `texture()` keyed CanvasTextures, gray ones `NoColorSpace` multiplying the color): `cloth`, `twill`, `knit`, `plaid`, `straw`, `stripes:<hex>`, `dots:<hex>` (sRGB); contrast raised (knit ribs 162/228/255, plaid bands 0.38). Normal or roughness maps would go beside them on `own.*` materials.
-- Animals (`animals.js`) have the rim but no hull: they are many small groups, a hull each would add more than one draw; phase 18 could skin them the same way.
+- plaza-noon 754 calls (+0..2: the motes), 1.26M tris, programs 43 -> 46; phone (medium) 650 calls, 786k tris.
+- `src/gfx/motes.js` `MOTES`: 160 at 900 particles (`dayNight.setParticles(k.particles)`: 53 low, 107 medium), box 24 wide from -0.6 to +4.4 round the player, size 0.13, warm 0xfff0bd-ish at 0.6 (not tone mapped), breeze + 0.35 of `uWind`; faded by `(1-night)*(1-1.6*cloud)*(1-under)` in `daynight.js`.
+- Night emissives: build.js lantern 2.5, window 2.0, flame 0.6+1.9n, core 0.8+1.7n; npchomes lantern 2.5, window 2.0; house lantern 2.5. Fireflies 72, warmer (1, .86, .36) x1.35, size 0.19.
+- Bloom: `POST.bloom.underThreshold` 0.8 underground (night 0.72); dungeon `KINDS.glow` color 1.7 (past white). Rain: `RAIN_TINT` in weather.js (sky horizon x1.2, 30% pale grey).
+- Phase 15: re-measure the phone shot's frame time with motes + rain (both CPU-updated Points/lines a frame) and the bloom at night on medium.

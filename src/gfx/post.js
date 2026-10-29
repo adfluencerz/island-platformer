@@ -34,7 +34,7 @@ import { U } from './uniforms.js';
 
 // The look (uniforms: tweak live through window.__game.post.grade.uniforms)
 export const POST = {
-  bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72 }, // (thresholds: the screen's brightness, 0..1)
+  bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.8 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
   saturation: 1.08,
   vignette: 0.2,
   warm: new THREE.Color(1.02, 1.0, 0.97), // (the day's tint)
@@ -219,8 +219,8 @@ export function createPost(renderer, { seats, view, gap }) {
       composer.setSize(size.x, size.y);
     },
     render() {
-      const night = Math.max(U.uNight.value, U.uUnder.value);
-      bloom.threshold = THREE.MathUtils.lerp(POST.bloom.threshold, POST.bloom.nightThreshold, night);
+      const { threshold, nightThreshold, underThreshold } = POST.bloom;
+      bloom.threshold = THREE.MathUtils.lerp(THREE.MathUtils.lerp(threshold, nightThreshold, U.uNight.value), underThreshold, U.uUnder.value);
       // the tint: warm by day, cool at night, leaning toward the sky's own color
       // (its hue: the horizon over its brightness), none underground
       sky.copy(U.uSkyHorizon.value);

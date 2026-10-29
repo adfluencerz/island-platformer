@@ -9,6 +9,7 @@ import './daynight.css';
 // time, so one game hour is DAY_LENGTH_SECONDS / 24 seconds.
 import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { light as shaderLight, U } from './gfx/uniforms.js';
+import { createMotes } from './gfx/motes.js';
 
 export { DAY_LENGTH_SECONDS };
 
@@ -109,7 +110,7 @@ function createFireflies(count) {
   const points = new THREE.Points(
     geo,
     new THREE.PointsMaterial({
-      size: 0.16,
+      size: 0.19,
       vertexColors: true,
       transparent: true,
       blending: THREE.AdditiveBlending,
@@ -132,10 +133,11 @@ function createFireflies(count) {
       pos[i * 3] = focus.x + wrap(bx - focus.x);
       pos[i * 3 + 1] = base[i * 3 + 1] + Math.sin(t * 1.1 + p * 2) * 0.25;
       pos[i * 3 + 2] = focus.z + wrap(bz - focus.z);
-      const glow = night * Math.max(0, Math.sin(t * 2.3 + p * 3)) ** 2;
-      col[i * 3] = 0.85 * glow;
-      col[i * 3 + 1] = 1.0 * glow;
-      col[i * 3 + 2] = 0.45 * glow;
+      // warm and bright at their peak, past the night's bloom threshold
+      const glow = 1.35 * night * Math.max(0, Math.sin(t * 2.3 + p * 3)) ** 2;
+      col[i * 3] = 1.0 * glow;
+      col[i * 3 + 1] = 0.86 * glow;
+      col[i * 3 + 2] = 0.36 * glow;
     }
     geo.attributes.position.needsUpdate = true;
     geo.attributes.color.needsUpdate = true;
@@ -169,8 +171,13 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
   const glow = new THREE.PointLight(0xffb36b, 0, 14, 1.4);
   glow.position.set(0, 2.2, 1.2);
 
-  const fireflies = createFireflies(90);
+  const fireflies = createFireflies(72);
   scene.add(fireflies.points);
+  // ...and by day, pollen and dust drifting in the sunlight (src/gfx/motes.js)
+  const motes = createMotes();
+  scene.add(motes.points);
+  // how much sun there is for them: none at night, under clouds or rain, or underground
+  const sunlit = (night) => (1 - night) * Math.max(0, 1 - cloud * 1.6) * (1 - under);
 
   // The sky's colors once the day's light is set (the shaders' own: the season
   // tints them in place, src/seasons.js)
@@ -280,6 +287,7 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       ui.root.classList.toggle('fast', fastForward && !paused);
       const night = apply();
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
+      motes.update(elapsed, dt, focus, sunlit(night));
     },
     /** A split screen's farmer's own view (src/main.js): the light as far underground as they are (amount, color), the fireflies round them (focus), and no lightning seen under a roof (sheltered). */
     view(focus, amount, color = 0xffffff, sheltered = false) {
@@ -288,12 +296,17 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       flash = sheltered ? 0 : flashOut;
       const night = apply(false);
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
+      motes.update(elapsed, 0, focus, sunlit(night));
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
     setTime(hours) {
       day = 1 + Math.floor(hours / 24);
       hour = THREE.MathUtils.euclideanModulo(hours, 24);
       apply();
+    },
+    /** The graphics tier's particle knob (src/gfx/quality.js): how many motes drift by day. */
+    setParticles(n) {
+      motes.setParticles(n);
     },
     hour: () => hour,
     day: () => day,
