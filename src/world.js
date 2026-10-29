@@ -132,6 +132,7 @@ function hookTree(material, soft = true) {
   material.flatShading = !soft;
   return hook(material, `tree${sway ? ':sway' : ''}`, (shader) => {
     define(shader, 'GFX_TREE');
+    define(shader, 'GFX_SHADOW_LIFT');
     if (sway) define(shader, 'GFX_SWAY');
     if (sway) use(shader, ['uTime', 'uWind', 'uCloudOffset'], 'v');
     shader.vertexShader = patch(shader.vertexShader, 'common', `
@@ -139,17 +140,31 @@ function hookTree(material, soft = true) {
         attribute float aFade;
       #endif
       varying float vTreeFade;
-      varying float vCanopyShade;
+      varying vec4 vCanopyShade;
       #ifdef GFX_SWAY
         ${GRASS_WIND_GLSL}
       #endif`, 'GFX_TREE');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       vTreeFade = 0.0;
-      vCanopyShade = 1.0;
       #ifdef USE_INSTANCING
         vTreeFade = aFade;
       #endif
-      vCanopyShade = mix(0.72, 1.15, smoothstep(-0.9, 0.5, position.y));
+      #ifdef FLAT_SHADED
+        // (a pine's tier, pineGeo: light at the tip, cool and dark under the
+        // skirt, its rim lighter and a touch warm, catching the sun)
+        // (and the sun gets through to its rim and top a little, though the
+        // tier above shades it: light.js, GFX_SHADOW_LIFT)
+        float canopyTop = smoothstep(-0.5, 0.7, position.y);
+        float canopyRim = smoothstep(0.62, 0.95, length(position.xz));
+        vCanopyShade.rgb = (mix(1.1, 2.05, canopyTop) + 1.0 * canopyRim)
+          * mix(vec3(0.8, 0.92, 1.14), vec3(1.08, 1.05, 0.88), canopyTop)
+          * mix(vec3(1.0), vec3(1.12, 1.08, 0.8), canopyRim);
+        vCanopyShade.a = 0.3 + 0.5 * max(canopyRim, canopyTop * canopyTop);
+      #else
+        // (a round canopy's blob, a trunk: warm on top, cool underneath)
+        float canopyTop = smoothstep(-0.9, 0.5, position.y);
+        vCanopyShade = vec4(mix(0.72, 1.15, canopyTop) * mix(vec3(0.9, 0.95, 1.08), vec3(1.04, 1.02, 0.94), canopyTop), 0.0);
+      #endif
       #if defined(GFX_SWAY) && defined(USE_INSTANCING)
         highp vec3 swayRoot = (modelMatrix * instanceMatrix[3]).xyz;
         float swayH = clamp((instanceMatrix * vec4(transformed, 1.0)).y, 0.0, 5.0); // (how high above the ground)
@@ -170,14 +185,15 @@ function hookTree(material, soft = true) {
       #endif`, 'GFX_TREE');
     shader.fragmentShader = patch(shader.fragmentShader, 'common', `
       varying float vTreeFade;
-      varying float vCanopyShade;`, 'GFX_TREE');
+      varying vec4 vCanopyShade;`, 'GFX_TREE');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
       if (vTreeFade > 0.001) {
         // (interleaved gradient noise: an even scatter of the pixels to drop)
         highp float treeDither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
         if (treeDither < vTreeFade) discard;
       }
-      diffuseColor.rgb *= vCanopyShade;`, 'GFX_TREE');
+      diffuseColor.rgb *= vCanopyShade.rgb;
+      float gfxShadowLift = vCanopyShade.a;`, 'GFX_TREE');
   });
 }
 onApply((k) => {
@@ -243,7 +259,7 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
         const n = set.slots.length;
         const geo = set.geometry.clone(); // (its own, for its own aFade)
         geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(n), 1));
-        if (set.geometry === canopyGeo) {
+        if (set.geometry === canopyGeo || set.geometry === pineGeo) {
           canopies.add(geo);
           canopyRange(geo, knobs());
         }
@@ -333,7 +349,6 @@ export const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
 export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map((c) => detail(foliageMat(c), 'rock')); // (cracks, lichen, moss low down: src/gfx/detail.js)
 
 const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6, 1, true).translate(0, 0.5, 0); // (no ends: in the canopy, and in the ground)
-export const coneGeo = new THREE.ConeGeometry(1, 1.4, 7);
 export const blobGeo = new THREE.IcosahedronGeometry(1, 0);
 // A round tree's canopy blob: an icosahedron, once subdivided (80
 // triangles), its corners pushed in or out a little (by where they are, so
@@ -360,7 +375,46 @@ export const canopyGeo = (() => {
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
   return geo;
 })();
-const canopyRange = (geo, k) => (k.treeDetail ? geo.setDrawRange(0, CANOPY_HI) : geo.setDrawRange(CANOPY_HI, Infinity));
+// A pine's tier, in place of a plain cone (its tip where the cone's was, as wide, 1):
+// round from the tip down a steep top to a shoulder, out over a flatter, drooping
+// skirt to the rim, and back in under it, hollow, to the trunk. Its rim
+// serrated (tips out and down, notches in and up) where the tier's
+// treeDetail is on: ten sides, 60 triangles; else seven, plain, 28 (by draw
+// range, as the round canopy). Flat-shaded; the tree hook lights the rim and
+// shades the underside by where a vertex is (hookTree).
+// (each profile: [radius, y] from the tip down, and a rim's [radius, y] for notches)
+const pineTier = (n, profile, notch) => {
+  const rings = profile.map(([r, y], k) => Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    const [rr, yy] = notch && k === notch.ring && i % 2 ? notch.at : [r, y];
+    return [Math.cos(a) * rr, yy, Math.sin(a) * rr];
+  }));
+  const pos = [];
+  for (let k = 0; k + 1 < rings.length; k++) {
+    const P = rings[k];
+    const Q = rings[k + 1];
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      if (profile[k][0] > 0) pos.push(...P[i], ...P[j], ...Q[j]);
+      if (profile[k + 1][0] > 0) pos.push(...P[i], ...Q[j], ...Q[i]);
+    }
+  }
+  return pos;
+};
+const PINE_HI = pineTier(10, [[0, 0.7], [0.45, -0.05], [1, -0.5], [0.3, -0.3], [0, -0.24]], { ring: 2, at: [0.8, -0.36] }).length / 3;
+export const pineGeo = (() => {
+  const pos = [
+    ...pineTier(10, [[0, 0.7], [0.45, -0.05], [1, -0.5], [0.3, -0.3], [0, -0.24]], { ring: 2, at: [0.8, -0.36] }),
+    ...pineTier(7, [[0, 0.7], [0.45, -0.05], [1, -0.46], [0, -0.3]]),
+  ];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals(); // (not indexed: each face's own)
+  geo.userData.hi = PINE_HI;
+  return geo;
+})();
+canopyGeo.userData.hi = CANOPY_HI;
+const canopyRange = (geo, k) => (k.treeDetail ? geo.setDrawRange(0, geo.userData.hi) : geo.setDrawRange(geo.userData.hi, Infinity));
 const canopies = new Set(); // (each world's copies of it: makeInstancer)
 onApply((k) => canopies.forEach((geo) => canopyRange(geo, k)));
 export const rockGeo = new THREE.DodecahedronGeometry(1, 0);
@@ -912,6 +966,27 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // same for everyone on the island, which is how a lobby names a tree.
   const trees = [];
 
+  // The floor under a standing tree's canopy (the ground's vertices and the
+  // grass tufts' colors, on every tier alike): darker and cooler toward the
+  // trunk, as the canopy shuts out the sky, broken by dappled patches where
+  // the sun gets through. It follows the trees: a felled one's goes with it
+  // (and a growing one's comes once it stands), a giant's is wider, and one
+  // that grows back elsewhere takes it along (drawTree marks, shadeCanopy
+  // does it, each frame, for what changed).
+  const groundTiles = new Map(); // "gx,gz" -> { chunk, first }: the ground's 5x5 vertices of a tile (below)
+  const canopyAt = new Map(); // tree -> [x, z, reach] it shades now, or null
+  const canopyDirty = []; // [x, z, reach]: spots to shade again
+  const canopyOf = (tree) => (tree.state === 'down' || tree.state === 'growing' ? null
+    : [tree.x, tree.z, (tree.kind === 'pine' ? 1.6 : 1.9) * tree.scale * tree.big]);
+  function markCanopy(tree) {
+    const now = canopyOf(tree);
+    const was = canopyAt.get(tree) ?? null;
+    if (String(now) === String(was)) return;
+    if (was) canopyDirty.push(was);
+    if (now) canopyDirty.push(now);
+    canopyAt.set(tree, now);
+  }
+
   // One of wilds.trees (shared/wilds.js): kind 'pine' | 'round', scale its
   // size, look what its details are drawn from (the same on every page).
   // A map may dress its trees and bushes in its own leaves (a season, say)
@@ -929,6 +1004,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const drawTree = (tree) => {
     treeDecor.show(tree.group, tree.parts, tree.state !== 'down');
     treeDecor.show(tree.stump, tree.stumpParts, tree.stumpUp);
+    markCanopy(tree);
   };
   function addTree({ x, z, kind, scale, look, sites }) {
     const lr = mulberry32(look);
@@ -944,9 +1020,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       // Pine: stacked cones
       const leaf = pickOwn(needles);
       addDecor(trunkGeo, trunkMat, 0, 0, 0, 1, 1.1, 1, tree);
-      addDecor(coneGeo, leaf, 0, 1.3, 0, 1.05, 1, 1.05, tree);
-      addDecor(coneGeo, leaf, 0, 2.0, 0, 0.8, 0.9, 0.8, tree);
-      addDecor(coneGeo, leaf, 0, 2.6, 0, 0.55, 0.8, 0.55, tree);
+      addDecor(pineGeo, leaf, 0, 1.3, 0, 1.05, 1, 1.05, tree);
+      addDecor(pineGeo, leaf, 0, 2.0, 0, 0.8, 0.9, 0.8, tree).rotation.y = 0.33; // (each tier's tips between the last's)
+      addDecor(pineGeo, leaf, 0, 2.6, 0, 0.55, 0.8, 0.55, tree).rotation.y = 0.9;
     } else {
       // Round tree: a cluster of soft leafy blobs
       const leaf = pickOwn(leaves);
@@ -1160,6 +1236,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], index: [] });
       const { pos, col, kind: kindOf, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
+      groundTiles.set(key, { chunk: chunks.get(chunkKey), first });
       const lip = lipColors.get(key);
       for (let i = 0; i < 5; i++) {
         for (let j = 0; j < 5; j++) {
@@ -1200,13 +1277,15 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
       if (type === 'stone') slabs.push([gx, gz, floor]);
     }
-    for (const { pos, col, kind, index } of chunks.values()) {
+    for (const chunk of chunks.values()) {
+      const { pos, col, kind, index } = chunk;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       geo.setAttribute('gfxKind', new THREE.Uint8BufferAttribute(kind, 4, true)); // (src/gfx/ground.js)
       geo.setIndex(index);
+      chunk.geo = geo; // (for its shade under the trees: shadeCanopy)
       const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
       ground.receiveShadow = true;
       root.add(ground);
@@ -1230,6 +1309,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       stones.setColorAt(i, color);
     });
     root.add(stones);
+
+    // (the shade under the trees standing now: The floor under a canopy)
+    shadeCanopy();
 
     // ---------- The cliffs ----------
     // Down every side of a tile that the sea or a lower floor is next to: a
@@ -1723,6 +1805,70 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
       drawTree(tree);
     }
+    shadeCanopy();
+  }
+
+  // The floor under a canopy, shaded again where canopyDirty says: each
+  // ground vertex and grass tuft there, from its own color (kept the first
+  // time), by the canopies over it now
+  function shadeCanopy() {
+    if (!canopyDirty.length || !groundTiles.size) return;
+    const CANOPY_CELL = 4;
+    const UNDER_CANOPY = [0.5, 0.42, 0.24]; // (how much darker, r g b, right under one: cooler)
+    const smooth = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
+    const cells = new Map(); // "cx,cz" -> the spots reaching into it
+    for (const spot of canopyAt.values()) {
+      if (!spot) continue;
+      const [x, z, reach] = spot;
+      for (let cx = Math.floor((x - reach) / CANOPY_CELL); cx <= Math.floor((x + reach) / CANOPY_CELL); cx++) {
+        for (let cz = Math.floor((z - reach) / CANOPY_CELL); cz <= Math.floor((z + reach) / CANOPY_CELL); cz++) {
+          const key = `${cx},${cz}`;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push(spot);
+        }
+      }
+    }
+    // how far under a canopy (x, z) is, 0..1, with a dapple of sun
+    const under = (x, z) => {
+      let u = 0;
+      for (const [sx, sz, reach] of cells.get(`${Math.floor(x / CANOPY_CELL)},${Math.floor(z / CANOPY_CELL)}`) ?? []) {
+        const d = Math.hypot(x - sx, z - sz) / reach;
+        if (d < 1) u = Math.max(u, 1 - smooth(0.3, 1, d));
+      }
+      if (!u) return 0;
+      const dapple = 0.5 + 0.5 * Math.sin(x * 1.9 + z * 0.7) * Math.sin(z * 1.6 - x * 0.9 + 1.3);
+      return u * (1 - 0.55 * smooth(0.55, 0.9, dapple));
+    };
+    const touched = new Set();
+    for (const [x, z, reach] of canopyDirty.splice(0)) {
+      for (let gx = Math.floor(x - reach - 1); gx <= Math.ceil(x + reach + 1); gx++) {
+        for (let gz = Math.floor(z - reach - 1); gz <= Math.ceil(z + reach + 1); gz++) {
+          const key = `${gx},${gz}`;
+          const tile = groundTiles.get(key);
+          if (tile?.chunk.geo) {
+            const { geo } = tile.chunk;
+            const p = geo.attributes.position.array;
+            const col = geo.attributes.color;
+            const base = (geo.userData.canopyBase ??= col.array.slice());
+            for (let i = tile.first * 3; i < (tile.first + 25) * 3; i += 3) {
+              const u = under(p[i], p[i + 2]);
+              for (let k = 0; k < 3; k++) col.array[i + k] = base[i + k] * (1 - u * UNDER_CANOPY[k]);
+            }
+            touched.add(col);
+          }
+          for (const { mesh, index } of foliageByTile.get(key) ?? []) {
+            const col = mesh.instanceColor;
+            if (!col) continue;
+            const base = (mesh.userData.canopyBase ??= col.array.slice());
+            const m = mesh.instanceMatrix.array;
+            const u = under(m[index * 16 + 12], m[index * 16 + 14]);
+            for (let k = 0; k < 3; k++) col.array[index * 3 + k] = base[index * 3 + k] * (1 - u * UNDER_CANOPY[k] * 0.9);
+            touched.add(col);
+          }
+        }
+      }
+    }
+    for (const col of touched) col.needsUpdate = true;
   }
 
   const _eye = new THREE.Vector3();

@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 21 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 22 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -25,6 +25,7 @@ Current phase: 21 (polish rounds: `phases/19-polish-rounds.md`)
 - 19+ polish rounds (`phases/19-polish-rounds.md`)
 - [x] 19 Night figures
 - [x] 20 Golden hour
+- [x] 21 Forest light
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -47,7 +48,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- The day's sun dips to ~16° at 18:30 (`daynight.js` `apply()`: `0.22 + 0.78 * sin` by day; the moon's path as it was), so evenings and mornings (plaza-morning ~27° from ~30°) throw longer shadows; the shadow box still covers them.
-- The sunset key is now at 18.5 (the shot's hour): a golden sun at 2.3, a lavender sky light; the shade tint (`uniforms.js` `light()`) and the grade's sky lean (`post.js` `skyTintLow`) follow a low sun.
-- The pond (`water.js` `dusk`) mirrors more sky round a low sun, leaning from the dim zenith to the warm horizon: peach into mauve; the sea gets a little (0.15), the shallows none.
-- Weakest now: forest-noon. The pines are dark, flat cones on a uniform green floor with no dappled light or depth; it reads the plainest of the day shots.
+- Pines are `pineGeo` tiers (`world.js`: serrated, flatter skirt, hollow underside; 60 tris hi / 28 lo by draw range like `canopyGeo`); the tree hook's `vCanopyShade` is now a vec4 tint (rgb) plus a shadow lift (a) that `light.js` applies under `GFX_SHADOW_LIFT`, since a pine's tiers shade each other at noon.
+- The floor under standing trees is shaded on the CPU (`shadeCanopy` in `world.js`: ground vertex colors and tuft instance colors, from their kept base), re-run for what `drawTree` marks, so it follows fell/regrow/giant; cliff lips keep their own colors.
+- Cloud shadows a touch deeper in clear weather (`light.js`: `mix(0.8, 0.38, uCloudAmount)`). plaza-noon +25k triangles, calls and programs as before.
+- Weakest now: rain-noon. It reads as plaza-noon with a grey veil: no wet sheen on the paving, no puddles or darker damp ground, the rain streaks barely show, and the light is as flat as noon's.
