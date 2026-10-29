@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 43 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 44 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -55,6 +55,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 40 The beach from the low camera
 - [x] 41 A moonlit night with depth
 - [x] 42 Noon light with depth
+- [x] 43 The autumn island
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -77,9 +78,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Noon has its own near/far: `gfxDay()` in `src/gfx/atmos.js` (sun above ~33 degrees, clear, by day, in the open; 0 at 8:00, 18:30, rain, night, underground), so the other hours are unchanged (contact sheet checked).
-- Near field (`src/gfx/light.js`): DAY_FILL 0.38 of the sky's fill cut near (shade most), NOON_GLSL makes near colors 22% richer and 10% deeper, the sky's light a little less blue by day; carpet roots 0.28 deeper (`src/world.js`).
-- Far field: the haze held back to the middle distance (start +0.45 fog-nears) and lifting into a pale blue-green (the horizon's luma times 0.92/1.06/1.0); the mid grass no longer washed blue.
-- Cloud shadows had very soft edges (25-unit blur) so they never read at noon: at a clear noon each patch is crisper (edge width x0.25), a little lighter (x0.8) and covers a little more; the plaza's start view sits half under one (lower left). A warm noon rim on grass tips and crown tops (`vGfxSunGlow`); near round crowns darker at night (`night-lamps` bush, about -27%).
-- Still front-lit at noon: the sun stands behind the camera (sunDir z +0.45, x near 0), so crowns light flat and their shadows fall behind them; a midday side light (`src/daynight.js`, keyed to the high sun) would model them. Programs read 46-48 between runs with the same code (drift).
-- Weakest shot now: lobby (high, noon on a wild autumn island, untouched since the big gaps): its near crowns are dull olive blobs, the autumn colors flat and even, the path and stones without shadow or depth.
+- Autumn crowns: a palette per wild theme (`THEMES.autumn.palette` in `src/maps.js`: reds, oranges, golds, two greens), picked per round tree and bush by `hash2` of where it stands and carried in the instance tint (`leafTint` in `src/world.js`: palette over the leaf material's color), so no new materials, draws or programs.
+- `hookTree`'s fragment: a warm crown (r over g) gets a deeper, redder shade and a golden lit top instead of the greens' cool blue-green, and far off its fire pales toward the haze (0.45 from 0.7 to 1.5 fog-nears); greens and the blossom pink untouched. Autumn grass a touch more golden (hue 0.13-0.2).
+- Midday side light (`MIDDAY_SIDE` 0.42 in `src/daynight.js`, 9:30-16:30, none at 8:00 or 18:30): the noon sun stands off to the east, so crowns light on one side and shadows fall aside (stones, trees, platforms), on every island; plaza-noon calls dropped about 130 (the shadow pass culls differently).
+- The lobby already went through every base hook (gfxDay near/far, carpet, detail, cloud and sun shadows): its flat look was the front light, which the side light fixes.
+- Weakest shot now: dungeon (high, last polished in round 23): one flat, even warm-brown room in the wide view, the torchlight with no pools of light and dark between, the floor boards and walls without depth or shadow, against the references' lit-and-shaded interiors.

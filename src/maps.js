@@ -134,9 +134,17 @@ const THEMES = {
     flowers: [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff6b4a, 0x7ec8ff],
   },
   autumn: {
-    tiles: { grass: 0x86973c, moss: 0x5a6530, meadow: 0xa9aa4c },
-    hue: [0.15, 0.22], // the grass is turning
+    tiles: { grass: 0x8a923a, moss: 0x5c6330, meadow: 0xaca64a },
+    hue: [0.13, 0.2], // the grass is turning, golden
     leaves: [0xd9822b, 0xc4502b, 0xe3a832, 0x9e8a34],
+    // (and each tree and bush its own color, by where it stands: a riot of
+    // reds, oranges and golds, a few still green: src/world.js leafTint)
+    palette: [
+      0xc23a22, 0xd8482a, 0xa8321f, // reds, scarlet, a deep crimson
+      0xe0642a, 0xe8822c, 0xd8702a, 0xf09a30, // oranges
+      0xf0b232, 0xf2c23c, 0xe6a42a, 0xe8b83a, // golds, amber
+      0x86a238, 0x5f9a3c, // a few still green
+    ],
     flowers: [0xffe14d, 0xff9f1c, 0xff6b4a, 0xffffff, 0xd8452f],
   },
   blossom: {
@@ -204,6 +212,7 @@ export function wildMap(island) {
     },
     flowerColors: theme.flowers,
     leafMats: leavesOf(island.theme),
+    leafPalette: theme.palette,
     // Rock steps, solid down to the ground, with moss on top
     platforms: island.terraces.map(([x, z, w, d, top], i) => ({
       x, y: top / 2, z, w, h: top, d, color: [0x8a857b, 0x7d786f, 0x918b80, 0x86817a][i % 4], cap: 'moss',
