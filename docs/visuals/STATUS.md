@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 17 (`phases/17-detail-nature.md`)
+Current phase: 18 (`phases/18-detail-characters.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -20,7 +20,7 @@ Current phase: 17 (`phases/17-detail-nature.md`)
 - [x] 14 Ambience
 - [x] 15 Perf and polish
 - [x] 16 Surface detail: built things and buildings
-- [ ] 17 Surface detail: nature
+- [x] 17 Surface detail: nature
 - [ ] 18 Surface detail: characters, animals and held things
 - 19+ polish rounds (`phases/19-polish-rounds.md`)
 
@@ -45,7 +45,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- The `detail` hook (`src/gfx/detail.js`): `detail(material, look?, name?)`, looks in `LOOKS` (wood, plank, stone, brick, cobble, thatch, tile, cloth, metal, plaster, endgrain) as the uniform `gfxDetailLook`, so every look is one program (plaza-noon 46 programs, lobby 88; calls unchanged).
-- Look by `userData.gfx.detail`, else the name (`BY_NAME`, `PLAIN` keeps leaves, rock, grass, water plain for phase 17), else the color (`defaultLook`). To add one: a name in `LOOKS`, a branch in `FRAGMENT`, a pattern in `BY_NAME`.
-- Frame: the piece's own (object space times its scale), so blocks and boards fit a part and grain runs along its long side; baked homes carry it per vertex (`bakeDetail`, 'detail:baked'), the dungeon per instance (`gfxLook`, 'detail:instanced', `add(geo, 'matte:stone', ...)`).
-- For nature (17): add looks (bark, rock, leaf...) the same way and take `rock|grass|leaf...` out of `PLAIN`; world-space-continuous surfaces (cliffs, ground) stay on `groundDetail`.
+- New looks in `src/gfx/detail.js`: bark, rock, soil, leaf, crop, reed, fern (a second program family, hook key 'detail:nature', so built things' shaders stay as small; `familyOf(look)`); plaza-noon 50 programs, lobby 91. `PLAIN` keeps only grass, flowers, water, food and light; leaf/hedge/moss, rock, soil/earth, reed, fern match by name.
+- Nature helpers in the head of `FRAGMENT_NATURE`: `dHt`/`dHRel` (height up the piece), `dFace` (1 facing up), `dQ` (a seamless place over round pieces) and one shared Voronoi `dVc`. For 18, fur, wool and cloth on round bodies want `dQ`/`dHRel` (darker belly, lighter back); leather can reuse rock's cell tint without the cracks; a third family ('detail:living') keeps each program small.
+- Cliffs (`ground:cliff`) read `gfxCliff` per vertex (metres under the lip, over the water: moss tongues, wet band); sand ripples across the wind (0.92, 0.38), as the shallows' sandy floor (`src/gfx/water.js`).
+- Startup in SwiftShader is near the 8 s fetch timeout (src/net/farm.js): bigger shaders pushed the farm's open past it and the page lost its account; a timed-out answer now throws instead of wiping it. Keep 18's shaders lean.
