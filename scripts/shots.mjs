@@ -1,4 +1,4 @@
-// `npm run shots -- [--tier low|medium|high] [--check]`: twelve fixed screenshots
+// `npm run shots -- [--tier low|medium|high] [--check]`: fourteen fixed screenshots
 // of the game at full graphics, to judge its look by (docs/visuals/), with
 // what the renderer drew for each, and a contact sheet of them all:
 //
@@ -18,6 +18,8 @@
 // a full frame takes a few seconds.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { weatherAt } from '../shared/weather.js';
+import { BOSS_IDS, arenaStart } from '../shared/bosses.js';
+import { dungeonStart } from '../shared/dungeons.js';
 import { logger, startDev, launch, openFarm } from './lib/page.mjs';
 
 const OUT = 'shots';
@@ -56,6 +58,8 @@ const SHOTS = [
     g.__restoreWeather = () => (g.weather.update = update);
   }],
   ['dungeon', (g) => (g.warp('dungeon'), g.dayNight.setTime(12), g.step(2))], // (the dark settles in: the light goes underground over a second or so)
+  ['foes', (g, { foesAt }) => (g.warp(foesAt), g.dayNight.setTime(12), g.step(2))], // (the bog's first room: its frogs awake and coming on)
+  ['boss', (g, { bossAt }) => (g.warp(bossAt), g.dayNight.setTime(12), g.step(3))], // (the lion's hall, a few steps in: it wakes as we come)
   ['split-2', async (g) => {
     g.warp('plaza');
     g.dayNight.setTime(12);
@@ -88,7 +92,7 @@ let exitCode = 0;
 
 // set the scene, step, draw once, screenshot, count
 async function shoot(page, name, set) {
-  await page.evaluate(`(async (g, ctx) => { await (${set.toString()})(g, ctx); })(window.__game, ${JSON.stringify({ rainy })})`);
+  await page.evaluate(`(async (g, ctx) => { await (${set.toString()})(g, ctx); })(window.__game, ${JSON.stringify({ rainy, foesAt: dungeonStart(BOSS_IDS[4]), bossAt: { ...arenaStart(BOSS_IDS[1]), z: arenaStart(BOSS_IDS[1]).z - 3 } })})`);
   stats[name] = await page.evaluate(() => {
     const g = window.__game;
     g.step(0.5);

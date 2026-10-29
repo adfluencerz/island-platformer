@@ -51,6 +51,7 @@ export async function openFarm(browser, { query = '', full = false, size = [480,
   const opening = full ? { width: Math.min(width, 480), height: Math.min(height, 320) } : { width, height };
   const context = await browser.newContext({ viewport: opening, ...(touch && { hasTouch: true, isMobile: true }), ...(existsSync(STATE) && { storageState: STATE }) });
   const page = await context.newPage();
+  page.setDefaultTimeout(300000); page.setDefaultNavigationTimeout(300000); // LOCAL-R53
   if (touch) await page.exposeFunction('__tap', (x, y) => page.touchscreen.tap(x, y));
   // Full graphics without a GPU: a frame takes a second or more, and the title
   // screen drawing them back to back starves the page, so the farm's login
