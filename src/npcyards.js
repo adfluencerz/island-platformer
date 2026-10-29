@@ -23,7 +23,9 @@ const pole = (g, [x, z], h, material = darkWoodMat, w = 0.1) => part(g, box, mat
 function lantern(g, glows, [x, y, z], size = 2) {
   part(g, box, lanternMat, [x, y, z], [0.2, 0.26, 0.2]).castShadow = false;
   part(g, cone, ironMat, [x, y + 0.2, z], [0.16, 0.1, 0.16]);
-  glows.push(glowSprite(g, [x, y, z + 0.15], size));
+  const glow = glowSprite(g, [x, y, z + 0.15], size);
+  glow.userData.lamp = true; // (it lights what is round it too, at night: src/npchomes.js lamps)
+  glows.push(glow);
 }
 // A chair at [x, z] facing yaw
 function chair(g, [x, z], yaw, color = 0xa0682f) {

@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 19 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 20 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -23,6 +23,7 @@ Current phase: 19 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 17 Surface detail: nature
 - [x] 18 Surface detail: characters, animals and held things
 - 19+ polish rounds (`phases/19-polish-rounds.md`)
+- [x] 19 Night figures
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -45,7 +46,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- A third family, 'detail:living' (`src/gfx/detail.js`): skin, hair, garment, straw, leather, fur, wool, horn, tool; no seed (it moves), patterns on `dQ`/`dR` (soft, seamless) and `dW` (the face's nearest plane: cells, strokes). plaza-noon 51 programs, lobby 93; `detailLiving(table)` paints a mount's or a boss's table by name.
-- Farmers' cloth canvases are 64-128 px, thread by thread; cloth, twill and knit use `repeat` 0.25 (four tiles a picture). Garment seams sit at z = 0 of each part's frame; worn patches 0.25 under a limb's pivot.
-- What reads from the play camera is only what is 8 cm or bigger (a farmer is ~60 px in plaza-morning): the straw braid, the denim's streaks, wool curls, fur strokes; finer detail shows only zoomed in.
-- Weakest against the references: night-lamps (Mabel and the farmer are dark smudges under the lamps; the people want more of the rim or a lamp-lit warmth) and the farmers' pale halo of rim on dark hair.
+- The neighbours' yard lanterns (`npchomes.js` `npcHomes.lamps`, 0.4 m off their wall) share build.js's 6 pooled lamp lights (`addLamps`), decay 1.25, reach 10: no new lights; Mabel is now lit warm from her lantern.
+- The rim (`character.js`) is scaled by the surface's own color (`0.2 + 1.6 * diffuseColor`, per channel): no halo on dark hair, any time of day; at night it is 1.8x (main.js `lightFarmers`).
+- Moonlit darks go grey-blue, not grey (`MOON` in `gfx/light.js`, used by the grade and the low tier's night grey); lamp-lit parts keep their warmth.
+- The player's own night glow (10, reach 14) still makes the biggest warm wash round the farmer; shrink it if a later round wants lamp pools to stand out more.
+- Weakest now: lake-sunset. The lake reads as a dull brown-green pond and the light is flat: no golden-hour warmth on the grass, no warm sky in the water.

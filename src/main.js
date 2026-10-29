@@ -2765,6 +2765,7 @@ function steer(dt) {
 // down gives back what it cost. Esc or Done ends it. On a farm with helpers
 // the room says yes (BUILT) or no (FARM_DENY: it goes, and the cost comes back).
 const buildings = createBuildings(worlds.home);
+buildings.addLamps(npcHomes.lamps); // (the neighbours' lanterns light the ground round them at night too)
 
 // ---------- The house ----------
 // Built in build mode (the house piece, one to a farm, 5 tiles by 4). E at
@@ -5645,7 +5646,7 @@ function updateWorld(dt) {
   npcHomes.setNight(dayNight.night());
   houseRoom.update(t, farmersHere().map((seat) => seat.player.position));
   seasons.frame(dt, { home: place !== 'lobby', focus: indoors() || cave.k > 0.5 ? null : player.position });
-  lightFarmers(hemi.color, 0.3 * hemi.intensity); // (their edges catch the sky's light)
+  lightFarmers(hemi.color, 0.3 * hemi.intensity * (1 + 0.8 * gfx.U.uNight.value * (1 - gfx.U.uUnder.value))); // (their edges catch the sky's light; more of the moon's, so they read against the dark)
   if (place !== 'lobby') {
     animals.update(dt, t, {
       hours: farmHours(),

@@ -4,6 +4,7 @@ import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { U } from './uniforms.js';
+import { MOON } from './light.js';
 
 // ---------- Post-processing: bloom, a color grade, anti-aliasing ----------
 // On medium and high (the tier's `post` knob, src/gfx/quality.js); low draws
@@ -159,8 +160,9 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     void main() {
       vec4 col = texture2D(tDiffuse, vUv);
       float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-      float sat = uSaturation * mix(1.0, uNightSaturation, uNight * (1.0 - smoothstep(0.25, 0.7, luma))); // (dark: by moonlight)
-      col.rgb = max(mix(vec3(luma), col.rgb, sat), 0.0) * uTint;
+      float moonlit = uNight * (1.0 - smoothstep(0.25, 0.7, luma)); // (dark: by moonlight, grey-blue; what a lamp lights keeps its color)
+      float sat = uSaturation * mix(1.0, uNightSaturation, moonlit);
+      col.rgb = max(mix(luma * mix(vec3(1.0), vec3(${MOON}), moonlit), col.rgb, sat), 0.0) * uTint;
       // the vignette, round the view this pixel is in
       vec4 part = uSeats[0];
       for (int i = 1; i < ${MAX_SEATS}; i++) {

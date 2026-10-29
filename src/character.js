@@ -62,7 +62,9 @@ export const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
 // overhead camera. main.js keeps it with the time of day (lightFarmers): the
 // sky's color, warmed a little toward the sun's, so it reads as light on them
 // and not as a blue haze. A narrow band right at the silhouette (tuned under
-// the tone mapping and the wrap light: src/gfx/tonemap.js, light.js).
+// the tone mapping and the wrap light: src/gfx/tonemap.js, light.js). As
+// much as the surface would give back (its own color, lifted): light cloth
+// and skin keep it all, dark hair only a faint edge, not a pale halo.
 const RIM = { warm: new THREE.Color(1, 0.9, 0.76), warmth: 0.45, from: 0.35 };
 const rim = { value: new THREE.Color(0.12, 0.12, 0.12) };
 const _warm = new THREE.Color();
@@ -75,7 +77,7 @@ function rimShader(shader) {
   shader.uniforms.uFarmerRim = rim;
   shader.fragmentShader = 'uniform vec3 uFarmerRim;\n' + patch(shader.fragmentShader, 'emissivemap_fragment', `
     float farmerEdge = smoothstep(${RIM.from.toFixed(2)}, 1.0, 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0));
-    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge);`, 'GFX_RIM');
+    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge) * min(vec3(1.0), 0.2 + 1.6 * diffuseColor.rgb);`, 'GFX_RIM');
 }
 // The rim on a lit material (the same for all: one shader program a kind of material)
 export const rimmed = (m) => hook(m, 'rim', rimShader);
