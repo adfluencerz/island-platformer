@@ -29,8 +29,9 @@ export const TIER_NAMES = ['low', 'medium', 'high'];
 // (src/world.js); grassSpread: each tuft that much wider (fewer tufts still
 // cover the ground: medium's; and the carpet's blades that much wider);
 // carpet: the share of the grass carpet's blades drawn round the camera
-// (src/world.js makeCarpet; 0: none, the tufts instead); treeDetail: 1 for round trees' canopies of 80 triangles a
-// blob, 0 for 20 (src/world.js canopyGeo); treeSway: canopies sway in the
+// (src/world.js makeCarpet; 0: none, the tufts instead); treeDetail: 1 for the
+// near level of the trees' canopies, pines, rocks and bushes near the view, 0
+// for the far level everywhere (src/world.js levels); treeSway: canopies sway in the
 // wind; msaa: samples in the post chain; particles: rain and snow; outline: a thin dark
 // edge round the farmers and the neighbours (src/character.js); detailGain:
 // the ground's painted detail that much stronger (src/gfx/ground.js: medium's,

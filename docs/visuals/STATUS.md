@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 34 (big gap: `phases/34-soft-forms.md`)
+Current phase: 35 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -45,7 +45,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 31 Smooth painterly shading (big gap 1)
 - [x] 32 Camera: a lower, wider view (big gap 2)
 - [x] 33 Grass as a carpet (big gap 3)
-- [ ] 34 Trees, rocks and bushes reshaped (big gap 4)
+- [x] 34 Trees, rocks and bushes reshaped (big gap 4)
 - 35+ polish rounds again
 
 ## Baseline (phase 0)
@@ -69,8 +69,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Carpet (`src/world.js` makeCarpet, hook 'carpet'): high and medium draw no tufts; each grass tile in view is an instance of one 96-blade cell (turned one of 8 ways), put in by the CPU in viewFrom (given the camera: frustum, rings, rebuilt when the camera moves half a step or turns), in 3 meshes by share (1, 0.5, 0.25): 3 calls. No rng: fingerprints untouched. Low keeps the tufts.
-- Root color = the ground's vertex colors at the tile's corners (canopy shade included); tips x1.3 warmer; 10 % dark, 10 % pale. Rings uCarpetFar = grass rings x1.15, at most 26/40. Ground (`gfx/ground.js` tiles): darker under it near, x1.05 past it.
-- Wind: gusts + a slow 19 m wave + per-blade shimmer; uPlayers is now 8 pushers (farmers' feet, then the 4 animals nearest, w = radius). Tilling/building clears whole tiles (hidden), and thins the edges round them; ninths of a tile blocked by colliders/trunks (isOpenGround, asked lazily).
-- Flowers lift 0.2 m on carpet tiers (stems longer). The farm's carpetMat (maps.js) gets the seasons' grass color and snow sink.
-- Budget left (plaza-noon / phones): high 756 calls / 709k tris of 850 / 1M; medium 747 / 615k of 700k, phone 603 / 464k, phone-forest-dusk 459k; low unchanged (378 / 354k).
+- Soft forms (`src/world.js` softBall/lobed/levels): a round tree is one canopy, a cloud of 11 lobes melted by a soft max (near 500 tris, far 80), turned, tipped and stretched by hash2 of where it stands; pines 3 skirts (4 on 30 %) with a drooping scalloped rim and a rolled lip (80 / 28 a tier); rocks a ball cut by 7 soft planes, flat under (180 / 20); bushes one 4-lobe clump (180 / 20); the berry bush too. No rng change: fingerprints untouched.
+- Every decor geometry with a far level (userData.hi) is in `canopies`: far past canopyFar and on low (treeDetail 0); and its shadow always draws the far level (onBeforeShadow/onAfterShadow in makeInstancer): that is what pays for the near detail.
+- Crown shading: crownBump reads lobes (0.82..1.06 out) and darkens creases more (0.76 + 0.38); pink leaves (blossom) lose most of the yellow crown warmth and get white petal specks and a paler top in the 'leaf' detail look.
+- Budget now (plaza-noon / phones): high 756 calls / 751k tris; medium 701 / 652k of 700k, phone 574 / 502k, phone-forest-dusk 488k; low 362 / 351k.
+- Weakest shot now: phone-forest-dusk: the round trees read as soft balls on a stick (lobes show only at the outline; trunk long under a dark underside), and the far ones in the haze still look like mushroom caps; BotW's crowns sit lower and show lit clumps inside the outline.

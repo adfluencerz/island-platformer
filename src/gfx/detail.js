@@ -411,7 +411,12 @@ const FRAGMENT_NATURE = /* glsl */ `
     float lFine = (gfxNoise(dQ * 9.0 + dOff) - 0.5) * gfxShow(9.0, dQPx);
     dK *= mix(0.92, lClump, lShow) * (0.9 + 0.2 * gfxNoise(dQ * 1.3 + dOff.yx)) * (1.0 + 0.16 * lFine);
     float lDapple = smoothstep(0.55, 0.8, gfxNoise(dQ * 4.2 + dOff * 1.3)) * lTop * gfxShow(4.2, dQPx * 0.5);
-    dCol *= mix(vec3(1.0), vec3(1.18, 1.22, 0.86), lDapple * 0.8 + lTop * 0.25);
+    // (a blossom's pink, not the dapples' yellow: paler to its top, and a
+    // few white petals specked over it)
+    float lPink = clamp((dCol.r - dCol.g) * 5.0, 0.0, 1.0) * clamp((dCol.b - dCol.g) * 8.0 + 0.5, 0.0, 1.0);
+    dCol *= mix(mix(vec3(1.0), vec3(1.18, 1.22, 0.86), lDapple * 0.8 + lTop * 0.25), vec3(1.0 + 0.16 * lTop), lPink);
+    float lPetal = smoothstep(0.8, 0.94, gfxNoise(dQ * 11.0 + dOff.yx * 1.7)) * gfxShow(11.0, dQPx) * lPink;
+    dCol = mix(dCol, vec3(max(dCol.r, 0.85)) * vec3(1.0, 0.95, 0.97), lPetal * 0.75);
   } else if (dLook > 15.5 && dLook < 16.5) {
     // crop: a leaf's pale midrib and side veins, lighter to the tip; a
     // fruit's blush low down and a fine speckle
