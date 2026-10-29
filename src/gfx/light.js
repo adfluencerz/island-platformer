@@ -77,6 +77,7 @@ export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCl
 const DUSK_FILL = '0.55'; // (how much of the sky's light the near field loses at dusk, in the shade)
 const MORNING_FILL = '0.5'; // (and in the misty morning)
 const RAIN_FILL = '0.5'; // (and in the rain, in the shade or not: the overcast's flat light)
+const NIGHT_FILL = '0.6'; // (and on a moonlit night, in the moon's shade most: the near field dark and rich, the moon's key and rim reading on it)
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -151,7 +152,8 @@ export function lightChunks() {
             // (in the rain the overcast's flat light: less of it near the camera
             // whatever the sun, so the wet foreground is dark and rich and the sheen reads on it)
             float gfxNearRain = gfxRain() * ( 1.0 - smoothstep( 0.6, 2.0, vFogDepth / max( fogNear, 1e-3 ) ) );
-            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * gfxNearShade - ${MORNING_FILL} * gfxMorn - ${RAIN_FILL} * gfxNearRain;
+            float gfxNearNight = gfxNight() * ( 1.0 - smoothstep( 0.6, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.4 * gfxSunLit );
+            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * gfxNearShade - ${MORNING_FILL} * gfxMorn - ${RAIN_FILL} * gfxNearRain - ${NIGHT_FILL} * gfxNearNight;
             irradiance *= mix( vec3( 1.0 ), vec3( 0.9, 0.98, 1.12 ), gfxMorn );
             irradiance *= mix( vec3( 1.0 ), vec3( 0.96, 1.04, 0.78 ), gfxNearRain ); // (and less blue: the wet greens deep, not teal)
           #endif
