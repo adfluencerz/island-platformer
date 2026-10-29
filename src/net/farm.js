@@ -61,7 +61,12 @@ export async function call(method, path, { body = {}, farm = null, leaving = fal
   const res = await fetch(path, { method, headers, body: JSON.stringify(body), keepalive: leaving, signal: leaving ? undefined : AbortSignal.timeout(8000) });
   // (a page served without the game server behind it answers /api with itself)
   if (!res.headers.get('content-type')?.startsWith('application/json')) throw new Error(NO_SERVER);
-  const out = await res.json().catch(() => ({}));
+  // (an answer cut off by the timeout, the page too busy to read it in time,
+  // is no answer: not an empty one, which would wipe the account off this farm)
+  const out = await res.json().catch((e) => {
+    if (e?.name === 'AbortError' || e?.name === 'TimeoutError') throw e;
+    return {};
+  });
   if (!res.ok) throw Object.assign(new Error(out.error || `HTTP ${res.status}`), { status: res.status });
   return out;
 }

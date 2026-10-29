@@ -6,6 +6,7 @@ import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { use } from './gfx/uniforms.js';
 import { groundDetail } from './gfx/ground.js';
+import { detail } from './gfx/detail.js';
 import { waterLook } from './gfx/water.js';
 import { knobs, onApply } from './gfx/quality.js';
 
@@ -329,7 +330,7 @@ export const foliageMat = (color) => new THREE.MeshStandardMaterial({ color, rou
 const trunkMat = foliageMat(0x6b4423);
 export const leafMats = [0x3f8a3a, 0x4f9e3c, 0x2f7a45, 0x5aa83f].map(foliageMat);
 export const pineMats = [0x2c6b3f, 0x24603a, 0x34784a].map(foliageMat);
-export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map(foliageMat);
+export const rockMats = [0x8d8d88, 0x7a7a76, 0x9e9a90].map((c) => detail(foliageMat(c), 'rock')); // (cracks, lichen, moss low down: src/gfx/detail.js)
 
 const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1, 6, 1, true).translate(0, 0.5, 0); // (no ends: in the canopy, and in the ground)
 export const coneGeo = new THREE.ConeGeometry(1, 1.4, 7);
@@ -455,7 +456,7 @@ const TREE_GONE = 0.4; // then to shrink away
 const TREE_GROW = 1.2; // growing back
 const STUMP_H = 0.28;
 const stumpGeo = new THREE.CylinderGeometry(0.16, 0.2, STUMP_H, 7).translate(0, STUMP_H / 2, 0);
-const stumpMats = [trunkMat, foliageMat(0xd9b48a), trunkMat]; // side, cut top, bottom
+const stumpMats = [trunkMat, detail(foliageMat(0xd9b48a), 'endgrain'), trunkMat]; // side, cut top (its rings), bottom
 const ROCK_BREAK = 0.3; // seconds to crumble away
 const ROCK_GROW = 0.9; // a new one surfacing
 const CHIPS = 5; // bits that fly off a breaking rock
@@ -918,8 +919,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const needles = map.pineMats ?? pineMats;
   // (all of them drawn instanced, in a few draws: makeInstancer; their
   // materials shared, the 'tree' hook fading one at a time)
-  for (const m of [trunkMat, ...leaves]) if (!treeLooks.has(m)) hookTree(m);
-  for (const m of needles) if (!treeLooks.has(m)) hookTree(m, false);
+  // (and their painted detail, src/gfx/detail.js: bark up the trunks, a
+  // leafy mottle on the canopies and bushes)
+  for (const m of [trunkMat, ...leaves]) if (!treeLooks.has(m)) hookTree(detail(m, m === trunkMat ? 'bark' : 'leaf'));
+  for (const m of needles) if (!treeLooks.has(m)) hookTree(detail(m, 'leaf'), false);
   const treeDecor = makeInstancer(root);
   // a tree drawn where its group says (or not at all, down), and its stump
   // (while it is felled)
@@ -1260,7 +1263,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const len = Math.hypot(ox, oz);
       return len < 1e-6 ? [dx, dz] : [ox / len, oz / len];
     };
-    const cliffChunks = new Map(); // "cx,cz" -> { pos, col }
+    const cliffChunks = new Map(); // "cx,cz" -> { pos, col, at }
     const earthTint = new THREE.Color();
     const shade = new THREE.Color();
     for (const [key, type] of tileGrid) {
@@ -1269,8 +1272,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
       const chunkKey = `${Math.floor((gx + H) / SURFACE_CHUNK)},${Math.floor((gz + H) / SURFACE_CHUNK)}`;
-      if (!cliffChunks.has(chunkKey)) cliffChunks.set(chunkKey, { pos: [], col: [] });
-      const { pos, col } = cliffChunks.get(chunkKey);
+      if (!cliffChunks.has(chunkKey)) cliffChunks.set(chunkKey, { pos: [], col: [], at: [] });
+      const { pos, col, at: cliffAt } = cliffChunks.get(chunkKey);
       // the earth under sand is sandier
       earthTint.copy(CLIFF_EARTH);
       if (kindDetail[type] === 3) earthTint.lerp(kindColors[type], 0.45);
@@ -1322,6 +1325,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
             const split = hash2(gx * 7.1 + k * 1.9, gz * 5.3 + row * 3.7 + dx * 2.1 + dz * 1.3) < 0.5;
             for (const tri of split ? [[A, B, C], [B, D, C]] : [[A, B, D], [A, D, C]]) {
               for (const p of tri) pos.push(...p);
+              for (const p of tri) cliffAt.push(floor - p[1], p[1] - water); // (how far under the lip, how high over the water: gfxCliff)
               if (row < 2) {
                 // the lip: its vertices' colors, as the ground's
                 for (const p of tri) {
@@ -1345,10 +1349,11 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         }
       }
     }
-    for (const { pos, col } of cliffChunks.values()) {
+    for (const { pos, col, at } of cliffChunks.values()) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.setAttribute('gfxCliff', new THREE.Float32BufferAttribute(at, 2)); // (moss under the lip, wet by the water: src/gfx/ground.js)
       geo.computeVertexNormals(); // (one a face: flat shaded anyway)
       const cliff = new THREE.Mesh(geo, map.cliffMat ?? cliffMat);
       cliff.receiveShadow = true;

@@ -44,6 +44,7 @@ import { toneMap } from './gfx/tonemap.js';
 import { createSky } from './gfx/sky.js';
 import { createPost } from './gfx/post.js';
 import { waterLook } from './gfx/water.js';
+import { detail } from './gfx/detail.js';
 import * as gfx from './gfx/uniforms.js';
 import { GamepadInput, padInUse } from './gamepad.js';
 import { el, hexColor } from './ui/dom.js';
@@ -507,11 +508,12 @@ const soilBedGeo = new THREE.BoxGeometry(TILE_SIZE * 0.92, 0.06, TILE_SIZE * 0.9
 const soilRidgeGeo = new THREE.CylinderGeometry(0.075, 0.075, TILE_SIZE * 0.84, 6, 1)
   .rotateZ(Math.PI / 2)
   .scale(1, 0.45, 1);
-const soilMat = new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 });
-const soilRidgeMat = new THREE.MeshStandardMaterial({ color: 0x6e4826, roughness: 1, flatShading: true });
+// (painted clods, a damp speckle and grit on all of them: src/gfx/detail.js)
+const soilMat = detail(new THREE.MeshStandardMaterial({ color: 0x5b3a1e, roughness: 1 }), 'soil');
+const soilRidgeMat = detail(new THREE.MeshStandardMaterial({ color: 0x6e4826, roughness: 1, flatShading: true }), 'soil');
 // ...darker when watered, till its crop is picked
-const wetSoilMat = new THREE.MeshStandardMaterial({ color: 0x33200f, roughness: 0.95 });
-const wetRidgeMat = new THREE.MeshStandardMaterial({ color: 0x41291a, roughness: 0.95, flatShading: true });
+const wetSoilMat = detail(new THREE.MeshStandardMaterial({ color: 0x33200f, roughness: 0.95 }), 'soil');
+const wetRidgeMat = detail(new THREE.MeshStandardMaterial({ color: 0x41291a, roughness: 0.95, flatShading: true }), 'soil');
 function setWet(key, wet) {
   const mesh = farmTiles.get(key);
   if (!mesh) return;

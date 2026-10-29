@@ -16,9 +16,17 @@ import { NOISE, VORONOI } from './noise.js';
 //          piece and each slab its own tint, and moss creeping in from the
 //          sides that face grass (gfxMoss, per slab: -x, +x, -z, +z)
 //   turf   a platform's turf: the speckle where it is green
-//   earth, rough  the sides of the earth and of rock: a soft mottle
+//   earth  the sides of the earth: a mottle, soft clods and pale stones
+//   rough  the sides of rock: a mottle, cracks (some Voronoi edges) and
+//          each piece its own tint
 //   cliff  the cliffs round the shore and down to a lower floor (world.js),
-//          their grassy lip, earth and wet rock: the same mottle
+//          their grassy lip, earth and wet rock: the mottle, strata in thin
+//          wavering bands, cracks, moss hanging from under the lip (not
+//          under sand) and a wet darker band just over the water
+//          (gfxCliff, per vertex: metres under the lip, over the water)
+// The sand (tiles) has fine ripples across the wind (from the south-west,
+// as the clouds drift and the trees lean), a steep dark lee to each, and
+// shell flecks, pale or pink.
 // The finer octaves fade as a pixel covers more of them (gfxShow), so
 // nothing shimmers far off. Runs right after the vertex color is in, before
 // the seasons' grass color (src/seasons.js, hooked earlier: code patched in
@@ -30,6 +38,7 @@ const MOSS = 'vec3(0.075, 0.2, 0.04)'; // (linear)
 const VERTEX = {
   tiles: ['attribute vec4 gfxKind;\nvarying vec4 vGroundKind;', 'vGroundKind = gfxKind;'],
   slab: ['attribute vec4 gfxMoss;\nvarying vec4 vGroundMoss;', 'vGroundMoss = gfxMoss;'],
+  cliff: ['attribute vec2 gfxCliff;\nvarying vec2 vGroundCliff;', 'vGroundCliff = gfxCliff;'],
 };
 
 const FRAGMENT = {
@@ -41,10 +50,18 @@ const FRAGMENT = {
     float groundWorn = smoothstep(0.55, 0.95, vGroundKind.z) * smoothstep(0.35, 0.75, gfxNoise(groundP * 0.7 + 11.3));
     float groundPebble = smoothstep(0.78, 0.9, gfxNoise(groundP * 5.1 + 23.9)) * gfxShow(5.1, groundPx);
     groundK *= 1.0 + vGroundKind.z * (0.24 * groundWorn + 0.16 * groundPebble);
-    // sand: faint ripples, wandering
-    float groundRipple = sin(dot(groundP, vec2(0.6, 0.8)) * 7.0 + gfxNoise(groundP * 0.4 + 2.0) * 5.0);
-    groundK *= 1.0 + groundRipple * 0.035 * vGroundKind.w * gfxShow(1.2, groundPx);
+    // sand: fine ripples across the wind, wandering, each a gentle rise and
+    // a steep darker lee; shell flecks, pale or pink
+    float groundRf = fract(dot(groundP, vec2(0.92, 0.38)) * 2.9 + gfxNoise(groundP * 0.45 + 2.0) * 1.6 + (gfxNoise(groundP * 1.4 + 6.0) - 0.5) * 0.5);
+    float groundRise = smoothstep(0.0, 0.75, groundRf) * (1.0 - smoothstep(0.75, 1.0, groundRf));
+    float groundLee = smoothstep(0.76, 0.84, groundRf) * (1.0 - smoothstep(0.9, 1.0, groundRf));
+    groundK *= 1.0 + vGroundKind.w * gfxShow(2.9, groundPx * 0.5) * (0.16 * (groundRise - 0.5) - 0.12 * groundLee);
     diffuseColor.rgb *= groundK;
+    highp vec2 groundSc = groundP * 2.2;
+    highp vec2 groundSi = floor(groundSc);
+    vec2 groundSf = groundSc - groundSi - 0.5 - (gfxHash2(groundSi + 7.0) - 0.5) * 0.6;
+    float groundShell = step(0.82, gfxHash(groundSi + 3.1)) * (1.0 - smoothstep(0.1, 0.15, length(groundSf * vec2(1.0, 1.6)))) * gfxShow(6.0, groundPx);
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.92, 0.88, 0.8), vec3(0.92, 0.6, 0.55), gfxHash(groundSi + 11.0)), groundShell * smoothstep(0.5, 0.9, vGroundKind.w) * 0.85);
     // moss where stone meets grass
     float groundMoss = clamp(vGroundKind.y * vGroundKind.x * 4.0, 0.0, 1.0) * smoothstep(0.3, 0.7, mix(0.5, gfxNoise(groundP * 1.9 + 3.3), gfxShow(1.9, groundPx)));
     diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK, groundMoss * 0.7);`,
@@ -72,10 +89,40 @@ const FRAGMENT = {
     float groundSpeck = smoothstep(0.6, 0.85, gfxNoise(groundP * 3.7 + 7.1)) * gfxShow(3.7, groundPx);
     diffuseColor.rgb *= groundK * (1.0 - 0.3 * groundSpeck * groundGreen);`,
   earth: `
-    diffuseColor.rgb *= groundK;`,
+    float groundClod = (gfxNoise(groundP * 2.2 + 8.1) - 0.5) * gfxShow(2.2, groundPx);
+    float groundStone = smoothstep(0.8, 0.9, gfxNoise(groundP * 4.3 + 3.7)) * gfxShow(4.3, groundPx);
+    diffuseColor.rgb *= groundK * (1.0 + 0.18 * groundClod) * (1.0 + 0.3 * groundStone);`,
+  rough: `
+    highp vec2 groundCell = gfxVoronoi(groundP * 1.4);
+    float groundCrack = 1.0 - smoothstep(0.025, 0.025 + fwidth(groundCell.x) * 1.5 + 0.01, groundCell.x);
+    groundCrack *= smoothstep(0.4, 0.65, gfxNoise(groundP * 0.9 + 5.0)) * smoothstep(0.06, 0.03, groundPx);
+    diffuseColor.rgb *= groundK * (0.94 + 0.12 * groundCell.y) * (1.0 - 0.35 * groundCrack);`,
+  cliff: `
+    vec3 cliffN = normalize(cross(dFdx(vGfxWorld), dFdy(vGfxWorld)));
+    float cliffWall = 1.0 - smoothstep(0.55, 0.85, abs(cliffN.y)); // (a wall, not the lip's top)
+    float cliffHas = step(1e-4, abs(vGroundCliff.x) + abs(vGroundCliff.y));
+    float cliffLum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+    // strata: thin bands by height, wavering, each its own shade, a dark seam between
+    highp float cliffY = vGfxWorld.y * 3.4 + (gfxNoise(groundP * 0.7 + 3.0) - 0.5) * 1.2;
+    float cliffBand = gfxHash(vec2(floor(cliffY), 5.0));
+    float cliffSeam = 1.0 - smoothstep(0.0, 0.12, min(fract(cliffY), 1.0 - fract(cliffY)));
+    groundK *= 1.0 + cliffWall * gfxShow(3.4, groundPx * 0.5) * ((cliffBand - 0.5) * 0.16 - 0.14 * cliffSeam);
+    // cracks: some of the Voronoi edges
+    highp vec2 cliffC = gfxVoronoi(groundP * 1.5);
+    float cliffCrack = 1.0 - smoothstep(0.022, 0.022 + fwidth(cliffC.x) * 1.5 + 0.01, cliffC.x);
+    cliffCrack *= smoothstep(0.4, 0.62, gfxNoise(groundP * 0.8 + 2.0)) * smoothstep(0.06, 0.03, groundPx) * cliffWall;
+    groundK *= (0.95 + 0.1 * cliffC.y) * (1.0 - 0.4 * cliffCrack);
+    diffuseColor.rgb *= groundK;
+    // moss hanging from under the lip in tongues (not under sand)
+    float cliffAlong = vGfxWorld.x + vGfxWorld.z;
+    float cliffTongue = 0.12 + 0.4 * gfxNoise(vec2(cliffAlong * 2.6, 0.5)) * gfxNoise(vec2(cliffAlong * 0.7, 3.5)) * 2.0;
+    float cliffMoss = smoothstep(0.03, 0.05, vGroundCliff.x) * (1.0 - smoothstep(cliffTongue - 0.08, cliffTongue, vGroundCliff.x));
+    cliffMoss *= cliffHas * (1.0 - smoothstep(0.2, 0.3, cliffLum)) * mix(0.6, 1.0, gfxNoise(groundP * 3.3 + 1.0));
+    diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK * (0.8 + 0.4 * gfxNoise(groundP * 5.1)), cliffMoss * 0.85);
+    // wet and darker just over the water, its top edge wavering
+    float cliffWet = 1.0 - smoothstep(0.1, 0.3, vGroundCliff.y + (gfxNoise(vec2(cliffAlong * 1.7, 4.0)) - 0.5) * 0.14);
+    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.6, 0.64, 0.66), cliffWet * cliffHas);`,
 };
-FRAGMENT.rough = FRAGMENT.earth;
-FRAGMENT.cliff = FRAGMENT.earth;
 
 // where the noise is read: the ground's plane, or (for sides) slanted by the
 // height, so a wall facing x or z, and a top, all get a mottle
@@ -98,7 +145,7 @@ export function groundDetail(material, kind) {
       shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', vertex[1], 'GFX_GROUND');
     }
     const varying = vertex ? vertex[0].split('\n')[1] : '';
-    shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${kind === 'slab' ? VORONOI : ''}${varying}`, 'GFX_GROUND');
+    shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${['slab', 'rough', 'cliff'].includes(kind) ? VORONOI : ''}${varying}`, 'GFX_GROUND');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     highp vec2 groundP = ${AT[kind]};
     float groundPx = gfxFootprint(groundP);

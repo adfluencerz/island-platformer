@@ -21,8 +21,23 @@ import { NOISE, VORONOI } from './noise.js';
 //   metal    brushed streaks, rust spots on iron (not on tin or brass)
 //   plaster  a soft mottle, a little grime at the foot of a wall
 //   endgrain a log's cut end: rings
+// and on what grows (the pieces' own y their axis, as a trunk stands):
+//   bark     ridges up the trunk round its axis, darker furrows between, the
+//            plates broken across now and then, moss round its foot
+//   rock     cracks along Voronoi edges (some of them), each piece its own
+//            tint, pale lichen on what faces up, moss on the shaded
+//            underside and low down, near the ground
+//   soil     clods (Voronoi cells) with dark gaps, a damp darker speckle,
+//            pale grit
+//   leaf     a soft blotchy canopy: leafy clumps with dark between, lighter
+//            and warmer dapples on top (continuous over a round blob)
+//   crop     leaves: a pale midrib and side veins, lighter to the tip;
+//            fruit: a soft blush, lighter on top, fine speckle
+//   reed     streaks along the blade, darker nodes, paler toward the tip
+//   fern     a frond: a dark midrib and leaflets slanting off it
 // The look is a uniform (gfxDetailLook), so every material with it shares one
-// program whatever its look; a home's baked mesh (homekit.js bake) carries it
+// program whatever its look (one for built things' looks, one for nature's:
+// 'detail', 'detail:nature'); a home's baked mesh (homekit.js bake) carries it
 // in its vertices instead (detailBaked, 'detail:baked'), with each part's own
 // frame (bakeDetail), the vertex colors as the base; a dungeon's instanced
 // pieces in an instanced attribute (detailInstanced, 'detail:instanced').
@@ -39,15 +54,21 @@ import { NOISE, VORONOI } from './noise.js';
 // fall on top.
 //
 // To add a look: a name in LOOKS (its index is its number), a branch in
-// FRAGMENT, and a name pattern in BY_NAME if materials should get it on
-// their own.
+// FRAGMENT_BUILT or FRAGMENT_NATURE (and its name in NATURE if there), and a
+// name pattern in BY_NAME if materials should get it on their own.
 
-export const LOOKS = ['none', 'wood', 'plank', 'stone', 'brick', 'cobble', 'thatch', 'tile', 'cloth', 'metal', 'plaster', 'endgrain'];
+export const LOOKS = ['none', 'wood', 'plank', 'stone', 'brick', 'cobble', 'thatch', 'tile', 'cloth', 'metal', 'plaster', 'endgrain',
+  'bark', 'rock', 'soil', 'leaf', 'crop', 'reed', 'fern'];
 
 // a material's look from its name (first match wins)
 const BY_NAME = [
   [/end ?grain/i, 'endgrain'],
-  [/thatch|straw|hay|reed/i, 'thatch'],
+  [/reed|rush|sedge/i, 'reed'],
+  [/fern|frond/i, 'fern'],
+  [/thatch|straw|hay/i, 'thatch'],
+  [/rock|boulder|crag/i, 'rock'],
+  [/leaf|leaves|hedge|moss|canopy|bush/i, 'leaf'],
+  [/soil|earth|dirt|tilled/i, 'soil'],
   [/roof|tile/i, 'tile'],
   [/brick|chimney/i, 'brick'],
   [/cobble|gravel|pebble/i, 'cobble'],
@@ -58,8 +79,8 @@ const BY_NAME = [
   [/plaster|wall|render/i, 'plaster'],
   [/wood|post|rail|bark|stave|beam|bench|log|trim|picket|withy|frame|edging|crate|timber|stake/i, 'wood'],
 ];
-// names that stay plain (living things, water, food, light...)
-const PLAIN = /leaf|hedge|moss|lichen|rock|grass|stalk|fruit|flower|snow|smoke|petal|soil|earth|water|grout|glass|window|lantern|flame|fire|portal|glow|hole|crow|bird|bee\b|dove|beak|cheese|mayo|honey|ash|book|mirror/i;
+// names that stay plain (grass and flowers, water, food, light...)
+const PLAIN = /lichen|grass|stalk|fruit|flower|snow|smoke|petal|water|grout|glass|window|lantern|flame|fire|portal|glow|hole|crow|bird|bee\b|dove|beak|cheese|mayo|honey|ash|book|mirror/i;
 
 const _hsl = { h: 0, s: 0, l: 0 };
 // a look from a material's color, for one with no name: browns are wood,
@@ -136,6 +157,7 @@ uniform float gfxDetailLook;
 ${NOISE}${VORONOI}
 #ifndef GFX_DETAIL_FN
 #define GFX_DETAIL_FN
+#define GFX_DETAIL_MOSS vec3(0.075, 0.2, 0.04)
 // how much of a line of half-width w (metres) covers a point d from it, for a pixel px wide
 float gfxDetailLine(float d, float w, float px) {
   return (1.0 - smoothstep(w, w + px, d)) * min(1.0, 2.5 * w / px);
@@ -159,7 +181,7 @@ vec2 gfxDetailBlocks(highp vec2 at, vec2 ext, vec2 size, float known) {
 #endif
 `;
 
-const FRAGMENT = /* glsl */ `
+const FRAGMENT_HEAD = /* glsl */ `
 {
   #if defined(GFX_DETAIL_BAKED) || defined(GFX_DETAIL_INSTANCED)
     float dLook = floor(vDetailLook + 0.5);
@@ -192,6 +214,9 @@ const FRAGMENT = /* glsl */ `
   vec3 dCol = diffuseColor.rgb;
   float dLum = dot(dCol, vec3(0.2126, 0.7152, 0.0722));
   float dK = 1.0 + (gfxNoise(dUV * 0.9 + dOff) - 0.5) * 0.1; // (a soft mottle under every look)
+`;
+
+const FRAGMENT_BUILT = /* glsl */ `
   if (dLook > 0.5 && dLook < 2.5) {
     // wood, plank: g.x along the grain, g.y across it
     float dAlongV = dWall * step(dExt.x * 1.15, dExt.y);
@@ -297,15 +322,117 @@ const FRAGMENT = /* glsl */ `
     float grime = dKnown * dWall * (1.0 - smoothstep(0.0, 0.45, dAt.y));
     dK *= 1.0 + (gfxNoise(dUV * 2.6 + dOff.yx) - 0.5) * 0.1 * gfxShow(2.6, dPx) + (gfxNoise(dUV * 8.0) - 0.5) * 0.06 * gfxShow(8.0, dPx);
     dK *= 1.0 - 0.1 * grime;
-  } else if (dLook > 10.5) {
+  } else if (dLook > 10.5 && dLook < 11.5) {
     // end grain: rings round the middle
     float rings = smoothstep(0.5, 0.95, abs(fract(length(dUV) * 14.0 + gfxNoise(dUV * 6.0 + dOff) * 1.2) * 2.0 - 1.0)) * gfxShow(14.0, dPx);
     dK *= 1.0 - 0.2 * rings;
-  }
+  }`;
+
+const FRAGMENT_NATURE = /* glsl */ `
+  // for what grows: how high up the piece (metres above its middle, and in
+  // its half-heights), which way the face looks (1 up, -1 down), and a place
+  // that runs on over a round piece's facets (no seams on a canopy)
+  float dHt = dot(dP, dUp);
+  float dHRel = dHt / max(dot(abs(dUp), dS), 1e-3);
+  float dFace = dot(dN, dUp);
+  highp vec2 dQ = dP.xz + dP.y * vec2(0.83, -0.61);
+  float dQPx = gfxFootprint(dQ);
+  // one Voronoi for the looks of cells, each its own place and size: rock, soil, leaf
+  highp vec2 dVc = gfxVoronoi((dLook > 14.5 ? dQ : dUV) * (dLook < 13.5 ? 2.2 : dLook < 14.5 ? 9.0 : 3.0) + dOff);
+  if (dLook > 11.5 && dLook < 12.5) {
+    // bark: five ridges round the piece's axis (its y), wandering, so they
+    // meet all the way round; dark furrows between, the plates broken
+    // across now and then, moss round the foot
+    float bA = atan(dP.z, dP.x);
+    float bR = length(dP.xz);
+    float bWave = (gfxNoise(dP.xz * 6.0 + vec2(0.0, dP.y * 0.8) + dOff) - 0.5) * 0.9 + 0.12 * sin(bA * 2.0 + dP.y * 3.1);
+    float bU = bA * 0.79577 + bWave; // (five ridges round)
+    float bF = abs(fract(bU) - 0.5) * 2.0; // (0 a plate's middle, 1 a furrow)
+    float bPlate = mod(floor(bU), 5.0);
+    float bHp = gfxHash(vec2(bPlate, dSeed * 31.0) + 1.3);
+    float bRow = dP.y * 2.4 + bHp * 5.0;
+    float bBreak = smoothstep(0.86, 0.97, fract(bRow)) * step(0.45, gfxHash(vec2(bPlate, floor(bRow)) + 7.7));
+    float bShow = gfxShow(5.0 / max(6.2832 * bR, 0.05), dPx);
+    float bFur = smoothstep(0.5, 0.95, bF);
+    float bStreak = gfxNoise(dP.xz * 14.0 + vec2(dP.y * 1.5, 0.0) + dOff.yx);
+    dK *= (0.9 + 0.2 * bHp) * mix(0.88, (1.14 - 0.65 * bFur) * (1.0 - 0.4 * bBreak) * (0.86 + 0.28 * bStreak), bShow);
+    float bMoss = 1.0 - smoothstep(0.05, 0.4, dHt + (gfxNoise(dP.xz * 5.0 + dP.y * 2.0 + dOff.yx) - 0.5) * 0.45 - 0.12 * bFur);
+    dCol = mix(dCol, GFX_DETAIL_MOSS * (0.8 + 0.5 * bStreak), bMoss * 0.7);
+  } else if (dLook > 12.5 && dLook < 13.5) {
+    // rock: cracks along some of its Voronoi edges, each piece its own tint;
+    // pale lichen on what faces up, moss on the shaded underside and low down
+    highp vec2 rc = dVc;
+    float re = rc.x / 2.2;
+    float rSome = smoothstep(0.35, 0.6, gfxNoise(dUV * 1.1 + dOff.yx + 4.0));
+    float rCrack = gfxDetailLine(re, 0.025, dPx) * rSome * mix(0.5, 1.0, gfxShow(2.2, dPx * 0.5));
+    float rGrain = (gfxNoise(dUV * 5.0 + dOff) - 0.5) * gfxShow(5.0, dPx) + (gfxNoise(dUV * 13.0 + dOff.yx) - 0.5) * 0.5 * gfxShow(13.0, dPx);
+    dK *= (0.82 + 0.3 * rc.y) * (1.0 + 0.3 * rGrain) * (1.0 - 0.7 * rCrack) * (1.0 - 0.2 * rSome * (1.0 - smoothstep(0.0, 0.08, re)));
+    float rLich = smoothstep(0.56, 0.72, gfxNoise(dUV * 3.3 + dOff * 1.7) + 0.15 * (gfxNoise(dUV * 9.0) - 0.5) * gfxShow(9.0, dPx)) * smoothstep(0.0, 0.5, dFace) * gfxShow(3.3, dPx * 0.5);
+    float rLow = 1.0 - smoothstep(-0.5, 0.25, dHRel + (gfxNoise(dUV * 2.4 + dOff.yx) - 0.5) * 0.7);
+    float rMoss = smoothstep(0.3, 0.6, max(rLow, 0.75 * smoothstep(0.45, -0.3, dFace)) * (0.55 + 0.9 * gfxNoise(dUV * 2.9 + dOff + 9.0)));
+    dCol = mix(dCol, vec3(0.55, 0.52, 0.26) * (0.5 + 1.5 * dLum), rLich * 0.7);
+    dCol = mix(dCol, GFX_DETAIL_MOSS * (0.85 + 0.4 * gfxNoise(dUV * 7.0)), rMoss * 0.8);
+  } else if (dLook > 13.5 && dLook < 14.5) {
+    // soil: clods with dark gaps, a damp darker speckle, pale grit
+    highp vec2 sc = dVc;
+    float sShow = gfxShow(9.0, dPx * 0.5);
+    float sGap = gfxDetailLine(sc.x / 9.0, 0.006, dPx) * sShow;
+    float sDamp = smoothstep(0.58, 0.8, gfxNoise(dUV * 5.0 + dOff.yx)) * 0.6 + smoothstep(0.65, 0.85, gfxNoise(dUV * 17.0 + dOff)) * 0.4 * gfxShow(17.0, dPx);
+    float sGrit = smoothstep(0.84, 0.94, gfxNoise(dUV * 26.0 + dOff.yx)) * gfxShow(26.0, dPx);
+    dK *= mix(0.97, (0.88 + 0.24 * sc.y) * (0.88 + 0.16 * smoothstep(0.0, 0.25, sc.x)), sShow) * (1.0 - 0.35 * sGap) * (1.0 - 0.32 * sDamp) * (1.0 + 0.5 * sGrit);
+  } else if (dLook > 14.5 && dLook < 15.5) {
+    // leaf: leafy clumps (Voronoi cells) with dark between, a soft mottle,
+    // lighter and warmer dapples on top
+    highp vec2 lc = dVc;
+    float lShow = gfxShow(3.0, dQPx * 0.5);
+    float lTop = smoothstep(-0.3, 0.9, dHRel);
+    float lClump = (0.88 + 0.2 * lc.y) * mix(0.8, 1.05, smoothstep(0.0, 0.42, lc.x));
+    float lFine = (gfxNoise(dQ * 9.0 + dOff) - 0.5) * gfxShow(9.0, dQPx);
+    dK *= mix(0.92, lClump, lShow) * (0.9 + 0.2 * gfxNoise(dQ * 1.3 + dOff.yx)) * (1.0 + 0.16 * lFine);
+    float lDapple = smoothstep(0.55, 0.8, gfxNoise(dQ * 4.2 + dOff * 1.3)) * lTop * gfxShow(4.2, dQPx * 0.5);
+    dCol *= mix(vec3(1.0), vec3(1.18, 1.22, 0.86), lDapple * 0.8 + lTop * 0.25);
+  } else if (dLook > 15.5 && dLook < 16.5) {
+    // crop: a leaf's pale midrib and side veins, lighter to the tip; a
+    // fruit's blush low down and a fine speckle
+    float cGreen = clamp((dCol.g - max(dCol.r, dCol.b)) / max(dCol.g, 1e-3) * 4.0, 0.0, 1.0);
+    float cTip = smoothstep(-0.8, 0.9, dHRel);
+    float cT = (dUV.x - 1.2 * abs(dUV.y)) * 14.0;
+    float cSide = gfxDetailLine(abs(fract(cT + 0.5) - 0.5) / 18.0, 0.003, dPx) * gfxShow(14.0, dPx);
+    float cVein = max(gfxDetailLine(abs(dUV.y), 0.005, dPx), 0.7 * cSide) * cGreen;
+    float cSpeck = smoothstep(0.72, 0.9, gfxNoise(dUV * 34.0 + dOff.yx)) * gfxShow(34.0, dPx) * (1.0 - cGreen);
+    dK *= (0.9 + 0.2 * dSeed) * mix(0.86, 1.1, cTip) * (1.0 + (gfxNoise(dUV * 12.0 + dOff) - 0.5) * 0.22 * gfxShow(12.0, dPx)) * (1.0 - 0.18 * cSpeck);
+    dCol = mix(dCol, dCol * vec3(1.25, 1.3, 0.8) + 0.015, cVein * 0.55);
+    dCol *= mix(vec3(1.0), vec3(1.06, 0.9, 0.86), (1.0 - cGreen) * (1.0 - cTip) * 0.6);
+  } else if (dLook > 16.5) {
+    // reed, fern: streaks along the blade, darker low down, paler to the
+    // tip; a reed's nodes and its tip dried warmer; a frond's dark midrib
+    // and the leaflets slanting off it
+    float fern = step(17.5, dLook);
+    float rTip = smoothstep(-0.2, 1.0, dHRel);
+    float rStreak = gfxNoise(vec2(dUV.x * 30.0, dUV.y * 1.5) + dOff) - 0.5;
+    float rNode = gfxDetailLine(abs(fract(dUV.y * 2.2 + dSeed) - 0.5) / 2.2, 0.008, dPx) * (1.0 - fern);
+    dK *= (0.92 + 0.16 * dSeed) * mix(0.8, 1.12, rTip) * (1.0 + 0.26 * rStreak * gfxShow(30.0, dPx)) * (1.0 - 0.3 * rNode);
+    dCol = mix(dCol, vec3(dLum) * vec3(1.6, 1.35, 0.8) + 0.02, (1.0 - fern) * smoothstep(0.55, 1.0, rTip) * 0.4);
+    float fT = (dUV.y - 0.9 * abs(dUV.x)) * 16.0;
+    float fGap = gfxDetailLine(abs(fract(fT + 0.5) - 0.5) / 16.0, 0.004, dPx) * gfxShow(16.0, dPx);
+    float fRib = gfxDetailLine(abs(dUV.x), 0.004, dPx);
+    dK *= 1.0 - fern * (0.35 * fGap + 0.3 * fRib);
+  }`;
+
+const FRAGMENT_TAIL = /* glsl */ `
   if (dLook > 0.5) diffuseColor.rgb = dCol * dK;
 }`;
 
-function compile(from) {
+// (built things' looks and nature's in programs of their own, so each
+// program carries only its family's code: smaller shaders, quicker to compile)
+const FRAGMENT = {
+  built: FRAGMENT_HEAD + FRAGMENT_BUILT + FRAGMENT_TAIL,
+  nature: FRAGMENT_HEAD + FRAGMENT_NATURE + FRAGMENT_TAIL,
+};
+const NATURE = new Set(['bark', 'rock', 'soil', 'leaf', 'crop', 'reed', 'fern']);
+export const familyOf = (look) => (NATURE.has(look) ? 'nature' : 'built');
+
+function compile(from, family = 'built') {
   return (shader, renderer, material) => {
     define(shader, 'GFX_DETAIL');
     if (from === 'baked') define(shader, 'GFX_DETAIL_BAKED');
@@ -314,10 +441,11 @@ function compile(from) {
     shader.vertexShader = patch(shader.vertexShader, 'common', VERTEX_COMMON, 'GFX_DETAIL');
     shader.vertexShader = patch(shader.vertexShader, 'project_vertex', VERTEX, 'GFX_DETAIL');
     shader.fragmentShader = patch(shader.fragmentShader, 'common', FRAGMENT_COMMON, 'GFX_DETAIL');
-    shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', FRAGMENT, 'GFX_DETAIL');
+    shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', FRAGMENT[family], 'GFX_DETAIL');
   };
 }
 const own = compile('uniform');
+const ownNature = compile('uniform', 'nature');
 const baked = compile('baked');
 const instanced = compile('instanced');
 
@@ -337,7 +465,7 @@ export function detail(material, look, name) {
   material.userData.gfx = { ...material.userData.gfx, detail: chosen };
   if (chosen === 'none' || !LOOKS.includes(chosen)) return material;
   uniformOf(material);
-  return hook(material, 'detail', own);
+  return familyOf(chosen) === 'nature' ? hook(material, 'detail:nature', ownNature) : hook(material, 'detail', own);
 }
 
 // Every material in a table ({ name: material or [materials] }), each its look by its name
