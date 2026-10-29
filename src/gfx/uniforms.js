@@ -82,4 +82,9 @@ export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, fla
   U.uUnder.value = under;
   U.uCloudAmount.value = cloud;
   U.uFlash.value = flash;
+  // round a low sun (sunrise, sunset) the shade goes cooler, so long shadows read blue against the gold
+  const low = (1 - THREE.MathUtils.smoothstep(sunDir.y, 0.12, 0.6)) * (1 - night) * (1 - cloud);
+  U.uShadowTint.value.copy(SHADE).lerp(SHADE_LOW, low);
 }
+const SHADE = new THREE.Color(0.8, 0.86, 1.0);
+const SHADE_LOW = new THREE.Color(0.66, 0.76, 1.04);
