@@ -1962,13 +1962,15 @@ const _lookAhead = new THREE.Vector3();
 // to half by GRASS_FAR[0], to none by [1] (and the patches beyond not drawn);
 // the trees' canopies beyond CANOPY_FAR the plain ones, the ground's surface
 // beyond GROUND_FAR its coarse triangles (src/world.js viewFrom). Scaled with the zoom.
+// (The grass carpet the same, but no further than src/world.js CARPET_FAR, and
+// only what the camera sees: it is given the camera.)
 const GRASS_FAR = [18, 30];
 const CANOPY_FAR = 40;
 const GROUND_FAR = 30;
 function viewFrom(near, end) {
   gfx.U.uGrassFar.value.set(near, end);
   const k = end / GRASS_FAR[1];
-  world.viewFrom?.(camera.position, { grassFar: [near, end], canopyFar: CANOPY_FAR * k, groundFar: GROUND_FAR * k });
+  world.viewFrom?.(camera.position, { grassFar: [near, end], canopyFar: CANOPY_FAR * k, groundFar: GROUND_FAR * k, camera });
 }
 updateCamera(0);
 
@@ -5673,7 +5675,7 @@ function updateWorld(dt) {
   rollFarmGiants();
   bossWorld.update(dt, t);
   giantBars.update(t);
-  gfx.frame(dt, { wind: weather.wind, players: seats.map((seat) => seat.player.position) }); // (the shaders' clock: the grass sways harder in a storm's wind)
+  gfx.frame(dt, { wind: weather.wind, players: seats.map((seat) => seat.player.position), animals: world === worlds.home ? animals.list() : [] }); // (the shaders' clock: the grass sways harder in a storm's wind; and what pushes it aside)
   world.updateTreeFade(dt, me.eye, camera, seats.map((seat) => [seat.eye, seat.camera]));
   if (place === 'lobby') updateSkyFade(dt, me.eye, camera); // (and sky isles over us: src/skyisles.js)
   world.update(t);

@@ -21,9 +21,10 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | pixel ratio cap | 0.5 | 1.5          | 2    |
 | shadow map    | off  | 1024          | 2048 |
 | post          | off  | half-res bloom | full |
-| grass density | 0.35 | 0.75          | 1.0  |
+| grass carpet (share of 96 blades a tile, since 33) | off: tufts | 0.6 | 1 |
+| grass density (tufts) | 0.35 | 0.75   | 1.0  |
 | grass blades (of 7 a tuft) | 3 | 6     | 7    |
-| grass spread (tuft width) | 1 | 1.2    | 1    |
+| grass spread (tuft, carpet blade width) | 1 | 1.2 | 1 |
 | tree detail (tris a canopy blob) | 20 | 80 (since 31) | 80 |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |

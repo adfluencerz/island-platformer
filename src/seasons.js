@@ -154,7 +154,7 @@ function snowOn(obj) {
   for (const child of obj.children) snowOn(child);
 }
 
-// map: the farm's map (its leafMats, pineMats, tuftMat, groundMat, turfMat, cliffMat
+// map: the farm's map (its leafMats, pineMats, tuftMat, carpetMat, groundMat, turfMat, cliffMat
 // and flower materials)
 export function createSeasons(map) {
   const a = new THREE.Color();
@@ -248,6 +248,7 @@ export function createSeasons(map) {
     attach({ root, trees = [], sun, hemi, scene, sky }) {
       lit = { root, sun, hemi, scene, sky };
       if (map.tuftMat) seasonal(map.tuftMat, { grass: true, sink: true }); // (once world.js has made it sway)
+      if (map.carpetMat) seasonal(map.carpetMat, { grass: true, sink: true });
       snowOn(root);
       // (autumn's leaves, under the trees with leaves)
       const spots = [];

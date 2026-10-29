@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 33 (big gap: `phases/33-carpet-grass.md`)
+Current phase: 34 (big gap: `phases/34-soft-forms.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -44,7 +44,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 30 The tree crowns
 - [x] 31 Smooth painterly shading (big gap 1)
 - [x] 32 Camera: a lower, wider view (big gap 2)
-- [ ] 33 Grass as a carpet (big gap 3)
+- [x] 33 Grass as a carpet (big gap 3)
 - [ ] 34 Trees, rocks and bushes reshaped (big gap 4)
 - 35+ polish rounds again
 
@@ -69,8 +69,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Camera (`src/main.js` CAM_WIDE_*): wide is the default, 30 degrees up from the farmer, 14 back, aimed above them so the horizon sits 0.55 (landscape) / 0.42 (portrait) of the way up from mid-screen; an upright screen widens the lens (40 degrees across at least) instead of pulling back. Menu "Camera: wide/classic" (`tp.cam`, `?cam=`; the first-person button is "View:" now); underground and indoors ease to classic.
-- Distance rings, per view (`viewFrom` in main.js and world.js, all times the zoom): grass to half by 18 m from the camera, none by 30 (aRank, a tuft's place in its patch's shuffled order: far patches draw fewer instances); ground surface beyond 30 m its coarse index (8 triangles a tile, not 32); canopies beyond 40 m the 20-triangle blob (rarely: decor squares are 71 m now).
-- Far: fog 30..75 in wide (90 classic); the camera's far plane is the fog's end + 1, sky dome radius 50 (drawn first, no depth). Shadow box 20 m ahead of the farmer in wide (was 8). Trees, rocks and still decor in 71 m squares (fewer, bigger draws: calls were the binding budget).
-- Sky: the gradient reaches the zenith by about 30 degrees up (a low camera only sees the bottom of the dome); dusk horizon 0xf0a274 (was a red orange that flooded the view).
-- Budget left (plaza-noon / phone): high 754 calls / 601k tris of 850 / 1M; medium 760 / 554k, phone 604 / 443k of 850 / 700k; low 376 / 354k, phone 180 / 235k of 450 / 600k.
+- Carpet (`src/world.js` makeCarpet, hook 'carpet'): high and medium draw no tufts; each grass tile in view is an instance of one 96-blade cell (turned one of 8 ways), put in by the CPU in viewFrom (given the camera: frustum, rings, rebuilt when the camera moves half a step or turns), in 3 meshes by share (1, 0.5, 0.25): 3 calls. No rng: fingerprints untouched. Low keeps the tufts.
+- Root color = the ground's vertex colors at the tile's corners (canopy shade included); tips x1.3 warmer; 10 % dark, 10 % pale. Rings uCarpetFar = grass rings x1.15, at most 26/40. Ground (`gfx/ground.js` tiles): darker under it near, x1.05 past it.
+- Wind: gusts + a slow 19 m wave + per-blade shimmer; uPlayers is now 8 pushers (farmers' feet, then the 4 animals nearest, w = radius). Tilling/building clears whole tiles (hidden), and thins the edges round them; ninths of a tile blocked by colliders/trunks (isOpenGround, asked lazily).
+- Flowers lift 0.2 m on carpet tiers (stems longer). The farm's carpetMat (maps.js) gets the seasons' grass color and snow sink.
+- Budget left (plaza-noon / phones): high 756 calls / 709k tris of 850 / 1M; medium 747 / 615k of 700k, phone 603 / 464k, phone-forest-dusk 459k; low unchanged (378 / 354k).

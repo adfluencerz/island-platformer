@@ -43,14 +43,15 @@ const meadowNoise = (x, z) =>
 // across the field the way the clouds drift (uCloudOffset: the breeze plus a
 // storm's uWind, five times as fast), so a wave of bending runs over the
 // meadow; a fine flutter on top; and every blade leaning away from the feet
-// of a farmer walking through it (uPlayers). The bend grows with height
+// of a farmer or an animal walking through it (uPlayers). On the tiers with
+// the grass carpet the tufts are not drawn (makeCarpet), and the flowers
+// stand taller, over its blades. The bend grows with height
 // squared (height: the tallest point of the mesh, its tip), and a bent blade
 // dips a little so it doesn't stretch. The flowers sway in the same wind.
 // Drawn from both sides, the back of a blade keeps its normal up (lit as the
 // ground is). (noSnow: the flowers keep their color in the snow; the farm's
 // grass is given its own, src/seasons.js)
-const MAX_FEET = 4; // (uPlayers: src/gfx/uniforms.js)
-const FEET_UP = 0.8; // (a farmer's position is this far above their feet: GROUND_STAND_Y, shared/level.js)
+const MAX_FEET = 8; // (uPlayers, the feet of the farmers and the animals nearest: src/gfx/uniforms.js)
 export const GRASS_WIND_GLSL = /* glsl */ `
   highp float gfxGrassHash(highp vec2 p) {
     highp vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -81,7 +82,7 @@ function addGrassWind(material, height, spread = false) {
   material.userData.noSnow = true;
   hook(material, `grass:${height.toFixed(3)}${spread ? ':spread' : ''}`, (shader) => {
     define(shader, 'GFX_GRASS');
-    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', 'uGrassFar', ...(spread ? ['uGrassSpread', 'uGrassDensity'] : [])], 'v');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', 'uGrassFar', ...(spread ? ['uGrassSpread', 'uGrassDensity'] : ['uCarpet'])], 'v');
     shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL + GRASS_KEEP_GLSL + (spread ? 'attribute float aRank;' : ''), 'GFX_GRASS');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       #ifdef USE_INSTANCING
@@ -89,7 +90,7 @@ function addGrassWind(material, height, spread = false) {
         // (further off, fewer: GRASS_KEEP_GLSL)
         float grassR = ${spread ? 'aRank / uGrassDensity' : 'gfxGrassHash(grassRoot.xz * 3.1 + 0.7)'};
         transformed *= smoothstep(grassR, grassR + 0.05, gfxGrassKeep(distance(grassRoot, cameraPosition)));
-        ${spread ? 'transformed.xz *= uGrassSpread;' : ''}
+        ${spread ? 'transformed.xz *= uGrassSpread;' : 'transformed.y += 0.2 * step(0.001, uCarpet) * clamp(transformed.y / 0.245, 0.0, 1.0); // (a flower over the carpet\'s blades, where there is one: its stem longer)'}
         float grassH = clamp(transformed.y / ${height.toFixed(3)}, 0.0, 1.2); // (0 at the root, 1 at the tip; after the snow's sink)
         vec2 grassDrift = uWind + vec2(0.6, 0.25); // (as the clouds drift: src/gfx/uniforms.js frame)
         vec2 grassDir = normalize(grassDrift);
@@ -103,7 +104,7 @@ function addGrassWind(material, height, spread = false) {
           vec4 feet = uPlayers[i];
           vec2 away = grassRoot.xz - feet.xz;
           float d = length(away);
-          float near = feet.w * (1.0 - smoothstep(0.2, 0.9, d)) * (1.0 - smoothstep(0.3, 0.9, abs(feet.y - ${FEET_UP.toFixed(2)} - grassRoot.y)));
+          float near = step(0.001, feet.w) * (1.0 - smoothstep(0.2, 0.9, d / max(feet.w, 0.01))) * (1.0 - smoothstep(0.3, 0.9, abs(feet.y - grassRoot.y)));
           grassBend += away / max(d, 0.05) * near * 1.1;
         }
         float grassLen = length(grassBend);
@@ -727,13 +728,168 @@ function makeTuftGeometry() {
 // tuft's blades. Again whenever the tier is changed.
 const grassMeshes = new Set();
 function grassTier(mesh, k = knobs()) {
-  mesh.count = mesh.userData.drawn = Math.round(mesh.userData.tufts * k.grassDensity); // (and fewer far from the view: viewFrom)
+  // (none where the tier has the carpet instead: makeCarpet)
+  mesh.count = mesh.userData.drawn = k.carpet > 0 ? 0 : Math.round(mesh.userData.tufts * k.grassDensity); // (and fewer far from the view: viewFrom)
   mesh.geometry.setDrawRange(0, Math.min(k.grassBlades, TUFT_BLADES) * BLADE_INDICES);
 }
 onApply((k) => {
   U.uGrassDensity.value = k.grassDensity;
+  U.uCarpet.value = k.carpet;
   grassMeshes.forEach((mesh) => grassTier(mesh, k));
+  carpets.forEach((carpet) => carpet.tier(k));
 });
+
+// ---------- The grass carpet ----------
+// On the tiers that have one (src/gfx/quality.js carpet), the grass round the
+// camera is a carpet of blades instead of the tufts: each tile of grass in
+// view is one instance of a cell of CARPET_BLADES blades (one layout for all
+// of them, turned one of eight ways by where it is, so no grid shows), put
+// in by the CPU when the view moves (makeCarpet's view: only the tiles the
+// camera sees, no further than the grass reaches), in three meshes by how
+// many of its blades a tile still needs at its distance (CARPET_LODS).
+// A blade's root takes the ground's own color there (its tile's corners, as
+// the ground's vertices have it, the canopies' shade too), its tip lighter
+// and warmer; a few dark ones, a few pale. They thin with the distance as the
+// tufts did (by rank: the first ones are spread evenly over the tile and stay
+// longest), shorter and fewer into the edge of a path or tilled soil, and
+// none where something stands (each third of a tile asked once, isOpenGround).
+// The wind (hook 'carpet'): big slow waves rolling across the field, the
+// gusts' noise as the tufts have it, a fine shimmer, and every farmer and
+// animal pushing them aside. No rng of the island's: nothing else moves.
+const CARPET_BLADES = 96;
+const CARPET_LODS = [1, 0.5, 0.25]; // (the share of its blades each mesh draws a tile with)
+const CARPET_CAP = 2400; // (tiles a mesh holds at most)
+const CARPET_REACH = 1.15; // (its rings, as a share of the view's grass's: uGrassFar)
+const CARPET_FAR = [26, 40]; // (and at their widest, whatever the view's grass: uCarpetFar)
+const CARPET_HEIGHT = 0.62; // (a tile's tallest blades, before its kind's own height: the farm's grass)
+const carpets = new Set();
+let carpetBase = null;
+function carpetGeometry() {
+  if (carpetBase) return carpetBase;
+  const r = mulberry32(0xca7e);
+  const rand = (min, max) => min + r() * (max - min);
+  const pos = [];
+  const col = [];
+  const blade = [];
+  const index = [];
+  const edge = (v) => Math.min(0.49, Math.max(-0.49, v));
+  for (let b = 0; b < CARPET_BLADES; b++) {
+    // (an R2 sequence: any first share of them is spread evenly over the tile)
+    const x = edge(((0.5 + b * 0.7548776662) % 1) - 0.5 + rand(-0.03, 0.03));
+    const z = edge(((0.5 + b * 0.5698402910) % 1) - 0.5 + rand(-0.03, 0.03));
+    const face = rand(0, Math.PI);
+    const w = rand(0.024, 0.036); // (half its width at the root)
+    const [wx, wz] = [Math.cos(face) * w, Math.sin(face) * w];
+    const h = rand(0.55, 1);
+    const lean = rand(0.06, 0.28) * h;
+    const turn = rand(0, Math.PI * 2);
+    const [lx, lz] = [Math.cos(turn) * lean, Math.sin(turn) * lean];
+    const pick = r();
+    const shade = pick < 0.1 ? 0.7 : pick > 0.9 ? 1.2 : rand(0.93, 1.07); // (a few dark, a few pale)
+    const first = pos.length / 3;
+    pos.push(x - wx, 0, z - wz, x + wx, 0, z + wz);
+    pos.push(x + lx * 0.3 - wx * 0.62, h * 0.5, z + lz * 0.3 - wz * 0.62, x + lx * 0.3 + wx * 0.62, h * 0.5, z + lz * 0.3 + wz * 0.62);
+    pos.push(x + lx, h, z + lz);
+    for (const [k, [cr, cg, cb]] of [[0, [0.8, 0.8, 0.8]], [0, [0.8, 0.8, 0.8]], [0.5, [1, 1, 0.96]], [0.5, [1, 1, 0.96]], [1, [1.3, 1.24, 0.98]]]) {
+      col.push(cr * shade, cg * shade, cb * shade);
+      blade.push(x, z, b / CARPET_BLADES, k);
+    }
+    index.push(first, first + 1, first + 3, first, first + 3, first + 2, first + 2, first + 3, first + 4);
+  }
+  carpetBase = {
+    position: new THREE.Float32BufferAttribute(pos, 3),
+    normal: new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3),
+    color: new THREE.Float32BufferAttribute(col, 3),
+    aBlade: new THREE.Float32BufferAttribute(blade, 4),
+    index: new THREE.Uint16BufferAttribute(index, 1),
+  };
+  return carpetBase;
+}
+// Per tile (instanced): aCell (its tile x, z; its blades' height, m; how
+// thick it grows, 0..1), aBits (which ninths of it are open, bits 0-8, x
+// then z; its sides that face no carpet, bits 9-12: -x, +x, -z, +z), aC0..3
+// (the ground's color at its corners: -x-z, +x-z, -x+z, +x+z)
+const CARPET_ATTRS = { aCell: 4, aBits: 1, aC0: 3, aC1: 3, aC2: 3, aC3: 3 };
+const CARPET_GLSL = /* glsl */ `
+  attribute vec4 aBlade;
+  attribute vec4 aCell;
+  attribute float aBits;
+  attribute vec3 aC0;
+  attribute vec3 aC1;
+  attribute vec3 aC2;
+  attribute vec3 aC3;
+  float gfxCarpetKeep(float d) {
+    return 1.0 - 0.5 * smoothstep(uCarpetFar.x - 3.0, uCarpetFar.x + 3.0, d) - 0.5 * smoothstep(uCarpetFar.y - 6.0, uCarpetFar.y, d);
+  }`;
+function addCarpet(material) {
+  material.userData.noSnow = true; // (the farm's own snow: src/seasons.js)
+  hook(material, 'carpet', (shader) => {
+    define(shader, 'GFX_CARPET');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', 'uCarpet', 'uCarpetFar', 'uGrassSpread'], 'v');
+    shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL + CARPET_GLSL, 'GFX_CARPET');
+    shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
+      // (the tile's turn of the one layout: mirrored, then a quarter turn or more)
+      highp vec2 cId = aCell.xy;
+      float cTurn = floor(gfxGrassHash(cId * 0.731 + 4.1) * 8.0);
+      vec2 cR = aBlade.xy;
+      vec2 cP = transformed.xz;
+      if (cTurn >= 4.0) { cR.x = -cR.x; cP.x = -cP.x; }
+      if (mod(cTurn, 4.0) >= 2.0) { cR = -cR; cP = -cP; }
+      if (mod(cTurn, 2.0) >= 1.0) { cR = vec2(-cR.y, cR.x); cP = vec2(-cP.y, cP.x); }
+      // (open where it stands? shorter and fewer toward a side with no carpet)
+      int cBits = int(aBits + 0.5);
+      ivec2 cSub = clamp(ivec2(floor((cR + 0.5) * 3.0)), 0, 2);
+      float cOpen = float((cBits >> (cSub.x + 3 * cSub.y)) & 1);
+      float cEdge = 1.0;
+      if ((cBits & 512) != 0) cEdge = min(cEdge, cR.x + 0.5);
+      if ((cBits & 1024) != 0) cEdge = min(cEdge, 0.5 - cR.x);
+      if ((cBits & 2048) != 0) cEdge = min(cEdge, cR.y + 0.5);
+      if ((cBits & 4096) != 0) cEdge = min(cEdge, 0.5 - cR.y);
+      cEdge = smoothstep(0.0, 0.5, cEdge);
+      highp vec3 grassRoot = (modelMatrix * vec4(cId.x + cR.x, 0.02, cId.y + cR.y, 1.0)).xyz;
+      // (fewer further off: the blades past this tile's share at its distance shrink away)
+      float cKeep = gfxCarpetKeep(distance(grassRoot, cameraPosition)) * aCell.w * uCarpet * mix(0.3, 1.0, cEdge) * cOpen;
+      float cShow = smoothstep(aBlade.z, aBlade.z + 0.04, cKeep);
+      float cTall = aCell.z * (0.8 + 0.4 * gfxGrassHash(cId * 1.37 + aBlade.z * 91.0)) * mix(0.45, 1.0, cEdge) * cShow;
+      vec2 cAt = cR + (cP - cR) * uGrassSpread * cShow;
+      transformed = vec3(cId.x + cAt.x, 0.02 + transformed.y * cTall, cId.y + cAt.y);
+      float grassH = aBlade.w; // (0 at the root, 1 at the tip)
+      vec2 grassDir = normalize(uWind + vec2(0.6, 0.25)); // (as the clouds drift)
+      float grassStorm = clamp(length(uWind) / 6.0, 0.0, 1.0);
+      highp vec2 grassP = (grassRoot.xz - uCloudOffset * 5.0) * 0.07;
+      float grassGust = smoothstep(0.3, 0.8, 0.65 * gfxGrassNoise(grassP) + 0.35 * gfxGrassNoise(grassP * 2.3 + 3.7));
+      // the big slow waves rolling downwind over the field (about 19 m apart), wavering
+      float cWave = 0.5 + 0.5 * sin(dot(grassRoot.xz, grassDir) * 0.33 - uTime * 1.25 + 2.5 * gfxGrassNoise(grassRoot.xz * 0.06));
+      cWave *= cWave;
+      // and the fine shimmer, each blade its own
+      float grassFine = sin(uTime * 3.4 + aBlade.z * 41.0 + dot(grassRoot.xz, vec2(1.3, 0.9)));
+      vec2 grassBend = grassDir * (0.1 + 0.3 * grassGust + 0.32 * cWave + 0.3 * grassStorm) + vec2(-grassDir.y, grassDir.x) * grassFine * (0.05 + 0.04 * grassGust);
+      for (int i = 0; i < ${MAX_FEET}; i++) {
+        vec4 feet = uPlayers[i];
+        vec2 away = grassRoot.xz - feet.xz;
+        float d = length(away);
+        float near = step(0.001, feet.w) * (1.0 - smoothstep(0.2, 0.9, d / max(feet.w, 0.01))) * (1.0 - smoothstep(0.3, 0.9, abs(feet.y - grassRoot.y)));
+        grassBend += away / max(d, 0.05) * near * 1.3;
+      }
+      grassBend *= min(1.0, 1.2 / max(length(grassBend), 1e-3));
+      float cUp = transformed.y - 0.02;
+      transformed.xz += grassBend * grassH * cUp;
+      transformed.y = 0.02 + cUp * (1.0 - 0.42 * dot(grassBend, grassBend) * grassH);
+      #ifdef USE_COLOR
+        vec2 cUV = cR + 0.5;
+        vColor.rgb *= mix(mix(aC0, aC1, cUV.x), mix(aC2, aC3, cUV.x), cUV.y); // (the ground's color under it)
+        vColor.rgb *= 1.0 + (0.14 * grassGust + 0.14 * cWave) * grassH; // (a wave's sheen running over the field)
+        float grassDew = uMist * grassH * grassH * (0.7 + 0.3 * gfxGrassHash(grassRoot.xz * 7.3));
+        vColor.rgb = vColor.rgb * (1.0 + 0.6 * grassDew) + vec3(0.02, 0.04, 0.05) * grassDew;
+      #endif`, 'GFX_CARPET');
+    shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_begin', `
+      #ifdef DOUBLE_SIDED
+        normal *= faceDirection; // (back as it was: up, lit as the ground is)
+        nonPerturbedNormal = normal;
+      #endif`, 'GFX_CARPET');
+  });
+  return material;
+}
 
 const FLOWER_COLORS = [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff6b4a];
 
@@ -1086,6 +1242,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // matrices are kept in hiddenFoliage so the ground can grow back
   // (restoreFoliage(), or restoreFoliage(key) for one tile).
   let hiddenFoliage = [];
+  let carpet = null; // (the grass carpet, once the ground is laid: makeCarpet)
   function clearFoliageOnTile(key) {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (const entry of foliageByTile.get(key) || []) {
@@ -1097,6 +1254,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       hiddenFoliage.push(entry);
     }
     foliageByTile.delete(key);
+    carpet?.hide(key, true);
   }
 
   function restoreFoliage(key = null) {
@@ -1109,6 +1267,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       trackFoliage(e.x, e.z, entry.mesh, entry.index);
     }
     hiddenFoliage = key === null ? [] : hiddenFoliage.filter((entry) => entry.key !== key);
+    if (key === null) carpet?.showAll();
+    else carpet?.hide(key, false);
   }
 
   // ---------- Trees, bushes, rocks ----------
@@ -1667,6 +1827,150 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     }
   }
 
+  // ---------- The grass carpet (see makeCarpet's notes, up top) ----------
+  carpet = makeCarpet();
+  function makeCarpet() {
+    const N = 2 * H + 1;
+    const at = (gx, gz) => (gx + H) * N + (gz + H);
+    const thick = new Float32Array(N * N); // (how thick it grows on each tile, 0: none)
+    const tall = new Float32Array(N * N); // (its blades' height there, m)
+    const bits = new Int16Array(N * N).fill(-1); // (which ninths are open: asked the first time it is in view)
+    const hidden = new Uint8Array(N * N); // (tilled, or built on: clearFoliageOnTile)
+    let any = false;
+    for (const [key, type] of tileGrid) {
+      const f = map.foliage[type];
+      if (!f || floorOf(type) !== 0 || !groundTiles.has(key)) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      const lush = meadowNoise(gx, gz);
+      const i = at(gx, gz);
+      thick[i] = Math.min(1, Math.max(0.3, (f.tufts + 0.5 * f.lushTufts) / 2.9));
+      tall[i] = CARPET_HEIGHT * (f.tall ?? 1) * (0.9 + 0.2 * lush) * (0.88 + 0.24 * hash2(gx * 0.37, gz * 0.41));
+      any = true;
+    }
+    if (!any) return null;
+    const isOn = (gx, gz) => Math.abs(gx) <= H && Math.abs(gz) <= H && thick[at(gx, gz)] > 0 && !hidden[at(gx, gz)];
+    const openBits = (gx, gz, i) => {
+      if (bits[i] < 0) {
+        let b = 0;
+        for (let n = 0; n < 9; n++) if (isOpenGround(gx + ((n % 3) - 1) / 3, gz + (Math.floor(n / 3) - 1) / 3, 0, -0.15)) b |= 1 << n;
+        bits[i] = b;
+      }
+      return bits[i];
+    };
+    const material = map.carpetMat ?? new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
+    material.side = THREE.DoubleSide;
+    addCarpet(material);
+    const base = carpetGeometry();
+    const meshes = CARPET_LODS.map((share) => {
+      const geo = new THREE.InstancedBufferGeometry();
+      for (const name of ['position', 'normal', 'color', 'aBlade']) geo.setAttribute(name, base[name]);
+      geo.setIndex(base.index);
+      for (const [name, size] of Object.entries(CARPET_ATTRS)) {
+        geo.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(CARPET_CAP * size), size).setUsage(THREE.DynamicDrawUsage));
+      }
+      geo.instanceCount = 0;
+      const mesh = new THREE.Mesh(geo, material);
+      mesh.frustumCulled = false; // (what is in view is chosen here)
+      mesh.receiveShadow = true;
+      mesh.userData.share = share;
+      mesh.visible = false;
+      root.add(mesh);
+      return mesh;
+    });
+    const frustum = new THREE.Frustum();
+    const sphere = new THREE.Sphere();
+    const eye = new THREE.Vector3();
+    const view = new THREE.Matrix4();
+    let last = '';
+    const self = {
+      tier(k) {
+        for (const mesh of meshes) mesh.geometry.setDrawRange(0, Math.ceil(CARPET_BLADES * k.carpet * mesh.userData.share) * BLADE_INDICES);
+        last = '';
+      },
+      hide(key, on) {
+        const [gx, gz] = key.split(',').map(Number);
+        if (Math.abs(gx) > H || Math.abs(gz) > H) return;
+        hidden[at(gx, gz)] = on ? 1 : 0;
+        last = '';
+      },
+      showAll() {
+        hidden.fill(0);
+        last = '';
+      },
+      // Before a view is drawn: the tiles its camera sees, out to rings
+      // ([full to, none by], as uCarpetFar), each in the mesh with just
+      // enough of its blades (a little more than enough: the view is put in
+      // again only once the camera has moved half a step, or turned)
+      view(camera, rings) {
+        const share = U.uCarpet.value;
+        if (!share) {
+          for (const mesh of meshes) mesh.visible = false;
+          return;
+        }
+        camera.updateMatrixWorld();
+        eye.setFromMatrixPosition(camera.matrixWorld);
+        root.updateWorldMatrix(true, false);
+        const e = camera.matrixWorld.elements;
+        const key = [eye.x * 2, eye.y * 2, eye.z * 2, e[8] * 60, e[9] * 60, e[10] * 60, camera.projectionMatrix.elements[0] * 60, camera.projectionMatrix.elements[5] * 60, rings[0], rings[1]].map(Math.round).join();
+        if (key === last) return;
+        last = key;
+        frustum.setFromProjectionMatrix(view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+        const local = root.worldToLocal(eye.clone());
+        const dy = Math.max(0, Math.abs(local.y - 0.4) - 0.4);
+        const reach = Math.sqrt(Math.max(0, rings[1] * rings[1] - dy * dy)) + 1;
+        const counts = [0, 0, 0];
+        const x0 = Math.max(-H, Math.floor(local.x - reach));
+        const x1 = Math.min(H, Math.ceil(local.x + reach));
+        const z0 = Math.max(-H, Math.floor(local.z - reach));
+        const z1 = Math.min(H, Math.ceil(local.z + reach));
+        for (let gx = x0; gx <= x1; gx++) {
+          for (let gz = z0; gz <= z1; gz++) {
+            const i = at(gx, gz);
+            if (!thick[i] || hidden[i]) continue;
+            const dx = Math.max(Math.abs(local.x - gx) - 0.5, 0);
+            const dz = Math.max(Math.abs(local.z - gz) - 0.5, 0);
+            const keep = grassKeep(Math.sqrt(dx * dx + dz * dz + dy * dy) - 0.8, rings) * thick[i];
+            if (keep <= 0.002) continue;
+            sphere.center.set(gx, 0.35, gz).applyMatrix4(root.matrixWorld);
+            sphere.radius = 1.1;
+            if (!frustum.intersectsSphere(sphere)) continue;
+            const lod = keep > CARPET_LODS[1] ? 0 : keep > CARPET_LODS[2] ? 1 : 2;
+            const n = counts[lod];
+            if (n >= CARPET_CAP) continue;
+            const ground = groundTiles.get(`${gx},${gz}`);
+            const color = ground?.chunk.geo?.attributes.color.array;
+            if (!color) continue;
+            counts[lod]++;
+            const a = meshes[lod].geometry.attributes;
+            a.aCell.array.set([gx, gz, tall[i], thick[i]], n * 4);
+            a.aBits.array[n] = openBits(gx, gz, i) | (isOn(gx - 1, gz) ? 0 : 512) | (isOn(gx + 1, gz) ? 0 : 1024) | (isOn(gx, gz - 1) ? 0 : 2048) | (isOn(gx, gz + 1) ? 0 : 4096);
+            for (const [c, v] of [['aC0', 0], ['aC1', 4], ['aC2', 20], ['aC3', 24]]) {
+              const k = (ground.first + v) * 3;
+              a[c].array.set([color[k], color[k + 1], color[k + 2]], n * 3);
+            }
+          }
+        }
+        meshes.forEach((mesh, lod) => {
+          const geo = mesh.geometry;
+          geo.instanceCount = counts[lod];
+          mesh.visible = counts[lod] > 0;
+          for (const [name, size] of Object.entries(CARPET_ATTRS)) {
+            const attr = geo.attributes[name];
+            attr.clearUpdateRanges();
+            attr.addUpdateRange(0, counts[lod] * size);
+            attr.needsUpdate = true;
+          }
+        });
+      },
+      dispose() {
+        carpets.delete(self);
+      },
+    };
+    self.tier(knobs());
+    carpets.add(self);
+    return self;
+  }
+
   // ---------- Shallows and foam along the shore ----------
   // Strips on the sea along every tile edge that faces open water, with a
   // corner piece round each outside corner of the coast: lighter water
@@ -2160,7 +2464,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // ones (20 triangles a blob), and the ground's surface in squares further
     // than groundFar its coarse triangles (8 a tile, not 32): far off, in the
     // haze, they look the same (the ground's painted detail is per pixel)
-    viewFrom(at, { grassFar, canopyFar, groundFar }) {
+    viewFrom(at, { grassFar, canopyFar, groundFar, camera = null }) {
+      const carpetFar = [Math.min(grassFar[0] * CARPET_REACH, CARPET_FAR[0]), Math.min(grassFar[1] * CARPET_REACH, CARPET_FAR[1])];
+      U.uCarpetFar.value.set(...carpetFar);
+      if (camera) carpet?.view(camera, carpetFar);
       for (const geo of surfaceChunks) {
         const start = boxDistance(geo.userData.box, at.x, at.z) > groundFar ? geo.userData.fine : 0;
         if (geo.drawRange.start !== start) geo.setDrawRange(start, start ? Infinity : geo.userData.fine);
@@ -2185,6 +2492,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // good. (Some geometries and materials are shared between worlds: three.js
     // uploads those again the next time they are drawn.)
     dispose() {
+      carpet?.dispose();
       root.traverse((obj) => {
         if (!obj.isMesh) return;
         grassMeshes.delete(obj);

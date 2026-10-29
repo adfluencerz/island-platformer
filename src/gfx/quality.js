@@ -5,8 +5,8 @@
 //
 //   tier()          the tier now
 //   knobs()         its knobs: { pixelRatio, shadowMap, post, grassDensity,
-//                   grassBlades, grassSpread, treeDetail, treeSway, cloudShadows,
-//                   msaa, particles, outline, detailGain }
+//                   grassBlades, grassSpread, carpet, treeDetail, treeSway,
+//                   cloudShadows, msaa, particles, outline, detailGain }
 //                   (pixelRatio is the one to draw at here: the tier's cap,
 //                   or the screen's own if lower)
 //   setTier(t)      pick one (kept in this browser), and apply it at once
@@ -27,16 +27,18 @@ export const TIER_NAMES = ['low', 'medium', 'high'];
 // post: 'off' | 'half' (half-res bloom) | 'full'; grassDensity: the share of the
 // grass tufts drawn; grassBlades: how many of each tuft's seven blades
 // (src/world.js); grassSpread: each tuft that much wider (fewer tufts still
-// cover the ground: medium's); treeDetail: 1 for round trees' canopies of 80 triangles a
+// cover the ground: medium's; and the carpet's blades that much wider);
+// carpet: the share of the grass carpet's blades drawn round the camera
+// (src/world.js makeCarpet; 0: none, the tufts instead); treeDetail: 1 for round trees' canopies of 80 triangles a
 // blob, 0 for 20 (src/world.js canopyGeo); treeSway: canopies sway in the
 // wind; msaa: samples in the post chain; particles: rain and snow; outline: a thin dark
 // edge round the farmers and the neighbours (src/character.js); detailGain:
 // the ground's painted detail that much stronger (src/gfx/ground.js: medium's,
 // for a phone's small screen with no MSAA)
 export const TIERS = {
-  low: { pixelRatio: 0.5, shadowMap: 0, post: 'off', grassDensity: 0.35, grassBlades: 3, grassSpread: 1, treeDetail: 0, treeSway: false, cloudShadows: false, msaa: 0, particles: 300, outline: false, detailGain: 1 },
-  medium: { pixelRatio: 1.5, shadowMap: 1024, post: 'half', grassDensity: 0.75, grassBlades: 6, grassSpread: 1.2, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 0, particles: 600, outline: false, detailGain: 1.35 },
-  high: { pixelRatio: 2, shadowMap: 2048, post: 'full', grassDensity: 1.0, grassBlades: 7, grassSpread: 1, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 4, particles: 900, outline: true, detailGain: 1 },
+  low: { pixelRatio: 0.5, shadowMap: 0, post: 'off', grassDensity: 0.35, grassBlades: 3, grassSpread: 1, carpet: 0, treeDetail: 0, treeSway: false, cloudShadows: false, msaa: 0, particles: 300, outline: false, detailGain: 1 },
+  medium: { pixelRatio: 1.5, shadowMap: 1024, post: 'half', grassDensity: 0.75, grassBlades: 6, grassSpread: 1.2, carpet: 0.6, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 0, particles: 600, outline: false, detailGain: 1.35 },
+  high: { pixelRatio: 2, shadowMap: 2048, post: 'full', grassDensity: 1.0, grassBlades: 7, grassSpread: 1, carpet: 1, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 4, particles: 900, outline: true, detailGain: 1 },
 };
 export const MAX_PARTICLES = Math.max(...Object.values(TIERS).map((k) => k.particles));
 
