@@ -4,7 +4,7 @@ import { mulberry32 } from '../shared/worldgen.js';
 import { giantScale } from '../shared/giants.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
-import { use } from './gfx/uniforms.js';
+import { use, U } from './gfx/uniforms.js';
 import { groundDetail } from './gfx/ground.js';
 import { detail } from './gfx/detail.js';
 import { waterLook } from './gfx/water.js';
@@ -66,16 +66,30 @@ export const GRASS_WIND_GLSL = /* glsl */ `
   }`;
 // (spread: the tufts, which the tier may draw wider, uGrassSpread: fewer of
 // them still cover the ground; not the flowers)
+// Further from the camera, fewer: to half by uGrassFar.x, to none by .y
+// (src/main.js viewFrom). A tuft goes, shrinking away, at its own distance:
+// the tufts by aRank, their place in their patch's shuffled order, so the
+// patch can stop drawing the ones past where the nearest of it keeps them
+// (viewFrom, below); the flowers by a hash of where they stand.
+const GRASS_KEEP_GLSL = /* glsl */ `
+  float gfxGrassKeep(float d) {
+    return 1.0 - 0.5 * smoothstep(uGrassFar.x - 3.0, uGrassFar.x + 3.0, d) - 0.5 * smoothstep(uGrassFar.y - 6.0, uGrassFar.y, d);
+  }`;
+const grassKeep = (d, [near, end]) => 1 - 0.5 * smooth(near - 3, near + 3, d) - 0.5 * smooth(end - 6, end, d); // (the same)
+const smooth = (a, b, x) => THREE.MathUtils.smoothstep(x, a, b);
 function addGrassWind(material, height, spread = false) {
   material.userData.noSnow = true;
   hook(material, `grass:${height.toFixed(3)}${spread ? ':spread' : ''}`, (shader) => {
     define(shader, 'GFX_GRASS');
-    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', ...(spread ? ['uGrassSpread'] : [])], 'v');
-    shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL, 'GFX_GRASS');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', 'uGrassFar', ...(spread ? ['uGrassSpread', 'uGrassDensity'] : [])], 'v');
+    shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL + GRASS_KEEP_GLSL + (spread ? 'attribute float aRank;' : ''), 'GFX_GRASS');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       #ifdef USE_INSTANCING
-        ${spread ? 'transformed.xz *= uGrassSpread;' : ''}
         highp vec3 grassRoot = (modelMatrix * instanceMatrix[3]).xyz;
+        // (further off, fewer: GRASS_KEEP_GLSL)
+        float grassR = ${spread ? 'aRank / uGrassDensity' : 'gfxGrassHash(grassRoot.xz * 3.1 + 0.7)'};
+        transformed *= smoothstep(grassR, grassR + 0.05, gfxGrassKeep(distance(grassRoot, cameraPosition)));
+        ${spread ? 'transformed.xz *= uGrassSpread;' : ''}
         float grassH = clamp(transformed.y / ${height.toFixed(3)}, 0.0, 1.2); // (0 at the root, 1 at the tip; after the snow's sink)
         vec2 grassDrift = uWind + vec2(0.6, 0.25); // (as the clouds drift: src/gfx/uniforms.js frame)
         vec2 grassDir = normalize(grassDrift);
@@ -303,7 +317,7 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
         if (!obj.isMesh) continue;
         obj.updateMatrix();
         const key = `${[obj.material].flat().map((m) => m.uuid).join(',')}|${obj.geometry.uuid}|${square}`;
-        if (!sets.has(key)) sets.set(key, { material: obj.material, geometry: obj.geometry, slots: [], mesh: null, shown: 0, shadow: obj.castShadow });
+        if (!sets.has(key)) sets.set(key, { material: obj.material, geometry: obj.geometry, slots: [], mesh: null, shown: 0, shadow: obj.castShadow, square });
         const set = sets.get(key);
         const part = { obj, thing, set, index: set.slots.length, color: obj.userData.tint ?? color, shown: true };
         set.slots.push(part);
@@ -317,6 +331,8 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
         const geo = set.geometry.clone(); // (its own, for its own aFade)
         geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(n), 1));
         if (set.geometry === canopyGeo || set.geometry === pineGeo) {
+          const [sx, sz] = set.square.split(',').map(Number);
+          geo.userData.box = [sx * chunk, sz * chunk, (sx + 1) * chunk, (sz + 1) * chunk]; // (its square, seen from above: viewFrom)
           canopies.add(geo);
           canopyRange(geo, knobs());
         }
@@ -346,6 +362,13 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
     },
     meshes: () => [...sets.values()].map((set) => set.mesh).filter(Boolean),
   };
+}
+
+// How far x, z is from a box [x0, z0, x1, z1] seen from above (0 inside it)
+function boxDistance([x0, z0, x1, z1], x, z) {
+  const dx = Math.max(x0 - x, 0, x - x1);
+  const dz = Math.max(z0 - z, 0, z - z1);
+  return Math.sqrt(dx * dx + dz * dz);
 }
 
 // A repeatable 0..1 value for a point: the same point always gets the same
@@ -492,7 +515,8 @@ export const pineGeo = (() => {
   return geo;
 })();
 canopyGeo.userData.hi = CANOPY_HI;
-const canopyRange = (geo, k) => (k.treeDetail ? geo.setDrawRange(0, geo.userData.hi) : geo.setDrawRange(geo.userData.hi, Infinity));
+// (a square of them far from the view, userData.far: the plain one whatever the tier: viewFrom)
+const canopyRange = (geo, k) => (k.treeDetail && !geo.userData.far ? geo.setDrawRange(0, geo.userData.hi) : geo.setDrawRange(geo.userData.hi, Infinity));
 const canopies = new Set(); // (each world's copies of it: makeInstancer)
 onApply((k) => canopies.forEach((geo) => canopyRange(geo, k)));
 export const rockGeo = new THREE.DodecahedronGeometry(1, 0);
@@ -563,6 +587,10 @@ const CLIFF_ROCK = new THREE.Color(0x4f4b47);
 // and the ground's surface and its cliffs in smaller ones (the whole island is
 // most of a view's triangles: the squares out of view are not drawn)
 const GROUND_CHUNK = 47;
+// (the rocks and the still decor in bigger ones: small things, many kinds of
+// them, few a square: a view from low down sees most of the island's
+// squares, and each kind in each square is a draw)
+const DECOR_CHUNK = 71;
 const SURFACE_CHUNK = 24;
 // The ground's surface sits this far above its floor (tilled soil is above it)
 const GROUND_LIFT = 0.012;
@@ -609,32 +637,42 @@ function fitBox(box, x, z, w) {
 }
 
 // Fade trees whose canopy sits on the line of sight from the camera to the
-// player. Canopies are treated as boxes around the trunk: CANOPY_RADIUS wide
-// and spanning CANOPY_BOTTOM..CANOPY_TOP in height (all times tree scale).
+// player. Canopies are treated as upright cylinders round the trunk:
+// CANOPY_RADIUS wide and spanning CANOPY_BOTTOM..CANOPY_TOP above its foot
+// (all times tree scale). The sight line is the real one, eye to camera, from
+// whichever way and at whatever angle the camera looks (wide or classic).
 const CANOPY_RADIUS = 1.3;
 const CANOPY_BOTTOM = 0.8;
 const CANOPY_TOP = 3.4;
 
 function blocksView(tree, eye, camera) {
-  const { x: tx, z: tz } = tree.group.position;
+  const { x: tx, y: ty, z: tz } = tree.group.position;
   const k = tree.scale * tree.big;
   const r = CANOPY_RADIUS * k + 0.4; // a little margin around the player
-  const dz = camera.position.z - eye.z;
-  if (Math.abs(dz) < 1e-3) return false;
-
-  // The sight line climbs toward the camera; find where it crosses the
-  // canopy's near and far edges in Z and test height and sideways distance.
-  const sNear = (tz + r - eye.z) / dz;
-  const sFar = (tz - r - eye.z) / dz;
-  if (sNear <= 0 || sFar >= 1) return false;
-  const yAt = (s) => eye.y + (camera.position.y - eye.y) * THREE.MathUtils.clamp(s, 0, 1);
-  const xAt = (s) => eye.x + (camera.position.x - eye.x) * THREE.MathUtils.clamp(s, 0, 1);
-  const sMid = (tz - eye.z) / dz;
-  return (
-    yAt(sFar) < CANOPY_TOP * k &&
-    yAt(sNear) > CANOPY_BOTTOM * k &&
-    Math.abs(xAt(sMid) - tx) < r
-  );
+  const cam = camera.position;
+  // the part of the line (s: 0 at the eye, 1 at the camera) at the canopy's height
+  const lo = ty + CANOPY_BOTTOM * k;
+  const hi = ty + CANOPY_TOP * k;
+  const dy = cam.y - eye.y;
+  let s0 = 0;
+  let s1 = 1;
+  if (Math.abs(dy) < 1e-6) {
+    if (eye.y < lo || eye.y > hi) return false;
+  } else {
+    const a = (lo - eye.y) / dy;
+    const b = (hi - eye.y) / dy;
+    s0 = Math.max(0, Math.min(a, b));
+    s1 = Math.min(1, Math.max(a, b));
+    if (s0 >= s1) return false;
+  }
+  // ...and the nearest it comes to the trunk there, seen from above
+  const dx = cam.x - eye.x;
+  const dz = cam.z - eye.z;
+  const len2 = dx * dx + dz * dz;
+  const s = THREE.MathUtils.clamp(len2 > 1e-9 ? ((tx - eye.x) * dx + (tz - eye.z) * dz) / len2 : s0, s0, s1);
+  const px = eye.x + dx * s - tx;
+  const pz = eye.z + dz * s - tz;
+  return px * px + pz * pz < r * r;
 }
 
 // Grass tufts: up to seven blades, of which the tier draws its grassBlades
@@ -689,10 +727,13 @@ function makeTuftGeometry() {
 // tuft's blades. Again whenever the tier is changed.
 const grassMeshes = new Set();
 function grassTier(mesh, k = knobs()) {
-  mesh.count = Math.round(mesh.userData.tufts * k.grassDensity);
+  mesh.count = mesh.userData.drawn = Math.round(mesh.userData.tufts * k.grassDensity); // (and fewer far from the view: viewFrom)
   mesh.geometry.setDrawRange(0, Math.min(k.grassBlades, TUFT_BLADES) * BLADE_INDICES);
 }
-onApply((k) => grassMeshes.forEach((mesh) => grassTier(mesh, k)));
+onApply((k) => {
+  U.uGrassDensity.value = k.grassDensity;
+  grassMeshes.forEach((mesh) => grassTier(mesh, k));
+});
 
 const FLOWER_COLORS = [0xffffff, 0xffe14d, 0xff7eb6, 0xb58cff, 0xff6b4a];
 
@@ -704,6 +745,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
   const H = map.half;
   const root = new THREE.Group();
+  const grassPatches = []; // (its grass's InstancedMeshes, a patch each: viewFrom)
+  const surfaceChunks = []; // (its ground's surface, a geometry a square: viewFrom)
   const platforms = []; // AABBs the player can stand on / bump into
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -987,7 +1030,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     // In square patches (GRASS_PATCH tiles a side), each its own InstancedMesh,
     // so the ones out of view are not drawn: a view sees about a fifth of the
     // island's grass. (Each keeps the shuffled order, so the tier thins every
-    // patch evenly; one tuft geometry for them all.)
+    // patch evenly, and so does the distance: aRank, each tuft's place in it;
+    // one tuft shape for them all, each patch its own copy for its aRank.)
     const tuftGeo = makeTuftGeometry();
     const patches = new Map(); // "px,pz" -> its tufts
     for (const tuft of grass) {
@@ -996,7 +1040,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       patches.get(key).push(tuft);
     }
     for (const patch of patches.values()) {
-      const tuftMesh = new THREE.InstancedMesh(tuftGeo, tuftMat, patch.length);
+      const geo = tuftGeo.clone();
+      geo.setAttribute('aRank', new THREE.InstancedBufferAttribute(Float32Array.from(patch, (_, i) => i / patch.length), 1));
+      const tuftMesh = new THREE.InstancedMesh(geo, tuftMat, patch.length);
       tuftMesh.receiveShadow = true;
       patch.forEach(([x, z, turn, k, tall, hue, light], i) => {
         m.compose(v.set(x, 0.02, z), q.setFromAxisAngle(up, turn), s.set(k, tall, k));
@@ -1007,8 +1053,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       tuftMesh.computeBoundingSphere(); // (now, while every tuft stands: one tilled away is scaled to nothing at the origin)
       tuftMesh.boundingSphere.radius += 0.5; // (and room for them to sway)
       tuftMesh.userData.tufts = patch.length;
+      tuftMesh.userData.box = patch.reduce(([x0, z0, x1, z1], [x, z]) => [Math.min(x0, x), Math.min(z0, z), Math.max(x1, x), Math.max(z1, z)], [Infinity, Infinity, -Infinity, -Infinity]);
       grassTier(tuftMesh);
       grassMeshes.add(tuftMesh);
+      grassPatches.push(tuftMesh);
       root.add(tuftMesh);
     }
 
@@ -1104,7 +1152,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // leafy mottle on the canopies and bushes)
   for (const m of [trunkMat, ...leaves]) if (!treeLooks.has(m)) hookTree(detail(m, m === trunkMat ? 'bark' : 'leaf'));
   for (const m of needles) if (!treeLooks.has(m)) hookTree(detail(m, 'leaf'), true);
-  const treeDecor = makeInstancer(root);
+  const treeDecor = makeInstancer(root, DECOR_CHUNK);
   // a tree drawn where its group says (or not at all, down), and its stump
   // (while it is felled)
   const drawTree = (tree) => {
@@ -1181,7 +1229,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // this list, the same for everyone on the island, which is how a lobby
   // names a rock.
   const rocks = [];
-  const rockDecor = makeInstancer(root);
+  const rockDecor = makeInstancer(root, DECOR_CHUNK);
   const drawRock = (rock) => rockDecor.show(rock.mesh, rock.parts, rock.state !== 'gone');
 
   // One of wilds.rocks (shared/wilds.js): size (big ones are boulders and
@@ -1219,7 +1267,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // Everything still that the map and the bushes put down with addDecor (and
   // the map's own still things, userData.decor): drawn instanced, in a few
   // draws. (The meshes stay in root, never drawn, for their transforms.)
-  const stillDecor = makeInstancer(root);
+  const stillDecor = makeInstancer(root, DECOR_CHUNK);
   for (const obj of [...root.children]) if (obj.isMesh && obj.userData.decor) stillDecor.adopt(obj);
   stillDecor.build();
 
@@ -1424,6 +1472,22 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     }
     for (const chunk of chunks.values()) {
       const { pos, col, kind, shore, index } = chunk;
+      // (and after its own triangles, the same tiles coarser, 2x2 quads a
+      // tile on every other vertex: drawn instead far from the view, viewFrom)
+      const fine = index.length;
+      const box = [Infinity, Infinity, -Infinity, -Infinity];
+      for (let first = 0; first < pos.length / 3; first += 25) {
+        box[0] = Math.min(box[0], pos[first * 3]);
+        box[1] = Math.min(box[1], pos[first * 3 + 2]);
+        box[2] = Math.max(box[2], pos[(first + 24) * 3]);
+        box[3] = Math.max(box[3], pos[(first + 24) * 3 + 2]);
+        for (const i of [0, 2]) {
+          for (const j of [0, 2]) {
+            const a = first + i * 5 + j;
+            index.push(a, a + 10, a + 2, a + 2, a + 10, a + 12);
+          }
+        }
+      }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
@@ -1431,6 +1495,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       geo.setAttribute('gfxKind', new THREE.Uint8BufferAttribute(kind, 4, true)); // (src/gfx/ground.js)
       geo.setAttribute('gfxShore', new THREE.Uint8BufferAttribute(shore, 1, true));
       geo.setIndex(index);
+      geo.setDrawRange(0, fine);
+      Object.assign(geo.userData, { fine, box });
+      surfaceChunks.push(geo);
       chunk.geo = geo; // (for its shade under the trees: shadeCanopy)
       const ground = new THREE.Mesh(geo, map.groundMat ?? groundMat); // (as the grass tufts)
       ground.receiveShadow = true;
@@ -2029,6 +2096,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   }
 
   const _eye = new THREE.Vector3();
+  let farCanopies = null; // (its trees' canopies, by their squares: viewFrom)
   return {
     name: map.name,
     root,
@@ -2083,6 +2151,31 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         if (tree.fade < 0.01) tree.fade = 0;
         if (tree.fade > 0.995) tree.fade = 1;
         if (tree.fade !== was) treeDecor.fade(tree.parts, 1 - tree.fade); // (dithered away: the 'tree' hook)
+      }
+    },
+    // Before a view is drawn, from its camera (at, a Vector3): each patch of
+    // grass draws only the tufts the grass hook keeps at its nearest to the
+    // camera (grassFar: [half by, none by], as uGrassFar; none past the end),
+    // the trees' canopies in squares further than canopyFar are the plain
+    // ones (20 triangles a blob), and the ground's surface in squares further
+    // than groundFar its coarse triangles (8 a tile, not 32): far off, in the
+    // haze, they look the same (the ground's painted detail is per pixel)
+    viewFrom(at, { grassFar, canopyFar, groundFar }) {
+      for (const geo of surfaceChunks) {
+        const start = boxDistance(geo.userData.box, at.x, at.z) > groundFar ? geo.userData.fine : 0;
+        if (geo.drawRange.start !== start) geo.setDrawRange(start, start ? Infinity : geo.userData.fine);
+      }
+      for (const mesh of grassPatches) {
+        const keep = grassKeep(boxDistance(mesh.userData.box, at.x, at.z), grassFar);
+        mesh.count = Math.min(mesh.userData.drawn, Math.ceil(mesh.userData.drawn * keep));
+        mesh.visible = mesh.count > 0;
+      }
+      farCanopies ??= [treeDecor, rockDecor, stillDecor].flatMap((decor) => decor.meshes()).map((mesh) => mesh.geometry).filter((geo) => geo.userData.box);
+      for (const geo of farCanopies) {
+        const far = boxDistance(geo.userData.box, at.x, at.z) > canopyFar;
+        if (far === !!geo.userData.far) continue;
+        geo.userData.far = far;
+        canopyRange(geo, knobs());
       }
     },
     update(t) {

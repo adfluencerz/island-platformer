@@ -137,10 +137,19 @@ export class Splash {
     const showGfx = () => (gfx.textContent = `Graphics: ${quality.tier()}`);
     shows.push(showGfx);
     showGfx();
+    // ...and the camera's angle from above: wide (low, the sky in view) or classic (src/view.js), at once
+    const cam = button('ui-btn ui-btn-small ui-btn-ghost', soundRow, '', () => {
+      view.toggleWide();
+      showCam();
+    });
+    cam.title = 'Wide: low, with the sky and the horizon in view. Classic: steeply down from above';
+    const showCam = () => (cam.textContent = `Camera: ${view.wide() ? 'wide' : 'classic'}`);
+    shows.push(showCam);
+    showCam();
     this.showSound = () => shows.forEach((show) => show());
     // the camera: from above, or in first person (V in game does the same)
     const viewRow = el('div', 'ui-row', main);
-    const showView = () => (viewBtn.textContent = `Camera: ${view.firstPerson() ? 'first person' : 'overhead'}`);
+    const showView = () => (viewBtn.textContent = `View: ${view.firstPerson() ? 'first person' : 'overhead'}`);
     const viewBtn = button('ui-btn ui-btn-small ui-btn-ghost', viewRow, '', () => {
       view.toggle();
       showView();
