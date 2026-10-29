@@ -117,6 +117,11 @@ export function lightChunks() {
   });
 }
 
+// Moonlight's grey: a little blue (its brightness the same), so what only the
+// moon lights at night goes cool and what a lamp lights stays warm (here on
+// the low tier, and in the grade on the others: src/gfx/post.js)
+export const MOON = '0.78, 0.97, 1.45';
+
 // At night on the low tier: the diffuse light, toward grey (its brightness
 // kept, as the grade does: greying the color it lights instead would let the
 // blue moon light more of it), less where it is bright (a lamp's)
@@ -128,8 +133,9 @@ const GREY_GLSL = /* glsl */ `
       float gfxD = dot( reflectedLight.directDiffuse, gfxLuma );
       float gfxI = dot( reflectedLight.indirectDiffuse, gfxLuma );
       gfxGrey *= 1.0 - smoothstep( 0.08, 0.4, gfxD + gfxI );
-      reflectedLight.directDiffuse = mix( reflectedLight.directDiffuse, vec3( gfxD ), gfxGrey );
-      reflectedLight.indirectDiffuse = mix( reflectedLight.indirectDiffuse, vec3( gfxI ), gfxGrey );
+      const vec3 gfxMoon = vec3( ${MOON} );
+      reflectedLight.directDiffuse = mix( reflectedLight.directDiffuse, gfxD * gfxMoon, gfxGrey );
+      reflectedLight.indirectDiffuse = mix( reflectedLight.indirectDiffuse, gfxI * gfxMoon, gfxGrey );
     }
   }
 `;
