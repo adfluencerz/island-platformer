@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULT_LOOK } from '../shared/looks.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
+import { knobs, onApply } from './gfx/quality.js';
 
 // ---------- Character model ----------
 // A little farmer built from primitives, used for the local player, for
@@ -296,6 +297,67 @@ class Parts {
     this.byMat.clear();
     return meshes;
   }
+}
+
+// ---------- The outline ----------
+// On the high tier (knobs().outline) a farmer has a thin dark edge, like the
+// ink round a painted figure: a hull of their pieces pushed out along the
+// normals and drawn inside out (its back faces only), so it shows just past
+// the silhouette. It is one mesh for the whole farmer, each piece skinned to
+// the part it moves with (the torso with the head, each arm, each leg) with
+// those parts' groups for bones, so it follows the walk and the swings in one
+// draw. The little bits (eyes, cheeks, glasses: noShadow) and the eyes'
+// group are left out. It casts no shadow.
+const OUTLINE = { push: 0.018, color: 0x3a281c };
+const hullMat = new THREE.MeshBasicMaterial({ color: OUTLINE.color, side: THREE.BackSide });
+hullMat.userData.noSnow = true;
+let outlineOn = null; // (the tier's, once applied: src/gfx/quality.js)
+onApply((k) => (outlineOn = k.outline));
+const outlined = () => (outlineOn ??= knobs().outline);
+const IDENTITY = new THREE.Matrix4();
+
+// meshes: [[the part's meshes, its bone's index]]; bones: the parts' groups, in
+// that order. In the rig's frame (it goes in the rig).
+function buildHull(meshes, bones) {
+  const pieces = [];
+  for (const [list, bone] of meshes) {
+    for (const mesh of list) {
+      if (mesh.material.userData.noShadow || mesh.material.side !== THREE.FrontSide) continue;
+      const src = mesh.geometry;
+      const pos = src.attributes.position;
+      const nrm = src.attributes.normal;
+      const n = pos.count;
+      const out = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        out[i * 3] = pos.getX(i) + nrm.getX(i) * OUTLINE.push;
+        out[i * 3 + 1] = pos.getY(i) + nrm.getY(i) * OUTLINE.push;
+        out[i * 3 + 2] = pos.getZ(i) + nrm.getZ(i) * OUTLINE.push;
+      }
+      const skinIndex = new Uint16Array(n * 4);
+      const skinWeight = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) {
+        skinIndex[i * 4] = bone;
+        skinWeight[i * 4] = 1;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(out, 3));
+      geo.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4));
+      geo.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
+      geo.setIndex(src.index ? Array.from(src.index.array) : [...Array(n).keys()]);
+      pieces.push(geo);
+    }
+  }
+  if (!pieces.length) return null;
+  const geo = mergeGeometries(pieces);
+  for (const g of pieces) g.dispose();
+  const hull = new THREE.SkinnedMesh(geo, hullMat);
+  hull.name = 'outline';
+  hull.castShadow = hull.receiveShadow = false;
+  hull.userData.noShadow = true;
+  // (each bone's own frame is the pieces' frame, so nothing to undo: the pose is the groups' as they are)
+  hull.bind(new THREE.Skeleton(bones, bones.map(() => IDENTITY.clone())), IDENTITY);
+  hull.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.85, 0), 1.4); // (round the farmer, in the rig's frame: not re-skinned to cull)
+  return hull;
 }
 
 // ---------- The head ----------
@@ -637,11 +699,30 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
       buildShoe(P, L.shoes);
     }
 
-    meshes = [
-      ...T.build(torso), ...E.build(eyes),
-      ...A[0].build(arms[0].pivot), ...A[1].build(arms[1].pivot),
-      ...G[0].build(legs[0].pivot), ...G[1].build(legs[1].pivot),
-    ];
+    const parts = [T.build(torso), A[0].build(arms[0].pivot), A[1].build(arms[1].pivot), G[0].build(legs[0].pivot), G[1].build(legs[1].pivot)];
+    meshes = [...parts.flat(), ...E.build(eyes)];
+    hullParts = parts.map((list, bone) => [list, bone]);
+    dropHull();
+    if (outlined()) makeHull();
+  }
+
+  // ---- The outline (high tier): one skinned hull, made and dropped as the tier changes ----
+  const bones = [torso, arms[0].pivot, arms[1].pivot, legs[0].pivot, legs[1].pivot];
+  let hullParts = [];
+  let hull = null;
+  let hullOn = false;
+  function makeHull() {
+    hullOn = true;
+    hull = buildHull(hullParts, bones);
+    if (hull) rig.add(hull);
+  }
+  function dropHull() {
+    hullOn = false;
+    if (!hull) return;
+    rig.remove(hull);
+    hull.geometry.dispose();
+    hull.skeleton.dispose();
+    hull = null;
   }
 
   // A hat, in the torso's parts
@@ -848,6 +929,8 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
   // moving: walking (or steering in the air) this frame. targetYaw: where it
   // should face while moving. time: seconds, for idle breathing.
   function animate(dt, { moving, onGround, targetYaw, time }) {
+    if (hullOn !== outlined()) outlined() ? makeHull() : dropHull(); // (the tier changed)
+
     // Turn smoothly toward the movement direction, taking the short way around
     if (moving) {
       let diff = targetYaw - anim.facing;
@@ -996,6 +1079,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     },
     // drop the per-farmer GPU resources (the shared materials and cloth stay)
     dispose() {
+      dropHull();
       root.traverse((obj) => obj.isMesh && obj.geometry.dispose());
       for (const m of [...Object.values(own), ...toolMats]) m.dispose();
       mount?.dispose();
