@@ -30,7 +30,7 @@ export const HORIZON_GLSL = /* glsl */ `
   }
 `;
 
-// GLSL: how much of a dusk it is, 0 to 1 (and of a misty morning: gfxMorning): a low sun in the west (not the
+// GLSL: how much of a dusk it is, 0 to 1 (and of a misty morning: gfxMorning; rain, night, a clear noon: gfxRain, gfxNight, gfxDay): a low sun in the west (not the
 // morning's, in the east), by day, out in the open, not overcast. What only
 // a dusk changes (the near field's sky fill, src/gfx/light.js; the haze ramped
 // by distance, below; the sun's glow on grass tips and crown edges,
@@ -63,6 +63,14 @@ export const DUSK_GLSL = /* glsl */ `
   float gfxNight() {
     return smoothstep(0.5, 1.0, uNight) * (1.0 - uCloudAmount) * (1.0 - uUnder);
   }
+  // (and the day's: a high sun, out in the open, not overcast: the sky's
+  // flat fill held back near the camera, a rich, saturated near field, the
+  // haze held back to the middle distance and lifting the far field into a
+  // pale blue-green; 0 at 8:00 and 18:30 (the sun below about 33 degrees),
+  // in the rain, at night and underground)
+  float gfxDay() {
+    return smoothstep(0.55, 0.8, uSunDir.y) * (1.0 - smoothstep(0.0, 0.25, uNight)) * (1.0 - uCloudAmount) * (1.0 - uUnder);
+  }
 #endif
 `;
 export const DUSK_UNIFORMS = ['uSunDir', 'uNight', 'uCloudAmount', 'uUnder', 'uMist', 'uRain'];
@@ -93,12 +101,14 @@ const FOG_GLSL = /* glsl */ `
     float gfxRn = gfxRain();
     float gfxNt = gfxNight();
     // (at night the same: the near field clear and dark, the far one lifting into the horizon's blue)
-    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist + 0.1 * gfxDk + 0.06 * gfxMn + 0.15 * gfxRn + 0.7 * gfxNt) * smoothstep(0.4 - 0.1 * uMist + 0.5 * gfxDk + 0.5 * gfxMn + 0.35 * gfxRn + 0.15 * gfxNt, 1.35 + 0.2 * gfxDk + 0.1 * gfxMn - 0.05 * gfxRn + 0.1 * gfxNt, gfxS);
+    // (and at noon: the near field clear and rich, the far one lifting into a pale blue-green)
+    float gfxDy = gfxDay();
+    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist + 0.1 * gfxDk + 0.06 * gfxMn + 0.15 * gfxRn + 0.7 * gfxNt + 0.14 * gfxDy) * smoothstep(0.4 - 0.1 * uMist + 0.5 * gfxDk + 0.5 * gfxMn + 0.35 * gfxRn + 0.15 * gfxNt + 0.45 * gfxDy, 1.35 + 0.2 * gfxDk + 0.1 * gfxMn - 0.05 * gfxRn + 0.1 * gfxNt + 0.1 * gfxDy, gfxS);
     // the low haze over the sea, thinning going up; in the morning's mist
     // thicker, nearer and lying higher
     float gfxAbove = max(vGfxWorld.y - uFogHeight.x, 0.0);
     float gfxHaze = (0.38 + 0.2 * gfxLow + 0.16 * uMist + 0.1 * gfxMn + 0.12 * gfxRn) * exp(-gfxAbove * uFogHeight.y * (1.0 - 0.3 * uMist - 0.3 * gfxRn))
-      * smoothstep(0.3 - 0.1 * uMist + 0.5 * gfxDk + 0.45 * gfxMn + 0.35 * gfxRn + 0.45 * gfxNt, 1.2 - 0.25 * uMist + 0.25 * gfxDk + 0.3 * gfxMn + 0.05 * gfxRn + 0.25 * gfxNt, gfxS);
+      * smoothstep(0.3 - 0.1 * uMist + 0.5 * gfxDk + 0.45 * gfxMn + 0.35 * gfxRn + 0.45 * gfxNt + 0.45 * gfxDy, 1.2 - 0.25 * uMist + 0.25 * gfxDk + 0.3 * gfxMn + 0.05 * gfxRn + 0.25 * gfxNt + 0.2 * gfxDy, gfxS);
     float gfxFog = 1.0 - (1.0 - fogFactor) * (1.0 - gfxAir * gfxOpen) * (1.0 - gfxHaze * gfxOpen);
     vec3 gfxSky = gfxHorizon(normalize(gfxView));
     // (the mist pale and cool; toward the sun its warmth still burns through: gfxHorizon)
@@ -107,6 +117,8 @@ const FOG_GLSL = /* glsl */ `
     gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(1.3, 1.08, 0.72), 0.45 * gfxDk);
     // (in the rain a cool blue-grey, not the grey-green of the land under it)
     gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(0.9, 0.98, 1.12), 0.4 * gfxRn);
+    // (at noon a pale blue-green, not the sky's blue bleaching the far grass)
+    gfxSky = mix(gfxSky, dot(gfxSky, vec3(0.2126, 0.7152, 0.0722)) * vec3(0.92, 1.06, 1.0) * 1.1, 0.4 * gfxDy);
     vec3 gfxColor = linearToOutputTexel(vec4(gfxSky, 1.0)).rgb;
     gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(gfxColor, fogColor, gfxCave), gfxFog);
   #endif

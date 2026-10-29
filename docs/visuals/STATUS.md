@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 42 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 43 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -54,6 +54,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 39 Water at sunset
 - [x] 40 The beach from the low camera
 - [x] 41 A moonlit night with depth
+- [x] 42 Noon light with depth
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -76,8 +77,9 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Night is moonlit (`src/daynight.js` KEYS): the moon a silver key (0.95) over a dimmer fill (0.48-0.5), standing side-back (sunDir z -0.3 at night), so crowns are lit on one side and its soft shadows stripe the grass; the night horizon a lighter blue than the zenith.
-- `gfxNight()` in `src/gfx/atmos.js`: the near fill cut (light.js NIGHT_FILL), the haze held back near and lifting the far rows into the horizon's blue, which is paler toward the moon (gfxHorizon); `vGfxSunGlow` gives a silver rim on crowns and carpet tips toward the moon; crowns less flattened at night (0.2).
-- Lamps: build.js pools reach 15 (decay 1, power 9), lantern/window emissive and npc glow sprites up, night bloom strength 0.34 (post.js). Fireflies, dungeon, the other hours unchanged.
-- Medium creep was the round-40 pebbles (each a rock's 180-tri near level, drawn with its whole 71-unit square): fewer of them, medium plaza-noon 678k -> 670k. No swim state exists: stepping off the beach falls through the visual slope to the y < -20 respawn; a collider would change gameplay, left as is.
-- Weakest shot now: phone (medium, noon on the plaza at the low camera): last polished in round 27 at the old camera; the noon light is flat and even next to the dusk and night shots, the plaza's stone and the far field without the depth the other hours have now.
+- Noon has its own near/far: `gfxDay()` in `src/gfx/atmos.js` (sun above ~33 degrees, clear, by day, in the open; 0 at 8:00, 18:30, rain, night, underground), so the other hours are unchanged (contact sheet checked).
+- Near field (`src/gfx/light.js`): DAY_FILL 0.38 of the sky's fill cut near (shade most), NOON_GLSL makes near colors 22% richer and 10% deeper, the sky's light a little less blue by day; carpet roots 0.28 deeper (`src/world.js`).
+- Far field: the haze held back to the middle distance (start +0.45 fog-nears) and lifting into a pale blue-green (the horizon's luma times 0.92/1.06/1.0); the mid grass no longer washed blue.
+- Cloud shadows had very soft edges (25-unit blur) so they never read at noon: at a clear noon each patch is crisper (edge width x0.25), a little lighter (x0.8) and covers a little more; the plaza's start view sits half under one (lower left). A warm noon rim on grass tips and crown tops (`vGfxSunGlow`); near round crowns darker at night (`night-lamps` bush, about -27%).
+- Still front-lit at noon: the sun stands behind the camera (sunDir z +0.45, x near 0), so crowns light flat and their shadows fall behind them; a midday side light (`src/daynight.js`, keyed to the high sun) would model them. Programs read 46-48 between runs with the same code (drift).
+- Weakest shot now: lobby (high, noon on a wild autumn island, untouched since the big gaps): its near crowns are dull olive blobs, the autumn colors flat and even, the path and stones without shadow or depth.
