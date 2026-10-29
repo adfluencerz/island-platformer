@@ -51,7 +51,7 @@ Measured in phase 15 (960x600, pixel ratio 1, SwiftShader, shadow pass included;
 `npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
 - `npm test` and `npm run build`.
 - `npm run browser --silent -- -e 'g.step(2); return g.stats()'` with no page errors, and the same with `--full`.
-- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (twelve PNGs, `contact.png`, `stats.json`: high, the two phone shots medium).
+- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (fourteen PNGs, `contact.png`, `stats.json`: high, the two phone shots medium).
 - Look at `shots/contact.png` once and judge it against the phase's "Proof" line.
 
 ## Rules

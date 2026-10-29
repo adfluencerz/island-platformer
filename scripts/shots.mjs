@@ -1,4 +1,4 @@
-// `npm run shots -- [--tier low|medium|high] [--check]`: twelve fixed screenshots
+// `npm run shots -- [--tier low|medium|high] [--check]`: fourteen fixed screenshots
 // of the game at full graphics, to judge its look by (docs/visuals/), with
 // what the renderer drew for each, and a contact sheet of them all:
 //
@@ -55,6 +55,10 @@ const SHOTS = [
     g.step(2); // (the sky clouds over)
     g.__restoreWeather = () => (g.weather.update = update);
   }],
+  // the farm's seasons (src/seasons.js: SEASON_DAYS a season, from day 1's spring): noon on day 25,
+  // the middle of winter, and day 18, the middle of autumn (both clear days); not in the --check budgets
+  ['winter-noon', (g) => (g.warp('plaza'), g.dayNight.setTime(24 * 24 + 12), g.step(1))],
+  ['autumn-noon', (g) => (g.warp('plaza'), g.dayNight.setTime(17 * 24 + 12), g.step(1))],
   ['dungeon', (g) => (g.warp('dungeon'), g.dayNight.setTime(12), g.step(2))], // (the dark settles in: the light goes underground over a second or so)
   ['split-2', async (g) => {
     g.warp('plaza');
