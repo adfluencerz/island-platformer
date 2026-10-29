@@ -156,10 +156,10 @@ function hookTree(material, soft = true) {
         // tier above shades it: light.js, GFX_SHADOW_LIFT)
         float canopyTop = smoothstep(-0.5, 0.7, position.y);
         float canopyRim = smoothstep(0.62, 0.95, length(position.xz));
-        vCanopyShade.rgb = (mix(1.0, 1.9, canopyTop) + 0.8 * canopyRim)
+        vCanopyShade.rgb = (mix(1.1, 2.05, canopyTop) + 1.0 * canopyRim)
           * mix(vec3(0.8, 0.92, 1.14), vec3(1.08, 1.05, 0.88), canopyTop)
           * mix(vec3(1.0), vec3(1.12, 1.08, 0.8), canopyRim);
-        vCanopyShade.a = 0.2 + 0.5 * max(canopyRim, canopyTop * canopyTop);
+        vCanopyShade.a = 0.3 + 0.5 * max(canopyRim, canopyTop * canopyTop);
       #else
         // (a round canopy's blob, a trunk: warm on top, cool underneath)
         float canopyTop = smoothstep(-0.9, 0.5, position.y);
