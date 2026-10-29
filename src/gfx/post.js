@@ -24,7 +24,8 @@ import { MOON } from './light.js';
 //     so the lamps, the windows and the torches glow. Half-res on medium.
 //   - grade: a touch of saturation (less at night, in the dark), a soft
 //     vignette (round each seat's own view), a tint warm by day and cool at
-//     night, leaning toward the sky;
+//     night, leaning toward the sky; warm lights and cool shades (a split
+//     by brightness, most round a low sun) and a touch of contrast in the mids;
 //     written to the screen as it is (the target is in its color space already:
 //     no OutputPass, which would tone map and encode a second time).
 //
@@ -37,13 +38,16 @@ import { MOON } from './light.js';
 // The look (uniforms: tweak live through window.__game.post.grade.uniforms)
 export const POST = {
   bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
-  saturation: 1.08,
+  saturation: 1.14,
+  saturationLow: 0.08, // (more round a low sun: a sunset's colors rich, not muddy)
+  contrast: 1.06, // (in the mids, round CONTRAST_PIVOT)
+  split: [0.3, 0.9], // (warm lights, cool shades: by day, and round a low sun; none at night or underground)
   nightSaturation: 0.62, // (at night the dark parts go grey-blue, as the eye sees by moonlight; what a lamp lights keeps its color. The low tier: src/gfx/light.js)
   vignette: 0.2,
   warm: new THREE.Color(1.02, 1.0, 0.97), // (the day's tint)
   cool: new THREE.Color(0.95, 0.98, 1.05), // (the night's)
   skyTint: 0.08, // (how far the tint leans toward the sky's horizon color)
-  skyTintLow: 0.16, // (and round a low sun, by day: a golden hour's warmth)
+  skyTintLow: 0.07, // (and round a low sun, by day: a golden hour's warmth, mostly in the split's warm lights: a whole-picture orange made the greens olive)
   rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
   rainSaturation: 0.1,
   mist: new THREE.Color(0.97, 0.99, 1.03), // (the morning's mist: a paler, cooler lean, so morning is not a second sunset)
@@ -147,6 +151,8 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     uVignette: { value: POST.vignette },
     uDark: { value: new THREE.Vector2(0.25, 0.7) }, // (how dark is dark enough for the moon's grey-blue, and how light keeps its color)
     uTint: { value: new THREE.Color(1, 1, 1) },
+    uContrast: { value: POST.contrast },
+    uSplit: { value: 0 }, // (how much of the warm-light, cool-shade split)
     uSeats: { value: Array.from({ length: MAX_SEATS }, () => new THREE.Vector4(0, 0, 1, 1)) }, // (each view: x, y, w, h in 0..1, from the bottom left)
     uSeatCount: { value: 1 },
   },
@@ -165,6 +171,8 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
     uniform float uVignette;
     uniform vec2 uDark;
     uniform vec3 uTint;
+    uniform float uContrast;
+    uniform float uSplit;
     uniform vec4 uSeats[${MAX_SEATS}];
     uniform int uSeatCount;
     varying vec2 vUv;
@@ -174,6 +182,9 @@ const gradeMaterial = () => new THREE.ShaderMaterial({
       float moonlit = uNight * (1.0 - smoothstep(uDark.x, uDark.y, luma)); // (dark: by moonlight, grey-blue; what a lamp lights keeps its color)
       float sat = uSaturation * mix(1.0, uNightSaturation, moonlit);
       col.rgb = max(mix(luma * mix(vec3(1.0), vec3(${MOON}), moonlit), col.rgb, sat), 0.0) * uTint;
+      // warm in the light, cool in the shade (by brightness), and a touch more contrast in the mids
+      col.rgb *= mix(vec3(1.0), mix(vec3(0.95, 1.0, 1.07), vec3(1.05, 1.0, 0.93), smoothstep(0.1, 0.6, luma)), uSplit);
+      col.rgb = max((col.rgb - 0.35) * uContrast + 0.35, 0.0);
       // the vignette, round the view this pixel is in
       vec4 part = uSeats[0];
       for (int i = 1; i < ${MAX_SEATS}; i++) {
@@ -271,7 +282,8 @@ export function createPost(renderer, { seats, view, gap }) {
       tint.multiply(rainTint.copy(WHITE).lerp(POST.rain, U.uCloudAmount.value * (1 - U.uUnder.value)));
       tint.multiply(rainTint.copy(WHITE).lerp(POST.mist, U.uMist.value));
       grade.uniforms.uTint.value.copy(tint);
-      grade.uniforms.uSaturation.value = POST.saturation + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value) + POST.mistSaturation * U.uMist.value;
+      grade.uniforms.uSplit.value = THREE.MathUtils.lerp(POST.split[0], POST.split[1], low) * (1 - U.uNight.value) * (1 - U.uUnder.value) * (1 - 0.7 * U.uCloudAmount.value);
+      grade.uniforms.uSaturation.value = POST.saturation + POST.saturationLow * low + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value) + POST.mistSaturation * U.uMist.value;
       const under = U.uUnder.value;
       grade.uniforms.uNight.value = Math.max(U.uNight.value * (1 - under), under * POST.cave.shade);
       grade.uniforms.uDark.value.set(THREE.MathUtils.lerp(0.25, POST.cave.dark[0], under), THREE.MathUtils.lerp(0.7, POST.cave.dark[1], under));

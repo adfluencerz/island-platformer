@@ -7,7 +7,8 @@ Stylized painterly, in the spirit of Breath of the Wild, not realism:
 - a real sky: a gradient dome, drifting clouds, sun, moon and stars, and cloud shadows on the ground;
 - atmospheric depth: far land melts into the sky, a low haze over the sea;
 - bloom on lamps, glints and the sun, and a light color grade (a touch of saturation, a soft vignette);
-- the low-poly shapes and flat-color charm stay: it is the light and air that change.
+- smooth, soft forms (no faceted flat shading), cloud-like canopies, rounded rocks:
+  since phase 31 the low-poly facets are gone; the flat-color palette stays.
 It must stay playable in a browser and on phones: the Graphics setting (tiers,
 below) is the escape hatch, and every phase keeps the low tier cheap.
 
@@ -23,7 +24,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | grass density | 0.35 | 0.75          | 1.0  |
 | grass blades (of 7 a tuft) | 3 | 6     | 7    |
 | grass spread (tuft width) | 1 | 1.2    | 1    |
-| tree detail (tris a canopy blob) | 20 | 20 | 80 |
+| tree detail (tris a canopy blob) | 20 | 80 (since 31) | 80 |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
@@ -49,7 +50,7 @@ Measured in phase 15 (960x600, pixel ratio 1, SwiftShader, shadow pass included;
 `npm run gates` runs them all in order (`scripts/gates.mjs`: one line per gate, the tail of any failure's output):
 - `npm test` and `npm run build`.
 - `npm run browser --silent -- -e 'g.step(2); return g.stats()'` with no page errors, and the same with `--full`.
-- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (eleven PNGs, `contact.png`, `stats.json`: high, the phone medium).
+- `npm run shots -- --tier low --check`, then `npm run shots -- --check` (twelve PNGs, `contact.png`, `stats.json`: high, the two phone shots medium).
 - Look at `shots/contact.png` once and judge it against the phase's "Proof" line.
 
 ## Rules

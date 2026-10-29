@@ -1,6 +1,13 @@
 # Visuals: status
 
-Current phase: 31 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 32 (big gap: `phases/32-camera.md`)
+
+## Course correction (after round 30)
+A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
+dark at dusk, with sparse grass, the sky never in frame and a green ghost where a
+canopy fades in front of the player. Polish rounds were tuning details on top of
+that. Four "big gap" phases come first now; polish rounds resume after 34.
+After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`.
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -35,6 +42,11 @@ Current phase: 31 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 28 The plaza stone
 - [x] 29 The HUD
 - [x] 30 The tree crowns
+- [x] 31 Smooth painterly shading (big gap 1)
+- [ ] 32 Camera: a lower, wider view (big gap 2)
+- [ ] 33 Grass as a carpet (big gap 3)
+- [ ] 34 Trees, rocks and bushes reshaped (big gap 4)
+- 35+ polish rounds again
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -57,8 +69,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- The crowns are painted per vertex in the 'tree' hook (`src/world.js` hookTree): sun-side light from `uSunDir` lifted toward up, yellow-green lit and blue-green shade, a warm dark underside, a sky rim by `cameraPosition`, lobes from the blob's bumps and a seeded slow pattern.
-- A per-material uniform `uTreeLeaf` tells leaves from bark (trunks and stumps as before), so no new program; bushes on the leaf materials get the crown look too.
-- Pines: each facet its own shade (a hash of its face normal), a lit warm skirt edge, a darker collar under the tier above, a dark hollow underneath; winter snow still lies on top (seasons.js runs after).
-- No GPU cost: forest-noon 499 calls / 718k tris / 49 programs, plaza-noon 792 / 861k / 49, phone 669 / 410k / 46.
-- Weakest now: rain-noon's grey wash (flat, desaturated, little depth); then the near pines from straight above, still a little faceted.
+- One switch, `src/gfx/smooth.js` (imported first in main.js): `flatShading` always reads false, and a faceted non-indexed geometry gets creased smooth normals when set on a mesh (52 degrees; rockGeo 75). Pines are `GFX_PINE` in the tree hook now, not `FLAT_SHADED`.
+- Light: uWrap 0.6, a two-step soft toon (uToon 0.4), shadow radius 4; dawn and dusk sky light lifted, dusk's sun golden (daynight KEYS); grade: saturation 1.14 (+0.08 round a low sun), a warm-light / cool-shade split, contrast 1.06; skyTintLow 0.07 (the orange wash made greens olive).
+- The fade: a tree between camera and farmer goes fully invisible in about 0.25 s (its shadow stays); no more dithered ghost.
+- Medium's treeDetail is 1 now (80-triangle canopies on the phone): phone 471k tris, phone-forest-dusk 489k, programs 44 (FLAT_SHADED variants gone: plaza-noon 51 -> 46).
+- Weakest now: silhouettes are still polygonal (10-sided pine tiers, icosahedron canopies, dodecahedron rocks: phase 34), the camera never shows the sky (32).

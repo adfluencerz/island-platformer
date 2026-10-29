@@ -358,7 +358,7 @@ const FRAGMENT_NATURE = /* glsl */ `
   highp vec2 dQ = dP.xz + dP.y * vec2(0.83, -0.61);
   float dQPx = gfxFootprint(dQ);
   // one Voronoi for the looks of cells, each its own place and size: rock, soil, leaf
-  highp vec2 dVc = gfxVoronoi((dLook > 14.5 ? dQ : dUV) * (dLook < 13.5 ? 2.2 : dLook < 14.5 ? 9.0 : 3.0) + dOff);
+  highp vec2 dVc = gfxVoronoi((dLook > 14.5 || abs(dLook - 13.0) < 0.5 ? dQ : dUV) * (dLook < 13.5 ? 2.2 : dLook < 14.5 ? 9.0 : 3.0) + dOff); // (a rock's and a leaf's run on over the facets: smooth-shaded, no seams)
   if (dLook > 11.5 && dLook < 12.5) {
     // bark: five ridges round the piece's axis (its y), wandering, so they
     // meet all the way round; dark furrows between, the plates broken
@@ -380,18 +380,19 @@ const FRAGMENT_NATURE = /* glsl */ `
     dCol = mix(dCol, GFX_DETAIL_MOSS * (0.8 + 0.5 * bStreak), bMoss * 0.7);
   } else if (dLook > 12.5 && dLook < 13.5) {
     // rock: cracks along some of its Voronoi edges, each piece its own tint;
-    // pale lichen on what faces up, moss on the shaded underside and low down
+    // pale lichen on its top, moss low down (by height and a place that
+    // runs on over its facets, dQ: no seams where it is smooth-shaded)
     highp vec2 rc = dVc;
     float re = rc.x / 2.2;
-    float rSome = smoothstep(0.35, 0.6, gfxNoise(dUV * 1.1 + dOff.yx + 4.0));
-    float rCrack = gfxDetailLine(re, 0.025, dPx) * rSome * mix(0.5, 1.0, gfxShow(2.2, dPx * 0.5));
-    float rGrain = (gfxNoise(dUV * 5.0 + dOff) - 0.5) * gfxShow(5.0, dPx) + (gfxNoise(dUV * 13.0 + dOff.yx) - 0.5) * 0.5 * gfxShow(13.0, dPx);
+    float rSome = smoothstep(0.35, 0.6, gfxNoise(dQ * 1.1 + dOff.yx + 4.0));
+    float rCrack = gfxDetailLine(re, 0.025, dQPx) * rSome * mix(0.5, 1.0, gfxShow(2.2, dQPx * 0.5));
+    float rGrain = (gfxNoise(dQ * 5.0 + dOff) - 0.5) * gfxShow(5.0, dQPx) + (gfxNoise(dQ * 13.0 + dOff.yx) - 0.5) * 0.5 * gfxShow(13.0, dQPx);
     dK *= (0.82 + 0.3 * rc.y) * (1.0 + 0.3 * rGrain) * (1.0 - 0.7 * rCrack) * (1.0 - 0.2 * rSome * (1.0 - smoothstep(0.0, 0.08, re)));
-    float rLich = smoothstep(0.56, 0.72, gfxNoise(dUV * 3.3 + dOff * 1.7) + 0.15 * (gfxNoise(dUV * 9.0) - 0.5) * gfxShow(9.0, dPx)) * smoothstep(0.0, 0.5, dFace) * gfxShow(3.3, dPx * 0.5);
-    float rLow = 1.0 - smoothstep(-0.5, 0.25, dHRel + (gfxNoise(dUV * 2.4 + dOff.yx) - 0.5) * 0.7);
-    float rMoss = smoothstep(0.3, 0.6, max(rLow, 0.75 * smoothstep(0.45, -0.3, dFace)) * (0.55 + 0.9 * gfxNoise(dUV * 2.9 + dOff + 9.0)));
+    float rLich = smoothstep(0.56, 0.72, gfxNoise(dQ * 3.3 + dOff * 1.7) + 0.15 * (gfxNoise(dQ * 9.0) - 0.5) * gfxShow(9.0, dQPx)) * smoothstep(-0.1, 0.6, dHRel) * gfxShow(3.3, dQPx * 0.5);
+    float rLow = 1.0 - smoothstep(-0.5, 0.25, dHRel + (gfxNoise(dQ * 2.4 + dOff.yx) - 0.5) * 0.7);
+    float rMoss = smoothstep(0.3, 0.6, max(rLow, 0.75 * smoothstep(-0.1, -0.7, dHRel)) * (0.55 + 0.9 * gfxNoise(dQ * 2.9 + dOff + 9.0)));
     dCol = mix(dCol, vec3(0.55, 0.52, 0.26) * (0.5 + 1.5 * dLum), rLich * 0.7);
-    dCol = mix(dCol, GFX_DETAIL_MOSS * (0.85 + 0.4 * gfxNoise(dUV * 7.0)), rMoss * 0.8);
+    dCol = mix(dCol, GFX_DETAIL_MOSS * (0.85 + 0.4 * gfxNoise(dQ * 7.0)), rMoss * 0.8);
   } else if (dLook > 13.5 && dLook < 14.5) {
     // soil: clods with dark gaps, a damp darker speckle, pale grit
     highp vec2 sc = dVc;

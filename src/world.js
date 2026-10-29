@@ -127,23 +127,23 @@ function addGrassWind(material, height, spread = false) {
 // height; the leaves (uTreeLeaf, the material's own) painted per vertex, a
 // crown bright and warm on the sun's side (uSunDir, lifted toward up), cool
 // in its shade, a soft rim toward the sky, a few lobes, a pine's tiers lit
-// at their tops and edges, each facet its own shade; smooth-shaded if soft
-// (a round canopy's normals are a ball's; a pine's cones keep their facets),
+// at their tops and edges, a slow mottle of needle clumps (GFX_PINE:
+// hookTree's pine; every tree is smooth-shaded, src/gfx/smooth.js),
 // and sways with the grass's gusts (sampled
 // where the instance stands, GRASS_WIND_GLSL) when the tier's treeSway is on:
 // the higher up, the further it leans. (One hook for trunks and leaves alike,
 // so they share one shader.)
-const treeLooks = new Set(); // (re-hooked when the tier changes)
+const treeLooks = new Map(); // material -> a pine's? (re-hooked when the tier changes)
 let treeSway = null; // (the tier's, once asked)
-function hookTree(material, soft = true) {
+function hookTree(material, pine = false) {
   treeSway ??= knobs().treeSway;
   const sway = treeSway;
-  treeLooks.add(material);
-  material.flatShading = !soft;
+  treeLooks.set(material, pine);
   const leaf = { value: material === trunkMat ? 0 : 1 };
-  return hook(material, `tree${sway ? ':sway' : ''}`, (shader) => {
+  return hook(material, `tree:${sway ? 'sway' : ''}${pine ? 'pine' : ''}`, (shader) => {
     define(shader, 'GFX_TREE');
     define(shader, 'GFX_SHADOW_LIFT');
+    if (pine) define(shader, 'GFX_PINE');
     if (sway) define(shader, 'GFX_SWAY');
     if (sway) use(shader, ['uTime', 'uWind', 'uCloudOffset'], 'v');
     use(shader, ['uSunDir', 'uNight'], 'v');
@@ -179,10 +179,10 @@ function hookTree(material, soft = true) {
       vec3 crownH = fract(floor(crownM[3].xyz * 2.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973));
       crownH += dot(crownH, crownH.yzx + 33.33);
       float crownSeed = fract((crownH.x + crownH.y) * crownH.z);
-      #ifdef FLAT_SHADED
+      #ifdef GFX_PINE
         // (a pine's tier, pineGeo: light at the tip and on its sun side,
         // its skirt's edge lighter and warm, catching the sun, the hollow
-        // under the skirt dark and cool, each facet a shade of its own, as
+        // under the skirt dark and cool, a slow mottle by where it is, as
         // clumps of needles; and the sun gets through to its rim and top a
         // little, though the tier above shades it: light.js, GFX_SHADOW_LIFT)
         float canopyTop = smoothstep(-0.5, 0.7, position.y);
@@ -192,11 +192,9 @@ function hookTree(material, soft = true) {
         float tierCollar = smoothstep(0.4, 0.55, length(position.xz)) * (1.0 - smoothstep(0.62, 0.82, length(position.xz)));
         float tierUnder = smoothstep(0.05, -0.3, objectNormal.y); // (the face's own normal)
         float tierLit = smoothstep(-0.4, 0.8, crownLit);
-        vec3 tierH = fract(floor(objectNormal * 6.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973) + crownSeed);
-        tierH += dot(tierH, tierH.yzx + 33.33);
-        float tierFacet = fract((tierH.x + tierH.y) * tierH.z);
+        float tierFacet = 0.5 + 0.5 * sin(position.x * 2.6 + crownSeed * 6.28) * sin(position.z * 2.3 - position.y * 1.7 + crownSeed * 9.0); // (a slow mottle, no facet its own shade)
         float tierK = (mix(1.15, 1.95, canopyTop) * mix(0.8, 1.32, tierLit) + 1.15 * canopyRim)
-          * (0.8 + 0.4 * tierFacet) * mix(1.0, 0.5, tierUnder) * (1.0 - 0.28 * tierCollar);
+          * (0.9 + 0.16 * tierFacet) * mix(1.0, 0.5, tierUnder) * (1.0 - 0.28 * tierCollar);
         vCanopyShade.rgb = tierK
           * mix(vec3(0.86, 0.95, 1.04), vec3(1.18, 1.1, 0.7), max(0.6 * canopyTop, tierLit)) // (a pine's blue-green warmed a little, even in shade)
           * mix(vec3(1.0), vec3(1.16, 1.1, 0.74), canopyRim * (1.0 - tierUnder))
@@ -258,7 +256,7 @@ function hookTree(material, soft = true) {
 onApply((k) => {
   if (treeSway === null || k.treeSway === treeSway) return;
   treeSway = k.treeSway;
-  for (const material of treeLooks) hookTree(material, !material.flatShading);
+  for (const [material, pine] of treeLooks) hookTree(material, pine);
 });
 
 // ---------- Instanced decor ----------
@@ -459,7 +457,8 @@ export const canopyGeo = (() => {
 // skirt to the rim, and back in under it, hollow, to the trunk. Its rim
 // serrated (tips out and down, notches in and up) where the tier's
 // treeDetail is on: ten sides, 60 triangles; else seven, plain, 28 (by draw
-// range, as the round canopy). Flat-shaded; the tree hook lights the rim and
+// range, as the round canopy). Smooth-shaded round, its rim a crease
+// (src/gfx/smooth.js); the tree hook lights the rim and
 // shades the underside by where a vertex is (hookTree).
 // (each profile: [radius, y] from the tip down, and a rim's [radius, y] for notches)
 const pineTier = (n, profile, notch) => {
@@ -488,7 +487,7 @@ export const pineGeo = (() => {
   ];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.computeVertexNormals(); // (not indexed: each face's own)
+  geo.computeVertexNormals(); // (not indexed: each face's own, smoothed where it is set on a mesh: src/gfx/smooth.js)
   geo.userData.hi = PINE_HI;
   return geo;
 })();
@@ -497,6 +496,7 @@ const canopyRange = (geo, k) => (k.treeDetail ? geo.setDrawRange(0, geo.userData
 const canopies = new Set(); // (each world's copies of it: makeInstancer)
 onApply((k) => canopies.forEach((geo) => canopyRange(geo, k)));
 export const rockGeo = new THREE.DodecahedronGeometry(1, 0);
+rockGeo.userData.crease = THREE.MathUtils.degToRad(75); // (its faces meet at 63 degrees: smoothed round, src/gfx/smooth.js)
 
 export function addDecor(geo, material, x, y, z, sx, sy = sx, sz = sx, parent) {
   const mesh = new THREE.Mesh(geo, material);
@@ -1103,7 +1103,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // (and their painted detail, src/gfx/detail.js: bark up the trunks, a
   // leafy mottle on the canopies and bushes)
   for (const m of [trunkMat, ...leaves]) if (!treeLooks.has(m)) hookTree(detail(m, m === trunkMat ? 'bark' : 'leaf'));
-  for (const m of needles) if (!treeLooks.has(m)) hookTree(detail(m, 'leaf'), false);
+  for (const m of needles) if (!treeLooks.has(m)) hookTree(detail(m, 'leaf'), true);
   const treeDecor = makeInstancer(root);
   // a tree drawn where its group says (or not at all, down), and its stump
   // (while it is felled)
@@ -1593,7 +1593,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       geo.setAttribute('gfxCliff', new THREE.Float32BufferAttribute(at, 2)); // (moss under the lip, wet by the water: src/gfx/ground.js)
-      geo.computeVertexNormals(); // (one a face: flat shaded anyway)
+      geo.computeVertexNormals(); // (one a face, smoothed where it is set on the mesh: src/gfx/smooth.js)
       const cliff = new THREE.Mesh(geo, map.cliffMat ?? cliffMat);
       cliff.receiveShadow = true;
       root.add(cliff);
@@ -2068,14 +2068,19 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     tileAt,
     clearFoliageOnTile,
     restoreFoliage,
-    // eye: the player's chest; trees in front of it fade out
+    // eye: the player's chest; trees in front of it fade out, all the way
+    // and quickly (gone in about 0.25 s: a tree half dithered away read as a
+    // see-through green ghost on a phone), and back in a little slower; its
+    // shadow stays (the shadow pass draws it whole)
     // views: [[eye, camera], ...] (a split screen: a tree in the way of any of them fades)
     updateTreeFade(dt, eye, camera, views = [[eye, camera]]) {
-      const k = damp(8, dt);
+      const out = damp(20, dt);
+      const back = damp(9, dt);
       for (const tree of trees) {
         const blocking = tree.state === 'up' && views.some(([at, cam]) => blocksView(tree, _eye.copy(at), cam));
         const was = tree.fade;
-        tree.fade += ((blocking ? 0.25 : 1) - tree.fade) * k;
+        tree.fade += ((blocking ? 0 : 1) - tree.fade) * (blocking ? out : back);
+        if (tree.fade < 0.01) tree.fade = 0;
         if (tree.fade > 0.995) tree.fade = 1;
         if (tree.fade !== was) treeDecor.fade(tree.parts, 1 - tree.fade); // (dithered away: the 'tree' hook)
       }

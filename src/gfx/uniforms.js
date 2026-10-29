@@ -28,8 +28,8 @@ export const U = {
   uCamPos: { value: new THREE.Vector3() }, // this view's camera, world space
   uFogHeight: { value: new THREE.Vector2(0, 0.35) }, // the haze's: x the sea's level, y how fast it thins going up (a unit)
   uShadowTint: { value: new THREE.Color(0.8, 0.86, 1.0) }, // the sky's light where the sun is shaded: cool, not grey (src/gfx/light.js)
-  uWrap: { value: 0.45 }, // how far past side-on the sun still lights a face
-  uToon: { value: 0.3 }, // how much of a half-tone step the light's falloff has
+  uWrap: { value: 0.6 }, // how far past side-on the sun still lights a face
+  uToon: { value: 0.4 }, // how much of a two-step, soft-edged toon ramp the light's falloff has
   uCloudShadows: { value: 1 }, // the clouds' shadows on the land, 0 to 1 (0 on the low tier)
   uGrassSpread: { value: 1 }, // how much wider each grass tuft is (the tier's grassSpread: src/gfx/quality.js)
   uDetailGain: { value: 1 }, // how much stronger the ground's painted detail is (the tier's detailGain)
@@ -96,4 +96,4 @@ export function light({ sunDir, sun, sky, zenith, glow, night, under, cloud, fla
   U.uShadowTint.value.copy(SHADE).lerp(SHADE_LOW, low);
 }
 const SHADE = new THREE.Color(0.8, 0.86, 1.0);
-const SHADE_LOW = new THREE.Color(0.62, 0.73, 1.08);
+const SHADE_LOW = new THREE.Color(0.7, 0.8, 1.08);
