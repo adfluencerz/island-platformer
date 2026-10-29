@@ -4,6 +4,7 @@ import { hashSeed, mulberry32 } from '../shared/worldgen.js';
 import { kit, matsFor, drawStep, drawBuilding, drawDecor, SKY_LOOKS } from './skystyles.js';
 import { chestModel } from './chest.js';
 import { ITEMS } from './items.js';
+import { cloneHooked } from './gfx/shading.js';
 
 // ---------- The sky isles (generation 10) ----------
 // Draws the landmasses floating over a lobby's island (shared/skyisles.js
@@ -147,7 +148,7 @@ function drawIsle({ island, root, addCollider }, isle, n, styleIndex) {
   const own = new Map();
   group.traverse((obj) => {
     if (!obj.isMesh) return;
-    if (!own.has(obj.material)) own.set(obj.material, obj.material.clone());
+    if (!own.has(obj.material)) own.set(obj.material, cloneHooked(obj.material)); // (with its hooks: the painted detail)
     obj.material = own.get(obj.material);
   });
   const materials = [...own.values()].map((mat) => ({ mat, opacity: mat.opacity, transparent: mat.transparent }));

@@ -42,6 +42,7 @@ import { NEEDLES, patch, swap } from '../src/gfx/chunks.js';
 import { patchToneChunk } from '../src/gfx/tonemap.js';
 import { lightChunks } from '../src/gfx/light.js';
 import { hook, hasHook, cloneHooked } from '../src/gfx/shading.js';
+import { detail, defaultLook, LOOKS, lookIndex, bakeDetail, detailBaked } from '../src/gfx/detail.js';
 import { homeWildsSource } from './wilds.js';
 import { BossFight, ARENAS, ARENA_R, arenaAt, arenaStart, arenaExit, portalOf, waveHits, seedAt, seedHits, swarmAt, swarmHits, swoopHits, bossFromWire, BOSS_IDS } from '../shared/bosses.js';
 import { DungeonRun, MAIN, ROOM_W, LAYOUTS, roomCount, roomRect, roomEntry, roomAt, roomOpen, dungeonAt, dungeonStart, dungeonExit, gateAt, sideDoorAt, chestAt, chestLoot, foeRooms, dungeonFromWire, foeHits } from '../shared/dungeons.js';
@@ -3708,6 +3709,30 @@ await test('shader hooks: every needle is in the installed three, and keys compo
   clear.onBeforeCompile(own);
   assert.ok(!own.fragmentShader.includes('GFX_ATMOS') && own.fragmentShader.includes('#include <fog_fragment>'), 'opted out: three\'s fog');
   assert.notEqual(key(clear), key(new THREE.MeshStandardMaterial()), 'and a program of its own');
+});
+
+await test('painted detail: every look shares one program, materials get looks by name or color, a baked part carries its own', () => {
+  const made = (color = 0xffffff, extra) => new THREE.MeshStandardMaterial({ color, ...extra });
+  const key = (m) => m.customProgramCacheKey();
+  const [plank, stone] = [detail(made(), 'plank'), detail(made(), 'stone')];
+  assert.equal(key(plank), 'gfx1||detail');
+  assert.equal(key(plank), key(stone), 'the look is a uniform, not a define: one program');
+  assert.equal(key(detail(made(0x4f9e3c))), 'gfx1||', 'no look (green): no hook, its program as before');
+  for (const [name, look] of [['post', 'wood'], ['plankA', 'plank'], ['stoneDark', 'stone'], ['flagstone', 'stone'], ['roofTile', 'tile'], ['straw', 'thatch'], ['iron', 'metal'], ['cloth', 'cloth'], ['plaster', 'plaster'], ['gravel', 'cobble'], ['hedge', 'none'], ['leaf', 'none']]) {
+    assert.equal(defaultLook(made(), name), look, `${name}: ${look}`);
+  }
+  assert.equal(defaultLook(made(0x8a6a3a)), 'wood', 'a brown: wood');
+  assert.equal(defaultLook(made(0x9c9a92)), 'stone', 'a grey: stone');
+  assert.equal(defaultLook(made(0x8a3a2a)), 'brick', 'a dark red-brown: brick');
+  assert.equal(defaultLook(made(0xffe7a3, { emissive: 0xffc35a })), 'none', 'a lamp: none');
+  assert.equal(LOOKS[lookIndex('tile')], 'tile');
+  const geo = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  const matrix = new THREE.Matrix4().compose(new THREE.Vector3(1, 2, 3), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), new THREE.Vector3(2, 0.5, 4));
+  const baked = bakeDetail(geo.clone().applyMatrix4(matrix), geo, stone, matrix);
+  assert.equal(baked.attributes.gfxPiece.getW(0), lookIndex('stone'));
+  assert.deepEqual([baked.attributes.gfxSize.getX(0), baked.attributes.gfxSize.getY(0), baked.attributes.gfxSize.getZ(0)], [2, 0.5, 4]);
+  assert.ok(Math.abs(baked.attributes.gfxUp.getZ(0) + 1) < 1e-6, 'up, in the turned part\'s own frame');
+  assert.equal(key(detailBaked(made())), 'gfx1||detail:baked');
 });
 
 await test('post: three still tone maps and encodes into a target flagged as XR, as the screen (src/gfx/post.js SeatsPass)', () => {
