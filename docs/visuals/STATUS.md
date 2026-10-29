@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 25 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 26 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -29,6 +29,7 @@ Current phase: 25 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 22 Rain
 - [x] 23 Dungeon light
 - [x] 24 Water surface
+- [x] 25 Morning
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -51,7 +52,7 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- Water swells: `world.js addRipples` adds three crossing swells (2.7-5.5 m, slow) that tilt the normal and shade the color; their height is `rippleWave`, kept over the mirror by `water.js` (`WATER.*.shade`).
-- Glints: a coarser layer (`WATER_BIG`, 0.77 m cells, about one in four lit on the crests) reads at 960x600; the fine facets as before.
-- Banks: pond water carries `gfxBank` (1 at the bank, 0 from 1.5 m out; `maps.js pondWaterGeo`, `build.js pondWaterGeo`): less mirror in the shallows, a dark wet band at the edge. Cliffs: the wet band darker and taller, rock under a pond falls dark.
-- Weakest now: plaza-morning. At 8:00 it looks almost the same as noon: no low warm morning light, no long soft shadows, no morning haze or dew; the grass and the plaza stones read flat and even.
+- Sun: in the morning it climbs more slowly (`daynight.js`, `slow`: about 20° at 8:00, its old path from noon); new keys at 7:00 and 8:25 (cream-gold sun 2.15, peach horizon, cool blue sky light 0.72), the day's colors from 9:30.
+- `uMist` (`uniforms.js`, from `morningMist()`: 1 from dawn to 8:30, gone by 10:00, none underground, less in rain): the atmos haze thicker, nearer and higher, pale and cool away from the sun; dew on the grass tips (vertex color); the grade a touch paler and less saturated (`POST.mist`).
+- plaza-morning draws about 60 more calls than noon (the low sun's longer shadow box); the check reads noon and the phone, both unchanged.
+- Weakest now: shore-noon. The beach is a flat, bright band with no wet sand, foam line or ripples on it, and the sea beyond is one even blue; the cliffs and the shore meet the water without much depth.
