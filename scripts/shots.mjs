@@ -55,7 +55,7 @@ const SHOTS = [
     g.step(2); // (the sky clouds over)
     g.__restoreWeather = () => (g.weather.update = update);
   }],
-  ['dungeon', (g) => (g.warp('dungeon'), g.dayNight.setTime(12))],
+  ['dungeon', (g) => (g.warp('dungeon'), g.dayNight.setTime(12), g.step(2))], // (the dark settles in: the light goes underground over a second or so)
   ['split-2', async (g) => {
     g.warp('plaza');
     g.dayNight.setTime(12);
