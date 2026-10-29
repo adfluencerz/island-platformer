@@ -60,12 +60,12 @@
   color: #fff;
   font: 18px var(--inv-font);
   text-shadow: 0 1px 0 var(--inv-outline);
-  box-shadow: inset 0 2px 0 var(--inv-wood-light), inset 0 -2px 0 #a3530c;
+  box-shadow: inset 0 2px 0 var(--inv-wood-light), inset 0 -2px 0 var(--inv-wood-dark);
   cursor: pointer;
 }
-.dev-btn:hover { background: #e98a2a; }
-.dev-btn:active { box-shadow: inset 0 2px 0 #a3530c; }
-.dev-btn.on { background: #a3530c; box-shadow: inset 0 2px 0 #7a3d08; }
+.dev-btn:hover { background: #d6844b; }
+.dev-btn:active { box-shadow: inset 0 2px 0 var(--inv-wood-dark); }
+.dev-btn.on { background: var(--inv-wood-dark); box-shadow: inset 0 2px 0 #7a3d08; }
 .dev-input {
   min-width: 0;
   padding: 3px 7px;
