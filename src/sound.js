@@ -1,11 +1,12 @@
 // ---------- Sound ----------
-// Every sound in the game is made on the spot with the Web Audio API, so there
-// are no sound files to load (and the app works offline as before).
+// Every sound effect is made on the spot with the Web Audio API; the music is
+// one song (src/music/), played round and round.
 //
 //   play(name)       a sound effect, from SOUNDS below (a few of the same at
 //                    once at most, so holding E doesn't pile them up)
-//   music(mood)      the tune that plays: 'day', 'night' or null (none). It
-//                    changes at the next bar.
+//   music(mood)      whether the song plays: 'day' or 'night' (it does), or
+//                    null (it doesn't)
+//   onSong(fn)       fn(title) whenever the song starts from its beginning
 //   rain(level)      the hiss of rain while it falls (src/weather.js), 0 to 1
 //   settings()       { effects, music }: on or off, kept in this browser
 //   setEffects(on), setMusic(on), toggle(): M mutes and unmutes both
@@ -13,15 +14,20 @@
 // Browsers only let a page make sound after a click, tap or key press: the
 // first one starts it (unlock, below). A hidden tab goes quiet.
 
+import songUrl from './music/whispers-in-the-greenwood.mp3';
+
 const STORE = 'tp.sound';
-const VOLUME = { effects: 0.5, music: 0.16 };
+const VOLUME = { effects: 0.5, music: 0.5 };
+export const SONG = 'Whispers In The Greenwood';
 
 let ctx = null;
 let effectsBus = null;
 let musicBus = null;
 let noiseBuffer = null;
 let prefs = load();
-let mood = null; // the tune asked for
+let mood = null; // the music asked for ('day', 'night' or null)
+let song = null; // the <audio> playing it, once it has loaded
+let songStarted = () => {};
 const playing = new Map(); // sound name -> how many are sounding
 
 function load() {
@@ -54,15 +60,17 @@ function unlock() {
     noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    setInterval(scheduleMusic, 100);
+    loadSong();
   }
   if (ctx.state === 'suspended' && !document.hidden) ctx.resume().catch(() => {});
+  playSong();
 }
 for (const type of ['pointerdown', 'keydown', 'touchend']) addEventListener(type, unlock, { capture: true });
 document.addEventListener('visibilitychange', () => {
   if (!ctx) return;
   if (document.hidden) ctx.suspend().catch(() => {});
   else ctx.resume().catch(() => {});
+  playSong();
 });
 
 // ---------- The building blocks ----------
@@ -181,51 +189,45 @@ export function rain(level) {
 }
 
 // ---------- The music ----------
-// A gentle tune made up as it goes: a chord a bar from a loop of four, a
-// low note on each, and a plucked melody wandering over the chord's notes
-// (by day: brighter and busier; at night: lower, slower, sparser).
-const MOODS = {
-  // chords as semitones over the key's root, a bar each
-  day: { root: 60, bpm: 92, chords: [[0, 4, 7], [-3, 0, 4], [-7, -3, 0], [-5, -1, 2]], notes: 0.7, wave: 'triangle', octave: 12 },
-  night: { root: 57, bpm: 66, chords: [[0, 3, 7], [-4, 0, 3], [-7, -4, 0], [-5, -2, 2]], notes: 0.35, wave: 'sine', octave: 12 },
-};
-const hz = (midi) => 440 * 2 ** ((midi - 69) / 12);
-const tune = { mood: null, bar: 0, beat: 0, nextAt: 0, last: 0 };
-
-// Every 100 ms: the notes due in the next half second
-function scheduleMusic() {
-  if (!ctx || ctx.state !== 'running') return;
-  if (!tune.mood || tune.beat === 0) tune.mood = mood; // (a new mood waits for the bar)
-  const m = MOODS[tune.mood];
-  if (!m) {
-    tune.nextAt = 0;
-    return;
-  }
-  const beatLen = 60 / m.bpm / 2; // (eighth notes)
-  if (tune.nextAt < ctx.currentTime) tune.nextAt = ctx.currentTime + 0.1;
-  while (tune.nextAt < ctx.currentTime + 0.5) {
-    const at = tune.nextAt - ctx.currentTime;
-    const chord = m.chords[tune.bar % m.chords.length];
-    if (tune.beat === 0) {
-      tone(musicBus, { freq: hz(m.root - 24 + chord[0]), len: beatLen * 7, gain: 0.5, at, attack: 0.05 }); // the bass
-      for (const n of chord) tone(musicBus, { freq: hz(m.root + n), len: beatLen * 8, gain: 0.08, at, attack: 0.3 }); // a soft pad
-    }
-    if (tune.beat > 0 && Math.random() < m.notes) {
-      // the melody: a step or two from the last note, over the chord's notes
-      const pool = [...chord, ...chord.map((n) => n + 12)].sort((a, b) => a - b);
-      const near = pool.filter((n) => Math.abs(n - tune.last) <= 7);
-      tune.last = (near.length ? near : pool)[Math.floor(Math.random() * (near.length || pool.length))];
-      tone(musicBus, { freq: hz(m.root + m.octave + tune.last), len: beatLen * 1.8, type: m.wave, gain: 0.22, at });
-    }
-    tune.nextAt += beatLen;
-    tune.beat = (tune.beat + 1) % 8;
-    if (tune.beat === 0) tune.bar++;
-  }
+// The song, fetched whole (so the service worker keeps it for offline, and it
+// can go back to its start anywhere) and played through the music's volume.
+// It starts again when it ends, and says so each time (onSong).
+async function loadSong() {
+  try {
+    const res = await fetch(songUrl);
+    if (!res.ok) return;
+    const audio = new Audio(URL.createObjectURL(await res.blob()));
+    ctx.createMediaElementSource(audio).connect(musicBus);
+    audio.addEventListener('ended', () => {
+      audio.currentTime = 0;
+      playSong();
+    });
+    audio.addEventListener('playing', () => {
+      if (audio.currentTime < 0.5) songStarted(SONG);
+    });
+    song = audio;
+    playSong();
+  } catch {} // (no song: the game plays on without it)
 }
 
-// The tune to play: 'day', 'night' or null
+// Play or pause the song: it plays while it's wanted, the music is on and the tab is seen
+function playSong() {
+  if (!song) return;
+  const on = !!mood && prefs.music && !document.hidden;
+  if (on && song.paused) song.play().catch(() => {}); // (refused until a click: the next one plays it)
+  else if (!on && !song.paused) song.pause();
+}
+
+// Whether the song plays: 'day', 'night' or null
 export function music(next) {
+  if (mood === next) return;
   mood = next;
+  playSong();
+}
+
+// fn(title) whenever the song starts from its beginning
+export function onSong(fn) {
+  songStarted = fn;
 }
 
 // ---------- Settings ----------
@@ -237,6 +239,7 @@ function apply() {
   const t = ctx.currentTime;
   effectsBus.gain.setTargetAtTime(prefs.effects ? VOLUME.effects : 0, t, 0.05);
   musicBus.gain.setTargetAtTime(prefs.music ? VOLUME.music : 0, t, 0.2);
+  playSong();
 }
 
 export function setEffects(on) {
