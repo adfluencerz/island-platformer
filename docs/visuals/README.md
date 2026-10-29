@@ -79,4 +79,5 @@ notes for next phase: ≤ 5 lines
 ## Tools
 - `window.__game` (dev): `stats()`, `warp('plaza'|'lake'|'house'|'forest'|'dungeon'|{x,z})`,
   `snapCamera()`, `dayNight.setTime(h)`, `step(s)`, `draw()`; the devtools Info tab shows the stats.
+- `?cam=wide|classic`: the camera's angle from above (the menu's Camera button, kept as `tp.cam`; wide by default, classic underground and indoors).
 - `npm run shots [-- --tier low|medium|high] [--check]`: `scripts/shots.mjs`, launcher in `scripts/lib/page.mjs`.

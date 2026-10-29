@@ -111,7 +111,7 @@ let me = null; // the seat the code works for now
 let camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock;
 let glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade;
 let workbench, arcade, cooking, readyNoted, learned, pettedOn;
-let fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote;
+let fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote;
 let airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown;
 let readyCheck, meal;
 
@@ -120,6 +120,7 @@ const freshSeat = () => ({
   fitZoom: 1,
   playerZoom: 1,
   camZoom: 1,
+  camWide: viewMode.wide() ? 1 : 0, // how far the camera is at the wide angle, 0 (classic) to 1, easing to it (updateCamera)
   camGroundY: 0, // feet height the camera tracks vertically
   underground: 0, // how far down in one we are (bosses.underground(), as of this frame)
   landedOn: null, // (the ledge we came down on last, while we stand on it)
@@ -153,7 +154,7 @@ const freshSeat = () => ({
 function become(seat) {
   if (me === seat) return;
   if (me) {
-    Object.assign(me.vals, { fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote });
+    Object.assign(me.vals, { fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote });
     Object.assign(me.vals, { airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown });
     Object.assign(me.vals, { readyCheck, meal });
   }
@@ -161,7 +162,7 @@ function become(seat) {
   ({ camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock } = seat);
   ({ glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade } = seat);
   ({ workbench, arcade, cooking, readyNoted, learned, pettedOn } = seat);
-  ({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = seat.vals);
+  ({ fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = seat.vals);
   ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = seat.vals);
   ({ readyCheck, meal } = seat.vals);
 }
@@ -193,7 +194,7 @@ function newSeat(index) {
 const first = newSeat(0); // (the page's own)
 seats.push(first);
 me = first;
-({ fitZoom, playerZoom, camZoom, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = first.vals);
+({ fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = first.vals);
 ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = first.vals);
 ({ readyCheck, meal } = first.vals);
 
@@ -223,6 +224,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 const FOG_NEAR = 30;
 const FOG_FAR = 90;
+const FOG_FAR_WIDE = 75; // (at the wide angle, src/view.js)
 const CAVE_FOG = [12, 23]; // (near and far, down in a boss's dungeon: the far side of a room goes dark...)
 const HALL_FOG = [15, 36]; // (...and in its boss's hall, wider: the boss across it stays in sight)
 scene.fog = new THREE.Fog(0x87ceeb, FOG_NEAR, FOG_FAR);
@@ -241,13 +243,27 @@ camera = first.camera = newCamera();
 // eases toward the player's feet each frame (see updateCamera). Vertically it
 // tracks the last ground the player stood on rather than every jump, so the
 // view doesn't bob. Adjust CAM_HEIGHT / CAM_TILT_DEG / CAM_FOLLOW_* to taste.
+// Two angles (the menu's Camera: wide or classic, src/view.js), the camera
+// always due south of the farmer, looking north:
+// - classic: 9 up and 9 back, looking straight at the farmer's feet, 45 degrees down.
+// - wide (the default): lower and further back (CAM_WIDE_RISE up from the
+//   farmer, CAM_WIDE_DIST away: about 7 up), and looking above the farmer, so
+//   the horizon sits CAM_WIDE_HORIZON of the way from the middle of the view
+//   to its top (in the top quarter of a wide screen, the top third of an
+//   upright phone's) and the farmer below the middle. On a screen taller than
+//   wide the lens widens to see at least CAM_WIDE_LENS degrees across, so it
+//   pulls back less (CAM_WIDE_FIT of the classic camera's way, below).
+// Underground and indoors (they have ceilings) it is classic whatever the
+// menu says; it eases from one to the other.
 const CAM_HEIGHT = 9;
 const CAM_TILT_DEG = 45;
-const CAM_OFFSET = new THREE.Vector3(
-  0,
-  CAM_HEIGHT,
-  CAM_HEIGHT * Math.tan(THREE.MathUtils.degToRad(CAM_TILT_DEG))
-);
+const CAM_DIST = CAM_HEIGHT / Math.sin(THREE.MathUtils.degToRad(CAM_TILT_DEG));
+const CAM_WIDE_RISE = 30; // degrees
+const CAM_WIDE_DIST = 14;
+const CAM_WIDE_HORIZON = [0.55, 0.42]; // (a wide screen's, an upright one's)
+const CAM_WIDE_LENS = 40;
+const CAM_WIDE_FIT = 0.3;
+const CAM_WIDE_EASE = 4;
 const CAM_FOLLOW_XZ = 6; // higher = snappier horizontal follow
 const CAM_FOLLOW_Y = 3; // vertical follow is gentler
 camTarget = first.camTarget = new THREE.Vector3(); // point the camera looks at, set once the player exists
@@ -262,7 +278,7 @@ const CAM_ZOOM_NEAR = 0.6;
 const CAM_ZOOM_FAR = 2.2;
 const CAM_ZOOM_EASE = 10;
 camOffset = first.camOffset = new THREE.Vector3();
-const zoomGoal = () => fitZoom * playerZoom;
+const zoomGoal = () => THREE.MathUtils.lerp(fitZoom, 1 + (fitZoom - 1) * CAM_WIDE_FIT, camWide) * playerZoom;
 // (to the seat's part of the screen)
 function fitCamera() {
   // (a phone can start the page before the screen has a size: wait for the resize)
@@ -1821,8 +1837,7 @@ const EYE_HEIGHT = 1.45; // above the feet
 const LOOK_PITCH = 1.4; // radians, up or down at most
 const LENS = { fov: 60, near: 0.5 }; // (from above)
 const FIRST_LENS = { fov: 75, near: 0.2 }; // (nothing is closer than the farmer's radius to the eyes)
-function setLens(first) {
-  const { fov, near } = first ? FIRST_LENS : LENS;
+function setLens({ fov, near }) {
   if (camera.fov === fov && camera.near === near) return;
   camera.fov = fov;
   camera.near = near;
@@ -1847,14 +1862,14 @@ function lookBy(right, down) {
   lookPitch = THREE.MathUtils.clamp(lookPitch - down, -LOOK_PITCH, LOOK_PITCH);
 }
 
-function updateCamera(dt) {
+function updateCamera(dt, wide = camWide) {
   const feetY = player.position.y - player.height / 2;
   // Track the ground we last stood on; only chase the player downward if they
   // drop below it (falling off a ledge), so normal jumps don't move the view.
   if (player.onGround || feetY < camGroundY) camGroundY = feetY;
 
-  setLens(lookYaw !== null);
   if (lookYaw !== null) {
+    setLens(FIRST_LENS);
     // (the follow point stays on the farmer, for the way back to the view from above)
     camTarget.set(player.position.x, feetY, player.position.z);
     const eyeY = feetY + EYE_HEIGHT;
@@ -1873,11 +1888,28 @@ function updateCamera(dt) {
     camTarget.set(player.position.x, feetY, player.position.z);
   }
 
+  camWide += (wide - camWide) * damp(CAM_WIDE_EASE, dt);
+  if (Math.abs(wide - camWide) < 1e-3) camWide = wide;
   camZoom += (zoomGoal() - camZoom) * damp(CAM_ZOOM_EASE, dt);
   if (!Number.isFinite(camZoom)) camZoom = zoomGoal(); // never leave the camera nowhere
-  camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
+  // (the lens: an upright screen's wider at the wide angle)
+  const { lerp, degToRad, radToDeg, clamp } = THREE.MathUtils;
+  const aspect = camera.aspect;
+  const wideFov = Math.max(LENS.fov, radToDeg(2 * Math.atan(Math.tan(degToRad(CAM_WIDE_LENS / 2)) / aspect)));
+  setLens({ fov: lerp(LENS.fov, wideFov, camWide), near: LENS.near });
+  const rise = degToRad(lerp(CAM_TILT_DEG, CAM_WIDE_RISE, camWide));
+  const dist = lerp(CAM_DIST, CAM_WIDE_DIST, camWide) * camZoom;
+  camOffset.set(0, Math.sin(rise) * dist, Math.cos(rise) * dist);
   camera.position.copy(camTarget).add(camOffset);
-  camera.lookAt(camTarget);
+  // (looking down at the farmer, classic; wide, above them: the horizon where it goes)
+  const horizon = lerp(CAM_WIDE_HORIZON[0], CAM_WIDE_HORIZON[1], clamp((1.2 - aspect) / 0.7, 0, 1));
+  const pitch = lerp(rise, Math.atan(horizon * Math.tan(degToRad(camera.fov / 2))), camWide);
+  camera.lookAt(camera.position.x, camera.position.y - Math.sin(pitch), camera.position.z - Math.cos(pitch));
+}
+// Whether the camera goes to the wide angle now: as the menu says, but
+// classic underground and indoors (ceilings)
+function wideGoal() {
+  return viewMode.wide() && bosses.underground().k < 0.5 && !indoors() ? 1 : 0;
 }
 
 // What the scene needs for a seat's view, just before it is drawn (draw):
@@ -1886,7 +1918,10 @@ function updateCamera(dt) {
 // not), rain and leaves in the air, and the night's glow round their farmer.
 function lookFrom(split) {
   gfx.look(camera); // (the shaders' view: src/gfx/uniforms.js)
-  if (place === 'title') return followSun(MENU_CAM.look, 0);
+  if (place === 'title') {
+    viewFrom(GRASS_FAR[0] * 3, GRASS_FAR[1] * 3); // (the island from round about: all of it)
+    return followSun(MENU_CAM.look, 0);
+  }
   if (split && place !== 'lobby') npcs.showSigns(npcs.signs(), player.position); // (the neighbours' signs: what they have for this farmer)
   for (const seat of seats) if (seat.nameTag) seat.nameTag.visible = seat !== me; // (the others' names: not your own)
   // Pushed back with the camera, so zooming out shows more island, not more fog
@@ -1894,8 +1929,19 @@ function lookFrom(split) {
   const zoom = lookYaw !== null ? 1 : camZoom; // (in first person, there is no zooming out)
   const hall = bosses?.underground().hall ?? 0;
   scene.fog.near = THREE.MathUtils.lerp(FOG_NEAR, THREE.MathUtils.lerp(CAVE_FOG[0], HALL_FOG[0], hall), underground) * Math.max(1, zoom);
-  scene.fog.far = THREE.MathUtils.lerp(FOG_FAR, THREE.MathUtils.lerp(CAVE_FOG[1], HALL_FOG[1], hall), underground) * Math.max(1, zoom);
+  // (the wide view's land melts into the sky's haze sooner: it sees out to the horizon)
+  scene.fog.far = THREE.MathUtils.lerp(THREE.MathUtils.lerp(FOG_FAR, FOG_FAR_WIDE, camWide), THREE.MathUtils.lerp(CAVE_FOG[1], HALL_FOG[1], hall), underground) * Math.max(1, zoom);
   reachSun(zoom);
+  // (the far plane at the fog's far end: what is beyond it is the sky's
+  // horizon color anyway, and not drawn costs nothing; the sky's dome, 50
+  // round the camera, is inside it)
+  const far = Math.max(60, scene.fog.far + 1);
+  if (camera.far !== far) {
+    camera.far = far;
+    camera.updateProjectionMatrix();
+  }
+  const reach = Math.max(1, zoom) * (lookYaw !== null ? 1.5 : 1); // (first person, from the ground, sees the grass further off)
+  viewFrom(GRASS_FAR[0] * reach, GRASS_FAR[1] * reach);
   if (split) {
     const cave = bosses.underground();
     const inside = indoors() || cave.k > 0.5;
@@ -1907,17 +1953,30 @@ function lookFrom(split) {
     water.visible = cave.k < 0.5;
     playerMesh.add(dayNight.glow);
   }
-  if (lookYaw === null) return followSun(camTarget, SUN_AHEAD * Math.max(1, camZoom));
+  if (lookYaw === null) return followSun(camTarget, SUN_AHEAD * (1 + 1.5 * camWide) * Math.max(1, camZoom)); // (the wide view sees further up the screen, and from the farmer down to its bottom edge only a few steps)
   // (first person: the shadows' box reaches half its width ahead of where we look)
   followSun(_lookAhead.set(camera.position.x + Math.sin(lookYaw) * sunReach / 2, 0, camera.position.z + Math.cos(lookYaw) * sunReach / 2), 0);
 }
 const _lookAhead = new THREE.Vector3();
+// The grass thins with distance from the camera (src/world.js addGrassWind):
+// to half by GRASS_FAR[0], to none by [1] (and the patches beyond not drawn);
+// the trees' canopies beyond CANOPY_FAR the plain ones, the ground's surface
+// beyond GROUND_FAR its coarse triangles (src/world.js viewFrom). Scaled with the zoom.
+const GRASS_FAR = [18, 30];
+const CANOPY_FAR = 40;
+const GROUND_FAR = 30;
+function viewFrom(near, end) {
+  gfx.U.uGrassFar.value.set(near, end);
+  const k = end / GRASS_FAR[1];
+  world.viewFrom?.(camera.position, { grassFar: [near, end], canopyFar: CANOPY_FAR * k, groundFar: GROUND_FAR * k });
+}
 updateCamera(0);
 
 // Jump the camera to the player at once (a teleport) instead of panning over
 function snapCamera() {
   camGroundY = player.position.y - player.height / 2;
   camTarget.set(player.position.x, camGroundY, player.position.z);
+  camWide = wideGoal();
   updateCamera(0);
 }
 
@@ -1925,7 +1984,7 @@ function snapCamera() {
 const MENU_CAM = { radius: 24, height: 13, speed: 0.06, look: new THREE.Vector3(0, 1.5, -5) };
 function updateMenuCamera(t) {
   lookYaw = null;
-  setLens(false);
+  setLens(LENS);
   const a = t * MENU_CAM.speed;
   camera.position.set(
     MENU_CAM.look.x + Math.sin(a) * MENU_CAM.radius,
@@ -5574,7 +5633,7 @@ function updateSeat(dt) {
   underground = bosses.underground().k;
   updateMeal(dt);
   if (place === 'title') updateMenuCamera(t);
-  else updateCamera(dt);
+  else updateCamera(dt, wideGoal());
   showCrosshair();
   // (where its view's trees fade out of the way, between the camera and here)
   me.eye.set(player.position.x, player.position.y + 0.3, player.position.z);

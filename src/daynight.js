@@ -38,7 +38,7 @@ const KEYS = [
   { h: 8.25, horizon: 0xe6ccb6, zenith: 0x5690d2, light: 0xffd8a8, lightI: 2.15, hemiSky: 0xaec8f2, hemiGround: 0x3a4a7a, hemiI: 0.82 },
   { h: 9.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
   { h: 17, horizon: 0x87ceeb, zenith: 0x3f88d2, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
-  { h: 18.5, horizon: 0xf4945a, zenith: 0x5a5ca2, light: 0xffb466, lightI: 2.7, hemiSky: 0xc2c2ea, hemiGround: 0x6a5448, hemiI: 1.75 },
+  { h: 18.5, horizon: 0xf0a274, zenith: 0x5a5ca2, light: 0xffb466, lightI: 2.7, hemiSky: 0xc2c2ea, hemiGround: 0x6a5448, hemiI: 1.75 },
   { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0xa48cc4, hemiGround: 0x382c5c, hemiI: 1.05 },
   { h: 20.5, horizon: 0x1a2048, zenith: 0x060a20, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
 ];

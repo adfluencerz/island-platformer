@@ -16,7 +16,7 @@ import { HORIZON_GLSL } from './atmos.js';
 // All of it comes from the shared uniforms (daynight.js sets them, the season
 // tints them), so it has nothing of its own to update.
 
-const RADIUS = 150; // (inside the camera's far plane, 200)
+const RADIUS = 50; // (inside the camera's far plane, at least 60: src/main.js lookFrom; drawn first, without depth, so its size shows nowhere)
 
 const vertexShader = /* glsl */ `
   varying vec3 vDir;
@@ -86,9 +86,11 @@ ${HORIZON_GLSL}
     vec3 horizon = gfxHorizon(dir); // (warmer toward a low sun: the fog's color that way, src/gfx/atmos.js)
     vec3 col = horizon;
     if (y > 0.0) {
-      // zenith to horizon, the horizon's haze a band along the bottom
+      // zenith to horizon, the horizon's haze a band along the bottom (most of
+      // the way to the zenith's color by 30 degrees up: the view from low down,
+      // src/main.js, sees that much of the sky over the horizon)
       float up = smoothstep(0.0, 0.14, y); // (what is in the sky fades out into the haze)
-      col = mix(horizon, uSkyZenith, pow(smoothstep(0.02, 0.75, y), 0.75));
+      col = mix(horizon, uSkyZenith, pow(smoothstep(0.0, 0.5, y), 0.7));
 
       vec3 sunDir = normalize(uSunDir);
       float mu = dot(dir, sunDir);
