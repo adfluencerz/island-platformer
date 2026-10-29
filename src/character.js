@@ -55,24 +55,33 @@ function sampleSwing(t) {
 export const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
 
 // ---------- Light ----------
-// A soft light on the farmers' edges, so they stand out from the grass under
-// the overhead camera. main.js keeps it with the time of day (lightFarmers).
+// A soft light on the edges of the farmers (and the neighbours, the animals
+// and the mounts: rimmed()), so they stand out from the grass under the
+// overhead camera. main.js keeps it with the time of day (lightFarmers): the
+// sky's color, warmed a little toward the sun's, so it reads as light on them
+// and not as a blue haze. A narrow band right at the silhouette (tuned under
+// the tone mapping and the wrap light: src/gfx/tonemap.js, light.js).
+const RIM = { warm: new THREE.Color(1, 0.9, 0.76), warmth: 0.45, from: 0.35 };
 const rim = { value: new THREE.Color(0.12, 0.12, 0.12) };
+const _warm = new THREE.Color();
 export function lightFarmers(color, strength) {
-  rim.value.copy(color).multiplyScalar(strength);
+  const luma = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b; // (as bright as the sky, in a warmer hue)
+  rim.value.copy(color).lerp(_warm.copy(RIM.warm).multiplyScalar(luma), RIM.warmth).multiplyScalar(strength);
 }
 function rimShader(shader) {
   define(shader, 'GFX_RIM');
   shader.uniforms.uFarmerRim = rim;
   shader.fragmentShader = 'uniform vec3 uFarmerRim;\n' + patch(shader.fragmentShader, 'emissivemap_fragment', `
-    float farmerEdge = 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0);
-    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge * farmerEdge);`, 'GFX_RIM');
+    float farmerEdge = smoothstep(${RIM.from.toFixed(2)}, 1.0, 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0));
+    totalEmissiveRadiance += uFarmerRim * (farmerEdge * farmerEdge);`, 'GFX_RIM');
 }
+// The rim on a lit material (the same for all: one shader program a kind of material)
+export const rimmed = (m) => hook(m, 'rim', rimShader);
 
 const mat = (color, opts = {}) => {
   const m = new THREE.MeshStandardMaterial({ color, roughness: 0.75, ...opts });
   m.userData.noSnow = true; // (snow keeps off the farmers: src/seasons.js)
-  return hook(m, 'rim', rimShader); // (the same for all: one shader program)
+  return rimmed(m);
 };
 // too small to cast a shadow worth drawing
 const noShadow = (m) => ((m.userData.noShadow = true), m);

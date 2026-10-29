@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { rimmed } from './character.js';
 
 // ---------- Mounts ----------
 // What a farmer rides once a boss is beaten (its `mount` item, src/items.js):
@@ -8,7 +9,7 @@ import * as THREE from 'three';
 // how high they sit on it. animate(dt, walk, t): walk 0..1, how much they
 // are walking.
 
-const mat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, flatShading: true });
+const mat = (color) => rimmed(new THREE.MeshStandardMaterial({ color, roughness: 0.75, flatShading: true })); // (the farmers' rim)
 const MATS = {
   skin: mat(0xf0e2b0),
   skinDark: mat(0xd4bd84),
