@@ -37,7 +37,7 @@ import { MOON } from './light.js';
 
 // The look (uniforms: tweak live through window.__game.post.grade.uniforms)
 export const POST = {
-  bloom: { strength: 0.22, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
+  bloom: { strength: 0.22, nightStrength: 0.34, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
   saturation: 1.14,
   saturationLow: 0.08, // (more round a low sun: a sunset's colors rich, not muddy)
   contrast: 1.06, // (in the mids, round CONTRAST_PIVOT)
@@ -267,8 +267,9 @@ export function createPost(renderer, { seats, view, gap }) {
       composer.setSize(size.x, size.y);
     },
     render() {
-      const { threshold, nightThreshold, underThreshold } = POST.bloom;
+      const { strength, nightStrength, threshold, nightThreshold, underThreshold } = POST.bloom;
       bloom.threshold = THREE.MathUtils.lerp(THREE.MathUtils.lerp(threshold, nightThreshold, U.uNight.value), underThreshold, U.uUnder.value);
+      bloom.strength = THREE.MathUtils.lerp(strength, nightStrength, U.uNight.value * (1 - U.uUnder.value)); // (at night the lamps' hearts bloom wider: their warm pools; not underground)
       // the tint: warm by day, cool at night, leaning toward the sky's own color
       // (its hue: the horizon over its brightness), none underground
       sky.copy(U.uSkyHorizon.value);

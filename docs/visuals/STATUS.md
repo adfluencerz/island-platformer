@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 41 (polish rounds again: `phases/19-polish-rounds.md`)
+Current phase: 42 (polish rounds again: `phases/19-polish-rounds.md`)
 
 ## Course correction (after round 30)
 A real phone screenshot (a forest at 6:20 pm) showed the game still faceted,
@@ -53,6 +53,7 @@ After each merge the orchestrator sends the user `phone-forest-dusk` and `phone`
 - [x] 38 Rain with depth
 - [x] 39 Water at sunset
 - [x] 40 The beach from the low camera
+- [x] 41 A moonlit night with depth
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -75,8 +76,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- The beach slopes on into the sea (`src/world.js` cliffs, `beachy`): no rock step on sand, wet sand down to a waterline that wanders (BEACH_SLOPE.run); the shallows and foam strips start there (insetOf), foam line wider, lace bigger.
-- Wet-to-dry gradient in `src/gfx/ground.js` (gfxShore.x reaches 2.5 tiles now, SHORE_REACH): dark wet with a sky sheen, damp, a tide line, pale dry; BEACH_WET also colors the slope and the lip.
-- The sand/green edge: `beach.at` (blurred sand and green, gfxShore.y/.z) wavers it a metre by noise; the carpet clumps by the sand (aBits 8192) and grows straw-green dune grass clumps a tile or two onto it (16384); low dunes on wide sand only (vertex rise, steep normals).
-- Pebbles and shells adopted into the rocks' instancer (no new calls); shallows softer aqua, clearer at the waterline, hue wandering. Calls/programs unchanged; triangles +15-25k (high plaza-noon 767k; medium plaza-noon 678k of 700k: little headroom on medium).
-- Weakest shot now: night-lamps: at the low camera the night is a flat navy wash, the ground past the lamps' pools and the treeline one even dark blue with no moonlight modelling or rim, the lamps' glow small; last polished in round 19 at the old top-down camera.
+- Night is moonlit (`src/daynight.js` KEYS): the moon a silver key (0.95) over a dimmer fill (0.48-0.5), standing side-back (sunDir z -0.3 at night), so crowns are lit on one side and its soft shadows stripe the grass; the night horizon a lighter blue than the zenith.
+- `gfxNight()` in `src/gfx/atmos.js`: the near fill cut (light.js NIGHT_FILL), the haze held back near and lifting the far rows into the horizon's blue, which is paler toward the moon (gfxHorizon); `vGfxSunGlow` gives a silver rim on crowns and carpet tips toward the moon; crowns less flattened at night (0.2).
+- Lamps: build.js pools reach 15 (decay 1, power 9), lantern/window emissive and npc glow sprites up, night bloom strength 0.34 (post.js). Fireflies, dungeon, the other hours unchanged.
+- Medium creep was the round-40 pebbles (each a rock's 180-tri near level, drawn with its whole 71-unit square): fewer of them, medium plaza-noon 678k -> 670k. No swim state exists: stepping off the beach falls through the visual slope to the y < -20 respawn; a collider would change gameplay, left as is.
+- Weakest shot now: phone (medium, noon on the plaza at the low camera): last polished in round 27 at the old camera; the noon light is flat and even next to the dusk and night shots, the plaza's stone and the far field without the depth the other hours have now.

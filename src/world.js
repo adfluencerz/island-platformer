@@ -200,7 +200,8 @@ function hookTree(material, pine = false) {
         * smoothstep(-0.1, 0.7, crownN.y) * (1.0 - 0.8 * uNight);
       // (at dusk the leaves' edge toward the low sun catches it: a warm rim, on the sun's own light, light.js;
       // in the misty morning a cool-bright one, dew on the leaves)
-      vGfxSunGlow = uTreeLeaf > 0.5 ? (3.0 * gfxDusk() + 2.0 * gfxMorning() * vec3(0.86, 1.0, 1.18))
+      // (and at night a silver one on the edge toward the moon)
+      vGfxSunGlow = uTreeLeaf > 0.5 ? (3.0 * gfxDusk() + 2.0 * gfxMorning() * vec3(0.86, 1.0, 1.18) + 2.6 * gfxNight() * vec3(0.82, 0.94, 1.2))
         * (1.0 - clamp(dot(crownN, normalize(cameraPosition - crownAt)), 0.0, 1.0))
         * smoothstep(0.0, 0.7, dot(crownN, normalize(vec3(uSunDir.x, 0.0, uSunDir.z)))) : vec3(0.0);
       vec3 crownH = fract(floor(crownM[3].xyz * 2.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973));
@@ -242,7 +243,7 @@ function hookTree(material, pine = false) {
           float crownLobe = sin(position.x * 2.7 + crownSeed * 6.28) * sin(position.z * 2.4 - position.y * 1.6 + crownSeed * 11.0);
           float crownSky = smoothstep(-0.25, 0.75, crownN.y); // (each clump's top lighter, the sky's: a crown seen against the sun too)
           float crownK = mix(0.6, 1.48, crownTop) * mix(0.74, 1.14, crownSky) * (1.0 - 0.6 * crownCrease) * (1.0 + 0.06 * crownLobe) + 0.22 * crownUnder;
-          crownK = mix(crownK, 0.95, 0.5 * uNight);
+          crownK = mix(crownK, 0.95, 0.2 * uNight); // (at night a little flatter: the moon models it still)
           vec3 crownCol = mix(vec3(0.84, 0.94, 1.1), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
           crownCol = mix(crownCol, vec3(1.04, 1.0, 0.72), 0.7 * crownUnder);
           vCanopyShade = vec4(crownK * crownCol + crownRim * vec3(0.28, 0.38, 0.36), 0.0);
@@ -1069,10 +1070,13 @@ function addCarpet(material) {
       // (in the misty morning the tips cool-bright in the sun, and now and then one, wet with dew, sparkles)
       float cMorn = gfxMorning();
       float cSpark = step(0.93, gfxGrassHash(grassRoot.xz * 13.7 + aBlade.z * 17.0)) * (0.5 + 0.5 * sin(uTime * 2.3 + aBlade.z * 53.0 + grassRoot.x * 3.1));
+      // (on a moonlit night the tips silver toward the moon, the roots darker)
+      float cNight = gfxNight();
       vGfxSunGlow = vec3(cDusk * grassH * grassH * (0.7 + 1.1 * cBack))
-        + cMorn * grassH * grassH * (0.45 + 0.9 * cBack + 5.0 * cSpark * grassH * grassH) * vec3(0.86, 1.0, 1.18);
+        + cMorn * grassH * grassH * (0.45 + 0.9 * cBack + 5.0 * cSpark * grassH * grassH) * vec3(0.86, 1.0, 1.18)
+        + cNight * grassH * grassH * (0.8 + 1.8 * cBack) * vec3(0.82, 0.94, 1.2);
       #ifdef USE_COLOR
-        vColor.rgb *= 1.0 - (0.35 * cDusk + 0.2 * cMorn) * (1.0 - grassH);
+        vColor.rgb *= 1.0 - (0.35 * cDusk + 0.2 * cMorn + 0.5 * cNight) * (1.0 - grassH);
       #endif
       #ifdef USE_COLOR
         vec2 cUV = cR + 0.5;
@@ -1720,7 +1724,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const out = SIDES4.find(([dx, dz]) => !tileGrid.has(`${gx + dx},${gz + dz}`));
       const green = beach.at(gx, gz)[1];
       const h = hash2(gx * 1.31 + 0.7, gz * 0.77 - 2.1);
-      if (!(out ? h < 0.1 : green > 0.15 && h < 0.04)) continue;
+      // (few: each is a rock's near level, 180 triangles, and its square's are
+      // all drawn when any of it is in view: medium's triangle budget)
+      if (!(out ? h < 0.065 : green > 0.15 && h < 0.02)) continue;
       const along = hash2(gx * 0.53 - 4.1, gz * 1.91 + 0.3) - 0.5;
       const [dx, dz] = out ?? [0, 0];
       const toSea = out ? 0.05 + 0.4 * hash2(gx * 2.7, gz * 0.37 + 9.1) : (hash2(gx * 2.7, gz * 0.37 + 9.1) - 0.5) * 0.8;

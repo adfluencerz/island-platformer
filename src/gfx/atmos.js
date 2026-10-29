@@ -24,7 +24,9 @@ export const HORIZON_GLSL = /* glsl */ `
     float low = 1.0 - smoothstep(0.12, 0.6, uSunDir.y); // (sunrise and sunset)
     float day = 1.0 - smoothstep(0.02, 0.12, uNight); // (as the sun's disc in the sky)
     float w = pow(max(face, 0.0), 3.0) * low * day * (1.0 - uUnder) * (1.0 - 0.75 * uCloudAmount);
-    return mix(uSkyHorizon, uSkyGlow, 0.4 * w);
+    // (at night the horizon toward the moon paler, a silver-blue: the far land lifts into it)
+    float moon = (0.35 + 0.65 * max(face, 0.0) * max(face, 0.0)) * smoothstep(0.5, 1.0, uNight) * (1.0 - uUnder) * (1.0 - 0.8 * uCloudAmount);
+    return mix(uSkyHorizon, uSkyGlow, 0.4 * w) * (1.0 + vec3(0.25, 0.4, 0.55) * moon);
   }
 `;
 
@@ -54,6 +56,13 @@ export const DUSK_GLSL = /* glsl */ `
   float gfxRain() {
     return uRain * (1.0 - smoothstep(0.0, 0.25, uNight)) * (1.0 - uUnder);
   }
+  // (and the night's: a clear night out in the open, moonlit: the sky's fill
+  // held back near the camera, a dark, rich near field, the haze held back to
+  // the middle distance and lifting the far field into the horizon's blue;
+  // 0 by day, in the rain and underground)
+  float gfxNight() {
+    return smoothstep(0.5, 1.0, uNight) * (1.0 - uCloudAmount) * (1.0 - uUnder);
+  }
 #endif
 `;
 export const DUSK_UNIFORMS = ['uSunDir', 'uNight', 'uCloudAmount', 'uUnder', 'uMist', 'uRain'];
@@ -82,12 +91,14 @@ const FOG_GLSL = /* glsl */ `
     float gfxDk = gfxDusk();
     float gfxMn = gfxMorning();
     float gfxRn = gfxRain();
-    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist + 0.1 * gfxDk + 0.06 * gfxMn + 0.15 * gfxRn) * smoothstep(0.4 - 0.1 * uMist + 0.5 * gfxDk + 0.5 * gfxMn + 0.35 * gfxRn, 1.35 + 0.2 * gfxDk + 0.1 * gfxMn - 0.05 * gfxRn, gfxS);
+    float gfxNt = gfxNight();
+    // (at night the same: the near field clear and dark, the far one lifting into the horizon's blue)
+    float gfxAir = (0.24 + 0.12 * gfxLow + 0.15 * uCloudAmount + 0.04 * uMist + 0.1 * gfxDk + 0.06 * gfxMn + 0.15 * gfxRn + 0.7 * gfxNt) * smoothstep(0.4 - 0.1 * uMist + 0.5 * gfxDk + 0.5 * gfxMn + 0.35 * gfxRn + 0.15 * gfxNt, 1.35 + 0.2 * gfxDk + 0.1 * gfxMn - 0.05 * gfxRn + 0.1 * gfxNt, gfxS);
     // the low haze over the sea, thinning going up; in the morning's mist
     // thicker, nearer and lying higher
     float gfxAbove = max(vGfxWorld.y - uFogHeight.x, 0.0);
     float gfxHaze = (0.38 + 0.2 * gfxLow + 0.16 * uMist + 0.1 * gfxMn + 0.12 * gfxRn) * exp(-gfxAbove * uFogHeight.y * (1.0 - 0.3 * uMist - 0.3 * gfxRn))
-      * smoothstep(0.3 - 0.1 * uMist + 0.5 * gfxDk + 0.45 * gfxMn + 0.35 * gfxRn, 1.2 - 0.25 * uMist + 0.25 * gfxDk + 0.3 * gfxMn + 0.05 * gfxRn, gfxS);
+      * smoothstep(0.3 - 0.1 * uMist + 0.5 * gfxDk + 0.45 * gfxMn + 0.35 * gfxRn + 0.45 * gfxNt, 1.2 - 0.25 * uMist + 0.25 * gfxDk + 0.3 * gfxMn + 0.05 * gfxRn + 0.25 * gfxNt, gfxS);
     float gfxFog = 1.0 - (1.0 - fogFactor) * (1.0 - gfxAir * gfxOpen) * (1.0 - gfxHaze * gfxOpen);
     vec3 gfxSky = gfxHorizon(normalize(gfxView));
     // (the mist pale and cool; toward the sun its warmth still burns through: gfxHorizon)

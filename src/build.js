@@ -134,7 +134,7 @@ const GLOWS = {
 };
 const FLICKERS = new Set(['torch', 'campfire']); // (a flame, not a lamp: its light flickers)
 const GLOW_LIGHTS = 6;
-const GLOW_REACH = 10;
+const GLOW_REACH = 15; // (a lamp's warm pool: wide over the grass and up the walls, src/gfx/post.js blooms its heart)
 const GLOW_COLOR = 0xffc35a;
 const UNDER_GLOW = { power: 14, reach: 6.5, decay: 1.6 }; // (a dungeon's lamps: bright close by, a short reach, so each lights a pool and the dark between stays)
 
@@ -2161,8 +2161,8 @@ export function createBuildings(world) {
     // (a dungeon's lamps' light)
     setNight(night, focus, under = 0) {
       // (bright enough at night, ~2.5 linear, that the bloom lifts them softly: src/gfx/post.js)
-      MATS.lantern.emissiveIntensity = night * 2.5;
-      MATS.window.emissiveIntensity = night * 2.0;
+      MATS.lantern.emissiveIntensity = night * 3.2;
+      MATS.window.emissiveIntensity = night * 2.5;
       const t = performance.now() / 1000;
       MATS.flame.emissiveIntensity = 0.6 + night * 1.9;
       MATS.flameCore.emissiveIntensity = 0.8 + night * 1.7;
@@ -2186,10 +2186,10 @@ export function createBuildings(world) {
         const glow = nearest[i];
         if (!glow) return void (light.intensity = 0);
         const flicker = glow.flicker ? 0.85 + 0.1 * Math.sin(t * 11 + glow.seed) + 0.05 * Math.sin(t * 27 + glow.seed * 2) : 1;
-        light.intensity = lit(glow) * (glow.under ? UNDER_GLOW.power : 6) * flicker;
+        light.intensity = lit(glow) * (glow.under ? UNDER_GLOW.power : 9) * flicker;
         light.color.setHex(glow.color ?? GLOW_COLOR);
         light.distance = glow.under ? UNDER_GLOW.reach : GLOW_REACH;
-        light.decay = glow.under ? UNDER_GLOW.decay : 1.25;
+        light.decay = glow.under ? UNDER_GLOW.decay : 1.0; // (a gentle falloff: the pool large and warm, fading over the grass)
         light.position.copy(glow.at);
       });
     },
