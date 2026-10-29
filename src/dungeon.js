@@ -72,7 +72,7 @@ const KINDS = {
   matte: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, flatShading: true }),
   gloss: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.05, flatShading: true }),
   metal: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.65, flatShading: true }),
-  glow: new THREE.MeshBasicMaterial({ color: 0xffffff }), // (lit from within: flames, honey, crystals)
+  glow: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.7, 1.7) }), // (lit from within: flames, honey, crystals; past white, so the bloom finds them)
   water: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.82 }),
 };
 const box = new THREE.BoxGeometry(1, 1, 1);
