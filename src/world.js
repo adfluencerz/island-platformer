@@ -67,7 +67,7 @@ function addGrassWind(material, height) {
   material.userData.noSnow = true;
   hook(material, `grass:${height.toFixed(3)}`, (shader) => {
     define(shader, 'GFX_GRASS');
-    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers'], 'v');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist'], 'v');
     shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL, 'GFX_GRASS');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       #ifdef USE_INSTANCING
@@ -100,6 +100,9 @@ function addGrassWind(material, height) {
         transformed.y *= 1.0 - 0.45 * dot(grassBend, grassBend) * grassH;
         #if defined(USE_COLOR) || defined(USE_INSTANCING_COLOR)
           vColor.rgb *= 1.0 + 0.22 * grassGust * grassH; // (a gust's wave shows as a sheen running over the field)
+          // (dew on the tips in the morning's mist: a cool, bright lift at the top of the blade)
+          float grassDew = uMist * grassH * grassH * (0.7 + 0.3 * gfxGrassHash(grassRoot.xz * 7.3));
+          vColor.rgb = vColor.rgb * (1.0 + 0.6 * grassDew) + vec3(0.02, 0.04, 0.05) * grassDew;
         #endif
       #endif`, 'GFX_GRASS');
     shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_begin', `

@@ -25,13 +25,16 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // its sky light lavender, so the long shadows go cool), and night is moonlit
 // blue. The sky (src/gfx/sky.js) runs from `zenith` overhead to `horizon`,
 // which is the fog's color too (the far land melts into it); neither is tone
-// mapped.
+// mapped. Morning is its own: cooler, paler and less saturated than the
+// sunset (a cream-gold sun, a peach horizon still at 8:00, a cool blue sky
+// light), with a mist lying low (morningMist), the day's colors back by 9:30.
 const KEYS = [
   { h: 0, horizon: 0x0b1026, zenith: 0x02040e, light: 0x94acff, lightI: 0.6, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
   { h: 4.5, horizon: 0x111a3a, zenith: 0x040816, light: 0x94acff, lightI: 0.55, hemiSky: 0x3858b4, hemiGround: 0x18204a, hemiI: 0.6 },
   { h: 6, horizon: 0x8a6a9c, zenith: 0x2e3468, light: 0xff9a6a, lightI: 0.5, hemiSky: 0xb09ac8, hemiGround: 0x3a3458, hemiI: 0.75 },
-  { h: 7, horizon: 0xf2b27a, zenith: 0x6a8cc4, light: 0xffc488, lightI: 1.25, hemiSky: 0xf0dce0, hemiGround: 0x464468, hemiI: 0.9 },
-  { h: 8.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
+  { h: 7, horizon: 0xeeb08c, zenith: 0x6488c4, light: 0xffbc84, lightI: 1.55, hemiSky: 0xccd0ee, hemiGround: 0x3a4274, hemiI: 0.78 },
+  { h: 8.25, horizon: 0xe6ccb6, zenith: 0x5690d2, light: 0xffd8a8, lightI: 2.15, hemiSky: 0xaec8f2, hemiGround: 0x2e4482, hemiI: 0.72 },
+  { h: 9.5, horizon: 0x87ceeb, zenith: 0x3a86d4, light: 0xfff6ea, lightI: 1.45, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
   { h: 17, horizon: 0x87ceeb, zenith: 0x3f88d2, light: 0xfff0dc, lightI: 1.4, hemiSky: 0xc4d8ff, hemiGround: 0x34487a, hemiI: 0.95 },
   { h: 18.5, horizon: 0xf4945a, zenith: 0x5a5ca2, light: 0xffa458, lightI: 2.3, hemiSky: 0xbcb0e0, hemiGround: 0x4a3c6c, hemiI: 1.1 },
   { h: 19, horizon: 0x8a5a86, zenith: 0x2a2a62, light: 0xff7458, lightI: 0.8, hemiSky: 0x9c80c0, hemiGround: 0x282660, hemiI: 0.85 },
@@ -52,6 +55,12 @@ function nightAmount(hour) {
   const ramp = (h, start, end) => THREE.MathUtils.smoothstep(h, start, end);
   if (hour < 12) return 1 - ramp(hour, 5, 7.5);
   return ramp(hour, 18.5, 20.5);
+}
+
+// The morning's mist: 1 from dawn to about 8:30, gone by 10:00
+function morningMist(hour) {
+  const ramp = (h, start, end) => THREE.MathUtils.smoothstep(h, start, end);
+  return ramp(hour, 5, 6.5) * (1 - ramp(hour, 8.5, 10));
 }
 
 function formatTime(hour) {
@@ -247,16 +256,19 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
     // sits low round sunrise and sunset (about 16° up at 18:30, so a golden
     // hour throws long shadows) but never below ~10°, so low light still
     // reaches flat ground and shadows don't stretch to infinity; the moon
-    // keeps above ~20°.
+    // keeps above ~20°. In the morning it climbs more slowly (about 20° up at
+    // 8:00, long shadows over the dew), back on its path by noon.
     const angle = ((hour - SUNRISE) / (SUNSET - SUNRISE)) * Math.PI;
     const isDay = hour >= SUNRISE && hour < SUNSET;
     const sign = isDay ? 1 : -1;
-    const up = Math.abs(Math.sin(angle));
+    const slow = isDay && hour < 12 ? THREE.MathUtils.lerp(0.3, 1, THREE.MathUtils.smoothstep(hour, 6.5, 11.5)) : 1;
+    const up = Math.abs(Math.sin(angle)) * slow;
     sunDir.set(Math.cos(angle) * sign, isDay ? 0.22 + 0.78 * up : 0.4 + 0.6 * up, 0.45).normalize();
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 40); // (main.js moves the target)
 
     const night = nightAmount(hour);
-    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash, wet, rain }); // (the shaders' copy: src/gfx/uniforms.js)
+    const mist = morningMist(hour) * (1 - under) * (1 - 0.6 * cloud);
+    shaderLight({ sunDir, sun, sky: s.horizon, zenith: s.zenith, glow: s.light, night, under, cloud, flash, wet, rain, mist }); // (the shaders' copy: src/gfx/uniforms.js)
     glow.intensity = Math.max(night * 10 * (1 - under), under * CAVE.glow); // (underground: a little light round us)
     glow.distance = THREE.MathUtils.lerp(14, CAVE.reach, under);
     if (!clock) return night;
