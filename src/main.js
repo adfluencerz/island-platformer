@@ -5922,10 +5922,10 @@ function draw() {
   }
 }
 
-// What a farmer holds (each hidden but the one in hand), and the rest of
-// them shown now: the meshes to hide for a view out of their own eyes
-const FIRST_TOOL_AHEAD = 0.6; // (first person: how far ahead of the eyes the tool in hand is drawn)
-const heldTools = (f) => [f.hoe, f.axe, f.pick, f.sword, f.mallet, f.bow, f.rod, f.can];
+// The arm a farmer holds things with (its hand, and the tool in it), and
+// the rest of them shown now: the meshes to hide for a view out of their own eyes
+const FIRST_TOOL_AHEAD = [0.6, 0.25]; // (first person: how far ahead of the eyes the arm is drawn, and how much higher)
+const heldTools = (f) => [f.toolArm];
 function bodyParts(obj, tools, out = []) {
   if (!obj.visible || obj.isLight || tools.includes(obj)) return out;
   if (obj.isMesh || obj.isSkinnedMesh) out.push(obj);
@@ -5937,17 +5937,20 @@ function bodyParts(obj, tools, out = []) {
 function seatView(seat, split) {
   within(seat, () => {
     lookFrom(split);
-    // (first person: not their own body in their eyes, but the tool in their
-    // hand stays, drawn a little ahead so a swing comes down in view, not
-    // under it; not the rod, its line hangs from where it is; its night light stays)
+    // (first person: not their own body in their eyes, but the arm with the
+    // tool in its hand stays, drawn a little ahead so a swing comes down in
+    // view, not under it, and on the right; not with the rod, its line hangs
+    // from where it is; its night light stays)
     const body = lookYaw === null ? [] : bodyParts(playerMesh, heldTools(farmer));
     for (const part of body) part.visible = false;
-    const ahead = lookYaw !== null && !farmer.rod.visible ? FIRST_TOOL_AHEAD : 0;
-    playerMesh.position.x += Math.sin(lookYaw) * ahead;
-    playerMesh.position.z += Math.cos(lookYaw) * ahead;
+    const [ahead, up] = lookYaw !== null && !farmer.rod.visible ? FIRST_TOOL_AHEAD : [0, 0];
+    const shift = new THREE.Vector3(Math.sin(lookYaw) * ahead, up, Math.cos(lookYaw) * ahead);
+    const mirror = ahead ? -1 : 1; // (and on the right: the tools are in the farmer's left hand)
+    playerMesh.position.add(shift);
+    playerMesh.scale.x *= mirror;
     renderer.render(scene, camera);
-    playerMesh.position.x -= Math.sin(lookYaw) * ahead;
-    playerMesh.position.z -= Math.cos(lookYaw) * ahead;
+    playerMesh.scale.x *= mirror;
+    playerMesh.position.sub(shift);
     for (const part of body) part.visible = true;
   });
 }

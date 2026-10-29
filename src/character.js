@@ -1164,6 +1164,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     bow,
     rod: rodGroup,
     rodTip,
+    toolArm: rightArm.pivot, // (the arm that holds the tools, its hand and whatever is in it)
     can,
     anim,
     animate,
