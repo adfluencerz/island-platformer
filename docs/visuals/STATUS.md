@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 29 (polish rounds: `phases/19-polish-rounds.md`)
+Current phase: 30 (polish rounds: `phases/19-polish-rounds.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -33,6 +33,7 @@ Current phase: 29 (polish rounds: `phases/19-polish-rounds.md`)
 - [x] 26 The shore
 - [x] 27 The phone
 - [x] 28 The plaza stone
+- [x] 29 The HUD
 
 ## Baseline (phase 0)
 `plaza-noon`, tier high, 960x600, pixel ratio 1 (SwiftShader), shadow pass included:
@@ -55,8 +56,8 @@ Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
   with three's per-material variants (shadows on/off), not per visit.
 
 ## Notes from the last phase
-- The grey halo was the ground's vertex blend (stone's color a quarter tile into the grass): stone now lends no color; `ground:tiles` paints its ground (warm mortar, some soil) out to a crisp noisy edge (stone share + noise, cut at 0.64 by fwidth), moss in the joints north of each slab.
-- Slabs (`ground:slab`): instance colors warmer (offsetHSL in world.js, by hash), worn pale middles, darker rims (faded to their average far off), one in five cracked across, moss along the north edge; one in six sunk and tipped (hash, no rng draws).
-- Edge tufts over slab sides facing grass: their own stream (seed ^ 0x3d6e), spliced into the shuffled list; no new calls or programs (plaza-noon 768-795 calls, 51 programs; phone 633-639, 47).
-- The outer mortar rim is a dark wavering ring where the plaza's circle runs past the slabs; sunken slabs read only faintly at plaza-noon distance.
-- Weakest now: the HUD (flat orange panels over a painterly scene, the hint and quest cards crowding the top-left in every shot); then forest-noon's flat canopy tops.
+- One frame (`.inv-frame`, inventory.css tokens `--frame-*`, `--hud-bg`): cream parchment, a thin warm line, uneven corners, a soft inner shadow; the palette moved from orange to cream/sand/terracotta, so menus, bag, shop and touch buttons follow.
+- The HUD over the world is see-through (`--hud-bg`): place panel, guide, clock (daynight.css), gold (light digit slots), toolbar (cream wells, terracotta ring), party card, prompt (a pill).
+- Place panel: hint on one line, cut short (at home beside the name, `.brief`), all of it on hover or a click (`.open`); the guide 300px wide in smaller type. Chat and notices have no box (`--hud-text-shadow`); notices sit over the prompt, 40cqw wide.
+- No GPU cost: plaza-noon 753-802 calls, 860k triangles, 49-51 programs, as before.
+- Weakest now: forest-noon (flat canopy tops, the trees read as green blobs from above); then rain-noon's grey wash.

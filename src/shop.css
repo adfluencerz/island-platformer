@@ -81,7 +81,7 @@
   text-align: left;
   cursor: pointer;
 }
-.shop-item:hover { background: #ffdca4; }
+.shop-item:hover { background: #fbeccd; }
 .shop-item:active { transform: translateY(1px); }
 .shop-item .inv-icon { width: 36px; height: 36px; flex: none; }
 .shop-item-name { flex: 1; }
