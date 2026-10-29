@@ -33,7 +33,9 @@ import { NOISE, VORONOI } from './noise.js';
 // them) lie in the hollows of the paths and the stone (tiles) and on the
 // plaza's slabs, shrinking as the ground dries (uWet).
 // The finer octaves fade as a pixel covers more of them (gfxShow), so
-// nothing shimmers far off. Runs right after the vertex color is in, before
+// nothing shimmers far off. All of it (groundK, what multiplies the color)
+// is stronger by the tier's detailGain (uDetailGain: medium's, so it reads
+// on a phone's small screen). Runs right after the vertex color is in, before
 // the seasons' grass color (src/seasons.js, hooked earlier: code patched in
 // later lands first), which keeps the brightness it finds, so the detail
 // survives the season's green and the greens are still found.
@@ -98,7 +100,7 @@ const FRAGMENT = {
     float groundCrack = 1.0 - smoothstep(0.025, 0.025 + fwidth(groundCell.x) * 1.5 + 0.01, groundCell.x);
     groundCrack *= smoothstep(0.4, 0.65, gfxNoise(groundP * 0.9 + 5.0)) * smoothstep(0.06, 0.03, groundPx);
     groundK *= 1.0 - 0.3 * groundCrack;
-    diffuseColor.rgb *= groundK * mix(vec3(1.04, 1.0, 0.94), vec3(0.95, 0.99, 1.05), groundSlab);
+    diffuseColor.rgb *= groundK * (1.0 + (mix(vec3(1.04, 1.0, 0.94), vec3(0.95, 0.99, 1.05), groundSlab) - 1.0) * uDetailGain);
     // moss creeping in from a side that faces grass, into the cracks there,
     // and the odd pocket of it
     vec2 groundAt = groundP - floor(groundP + 0.5); // (where on its slab: ±0.43)
@@ -175,12 +177,14 @@ export function groundDetail(material, kind) {
       shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', vertex[1], 'GFX_GROUND');
     }
     const varying = vertex ? vertex[0].split('\n').filter((line) => line.startsWith('varying')).join('\n') : '';
-    shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${['slab', 'rough', 'cliff'].includes(kind) ? VORONOI : ''}${varying}`, 'GFX_GROUND');
+    use(shader, ['uDetailGain'], 'f'); // (the tier's: stronger on medium, for a phone's small screen)
+    shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${['slab', 'rough', 'cliff'].includes(kind) ? VORONOI : ''}${varying}
+    float groundGain(float k) { return 1.0 + (k - 1.0) * uDetailGain; }`, 'GFX_GROUND');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     highp vec2 groundP = ${AT[kind]};
     float groundPx = gfxFootprint(groundP);
     float groundK = 1.0 + (gfxNoise(groundP * 0.31) - 0.5) * 0.16
       + (gfxNoise(groundP * 1.17 + 19.7) - 0.5) * 0.08 * gfxShow(1.17, groundPx);
-    ${FRAGMENT[kind]}`, 'GFX_GROUND');
+    ${FRAGMENT[kind].replaceAll('diffuseColor.rgb *= groundK', 'diffuseColor.rgb *= groundGain(groundK)')}`, 'GFX_GROUND');
   });
 }

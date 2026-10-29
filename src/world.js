@@ -64,14 +64,17 @@ export const GRASS_WIND_GLSL = /* glsl */ `
     return mix(mix(gfxGrassHash(i), gfxGrassHash(i + vec2(1.0, 0.0)), u.x),
                mix(gfxGrassHash(i + vec2(0.0, 1.0)), gfxGrassHash(i + vec2(1.0, 1.0)), u.x), u.y);
   }`;
-function addGrassWind(material, height) {
+// (spread: the tufts, which the tier may draw wider, uGrassSpread: fewer of
+// them still cover the ground; not the flowers)
+function addGrassWind(material, height, spread = false) {
   material.userData.noSnow = true;
-  hook(material, `grass:${height.toFixed(3)}`, (shader) => {
+  hook(material, `grass:${height.toFixed(3)}${spread ? ':spread' : ''}`, (shader) => {
     define(shader, 'GFX_GRASS');
-    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist'], 'v');
+    use(shader, ['uTime', 'uWind', 'uCloudOffset', 'uPlayers', 'uMist', ...(spread ? ['uGrassSpread'] : [])], 'v');
     shader.vertexShader = patch(shader.vertexShader, 'common', GRASS_WIND_GLSL, 'GFX_GRASS');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       #ifdef USE_INSTANCING
+        ${spread ? 'transformed.xz *= uGrassSpread;' : ''}
         highp vec3 grassRoot = (modelMatrix * instanceMatrix[3]).xyz;
         float grassH = clamp(transformed.y / ${height.toFixed(3)}, 0.0, 1.2); // (0 at the root, 1 at the tip; after the snow's sink)
         vec2 grassDrift = uWind + vec2(0.6, 0.25); // (as the clouds drift: src/gfx/uniforms.js frame)
@@ -901,7 +904,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
 
     const tuftMat = map.tuftMat ?? new THREE.MeshStandardMaterial({ color: 0x8cc04f, roughness: 1, vertexColors: true }); // (a map may bring its own: the farm's seasons color it)
     tuftMat.side = THREE.DoubleSide;
-    addGrassWind(tuftMat, TUFT_HEIGHT);
+    addGrassWind(tuftMat, TUFT_HEIGHT, true);
     // In square patches (GRASS_PATCH tiles a side), each its own InstancedMesh,
     // so the ones out of view are not drawn: a view sees about a fifth of the
     // island's grass. (Each keeps the shuffled order, so the tier thins every

@@ -20,8 +20,9 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | pixel ratio cap | 0.5 | 1.5          | 2    |
 | shadow map    | off  | 1024          | 2048 |
 | post          | off  | half-res bloom | full |
-| grass density | 0.35 | 0.6           | 1.0  |
-| grass blades (of 7 a tuft) | 3 | 5     | 7    |
+| grass density | 0.35 | 0.75          | 1.0  |
+| grass blades (of 7 a tuft) | 3 | 6     | 7    |
+| grass spread (tuft width) | 1 | 1.2    | 1    |
 | tree detail (tris a canopy blob) | 20 | 20 | 80 |
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
@@ -29,6 +30,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | particles (rain, snow; motes: 160 at 900) | 300 | 600 | 900 |
 | night's grey  | in the light (0.35) | in the grade | in the grade |
 | character outline | off | off       | on   |
+| ground detail gain | 1 | 1.35        | 1    |
 
 ## Budgets (final from phase 15: `plaza-noon` and `phone` in `npm run shots`, each at its tier)
 Measured in phase 15 (960x600, pixel ratio 1, SwiftShader, shadow pass included; calls drift ±20 between runs):
