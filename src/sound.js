@@ -1,12 +1,14 @@
 // ---------- Sound ----------
 // Every sound effect is made on the spot with the Web Audio API; the music is
-// one song (src/music/), played round and round.
+// the songs in src/music/ (SONGS, below), one at a time, by the mood.
 //
 //   play(name)       a sound effect, from SOUNDS below (a few of the same at
 //                    once at most, so holding E doesn't pile them up)
-//   music(mood)      whether the song plays: 'day' or 'night' (it does), or
-//                    null (it doesn't)
-//   onSong(fn)       fn(title) whenever the song starts from its beginning
+//   music(mood, at)  which song plays: 'day' or 'night' (on the farm and
+//                    about: Whispers In The Greenwood, round and round),
+//                    'chase' (a party game a minute long: Desert Carousel
+//                    Chase, once, from `at` seconds in), or null (none)
+//   onSong(fn)       fn(title) whenever a song starts from its beginning
 //   rain(level)      the hiss of rain while it falls (src/weather.js), 0 to 1
 //   settings()       { effects, music }: on or off, kept in this browser
 //   setEffects(on), setMusic(on), toggle(): M mutes and unmutes both
@@ -14,19 +16,27 @@
 // Browsers only let a page make sound after a click, tap or key press: the
 // first one starts it (unlock, below). A hidden tab goes quiet.
 
-import songUrl from './music/whispers-in-the-greenwood.mp3';
+import greenwoodUrl from './music/whispers-in-the-greenwood.mp3';
+import chaseUrl from './music/desert-carousel-chase.mp3';
 
 const STORE = 'tp.sound';
 const VOLUME = { effects: 0.5, music: 0.5 };
-export const SONG = 'Whispers In The Greenwood';
+
+// The songs: the moods each plays in, whether it goes round and round, and
+// gain: how loud, to even out how loud each was made (Desert Carousel Chase
+// is about 3 dB louder)
+const SONGS = [
+  { title: 'Whispers In The Greenwood', url: greenwoodUrl, moods: ['day', 'night'], loop: true, gain: 1 },
+  { title: 'Desert Carousel Chase', url: chaseUrl, moods: ['chase'], loop: false, gain: 0.7 },
+];
 
 let ctx = null;
 let effectsBus = null;
 let musicBus = null;
 let noiseBuffer = null;
 let prefs = load();
-let mood = null; // the music asked for ('day', 'night' or null)
-let song = null; // the <audio> playing it, once it has loaded
+let mood = null; // the music asked for ('day', 'night', 'chase' or null)
+let cue = null; // { at, t }: the song for the mood from `at` seconds in, as of performance.now() t
 let songStarted = () => {};
 const playing = new Map(); // sound name -> how many are sounding
 
@@ -60,17 +70,17 @@ function unlock() {
     noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const data = noiseBuffer.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    loadSong();
+    SONGS.forEach(loadSong);
   }
   if (ctx.state === 'suspended' && !document.hidden) ctx.resume().catch(() => {});
-  playSong();
+  playSongs();
 }
 for (const type of ['pointerdown', 'keydown', 'touchend']) addEventListener(type, unlock, { capture: true });
 document.addEventListener('visibilitychange', () => {
   if (!ctx) return;
   if (document.hidden) ctx.suspend().catch(() => {});
   else ctx.resume().catch(() => {});
-  playSong();
+  playSongs();
 });
 
 // ---------- The building blocks ----------
@@ -189,43 +199,68 @@ export function rain(level) {
 }
 
 // ---------- The music ----------
-// The song, fetched whole (so the service worker keeps it for offline, and it
+// Each song, fetched whole (so the service worker keeps it for offline, and it
 // can go back to its start anywhere) and played through the music's volume.
-// It starts again when it ends, and says so each time (onSong).
-async function loadSong() {
+// One that goes round starts again when it ends; each says so whenever it
+// starts from its beginning (onSong).
+async function loadSong(song) {
   try {
-    const res = await fetch(songUrl);
+    const res = await fetch(song.url);
     if (!res.ok) return;
     const audio = new Audio(URL.createObjectURL(await res.blob()));
-    ctx.createMediaElementSource(audio).connect(musicBus);
+    const gain = ctx.createGain();
+    gain.gain.value = song.gain;
+    ctx.createMediaElementSource(audio).connect(gain).connect(musicBus);
     audio.addEventListener('ended', () => {
+      if (!song.loop) return;
       audio.currentTime = 0;
-      playSong();
+      playSongs();
     });
     audio.addEventListener('playing', () => {
-      if (audio.currentTime < 0.5) songStarted(SONG);
+      if (audio.currentTime < 0.5) songStarted(song.title);
     });
-    song = audio;
-    playSong();
+    song.audio = audio;
+    if (wanted() === song) seek(song);
+    playSongs();
   } catch {} // (no song: the game plays on without it)
 }
 
-// Play or pause the song: it plays while it's wanted, the music is on and the tab is seen
-function playSong() {
-  if (!song) return;
-  const on = !!mood && prefs.music && !document.hidden;
-  if (on && song.paused) song.play().catch(() => {}); // (refused until a click: the next one plays it)
-  else if (!on && !song.paused) song.pause();
+const wanted = () => SONGS.find((s) => s.moods.includes(mood)) ?? null;
+
+// The song to where its mood's cue says (the time since counted)
+function seek(song) {
+  if (!cue || !song.audio) return;
+  const at = cue.at + (performance.now() - cue.t) / 1000;
+  song.audio.currentTime = Math.max(0, Math.min(at, song.audio.duration || at));
 }
 
-// Whether the song plays: 'day', 'night' or null
-export function music(next) {
+// Play the song for the mood (while the music is on and the tab is seen) and
+// pause the others. One that doesn't go round stays quiet once it's over.
+function playSongs() {
+  const want = prefs.music && !document.hidden ? wanted() : null;
+  for (const { audio } of SONGS) {
+    if (!audio) continue;
+    if (audio === want?.audio && audio.paused && !audio.ended) audio.play().catch(() => {}); // (refused until a click: the next one plays it)
+    else if (audio !== want?.audio && !audio.paused) audio.pause();
+  }
+}
+
+// Which song plays: 'day', 'night', 'chase' or null. at: seconds into the
+// song, when the mood changes to one that doesn't go round (a song that does
+// carries on from where it was)
+export function music(next, at = 0) {
   if (mood === next) return;
+  const was = wanted();
   mood = next;
-  playSong();
+  const song = wanted();
+  if (song && song !== was && !song.loop) {
+    cue = { at, t: performance.now() };
+    seek(song);
+  }
+  playSongs();
 }
 
-// fn(title) whenever the song starts from its beginning
+// fn(title) whenever a song starts from its beginning
 export function onSong(fn) {
   songStarted = fn;
 }
@@ -239,7 +274,7 @@ function apply() {
   const t = ctx.currentTime;
   effectsBus.gain.setTargetAtTime(prefs.effects ? VOLUME.effects : 0, t, 0.05);
   musicBus.gain.setTargetAtTime(prefs.music ? VOLUME.music : 0, t, 0.2);
-  playSong();
+  playSongs();
 }
 
 export function setEffects(on) {
