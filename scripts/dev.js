@@ -6,6 +6,9 @@
 // next port, where the page at the usual address would never reach the server.
 import { spawn } from 'node:child_process';
 
+// GAME_PORT and VITE_PORT pick the ports (3001 and 5173 by default), so several
+// checkouts can run side by side; point BROWSER_URL at the Vite port for the
+// browser harness (scripts/lib/page.mjs).
 const GAME_PORT = process.env.GAME_PORT || '3001';
 const env = { ...process.env, GAME_PORT };
 
@@ -14,7 +17,7 @@ const procs = [
     stdio: 'inherit',
     env: { ...env, PORT: GAME_PORT, GAME_DEV: '1' },
   }),
-  spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--strictPort'], { stdio: 'inherit', env }),
+  spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--strictPort', ...(process.env.VITE_PORT ? ['--port', process.env.VITE_PORT] : [])], { stdio: 'inherit', env }),
 ];
 
 const stop = () => {
