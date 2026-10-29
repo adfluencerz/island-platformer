@@ -1,6 +1,6 @@
 # Visuals: status
 
-Current phase: 11 (`phases/11-water.md`)
+Current phase: 12 (`phases/12-cliffs.md`)
 
 ## Phases
 - [x] 00 Tooling and tiers
@@ -14,7 +14,7 @@ Current phase: 11 (`phases/11-water.md`)
 - [x] 08 Trees: instancing, dithered fade, painterly canopy
 - [x] 09 Bushes, rocks, biome decor instanced
 - [x] 10 Ground detail
-- [ ] 11 Water
+- [x] 11 Water
 - [ ] 12 Cliff skirts
 - [ ] 13 Characters
 - [ ] 14 Ambience
@@ -33,8 +33,8 @@ rain-noon 919, dungeon 389, split-2 2166, lobby 1106; phone (medium) 1269 calls,
 Low tier (`?lowgfx`, no shadow pass): about 271 calls, 785k triangles.
 
 ## Notes from the last phase
-- plaza-noon 741-757 calls (unchanged), 1.22M tris, programs 39 -> 42 (one per ground kind); phone 652 calls.
-- `src/gfx/ground.js` `groundDetail(material, kind)`: the `ground:<kind>` hook (tiles, slab, turf, earth, rough), patched at color_fragment so it runs before the seasons' grass swap (hooked earlier). The ground chunks carry `gfxKind` (u8 x4: green, stone, path, sand weights), each world's slabs `gfxMoss` (grass on -x, +x, -z, +z).
-- `src/gfx/noise.js`: `NOISE` (gfxHash, gfxHash2, gfxNoise, gfxFootprint, gfxShow: fade an octave by pixel footprint) and `VORONOI` (gfxVoronoi: edge distance, cell id), guarded so several hooks can include them; light.js's clouds use them too. Reuse these for phases 16-18.
-- Harness: full graphics now opens at 480x320 and resizes once on the farm (`scripts/lib/page.mjs`): at 960x600 the startup work outlasted the login check's 8 s timeout and shots failed, on main too.
-- lake-sunset's dark pine at lower left stands beside the sight line, not in it, so it rightly doesn't fade (blocksView); left as is.
+- plaza-noon 741-750 calls (unchanged), 1.22M tris, programs 42 -> 44; lake-sunset 322 calls, 45 programs.
+- `src/gfx/water.js` `waterLook(material, kind)`: the hook `water:<kind>` (sea, shallows, pond), after `addRipples`. Fresnel toward the sky (atmos.js `gfxHorizon`, toward `uSkyZenith` as the reflection looks up) and glitter are added after tone mapping (new needle `colorspace_fragment`), so glints pass bloom's threshold; capped at 1.6.
+- The camera always has the sun behind it (daynight.js: sunDir z 0.45), so a mirror-true sun path is never in a shot: the glitter comes from little wave facets (WATER_FACETS a unit, WATER_TILT) that catch the sun from any side.
+- Phase 12's cliff skirts meet the sea at `SEA_LEVEL` (-0.6, world.js); the shallows strip (2.4 wide, y +0.035) and foam (0.8, y +0.04) lie on it along each tile edge facing open water (`shoreStrip`): skirts should drop from the tile edge to below `SEA_LEVEL` so the strips start right at their foot.
+- None of the shots shows the open sea (lobby and plaza-noon frame only land): judge water with `npm run browser -- --full --size 960x600 --shot FILE -e 'g.warp({x:-66,z:4}); g.dayNight.setTime(18.5); g.step(0.5); g.snapCamera(); g.draw()'` (the west shore at sunset).
