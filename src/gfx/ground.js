@@ -17,6 +17,8 @@ import { NOISE, VORONOI } from './noise.js';
 //          sides that face grass (gfxMoss, per slab: -x, +x, -z, +z)
 //   turf   a platform's turf: the speckle where it is green
 //   earth, rough  the sides of the earth and of rock: a soft mottle
+//   cliff  the cliffs round the shore and down to a lower floor (world.js),
+//          their grassy lip, earth and wet rock: the same mottle
 // The finer octaves fade as a pixel covers more of them (gfxShow), so
 // nothing shimmers far off. Runs right after the vertex color is in, before
 // the seasons' grass color (src/seasons.js, hooked earlier: code patched in
@@ -73,6 +75,7 @@ const FRAGMENT = {
     diffuseColor.rgb *= groundK;`,
 };
 FRAGMENT.rough = FRAGMENT.earth;
+FRAGMENT.cliff = FRAGMENT.earth;
 
 // where the noise is read: the ground's plane, or (for sides) slanted by the
 // height, so a wall facing x or z, and a top, all get a mottle
@@ -82,6 +85,7 @@ const AT = {
   turf: 'vGfxWorld.xz',
   earth: 'vGfxWorld.xz + vGfxWorld.y * vec2(0.83, -0.61)',
   rough: 'vGfxWorld.xz + vGfxWorld.y * vec2(0.83, -0.61)',
+  cliff: 'vGfxWorld.xz + vGfxWorld.y * vec2(0.83, -0.61)',
 };
 
 export function groundDetail(material, kind) {
