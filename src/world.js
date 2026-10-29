@@ -170,12 +170,14 @@ function hookTree(material, pine = false) {
       #endif
       varying float vTreeFade;
       varying vec4 vCanopyShade;
+      varying float vCrownLit;
       uniform float uTreeLeaf;
       #ifdef GFX_SWAY
         ${GRASS_WIND_GLSL}
       #endif`, 'GFX_TREE');
     shader.vertexShader = patch(shader.vertexShader, 'begin_vertex', `
       vTreeFade = 0.0;
+      vCrownLit = -1.0; // (none: a pine's, a trunk's)
       #ifdef USE_INSTANCING
         vTreeFade = aFade;
       #endif
@@ -218,20 +220,24 @@ function hookTree(material, pine = false) {
         vCanopyShade.a = (0.3 + 0.5 * max(canopyRim, canopyTop * canopyTop)) * (1.0 - tierUnder);
       #else
         if (uTreeLeaf > 0.5) {
-          // (a round canopy's blob, a bush: a bright, warm crown on the sun's
-          // side, a touch yellow-green, cooler blue-green in its shade, the
-          // underside dark and warm; its lobes lighter, the creases between
-          // them darker (by how far out a point is: canopyGeo, bushGeo) and a
-          // slow pattern of its own; a soft rim toward the sky)
-          float crownTop = smoothstep(-0.55, 0.85, crownLit);
-          float crownUnder = smoothstep(0.0, -0.75, crownN.y);
-          float crownBump = smoothstep(0.82, 1.06, length(position));
+          // (a round canopy, a bush: clumps of leaves, each lit as a ball of
+          // its own by its clump normal (clumpNormals), a soft step from its
+          // shaded foot to a bright, warm, a touch yellow-green top on the
+          // sun's side, cooler blue-green in its shade, a soft dark crease
+          // between two clumps (in the normal's length), what faces down
+          // warm and lifted by the light off the ground, not black; a slow
+          // pattern of its own; a soft rim toward the sky)
+          float crownCrease = clamp(2.0 - 2.0 * length(objectNormal), 0.0, 1.0);
+          float crownTop = 0.4 * smoothstep(-0.6, 0.9, crownLit) + 0.6 * smoothstep(0.05, 0.4, crownLit);
+          float crownUnder = smoothstep(0.1, -0.7, crownN.y);
           float crownLobe = sin(position.x * 2.7 + crownSeed * 6.28) * sin(position.z * 2.4 - position.y * 1.6 + crownSeed * 11.0);
-          float crownK = mix(0.62, 1.45, crownTop) * (0.76 + 0.38 * crownBump + 0.14 * crownLobe);
+          float crownSky = smoothstep(-0.25, 0.75, crownN.y); // (each clump's top lighter, the sky's: a crown seen against the sun too)
+          float crownK = mix(0.6, 1.48, crownTop) * mix(0.74, 1.14, crownSky) * (1.0 - 0.6 * crownCrease) * (1.0 + 0.06 * crownLobe) + 0.22 * crownUnder;
           crownK = mix(crownK, 0.95, 0.5 * uNight);
-          vec3 crownCol = mix(vec3(0.82, 0.93, 1.12), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
-          crownCol = mix(crownCol, vec3(1.0, 0.9, 0.74), 0.6 * crownUnder);
+          vec3 crownCol = mix(vec3(0.84, 0.94, 1.1), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
+          crownCol = mix(crownCol, vec3(1.04, 1.0, 0.72), 0.7 * crownUnder);
           vCanopyShade = vec4(crownK * crownCol + crownRim * vec3(0.28, 0.38, 0.36), 0.0);
+          vCrownLit = 0.5 + 0.5 * max(crownLit, 0.7 * crownN.y - 0.1); // (each clump's lit side, or its top under the sky, stepped per pixel)
         } else {
           // (a trunk: warm on top, cool underneath)
           float canopyTop = smoothstep(-0.9, 0.5, position.y);
@@ -258,7 +264,8 @@ function hookTree(material, pine = false) {
       #endif`, 'GFX_TREE');
     shader.fragmentShader = patch(shader.fragmentShader, 'common', `
       varying float vTreeFade;
-      varying vec4 vCanopyShade;`, 'GFX_TREE');
+      varying vec4 vCanopyShade;
+      varying float vCrownLit;`, 'GFX_TREE');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
       if (vTreeFade > 0.001) {
         // (interleaved gradient noise: an even scatter of the pixels to drop)
@@ -268,6 +275,9 @@ function hookTree(material, pine = false) {
       // (a blossom's pink lit without the green crown's yellow warmth)
       float treePink = clamp((diffuseColor.r - diffuseColor.g) * 5.0, 0.0, 1.0) * clamp((diffuseColor.b - diffuseColor.g) * 8.0 + 0.5, 0.0, 1.0);
       diffuseColor.rgb *= mix(vCanopyShade.rgb, vec3(dot(vCanopyShade.rgb, vec3(0.3, 0.45, 0.25))) * vec3(1.06, 0.97, 1.0), 0.4 * treePink);
+      // (a clump's lit side a step brighter and warmer than its shaded foot,
+      // crisp per pixel: the round crown's clumps inside its outline)
+      if (vCrownLit > -0.5) diffuseColor.rgb *= mix(vec3(0.8), vec3(1.15, 1.12, 0.97), smoothstep(0.5, 0.64, vCrownLit));
       float gfxShadowLift = vCanopyShade.a;`, 'GFX_TREE');
   });
 }
@@ -334,7 +344,7 @@ export function makeInstancer(parent, chunk = GROUND_CHUNK) {
         const n = set.slots.length;
         const geo = set.geometry.clone(); // (its own, for its own aFade)
         geo.setAttribute('aFade', new THREE.InstancedBufferAttribute(new Float32Array(n), 1));
-        if ([canopyGeo, pineGeo, bushGeo, rockGeo].includes(set.geometry)) {
+        if ([...canopyGeos, pineGeo, bushGeo, rockGeo].includes(set.geometry)) {
           const [sx, sz] = set.square.split(',').map(Number);
           geo.userData.box = [sx * chunk, sz * chunk, (sx + 1) * chunk, (sz + 1) * chunk]; // (its square, seen from above: viewFrom)
           canopies.add(geo);
@@ -508,30 +518,104 @@ function levels(near, far) {
     geo.setAttribute(name, new THREE.Float32BufferAttribute([...near.attributes[name].array, ...far.attributes[name].array], 3));
   }
   geo.userData.hi = near.attributes.position.count;
+  geo.userData.gfxSmooth = true; // (smooth already: src/gfx/smooth.js)
   geo.setDrawRange(0, geo.userData.hi);
   return geo;
 }
-// A round tree's canopy: a soft cloud of lobes round a heart, one on top,
-// a ring of three above its middle and four round it, two filling in under
-// it, so it reads round from any side, lumpy all round its outline; each
-// tree turns, stretches and tips it its own way (addTree); near 500
-// triangles, far 80 (and its shadow the far one: makeInstancer). The tree hook lights its lobes brighter and the
-// creases between them darker (by how far out a point is: hookTree).
-const CANOPY_LOBES = [
-  [0, 0, 0, 0.52], // (the heart)
-  [0.05, 0.42, 0.05, 0.55], // (its top)
-  [0.38, 0.25, 0.12, 0.5],
-  [-0.28, 0.28, 0.3, 0.5],
-  [-0.1, 0.3, -0.4, 0.52],
-  [0.5, -0.02, -0.18, 0.56],
-  [0.2, 0, 0.5, 0.56],
-  [-0.5, 0.02, 0.05, 0.55],
-  [-0.15, -0.04, -0.5, 0.55],
-  [0.25, -0.3, 0.15, 0.46],
-  [-0.2, -0.32, -0.1, 0.46],
+// Clump normals: each point's normal its own lobe's (from the lobe's middle
+// out), blended across the creases between lobes (by how near each lobe's
+// surface the point is), a little of the form's own kept: each clump lights
+// as a ball of its own, a lit top and a shaded foot, inside the outline too.
+// How evenly two lobes share a point (a crease) rides in the normal's length,
+// 1 on a clump down to 0.5 in a crease (nothing else reads it: three.js
+// normalizes it; the tree hook reads it for a soft dark crease)
+function clumpNormals(geo, lobes, shape = (p) => p) {
+  const p = geo.attributes.position;
+  const n = geo.attributes.normal;
+  const at = new THREE.Vector3();
+  const sum = new THREE.Vector3();
+  const to = new THREE.Vector3();
+  const own = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    shape(at.fromBufferAttribute(p, i)); // (where it is among the lobes)
+    sum.set(0, 0, 0);
+    let total = 0;
+    let most = 0;
+    for (const [x, y, z, r] of lobes) {
+      to.set(at.x - x, at.y - y, at.z - z);
+      const w = Math.exp(-28 * (to.length() - r));
+      sum.addScaledVector(to.normalize(), w);
+      total += w;
+      most = Math.max(most, w);
+    }
+    own.fromBufferAttribute(n, i);
+    sum.normalize().multiplyScalar(0.85).addScaledVector(own, 0.15).normalize();
+    const crease = Math.min(1, 2 * (1 - most / total));
+    sum.multiplyScalar(1 - 0.5 * crease);
+    n.setXYZ(i, sum.x, sum.y, sum.z);
+  }
+  return geo;
+}
+// A lobed thing's two levels, with clump normals
+const clumped = (lobes, shape, near, far, undo) => levels(
+  clumpNormals(softBall(near, shape), lobes, undo),
+  clumpNormals(softBall(far, shape), lobes, undo),
+);
+// A round tree's canopy: a soft cloud of lobes round a heart, in one of four
+// layouts (a tree's goes with its leaf: addTree): a round heavy one, its
+// lowest lobes hanging; a wide one, wider than tall; one with a big lobe
+// hanging low to one side of the trunk; a lopsided one, a big mass and a
+// smaller one lower on the other side. Each tree turns, stretches and tips
+// its own (addTree); near 500 triangles, far 80 (and its shadow the far one:
+// makeInstancer), both clump-lit (clumpNormals, hookTree). (Every lobe holds
+// the middle: lobed)
+const CANOPY_LAYOUTS = [
+  [
+    [0, 0, 0, 0.55], [0.05, 0.42, 0.05, 0.55], // (the heart, its top)
+    [0.36, 0.26, 0.14, 0.5], [-0.3, 0.28, 0.28, 0.53], [-0.08, 0.3, -0.4, 0.54],
+    [0.52, -0.04, -0.16, 0.58], [0.18, -0.02, 0.52, 0.59], [-0.52, 0, 0.06, 0.58], [-0.16, -0.04, -0.52, 0.58],
+    [0.3, -0.36, 0.18, 0.56], [-0.26, -0.38, -0.12, 0.54], [0.04, -0.4, -0.32, 0.56], // (hanging)
+  ],
+  [
+    [0, 0, 0, 0.5], [0.2, 0.3, 0.02, 0.48], [-0.22, 0.27, 0.1, 0.48],
+    [0.62, -0.02, 0.05, 0.66], [0.2, 0.02, 0.6, 0.67], [-0.5, -0.04, 0.38, 0.66], [-0.5, 0.03, -0.36, 0.66], [0.2, -0.03, -0.6, 0.67],
+    [0, -0.3, 0, 0.48],
+  ],
+  [
+    [0, 0.05, 0, 0.55], [0, 0.45, 0.05, 0.55],
+    [0.3, 0.28, -0.22, 0.5], [-0.32, 0.25, 0.15, 0.5],
+    [0.15, 0, 0.5, 0.56], [-0.5, 0, -0.1, 0.56], [0.1, -0.02, -0.5, 0.56],
+    [0.5, -0.42, 0.12, 0.74], [0.6, -0.12, 0.2, 0.72], // (the low side lobe)
+  ],
+  [
+    [0, 0, 0, 0.5], [0.28, 0.24, 0, 0.62], [0.3, 0.52, 0.1, 0.68], [0.55, 0.15, -0.25, 0.68],
+    [-0.45, -0.18, 0.1, 0.56], [-0.38, -0.32, -0.25, 0.59], [0.1, -0.35, 0.3, 0.52], [-0.15, 0.25, 0.3, 0.5],
+  ],
 ];
-const canopyShape = (d) => lobed(CANOPY_LOBES)(d) * (d.y < 0 ? 1 - 0.1 * d.y * d.y : 1);
-export const canopyGeo = levels(softBall(4, canopyShape), softBall(1, canopyShape));
+// (a little flatter underneath; undone to find a point's lobes)
+const sag = (y) => (y < 0 ? 1 - 0.1 * y * y : 1);
+// Leaf clumps for the near level's light, smaller than its lobes, more of
+// them (fewer underneath), sunk in under its surface: each its own lit ball
+// inside the outline as well as at it (the far level's light from its lobes)
+const leafClumps = (shape, n, turn) => {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (2 * (i + 0.5)) / n;
+    if (y < -0.75) continue;
+    const a = i * 2.39996 + turn;
+    const d = new THREE.Vector3(Math.cos(a) * Math.sqrt(1 - y * y), y, Math.sin(a) * Math.sqrt(1 - y * y));
+    const r = shape(d);
+    out.push([d.x * r * 0.5, d.y * r * 0.5, d.z * r * 0.5, r * 0.52]);
+  }
+  return out;
+};
+export const canopyGeos = CANOPY_LAYOUTS.map((lobes, i) => {
+  const shape = (d) => lobed(lobes)(d) * sag(d.y);
+  return levels(
+    clumpNormals(softBall(4, shape), leafClumps(shape, 16, i * 1.3)),
+    clumpNormals(softBall(1, shape), lobes, (at) => at.multiplyScalar(1 / sag(at.y / at.length()))),
+  );
+});
 // A bush: four lobes, low and wide, flat underneath (near 180 triangles, far 20)
 const BUSH_LOBES = [
   [0, 0, 0, 0.7],
@@ -540,7 +624,7 @@ const BUSH_LOBES = [
   [0.05, 0.28, -0.1, 0.55],
 ];
 const bushShape = (d) => Math.min(lobed(BUSH_LOBES)(d), d.y < -0.2 ? 0.55 / -d.y : Infinity);
-export const bushGeo = levels(softBall(2, bushShape), softBall(0, bushShape));
+export const bushGeo = clumped(BUSH_LOBES, bushShape, 2, 0);
 // A pine's tier (its tip where a cone's would be, as wide, 1): a soft skirt,
 // round from the tip down over a shoulder, drooping steeper to its rim, the
 // rim scalloped (every other point in and up) and rolled under in a thick
@@ -717,8 +801,8 @@ function fitBox(box, x, z, w) {
 // CANOPY_RADIUS wide and spanning CANOPY_BOTTOM..CANOPY_TOP above its foot
 // (all times tree scale). The sight line is the real one, eye to camera, from
 // whichever way and at whatever angle the camera looks (wide or classic).
-const CANOPY_RADIUS = 1.3;
-const CANOPY_BOTTOM = 0.8;
+const CANOPY_RADIUS = 1.45;
+const CANOPY_BOTTOM = 0.7;
 const CANOPY_TOP = 3.4;
 
 function blocksView(tree, eye, camera) {
@@ -1420,12 +1504,14 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         addDecor(pineGeo, leaf, 0, y, 0, r * w, h, r * w, tree).rotation.y = i * 0.33 + (i > 1 ? 0.24 : 0);
       });
     } else {
-      // Round tree: one soft cloud of lobes, turned, stretched and tipped
-      // its own way
+      // Round tree: one soft cloud of lobes, low and heavy on a short trunk,
+      // turned, stretched and tipped its own way; its layout goes with its
+      // leaf (so a leaf's instanced set keeps one geometry: no more draws)
       const leaf = pickOwn(leaves);
-      addDecor(trunkGeo, trunkMat, 0, 0, 0, 1.1, 1.5, 1.1, tree);
-      const wide = own(1, 1.25, 1.48);
-      const crown = addDecor(canopyGeo, leaf, 0, own(2, 1.98, 2.15), 0, wide * own(3, 0.88, 1.08), own(4, 1.15, 1.35), wide, tree);
+      addDecor(trunkGeo, trunkMat, 0, 0, 0, 1.1, 1.3, 1.1, tree);
+      const wide = own(1, 1.28, 1.5);
+      const crownGeo = canopyGeos[Math.max(0, leaves.indexOf(leaf)) % canopyGeos.length];
+      const crown = addDecor(crownGeo, leaf, 0, own(2, 1.7, 1.84), 0, wide * own(3, 0.88, 1.08), own(4, 1.18, 1.36), wide, tree);
       crown.rotation.set(own(5, -0.18, 0.18), own(6, 0, Math.PI * 2), own(7, -0.18, 0.18));
     }
     // (each tree a shade of its own: lighter or darker, a touch warmer or cooler)
