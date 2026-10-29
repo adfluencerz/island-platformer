@@ -46,6 +46,8 @@ export const POST = {
   skyTintLow: 0.16, // (and round a low sun, by day: a golden hour's warmth)
   rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
   rainSaturation: 0.1,
+  mist: new THREE.Color(0.97, 0.99, 1.03), // (the morning's mist: a paler, cooler lean, so morning is not a second sunset)
+  mistSaturation: -0.04,
   // underground: what no lamp lights goes grey-blue as by moonlight (the night's
   // own look, how much of it), only the darkest of it (the brightness it starts
   // to keep its color at, and keeps all of it by: a lamp's pool keeps its warmth)
@@ -265,10 +267,11 @@ export function createPost(renderer, { seats, view, gap }) {
       sky.g = Math.min(sky.g, 1.6);
       sky.b = Math.min(sky.b, 1.6);
       const low = (1 - THREE.MathUtils.smoothstep(U.uSunDir.value.y, 0.12, 0.6)) * (1 - U.uNight.value) * (1 - U.uCloudAmount.value);
-      tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, THREE.MathUtils.lerp(POST.skyTint, POST.skyTintLow, low)).lerp(WHITE, U.uUnder.value);
+      tint.copy(POST.warm).lerp(POST.cool, U.uNight.value).lerp(sky, THREE.MathUtils.lerp(POST.skyTint, POST.skyTintLow, low * (1 - 0.6 * U.uMist.value))).lerp(WHITE, U.uUnder.value);
       tint.multiply(rainTint.copy(WHITE).lerp(POST.rain, U.uCloudAmount.value * (1 - U.uUnder.value)));
+      tint.multiply(rainTint.copy(WHITE).lerp(POST.mist, U.uMist.value));
       grade.uniforms.uTint.value.copy(tint);
-      grade.uniforms.uSaturation.value = POST.saturation + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value);
+      grade.uniforms.uSaturation.value = POST.saturation + POST.rainSaturation * U.uCloudAmount.value * (1 - U.uNight.value) * (1 - U.uUnder.value) + POST.mistSaturation * U.uMist.value;
       const under = U.uUnder.value;
       grade.uniforms.uNight.value = Math.max(U.uNight.value * (1 - under), under * POST.cave.shade);
       grade.uniforms.uDark.value.set(THREE.MathUtils.lerp(0.25, POST.cave.dark[0], under), THREE.MathUtils.lerp(0.7, POST.cave.dark[1], under));
