@@ -13,8 +13,12 @@ import { NOISE, VORONOI } from './noise.js';
 //          the greens, moss in the gaps of stone next to grass, paths worn
 //          lighter down their middles with a few pale pebbles, faint ripples
 //          on the sand; darker under the grass carpet near the camera
-//          and lighter past it (the tiers with one); and (gfxShore: how near the open sea) the sand
-//          wet and darker at the waterline, a lace of foam over its edge;
+//          and lighter past it (the tiers with one); the sand's edge with
+//          the green wavered a metre either way (gfxShore's y, z: the sand
+//          and the green round it, blurred); and (gfxShore's x: how near the
+//          open sea) the sand dark and wet with a sheen by the water, damp
+//          beyond, a faint tide line, then dry and pale (its slope on into
+//          the sea is the cliffs': world.js);
 //          the stone's own ground (world.js gives it its neighbors' color)
 //          a warm mortar out to a crisp, wavering edge, moss in its joints
 //   slab   a stone tile's slab: cracks (Voronoi edges, some of them; all of
@@ -30,7 +34,9 @@ import { NOISE, VORONOI } from './noise.js';
 //          their grassy lip, earth and wet rock: the mottle, strata in thin
 //          wavering bands, cracks, moss hanging from under the lip (not
 //          under sand) and a wet darker band just over the water
-//          (gfxCliff, per vertex: metres under the lip, over the water)
+//          (gfxCliff, per vertex: metres under the lip, over the water;
+//          and 1 on a beach's slope into the sea: none of that, its wet
+//          sand in its vertex colors)
 // The sand (tiles) has fine ripples across the wind (from the south-west,
 // as the clouds drift and the trees lean), a steep dark lee to each, and
 // shell flecks, pale or pink.
@@ -46,6 +52,22 @@ import { NOISE, VORONOI } from './noise.js';
 // survives the season's green and the greens are still found.
 
 const MOSS = 'vec3(0.075, 0.2, 0.04)'; // (linear)
+
+// The beach (tiles): how far in from the sea (tiles) the ground's gfxShore
+// reaches, and what the sand is multiplied by where it is wet at the
+// waterline and damp beyond it (src/world.js colors the beach's slope into the
+// sea and the lip over it the same), and the colors (linear) its edge with
+// the green is pushed toward: the sand's own and the grass's
+export const SHORE_REACH = 2.5;
+export const BEACH_WET = [0.42, 0.36, 0.3];
+const BEACH_DAMP = [0.76, 0.7, 0.62];
+const BEACH = {
+  SHORE_REACH: SHORE_REACH.toFixed(2),
+  BEACH_WET: `vec3(${BEACH_WET.join(', ')})`,
+  BEACH_DAMP: `vec3(${BEACH_DAMP.join(', ')})`,
+  BEACH_SAND: 'vec3(0.76, 0.6, 0.3)',
+  BEACH_GREEN: 'vec3(0.11, 0.33, 0.045)',
+};
 const MORTAR = 'vec3(0.15, 0.122, 0.088)'; // (the stone's ground: between and round the slabs)
 const SOIL = 'vec3(0.14, 0.095, 0.055)';
 
@@ -56,16 +78,34 @@ const SOIL = 'vec3(0.14, 0.095, 0.055)';
 const PUDDLE = (p, seed, more = 0) => `smoothstep(-0.07, 0.04, 0.75 * gfxNoise(${p} * 0.55 + ${seed}) + 0.25 * gfxNoise(${p} * 1.7 + ${seed} * 0.3) - ${(0.76 - more).toFixed(2)} + 0.08 * uWet)`;
 
 const VERTEX = {
-  tiles: ['attribute vec4 gfxKind;\nattribute float gfxShore;\nvarying vec4 vGroundKind;\nvarying float vGroundShore;', 'vGroundKind = gfxKind;\nvGroundShore = gfxShore;'],
+  tiles: ['attribute vec4 gfxKind;\nattribute vec3 gfxShore;\nvarying vec4 vGroundKind;\nvarying vec3 vGroundShore;', 'vGroundKind = gfxKind;\nvGroundShore = gfxShore;'],
   slab: ['attribute vec4 gfxMoss;\nvarying vec4 vGroundMoss;', 'vGroundMoss = gfxMoss;'],
-  cliff: ['attribute vec2 gfxCliff;\nvarying vec2 vGroundCliff;', 'vGroundCliff = gfxCliff;'],
+  cliff: ['attribute vec3 gfxCliff;\nvarying vec3 vGroundCliff;', 'vGroundCliff = gfxCliff;'],
 };
 
 const FRAGMENT = {
   tiles: `
+    // the edge between the sand and the green (vGroundShore.y, .z: how much
+    // plain sand and green is round here, each blurred over two tiles, so .z
+    // is about a half on the edge the tiles have): wavered a metre or so
+    // either way by two octaves of noise, a soft painted edge, the color
+    // there pushed to the sand's own or the green's (the vertex colors only
+    // blur a quarter of a tile): no straight band. Not where a path or stone
+    // is in the mix, nor away from the sand.
+    float groundSandW = vGroundKind.w;
+    float groundEdgeAt = 1.08 - vGroundShore.z + (gfxNoise(groundP * 0.55 + 23.0) - 0.5) * 0.5
+      + (gfxNoise(groundP * 1.9 + 5.0) - 0.5) * 0.22 * gfxShow(1.9, groundPx);
+    float groundEdgeW = fwidth(groundEdgeAt) + 0.05;
+    float groundSand = mix(groundSandW, smoothstep(0.5 - groundEdgeW, 0.5 + groundEdgeW, groundEdgeAt),
+      smoothstep(0.03, 0.15, vGroundShore.y) * clamp((vGroundKind.x + groundSandW - 0.85) * 6.7, 0.0, 1.0));
+    vec3 groundGreenC = mix(BEACH_GREEN, max(diffuseColor.rgb - groundSandW * BEACH_SAND, 0.0) / max(1.0 - groundSandW, 0.05), 1.0 - smoothstep(0.35, 0.7, groundSandW));
+    diffuseColor.rgb = groundSand > groundSandW
+      ? mix(diffuseColor.rgb, BEACH_SAND, (groundSand - groundSandW) / max(1.0 - groundSandW, 1e-3))
+      : mix(diffuseColor.rgb, groundGreenC, (groundSandW - groundSand) / max(groundSandW, 1e-3));
+    float groundGreen = clamp(vGroundKind.x + groundSandW - groundSand, 0.0, 1.0);
     // a dark speckle on the greens
     float groundSpeck = smoothstep(0.6, 0.85, gfxNoise(groundP * 3.7 + 7.1)) * gfxShow(3.7, groundPx);
-    groundK *= 1.0 - 0.3 * groundSpeck * vGroundKind.x;
+    groundK *= 1.0 - 0.3 * groundSpeck * groundGreen;
     // paths: worn lighter down the middle, in patches, and a few pale pebbles
     float groundWorn = smoothstep(0.55, 0.95, vGroundKind.z) * smoothstep(0.35, 0.75, gfxNoise(groundP * 0.7 + 11.3));
     float groundPebble = smoothstep(0.78, 0.9, gfxNoise(groundP * 5.1 + 23.9)) * gfxShow(5.1, groundPx);
@@ -75,7 +115,7 @@ const FRAGMENT = {
     float groundRf = fract(dot(groundP, vec2(0.92, 0.38)) * 2.9 + gfxNoise(groundP * 0.45 + 2.0) * 1.6 + (gfxNoise(groundP * 1.4 + 6.0) - 0.5) * 0.5);
     float groundRise = smoothstep(0.0, 0.75, groundRf) * (1.0 - smoothstep(0.75, 1.0, groundRf));
     float groundLee = smoothstep(0.76, 0.84, groundRf) * (1.0 - smoothstep(0.9, 1.0, groundRf));
-    groundK *= 1.0 + vGroundKind.w * gfxShow(2.9, groundPx * 0.5) * (0.16 * (groundRise - 0.5) - 0.12 * groundLee);
+    groundK *= 1.0 + groundSand * gfxShow(2.9, groundPx * 0.5) * (0.16 * (groundRise - 0.5) - 0.12 * groundLee);
     diffuseColor.rgb *= groundK;
     // under the grass carpet (src/world.js makeCarpet, the tiers that have
     // one): a little darker and cooler between its blades near the camera;
@@ -83,24 +123,29 @@ const FRAGMENT = {
     // seen from afar, so no ring shows where it ends
     float groundCarpet = 1.0 - 0.5 * smoothstep(uCarpetFar.x - 3.0, uCarpetFar.x + 3.0, distance(vGfxWorld, cameraPosition))
       - 0.5 * smoothstep(uCarpetFar.y - 6.0, uCarpetFar.y, distance(vGfxWorld, cameraPosition));
-    diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(1.05, 1.05, 0.99), vec3(0.84, 0.86, 0.9), groundCarpet), vGroundKind.x * step(0.001, uCarpet));
+    diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(1.05, 1.05, 0.99), vec3(0.84, 0.86, 0.9), groundCarpet), groundGreen * step(0.001, uCarpet));
     highp vec2 groundSc = groundP * 2.2;
     highp vec2 groundSi = floor(groundSc);
     vec2 groundSf = groundSc - groundSi - 0.5 - (gfxHash2(groundSi + 7.0) - 0.5) * 0.6;
     float groundShell = step(0.82, gfxHash(groundSi + 3.1)) * (1.0 - smoothstep(0.1, 0.15, length(groundSf * vec2(1.0, 1.6)))) * gfxShow(6.0, groundPx);
-    diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.92, 0.88, 0.8), vec3(0.92, 0.6, 0.55), gfxHash(groundSi + 11.0)), groundShell * smoothstep(0.5, 0.9, vGroundKind.w) * 0.85);
-    // the waterline on sand (vGroundShore: 1 at a side facing the open sea):
-    // wet, darker and a little cooler, its inner edge wavering and breathing
-    // with the swash, a faint damp line at its top, and a lace of foam
-    // washing in and out over its outer edge
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.92, 0.88, 0.8), vec3(0.92, 0.6, 0.55), gfxHash(groundSi + 11.0)), groundShell * smoothstep(0.5, 0.9, groundSand) * 0.85);
+    // from the sea up (vGroundShore.x: 1 at a side facing the open sea, 0
+    // SHORE_REACH in; the beach's slope on into the water is the cliffs',
+    // as wet as this at its top): dark wet sand with a sheen of the sky by
+    // the water, damp sand beyond, a faint tide line of drift at its top,
+    // then dry and pale; its edges wavering, the wet's breathing with the swash
     float groundSwash = sin(uTime * 0.85 + dot(groundP, vec2(0.23, 0.31)));
-    float groundWetAt = vGroundShore + (gfxNoise(groundP * 1.1 + 41.0) - 0.5) * 0.24 + 0.05 * groundSwash;
-    float groundWet = smoothstep(0.36, 0.58, groundWetAt) * vGroundKind.w;
-    float groundDamp = smoothstep(0.2, 0.38, groundWetAt) * (1.0 - smoothstep(0.38, 0.5, groundWetAt)) * vGroundKind.w;
-    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.62, 0.54, 0.44), groundWet) * (1.0 - 0.1 * groundDamp);
-    float groundLaceAt = vGroundShore + 0.07 * groundSwash + (gfxNoise(groundP * 2.3 + vec2(uTime * 0.12, 7.0)) - 0.5) * 0.12;
-    float groundLace = smoothstep(0.8, 0.9, groundLaceAt) * mix(0.55, smoothstep(0.3, 0.62, gfxNoise(groundP * 4.4 - vec2(0.0, uTime * 0.09))), gfxShow(4.4, groundPx));
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.9), groundLace * 0.75 * vGroundKind.w);
+    float groundD = (1.0 - vGroundShore.x) * SHORE_REACH + (gfxNoise(groundP * 0.8 + 41.0) - 0.5) * 0.6
+      + (gfxNoise(groundP * 2.7 + 13.0) - 0.5) * 0.2 * gfxShow(2.7, groundPx);
+    float groundWet = (1.0 - smoothstep(0.45, 1.05, groundD - 0.08 * groundSwash)) * groundSand;
+    float groundDamp = (1.0 - smoothstep(1.0, 2.0, groundD)) * groundSand;
+    float groundTide = smoothstep(1.9, 2.0, groundD) * (1.0 - smoothstep(2.04, 2.2, groundD)) * groundSand
+      * mix(0.5, smoothstep(0.35, 0.6, gfxNoise(groundP * 3.3 + 2.0)), gfxShow(3.3, groundPx));
+    diffuseColor.rgb *= mix(vec3(1.0), BEACH_DAMP, groundDamp) * mix(vec3(1.0), BEACH_WET / BEACH_DAMP, groundWet) * (1.0 - 0.22 * groundTide);
+    diffuseColor.rgb *= 1.0 + vec3(0.1, 0.1, 0.13) * (1.0 - groundDamp) * groundSand; // (the dry sand pale)
+    vec3 groundV = normalize(cameraPosition - vGfxWorld);
+    float groundSheen = groundWet * (0.3 + 0.7 * pow(1.0 - groundV.y, 2.0)) * mix(0.7, 1.0, gfxNoise(groundP * 1.3 + vec2(uTime * 0.04, 2.0)));
+    diffuseColor.rgb = mix(diffuseColor.rgb, uSkyHorizon * 0.5, groundSheen * 0.22);
     // the stone's own ground (world.js lends it no color, so it doesn't blur
     // out into the grass): a warm dark mortar between and round the slabs,
     // some of it soil, out to a crisp edge that wavers as if painted; moss
@@ -180,13 +225,14 @@ const FRAGMENT = {
     float cliffAlong = vGfxWorld.x + vGfxWorld.z;
     float cliffTongue = 0.12 + 0.4 * gfxNoise(vec2(cliffAlong * 2.6, 0.5)) * gfxNoise(vec2(cliffAlong * 0.7, 3.5)) * 2.0;
     float cliffMoss = smoothstep(0.03, 0.05, vGroundCliff.x) * (1.0 - smoothstep(cliffTongue - 0.08, cliffTongue, vGroundCliff.x));
-    cliffMoss *= cliffHas * (1.0 - smoothstep(0.2, 0.3, cliffLum)) * mix(0.6, 1.0, gfxNoise(groundP * 3.3 + 1.0));
+    cliffMoss *= cliffHas * (1.0 - vGroundCliff.z) * (1.0 - smoothstep(0.2, 0.3, cliffLum)) * mix(0.6, 1.0, gfxNoise(groundP * 3.3 + 1.0));
     diffuseColor.rgb = mix(diffuseColor.rgb, ${MOSS} * groundK * (0.8 + 0.4 * gfxNoise(groundP * 5.1)), cliffMoss * 0.85);
     // wet and darker just over the water, its top edge wavering
     float cliffWet = 1.0 - smoothstep(0.12, 0.36, vGroundCliff.y + (gfxNoise(vec2(cliffAlong * 1.7, 4.0)) - 0.5) * 0.14);
-    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.5, 0.55, 0.58), cliffWet * cliffHas);
+    // (not on a beach's slope on into the sea, vGroundCliff.z: wet sand by its vertex colors)
+    diffuseColor.rgb *= mix(vec3(1.0), vec3(0.5, 0.55, 0.58), cliffWet * cliffHas * (1.0 - vGroundCliff.z));
     // and under the water (seen through a pond's), falling dark: the bank's contact shadow
-    diffuseColor.rgb *= 1.0 - 0.6 * cliffHas * (1.0 - smoothstep(-0.3, 0.0, vGroundCliff.y));`,
+    diffuseColor.rgb *= 1.0 - 0.6 * cliffHas * (1.0 - vGroundCliff.z) * (1.0 - smoothstep(-0.3, 0.0, vGroundCliff.y));`,
 };
 
 // where the noise is read: the ground's plane, or (for sides) slanted by the
@@ -205,7 +251,7 @@ export function groundDetail(material, kind) {
     define(shader, 'GFX_WORLD');
     define(shader, 'GFX_GROUND');
     if (kind === 'tiles' || kind === 'slab') define(shader, 'GFX_PUDDLE');
-    if (kind === 'tiles') use(shader, ['uTime', 'uCarpet', 'uCarpetFar'], 'f'); // (the swash on the wet sand; the grass carpet over it)
+    if (kind === 'tiles') use(shader, ['uTime', 'uCarpet', 'uCarpetFar', 'uSkyHorizon'], 'f'); // (the swash on the wet sand, its sheen; the grass carpet over it)
     const vertex = VERTEX[kind];
     if (vertex) {
       shader.vertexShader = patch(shader.vertexShader, 'common', vertex[0], 'GFX_GROUND');
@@ -213,7 +259,8 @@ export function groundDetail(material, kind) {
     }
     const varying = vertex ? vertex[0].split('\n').filter((line) => line.startsWith('varying')).join('\n') : '';
     use(shader, ['uDetailGain'], 'f'); // (the tier's: stronger on medium, for a phone's small screen)
-    shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${['slab', 'rough', 'cliff'].includes(kind) ? VORONOI : ''}${varying}
+    const beach = kind === 'tiles' ? Object.entries(BEACH).map(([k, v]) => `#define ${k} ${v}\n`).join('') : '';
+    shader.fragmentShader = patch(shader.fragmentShader, 'common', `${NOISE}${['slab', 'rough', 'cliff'].includes(kind) ? VORONOI : ''}${beach}${varying}
     float groundGain(float k) { return 1.0 + (k - 1.0) * uDetailGain; }`, 'GFX_GROUND');
     shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     highp vec2 groundP = ${AT[kind]};

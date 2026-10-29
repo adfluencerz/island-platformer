@@ -6,7 +6,7 @@ import { giantScale } from '../shared/giants.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
 import { use, U } from './gfx/uniforms.js';
-import { groundDetail } from './gfx/ground.js';
+import { groundDetail, SHORE_REACH, BEACH_WET } from './gfx/ground.js';
 import { detail } from './gfx/detail.js';
 import { waterLook } from './gfx/water.js';
 import { NOISE } from './gfx/noise.js';
@@ -451,7 +451,7 @@ export function addRipples(material) {
 // shallows along the shore, and the foam where it meets the shore
 export const SEA_LEVEL = -0.6;
 const SHALLOWS_WIDTH = 4.5; // (the turquoise band the inner half, a fainter shelf the outer: src/gfx/water.js)
-const SHALLOWS_COLOR = new THREE.Color(0x2fe2b6);
+const SHALLOWS_COLOR = new THREE.Color(0x45d6bc);
 const shallowsMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false });
 waterLook(addRipples(shallowsMat), 'shallows'); // (rocking with the sea, mirroring the sky as it does: src/gfx/water.js)
 const FOAM_WIDTH = 1.1; // (its solid line wider than the cliffs reach out over it: The cliffs)
@@ -471,12 +471,13 @@ hook(foamMat, 'foam', (shader) => {
   shader.fragmentShader = patch(shader.fragmentShader, 'color_fragment', `
     float shore = vColor.a;
     highp vec2 foamP = vGfxWorld.xz;
-    float foamShow = gfxShow(3.6, gfxFootprint(foamP));
+    float foamShow = gfxShow(2.6, gfxFootprint(foamP));
     float drift = sin(vGfxWorld.x * 0.8 + vGfxWorld.z * 0.6) * 1.5;
     float swash = sin(uTime * 0.85 + dot(foamP, vec2(0.23, 0.31)));
     float wave = sin(shore * 11.0 + uTime * 1.6 + drift);
-    float lace = mix(0.6, smoothstep(0.28, 0.6, gfxNoise(foamP * 3.6 + vec2(uTime * 0.11, -uTime * 0.07))), foamShow);
-    float line = smoothstep(0.5 - 0.12 * swash, 0.82 - 0.08 * swash, shore + (gfxNoise(foamP * 1.7 + 5.0) - 0.5) * 0.25);
+    // (the lace in bigger holes and the line wider than from above, so they read at the low camera)
+    float lace = mix(0.6, smoothstep(0.28, 0.6, gfxNoise(foamP * 2.6 + vec2(uTime * 0.11, -uTime * 0.07))), foamShow);
+    float line = smoothstep(0.4 - 0.12 * swash, 0.74 - 0.08 * swash, shore + (gfxNoise(foamP * 1.7 + 5.0) - 0.5) * 0.25);
     diffuseColor.a = max(line * mix(0.55, 1.0, lace), smoothstep(0.45, 0.9, wave) * shore * 0.8 * lace);`, 'GFX_FOAM');
 });
 
@@ -764,6 +765,13 @@ const DECOR_CHUNK = 71;
 const SURFACE_CHUNK = 24;
 // The ground's surface sits this far above its floor (tilled soil is above it)
 const GROUND_LIFT = 0.012;
+// (a sandy shore's slope on into the sea, instead of a cliff: from the tile's
+// side out (m) to where it starts down, and how much further it reaches by
+// its foot, wandering along the shore by the place alone, so the waterline
+// isn't straight; where it meets the sea, beachWaterline out, the shallows
+// and the foam start: The cliffs, Shallows and foam)
+const BEACH_SLOPE = { out: 0.3, run: (x, z) => 1.3 * (0.65 + 0.7 * (0.5 + 0.5 * Math.sin(x * 0.41 + z * 0.33 + 1.4 * Math.sin(z * 0.23 - x * 0.19)))) };
+const beachWaterline = (x, z) => BEACH_SLOPE.out + (BEACH_SLOPE.run(x, z) * (0.1 + SEA_LEVEL)) / (0.1 + Math.min(-1, SEA_LEVEL - 0.4));
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
 const slabGeo = new THREE.BoxGeometry(0.86, 0.06, 0.86);
 const slabMat = new THREE.MeshStandardMaterial({ roughness: 0.9 });
@@ -931,6 +939,7 @@ const CARPET_CAP = 2400; // (tiles a mesh holds at most)
 const CARPET_REACH = 1.15; // (its rings, as a share of the view's grass's: uGrassFar)
 const CARPET_FAR = [26, 40]; // (and at their widest, whatever the view's grass: uCarpetFar)
 const CARPET_HEIGHT = 0.62; // (a tile's tallest blades, before its kind's own height: the farm's grass)
+const DUNE_GRASS = new THREE.Color(0x7f9440); // (its blades on the sand, mixed with the sand's own color)
 const carpets = new Set();
 let carpetBase = null;
 function carpetGeometry() {
@@ -1017,11 +1026,17 @@ function addCarpet(material) {
       if ((cBits & 2048) != 0) cEdge = min(cEdge, cR.y + 0.5);
       if ((cBits & 4096) != 0) cEdge = min(cEdge, 0.5 - cR.y);
       cEdge = smoothstep(0.0, 0.5, cEdge);
+      // (by the sand, in clumps: the grass's edge breaks up, and on the sand only clumps of dune grass)
+      float cClump = 1.0;
+      if (cBits >= 8192) {
+        float cNoise = gfxGrassNoise((aCell.xy + cR) * 0.9 + 7.3) + 0.25 * gfxGrassNoise((aCell.xy + cR) * 2.3 + 1.1);
+        cClump = cBits >= 16384 ? smoothstep(0.5, 0.85, cNoise) : smoothstep(0.2, 0.6, cNoise);
+      }
       highp vec3 grassRoot = (modelMatrix * vec4(cId.x + cR.x, 0.02, cId.y + cR.y, 1.0)).xyz;
       // (fewer further off: the blades past this tile's share at its distance shrink away)
-      float cKeep = gfxCarpetKeep(distance(grassRoot, cameraPosition)) * aCell.w * uCarpet * mix(0.3, 1.0, cEdge) * cOpen;
+      float cKeep = gfxCarpetKeep(distance(grassRoot, cameraPosition)) * aCell.w * uCarpet * mix(0.3, 1.0, cEdge) * cOpen * cClump;
       float cShow = smoothstep(aBlade.z, aBlade.z + 0.04, cKeep);
-      float cTall = aCell.z * (0.8 + 0.4 * gfxGrassHash(cId * 1.37 + aBlade.z * 91.0)) * mix(0.45, 1.0, cEdge) * cShow;
+      float cTall = aCell.z * (0.8 + 0.4 * gfxGrassHash(cId * 1.37 + aBlade.z * 91.0)) * mix(0.45, 1.0, cEdge) * mix(0.55, 1.0, cClump) * cShow;
       vec2 cAt = cR + (cP - cR) * uGrassSpread * cShow;
       transformed = vec3(cId.x + cAt.x, 0.02 + transformed.y * cTall, cId.y + cAt.y);
       float grassH = aBlade.w; // (0 at the root, 1 at the tip)
@@ -1168,6 +1183,73 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   const tileAt = (x, z) => tileGrid.get(tileKeyFor(x, z));
   const floorOf = (type) => map.floors?.[type] ?? 0;
 
+  // ---------- The beach ----------
+  // How much plain sand (no grass of its own) and how much green ground is
+  // round a point, each blurred over a couple of tiles (beach.at: [sand,
+  // green], 0..1), so the shader can waver the edge between them a metre
+  // either way (gfxShore's y and z: src/gfx/ground.js), the carpet can thin
+  // out onto the sand (makeCarpet) and the wide sand can rise in low dunes
+  // (beach.dune: metres, 0 by the sea, by the grass and on anything else).
+  // Only how the ground looks: what you stand on is the flat earth below.
+  const beach = (() => {
+    const N = 2 * H + 1;
+    const sand = new Float32Array(N * N);
+    const green = new Float32Array(N * N);
+    for (const [key, type] of tileGrid) {
+      const style = map.tileStyles[type];
+      if (!style || floorOf(type) !== 0) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      const i = (gx + H) * N + (gz + H);
+      if (detailOf(type, style) === 3 && !map.foliage?.[type]) sand[i] = 1;
+      else if (style.lush) green[i] = 1;
+    }
+    // (a tent five tiles wide, along x then along z; past the edge, the sea)
+    const W = [1, 2, 3, 2, 1].map((w) => w / 9);
+    const blur = (a) => {
+      for (const along of [N, 1]) {
+        const out = new Float32Array(N * N);
+        for (let i = 0; i < N * N; i++) {
+          const x = along === N ? Math.floor(i / N) : i % N;
+          let v = 0;
+          for (let k = -2; k <= 2; k++) if (x + k >= 0 && x + k < N) v += W[k + 2] * a[i + k * along];
+          out[i] = v;
+        }
+        a.set(out);
+      }
+      return a;
+    };
+    blur(sand);
+    blur(green);
+    const read = (a, x, z) => {
+      const fx = Math.min(Math.max(x / TILE_SIZE + H, 0), N - 1.001);
+      const fz = Math.min(Math.max(z / TILE_SIZE + H, 0), N - 1.001);
+      const ix = Math.floor(fx);
+      const iz = Math.floor(fz);
+      const u = fx - ix;
+      const w = fz - iz;
+      const i = ix * N + iz;
+      return (a[i] * (1 - w) + a[i + 1] * w) * (1 - u) + (a[i + N] * (1 - w) + a[i + N + 1] * w) * u;
+    };
+    const smooth = (a, b, x) => {
+      const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
+      return t * t * (3 - 2 * t);
+    };
+    return {
+      at: (x, z) => [read(sand, x, z), read(green, x, z)],
+      // low rises across the wind (from the south-west), wandering, on the
+      // middle of wide sand only, none within a metre and a half of the sea
+      // (shore: how near it is, as the ground's gfxShore has it)
+      dune(x, z, shore) {
+        const [s, g] = this.at(x, z);
+        const on = smooth(0.62, 0.95, s) * (1 - smooth(0.0, 0.12, g)) * (1 - smooth(0.0, 0.4, shore));
+        if (on <= 0) return 0;
+        const ridge = 0.5 + 0.5 * Math.sin(x * 0.55 + z * 0.24 + 1.6 * Math.sin(z * 0.19 - x * 0.07));
+        const swell = 0.5 + 0.5 * Math.sin(z * 0.31 - x * 0.17 + 2.0);
+        return 0.11 * on * ridge * ridge * (0.4 + 0.6 * swell);
+      },
+    };
+  })();
+
   // The earth under the tiles, and what you stand on: one box per run of
   // land tiles at the same height along each row
   const runs = [];
@@ -1240,6 +1322,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // those: less than 0 for grass right up to a trunk).
   function isOpenGround(x, z, margin = 0, wildMargin = margin) {
     if (!map.decorTypes.has(tileAt(x, z))) return false;
+    return isClearGround(x, z, margin, wildMargin);
+  }
+  // (the same, on any kind of ground)
+  function isClearGround(x, z, margin = 0, wildMargin = margin) {
     for (let cx = Math.floor((x - margin) / BOX_CELL); cx <= Math.floor((x + margin) / BOX_CELL); cx++) {
       for (let cz = Math.floor((z - margin) / BOX_CELL); cz <= Math.floor((z + margin) / BOX_CELL); cz++) {
         for (const box of boxCells.get(`${cx},${cz}`) ?? []) {
@@ -1615,6 +1701,45 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   treeDecor.build();
   for (const tree of trees) drawTree(tree);
   for (const rock of wilds.rocks) addRock(rock);
+  // A few pebbles and shells on the beach, along the wet sand by the sea and
+  // the odd one by the grass: only for the look (no collider, never broken),
+  // in the rocks' own instanced meshes (a square's, with a material one of
+  // its rocks has: no more draws), placed by their tile alone
+  {
+    const mats = new Map(); // square -> the rocks' materials in it
+    for (const rock of rocks) {
+      const key = `${Math.floor(rock.x / DECOR_CHUNK)},${Math.floor(rock.z / DECOR_CHUNK)}`;
+      if (!mats.has(key)) mats.set(key, new Set());
+      mats.get(key).add(rock.mesh.material);
+    }
+    const SIDES4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [key, type] of tileGrid) {
+      const style = map.tileStyles[type];
+      if (!style || floorOf(type) !== 0 || detailOf(type, style) !== 3) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      const out = SIDES4.find(([dx, dz]) => !tileGrid.has(`${gx + dx},${gz + dz}`));
+      const green = beach.at(gx, gz)[1];
+      const h = hash2(gx * 1.31 + 0.7, gz * 0.77 - 2.1);
+      if (!(out ? h < 0.1 : green > 0.15 && h < 0.04)) continue;
+      const along = hash2(gx * 0.53 - 4.1, gz * 1.91 + 0.3) - 0.5;
+      const [dx, dz] = out ?? [0, 0];
+      const toSea = out ? 0.05 + 0.4 * hash2(gx * 2.7, gz * 0.37 + 9.1) : (hash2(gx * 2.7, gz * 0.37 + 9.1) - 0.5) * 0.8;
+      const x = (gx + (out ? dx * toSea - dz * along * 0.8 : along * 0.8)) * TILE_SIZE;
+      const z = (gz + (out ? dz * toSea + dx * along * 0.8 : toSea)) * TILE_SIZE;
+      const choice = [...(mats.get(`${Math.floor(x / DECOR_CHUNK)},${Math.floor(z / DECOR_CHUNK)}`) ?? [])];
+      if (!choice.length || !isClearGround(x, z, 0.2, -0.2)) continue;
+      const shell = hash2(gx * 3.3 + 1.1, gz * 2.9) < 0.4;
+      const k = shell ? 0.08 + 0.12 * h : 0.11 + 0.12 * hash2(gz * 0.9, gx * 1.7);
+      const pebble = addDecor(rockGeo, choice[Math.floor(hash2(gx * 0.19, gz * 4.3) * choice.length) % choice.length], x, k * (shell ? 0.15 : 0.25), z, k * 1.3, k * (shell ? 0.35 : 0.6), k, root);
+      pebble.rotation.set(0, hash2(gz * 1.7, gx * 0.6) * Math.PI * 2, 0);
+      pebble.userData.decor = false; // (the rocks' instancer, not the still decor's)
+      const tone = hash2(gx * 0.61 + 7.7, gz * 1.13);
+      pebble.userData.tint = shell
+        ? new THREE.Color().setRGB(1.25, 1.1 + 0.1 * tone, 1.0 + 0.1 * (1 - tone)).multiplyScalar(1.05)
+        : new THREE.Color().setRGB(0.95 + 0.25 * tone, 0.92 + 0.2 * tone, 0.86 + 0.16 * tone);
+      rockDecor.adopt(pebble);
+    }
+  }
   rockDecor.build();
   for (const rock of rocks) rock.baseRadius = rock.radius;
   // (the bushes and anything else the map scatters steer clear of them: isOpenGround)
@@ -1739,11 +1864,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
 
     // (how near the open sea a point is, for the wet sand at the waterline:
     // 1 on a side that faces it, 0 SHORE_REACH tiles in; src/gfx/ground.js)
-    const SHORE_REACH = 1.5;
     const shoreAt = (x, z, gx, gz) => {
       let d = SHORE_REACH;
-      for (let sz = gz - 2; sz <= gz + 2; sz++) {
-        for (let sx = gx - 2; sx <= gx + 2; sx++) {
+      for (let sz = gz - 3; sz <= gz + 3; sz++) {
+        for (let sx = gx - 3; sx <= gx + 3; sx++) {
           if (tileGrid.has(`${sx},${sz}`)) continue;
           d = Math.min(d, Math.hypot(Math.max(sx - 0.5 - x, 0, x - sx - 0.5), Math.max(sz - 0.5 - z, 0, z - sz - 0.5)));
         }
@@ -1751,7 +1875,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       return 1 - d / SHORE_REACH;
     };
     const nearSea = (gx, gz) => {
-      for (let sz = gz - 2; sz <= gz + 2; sz++) for (let sx = gx - 2; sx <= gx + 2; sx++) if (!tileGrid.has(`${sx},${sz}`)) return true;
+      for (let sz = gz - 3; sz <= gz + 3; sz++) for (let sx = gx - 3; sx <= gx + 3; sx++) if (!tileGrid.has(`${sx},${sz}`)) return true;
       return false;
     };
 
@@ -1762,8 +1886,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const [gx, gz] = key.split(',').map(Number);
       const floor = floorOf(type);
       const chunkKey = `${Math.floor((gx + H) / SURFACE_CHUNK)},${Math.floor((gz + H) / SURFACE_CHUNK)}`;
-      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], col: [], kind: [], shore: [], index: [] });
-      const { pos, col, kind: kindOf, shore: shoreOf, index } = chunks.get(chunkKey);
+      if (!chunks.has(chunkKey)) chunks.set(chunkKey, { pos: [], nor: [], col: [], kind: [], shore: [], index: [] });
+      const { pos, nor, col, kind: kindOf, shore: shoreOf, index } = chunks.get(chunkKey);
       const first = pos.length / 3;
       groundTiles.set(key, { chunk: chunks.get(chunkKey), first });
       const lip = lipColors.get(key);
@@ -1809,13 +1933,24 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           }
           const shade = 1 - meadowNoise(x, z) * 0.1 * lush + (hash2(x, z) - 0.5) * jitter * 5;
           tint.multiplyScalar(shade * (1 - 0.4 * contactShade(x, floor, z)));
-          pos.push(x, floor + GROUND_LIFT, z);
-          col.push(tint.r, tint.g, tint.b);
           const shore = coast ? shoreAt(gx + ox, gz + oz, gx, gz) : 0;
-          shoreOf.push(Math.round(shore * 255));
+          // (the low dunes on wide sand, and their slopes in the normal,
+          // steeper than they are, so the rises read from the camera)
+          let rise = 0;
+          let [nx, nz] = [0, 0];
+          if (floor === 0 && detail[3] > 0.5 && (rise = beach.dune(x, z, shore)) > 0) {
+            nx = -(beach.dune(x + 0.15, z, shore) - beach.dune(x - 0.15, z, shore)) / 0.3 * 2.5;
+            nz = -(beach.dune(x, z + 0.15, shore) - beach.dune(x, z - 0.15, shore)) / 0.3 * 2.5;
+          }
+          const nl = Math.hypot(nx, 1, nz);
+          pos.push(x, floor + GROUND_LIFT + rise, z);
+          nor.push(nx / nl, 1 / nl, nz / nl);
+          col.push(tint.r, tint.g, tint.b);
+          const [sandNear, greenNear] = floor === 0 ? beach.at(x, z) : [0, 0];
+          shoreOf.push(Math.round(shore * 255), Math.round(sandNear * 255), Math.round(greenNear * 255));
           // (the lip over the sea as wet as the sand at its edge: the tiles' look)
-          const wet = 1 - 0.42 * detail[3] * Math.min(Math.max((shore - 0.35) / 0.25, 0), 1);
-          lip?.set([tint.r * wet, tint.g * wet, tint.b * wet * 0.96], (i * 5 + j) * 3);
+          const wet = detail[3] * Math.min(Math.max((shore - 0.8) / 0.15, 0), 1);
+          lip?.set([tint.r * (1 - wet * (1 - BEACH_WET[0])), tint.g * (1 - wet * (1 - BEACH_WET[1])), tint.b * (1 - wet * (1 - BEACH_WET[2]))], (i * 5 + j) * 3);
           for (const d of detail) kindOf.push(Math.round(d * 255));
         }
       }
@@ -1828,7 +1963,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (type === 'stone') slabs.push([gx, gz, floor]);
     }
     for (const chunk of chunks.values()) {
-      const { pos, col, kind, shore, index } = chunk;
+      const { pos, nor, col, kind, shore, index } = chunk;
       // (and after its own triangles, the same tiles coarser, 2x2 quads a
       // tile on every other vertex: drawn instead far from the view, viewFrom)
       const fine = index.length;
@@ -1847,10 +1982,10 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geo.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       geo.setAttribute('gfxKind', new THREE.Uint8BufferAttribute(kind, 4, true)); // (src/gfx/ground.js)
-      geo.setAttribute('gfxShore', new THREE.Uint8BufferAttribute(shore, 1, true));
+      geo.setAttribute('gfxShore', new THREE.Uint8BufferAttribute(shore, 3, true)); // (how near the sea; the sand and the green round it: beach)
       geo.setIndex(index);
       geo.setDrawRange(0, fine);
       Object.assign(geo.userData, { fine, box });
@@ -1929,6 +2064,8 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
     const cliffChunks = new Map(); // "cx,cz" -> { pos, col, at }
     const earthTint = new THREE.Color();
     const shade = new THREE.Color();
+    const sandTint = new THREE.Color();
+    const wetSand = new THREE.Color();
     for (const [key, type] of tileGrid) {
       const lip = lipColors.get(key);
       if (!lip) continue;
@@ -1938,6 +2075,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       if (!cliffChunks.has(chunkKey)) cliffChunks.set(chunkKey, { pos: [], col: [], at: [] });
       const { pos, col, at: cliffAt } = cliffChunks.get(chunkKey);
       // the earth under sand is sandier
+      sandTint.copy(kindColors[type]);
       earthTint.copy(CLIFF_EARTH);
       if (kindDetail[type] === 3) earthTint.lerp(kindColors[type], 0.45);
       for (const [dx, dz] of SIDES) {
@@ -1949,6 +2087,9 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         const foot = sea ? Math.min(floor - 1, SEA_LEVEL - 0.4) : drop - 0.05;
         const water = sea ? SEA_LEVEL : drop + 0.33; // (a pond's water, over its floor)
         const [tx, tz] = [-dz, dx]; // along the side
+        // (sand down to the sea: no cliff but the beach sloping on into
+        // the water, wet sand, the floor under the shallows: BEACH_SLOPE)
+        const beachy = sea && floor === 0 && kindDetail[type] === 3;
         // the points: rows (lip, lip's edge, under it, then the cliff's rows) by five along
         const rows = [[], [], [], [], [], [], []];
         const rowColor = [[], [], []];
@@ -1968,11 +2109,20 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
           const g = lip[(i * 5 + j) * 3 + 1];
           const b = lip[(i * 5 + j) * 3 + 2];
           rows[0].push(at(0, floor + GROUND_LIFT));
-          rows[1].push(at(lean, floor + GROUND_LIFT - 0.015));
-          rows[2].push(at(lean - 0.02, top + 0.02));
-          for (let row = 0; row < 4; row++) {
-            const y = top + (foot - top) * CLIFF_ROWS[row];
-            rows[3 + row].push(at(row === 0 ? d0 : pushOf(y, 0.05, 0.2), y));
+          if (beachy) {
+            rows[1].push(at(BEACH_SLOPE.out * 0.4, floor + GROUND_LIFT - 0.02));
+            rows[2].push(at(BEACH_SLOPE.out * 0.75, (floor + top) / 2));
+            for (let row = 0; row < 4; row++) {
+              const y = top + (foot - top) * CLIFF_ROWS[row];
+              rows[3 + row].push(at(BEACH_SLOPE.out + BEACH_SLOPE.run(px, pz) * CLIFF_ROWS[row] + pushOf(y, -0.04, 0.08) * (row > 0), y));
+            }
+          } else {
+            rows[1].push(at(lean, floor + GROUND_LIFT - 0.015));
+            rows[2].push(at(lean - 0.02, top + 0.02));
+            for (let row = 0; row < 4; row++) {
+              const y = top + (foot - top) * CLIFF_ROWS[row];
+              rows[3 + row].push(at(row === 0 ? d0 : pushOf(y, 0.05, 0.2), y));
+            }
           }
           rowColor[0].push([r, g, b]);
           rowColor[1].push([r * 0.9, g * 0.9, b * 0.9]);
@@ -1988,12 +2138,23 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
             const split = hash2(gx * 7.1 + k * 1.9, gz * 5.3 + row * 3.7 + dx * 2.1 + dz * 1.3) < 0.5;
             for (const tri of split ? [[A, B, C], [B, D, C]] : [[A, B, D], [A, D, C]]) {
               for (const p of tri) pos.push(...p);
-              for (const p of tri) cliffAt.push(floor - p[1], p[1] - water); // (how far under the lip, how high over the water: gfxCliff)
+              for (const p of tri) cliffAt.push(floor - p[1], p[1] - water, beachy ? 1 : 0); // (how far under the lip, how high over the water, a beach's: gfxCliff)
               if (row < 2) {
                 // the lip: its vertices' colors, as the ground's
                 for (const p of tri) {
                   const [ri, ki] = p === A ? [row, k] : p === B ? [row, k + 1] : p === C ? [row + 1, k] : [row + 1, k + 1];
                   col.push(...rowColor[ri][ki]);
+                }
+                continue;
+              }
+              if (beachy) {
+                // the beach's slope: wet dark sand down to the water, the
+                // floor under it paler (the shallows tint it: src/gfx/water.js)
+                for (const p of tri) {
+                  const under = Math.min(Math.max((water - p[1]) / 0.3, 0), 1);
+                  const n = 0.94 + 0.12 * hash2(p[0] * 1.3, p[2] * 1.7);
+                  shade.copy(sandTint).multiply(wetSand.setRGB(...BEACH_WET)).lerp(c.copy(sandTint).multiplyScalar(0.8), under).multiplyScalar(n);
+                  col.push(shade.r, shade.g, shade.b);
                 }
                 continue;
               }
@@ -2016,7 +2177,7 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      geo.setAttribute('gfxCliff', new THREE.Float32BufferAttribute(at, 2)); // (moss under the lip, wet by the water: src/gfx/ground.js)
+      geo.setAttribute('gfxCliff', new THREE.Float32BufferAttribute(at, 3)); // (moss under the lip, wet by the water: src/gfx/ground.js)
       geo.computeVertexNormals(); // (one a face, smoothed where it is set on the mesh: src/gfx/smooth.js)
       const cliff = new THREE.Mesh(geo, map.cliffMat ?? cliffMat);
       cliff.receiveShadow = true;
@@ -2045,11 +2206,36 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
       any = true;
     }
     if (!any) return null;
+    // (and thinning out onto the sand next to it, a tile or two, shorter
+    // and straw-green: dune grass, not by the sea; beach.at)
+    const duneGrass = new Uint8Array(N * N);
+    const clumps = new Uint8Array(N * N); // (in clumps: 1 the grass next to the sand, 2 on it)
+    for (const [key, type] of tileGrid) {
+      if (map.foliage[type] || floorOf(type) !== 0 || !groundTiles.has(key)) continue;
+      if (detailOf(type, map.tileStyles[type] ?? {}) !== 3) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      const near = beach.at(gx, gz)[1] * (0.8 + 0.5 * hash2(gx * 0.71 + 3.3, gz * 0.53 - 1.9));
+      if (near < 0.08 || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !tileGrid.has(`${gx + dx},${gz + dz}`))) continue;
+      const i = at(gx, gz);
+      thick[i] = Math.min(0.5, near * 1.3);
+      tall[i] = CARPET_HEIGHT * (0.6 + 0.3 * hash2(gx * 0.37, gz * 0.41));
+      duneGrass[i] = 1;
+      clumps[i] = 2;
+    }
+    for (const [key, type] of tileGrid) {
+      if (!map.foliage[type] || floorOf(type) !== 0) continue;
+      const [gx, gz] = key.split(',').map(Number);
+      if (beach.at(gx, gz)[0] > 0.1) clumps[at(gx, gz)] = 1;
+    }
     const isOn = (gx, gz) => Math.abs(gx) <= H && Math.abs(gz) <= H && thick[at(gx, gz)] > 0 && !hidden[at(gx, gz)];
     const openBits = (gx, gz, i) => {
       if (bits[i] < 0) {
         let b = 0;
-        for (let n = 0; n < 9; n++) if (isOpenGround(gx + ((n % 3) - 1) / 3, gz + (Math.floor(n / 3) - 1) / 3, 0, -0.15)) b |= 1 << n;
+        for (let n = 0; n < 9; n++) {
+          const [x, z] = [gx + ((n % 3) - 1) / 3, gz + (Math.floor(n / 3) - 1) / 3];
+          const on = duneGrass[i] ? (map.decorTypes.has(tileAt(x, z)) || tileAt(x, z) === tileAt(gx, gz)) && isClearGround(x, z, 0, -0.15) : isOpenGround(x, z, 0, -0.15);
+          if (on) b |= 1 << n;
+        }
         bits[i] = b;
       }
       return bits[i];
@@ -2140,10 +2326,11 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
             counts[lod]++;
             const a = meshes[lod].geometry.attributes;
             a.aCell.array.set([gx, gz, tall[i], thick[i]], n * 4);
-            a.aBits.array[n] = openBits(gx, gz, i) | (isOn(gx - 1, gz) ? 0 : 512) | (isOn(gx + 1, gz) ? 0 : 1024) | (isOn(gx, gz - 1) ? 0 : 2048) | (isOn(gx, gz + 1) ? 0 : 4096);
+            a.aBits.array[n] = openBits(gx, gz, i) | (isOn(gx - 1, gz) ? 0 : 512) | (isOn(gx + 1, gz) ? 0 : 1024) | (isOn(gx, gz - 1) ? 0 : 2048) | (isOn(gx, gz + 1) ? 0 : 4096) | clumps[i] * 8192;
             for (const [c, v] of [['aC0', 0], ['aC1', 4], ['aC2', 20], ['aC3', 24]]) {
               const k = (ground.first + v) * 3;
-              a[c].array.set([color[k], color[k + 1], color[k + 2]], n * 3);
+              if (duneGrass[i]) a[c].array.set([0.6 * DUNE_GRASS.r + 0.4 * color[k], 0.6 * DUNE_GRASS.g + 0.4 * color[k + 1], 0.6 * DUNE_GRASS.b + 0.4 * color[k + 2]], n * 3);
+              else a[c].array.set([color[k], color[k + 1], color[k + 2]], n * 3);
             }
           }
         }
@@ -2172,8 +2359,14 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
   // Strips on the sea along every tile edge that faces open water, with a
   // corner piece round each outside corner of the coast: lighter water
   // reaching out from the island, and foam over it. Vertex alpha: 1 at the
-  // shore, 0 out at sea.
+  // shore, 0 out at sea. Off sand they start where the beach's slope meets
+  // the water (insetOf), so the foam's line hugs the waterline.
   const sea = (gx, gz) => !tileGrid.has(`${gx},${gz}`);
+  // (how far out from a tile's side the water starts: a sandy shore's slope reaches out under it)
+  const insetOf = (gx, gz, x, z) => {
+    const type = tileGrid.get(`${gx},${gz}`);
+    return floorOf(type) === 0 && detailOf(type, map.tileStyles[type] ?? {}) === 3 ? beachWaterline(x, z) - 0.08 : 0;
+  };
   function shoreStrip(width, color, y, material) {
     const pos = [];
     const col = [];
@@ -2194,22 +2387,25 @@ export function buildWorld(map, wilds = { trees: [], rocks: [] }) {
         const [tx, tz] = [-dz, dx];
         const ex = gx + dx / 2;
         const ez = gz + dz / 2;
+        const e0 = insetOf(gx, gz, ex - tx / 2, ez - tz / 2);
+        const e1 = insetOf(gx, gz, ex + tx / 2, ez + tz / 2);
         quad([
-          [ex - tx / 2, ez - tz / 2, 1],
-          [ex - tx / 2 + dx * W, ez - tz / 2 + dz * W, 0],
-          [ex + tx / 2 + dx * W, ez + tz / 2 + dz * W, 0],
-          [ex + tx / 2, ez + tz / 2, 1],
+          [ex - tx / 2 + dx * e0, ez - tz / 2 + dz * e0, 1],
+          [ex - tx / 2 + dx * (e0 + W), ez - tz / 2 + dz * (e0 + W), 0],
+          [ex + tx / 2 + dx * (e1 + W), ez + tz / 2 + dz * (e1 + W), 0],
+          [ex + tx / 2 + dx * e1, ez + tz / 2 + dz * e1, 1],
         ]);
-        // round the corner, where the coast turns away
+        // round the corner, where the coast turns away (from the inset
+        // side, round the slope's diagonal, to the next side's)
         if (sea(gx + tx, gz + tz) && sea(gx + dx + tx, gz + dz + tz)) {
-          const cx = ex + tx / 2;
-          const cz = ez + tz / 2;
-          quad([
-            [cx, cz, 1],
-            [cx + dx * W, cz + dz * W, 0],
-            [cx + (dx + tx) * W * 0.7, cz + (dz + tz) * W * 0.7, 0],
-            [cx + tx * W, cz + tz * W, 0],
-          ]);
+          const cx = gx + dx / 2 + tx / 2;
+          const cz = gz + dz / 2 + tz / 2;
+          const e = insetOf(gx, gz, cx, cz);
+          const k = Math.SQRT1_2;
+          const mid = [cx + (dx + tx) * e * k, cz + (dz + tz) * e * k, 1];
+          const midOut = [cx + (dx + tx) * (e + W) * k, cz + (dz + tz) * (e + W) * k, 0];
+          quad([[cx + dx * e, cz + dz * e, 1], [cx + dx * (e + W), cz + dz * (e + W), 0], midOut, mid]);
+          quad([mid, midOut, [cx + tx * (e + W), cz + tz * (e + W), 0], [cx + tx * e, cz + tz * e, 1]]);
         }
       }
     }
