@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SPAWN } from '../shared/level.js';
 import { hashSeed, STONE_CIRCLE, WILD_HALF } from '../shared/worldgen.js';
 import { distToPaths, addDecor, rockGeo, rockMats, foliageMat, addRipples, leafMats, pineMats } from './world.js';
-import { waterLook, WATER_BANK_REACH } from './gfx/water.js';
+import { waterLook } from './gfx/water.js';
 import { detail } from './gfx/detail.js';
 import { buildStall } from './merchant.js';
 import { buildPens } from './animals.js';
@@ -325,11 +325,10 @@ function buildPond({ root, rand, rng }, pond, inPond, floor, waterY) {
   return pads;
 }
 // The pond's water: a disc, in a grid of half-metre squares, each corner
-// knowing how near the bank it is (gfxBank: 1 on the bank, 0 from
-// WATER_BANK_REACH out), for the shallows, the wet edge and the deep middle
-// (src/gfx/water.js): rings round it, a quarter metre apart for the first
-// metre and a half, then half a metre
-const BANK_RINGS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6];
+// knowing how near the bank it is (gfxBank: 1 on the bank, 0 from BANK_REACH
+// out), for the shallows and the wet edge (src/gfx/water.js)
+const BANK_REACH = 1.5;
+const BANK_RINGS = 6;
 function pondWaterGeo(pond, inPond) {
   const R = pond.r + 0.9;
   const n = Math.ceil((R * 2) / 0.5);
@@ -343,15 +342,15 @@ function pondWaterGeo(pond, inPond) {
       const z = -R + i * step;
       pos.push(x, 0, z);
       // how far to the nearest ground that is not the pond: rings round it, eight ways
-      let d = inPond(pond.x + x, pond.z + z) ? WATER_BANK_REACH : 0;
-      for (const r of BANK_RINGS) {
-        if (d < WATER_BANK_REACH) break;
+      let d = inPond(pond.x + x, pond.z + z) ? BANK_REACH : 0;
+      for (let ring = 1; ring <= BANK_RINGS && d === BANK_REACH; ring++) {
+        const r = (ring / BANK_RINGS) * BANK_REACH;
         for (let k = 0; k < 8; k++) {
           const a = (k / 8) * Math.PI * 2;
           if (!inPond(pond.x + x + Math.cos(a) * r, pond.z + z + Math.sin(a) * r)) { d = r; break; }
         }
       }
-      bank.push(1 - d / WATER_BANK_REACH);
+      bank.push(1 - d / BANK_REACH);
     }
   }
   for (let i = 0; i < n; i++) {

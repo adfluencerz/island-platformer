@@ -204,9 +204,6 @@ function hookTree(material, pine = false) {
       vGfxSunGlow = uTreeLeaf > 0.5 ? (3.0 * gfxDusk() + 2.0 * gfxMorning() * vec3(0.86, 1.0, 1.18) + 2.6 * gfxNight() * vec3(0.82, 0.94, 1.2))
         * (1.0 - clamp(dot(crownN, normalize(cameraPosition - crownAt)), 0.0, 1.0))
         * smoothstep(0.0, 0.7, dot(crownN, normalize(vec3(uSunDir.x, 0.0, uSunDir.z)))) : vec3(0.0);
-      // (and at a clear noon a warm one on the crown's top edge toward the high sun, a pine's too)
-      vGfxSunGlow += step(0.5, uTreeLeaf) * 1.3 * gfxDay() * vec3(1.0, 0.96, 0.8) * pow(1.0 - clamp(dot(crownN, normalize(cameraPosition - crownAt)), 0.0, 1.0), 1.5)
-        * smoothstep(0.3, 0.9, dot(crownN, uSunDir));
       vec3 crownH = fract(floor(crownM[3].xyz * 2.0 + 0.5) * vec3(0.1031, 0.1030, 0.0973));
       crownH += dot(crownH, crownH.yzx + 33.33);
       float crownSeed = fract((crownH.x + crownH.y) * crownH.z);
@@ -245,15 +242,10 @@ function hookTree(material, pine = false) {
           float crownUnder = smoothstep(0.1, -0.7, crownN.y);
           float crownLobe = sin(position.x * 2.7 + crownSeed * 6.28) * sin(position.z * 2.4 - position.y * 1.6 + crownSeed * 11.0);
           float crownSky = smoothstep(-0.25, 0.75, crownN.y); // (each clump's top lighter, the sky's: a crown seen against the sun too)
-          // (at a clear noon, under the high sun, a ball over its own shade: its lit top
-          // brighter, what faces down dark and cool, not lifted by the ground's warm light)
-          float crownNoon = gfxDay();
-          float crownK = mix(0.6, 1.48, crownTop) * mix(0.74, 1.14, crownSky) * (1.0 - 0.6 * crownCrease) * (1.0 + 0.06 * crownLobe) + 0.22 * crownUnder * (1.0 - 0.85 * crownNoon);
-          crownK *= mix(1.0, mix(0.42, 1.12, smoothstep(-0.45, 0.6, crownN.y)), crownNoon);
+          float crownK = mix(0.6, 1.48, crownTop) * mix(0.74, 1.14, crownSky) * (1.0 - 0.6 * crownCrease) * (1.0 + 0.06 * crownLobe) + 0.22 * crownUnder;
           crownK = mix(crownK, 0.95, 0.2 * uNight); // (at night a little flatter: the moon models it still)
-          crownK *= 1.0 - 0.5 * gfxNight() * (1.0 - smoothstep(16.0, 34.0, length(cameraPosition - crownAt))); // (and the near ones darker, as the near field is)
           vec3 crownCol = mix(vec3(0.84, 0.94, 1.1), vec3(1.16, 1.1, 0.7), crownTop * crownTop);
-          crownCol = mix(crownCol, mix(vec3(1.04, 1.0, 0.72), vec3(0.8, 0.94, 1.04), crownNoon), 0.7 * crownUnder);
+          crownCol = mix(crownCol, vec3(1.04, 1.0, 0.72), 0.7 * crownUnder);
           vCanopyShade = vec4(crownK * crownCol + crownRim * vec3(0.28, 0.38, 0.36), 0.0);
           vCrownLit = 0.5 + 0.5 * max(crownLit, 0.7 * crownN.y - 0.1); // (each clump's lit side, or its top under the sky, stepped per pixel)
         } else {
@@ -1083,31 +1075,13 @@ function addCarpet(material) {
       float cUp = transformed.y - 0.02;
       transformed.xz += grassBend * grassH * cUp;
       transformed.y = 0.02 + cUp * (1.0 - 0.42 * dot(grassBend, grassBend) * grassH);
-      // (at dusk the tips catch the low sun, more looking toward it: on the sun's own light, so a
-      // blade in shadow stays dark, light.js; and the roots darker, the near field deep and rich)
-      float cDusk = gfxDusk();
-      vec2 cLook = grassRoot.xz - cameraPosition.xz;
-      float cBack = smoothstep(-0.3, 0.9, dot(cLook, uSunDir.xz) * inversesqrt(max(dot(cLook, cLook) * dot(uSunDir.xz, uSunDir.xz), 1e-6)));
-      // (in the misty morning the tips cool-bright in the sun, and now and then one, wet with dew, sparkles)
-      float cMorn = gfxMorning();
-      float cSpark = step(0.93, gfxGrassHash(grassRoot.xz * 13.7 + aBlade.z * 17.0)) * (0.5 + 0.5 * sin(uTime * 2.3 + aBlade.z * 53.0 + grassRoot.x * 3.1));
-      // (on a moonlit night the tips silver toward the moon, the roots darker)
-      float cNight = gfxNight();
-      // (at a clear noon the tips catch the high sun a little, warm, the roots deeper: the near field rich)
-      float cDay = gfxDay();
-      vGfxSunGlow = vec3(cDusk * grassH * grassH * (0.7 + 1.1 * cBack))
-        + cDay * grassH * grassH * (0.35 + 0.5 * cBack) * vec3(1.0, 0.95, 0.72)
-        + cMorn * grassH * grassH * (0.45 + 0.9 * cBack + 5.0 * cSpark * grassH * grassH) * vec3(0.86, 1.0, 1.18)
-        + cNight * grassH * grassH * (0.8 + 1.8 * cBack) * vec3(0.82, 0.94, 1.2);
-      #ifdef USE_COLOR
-        vColor.rgb *= 1.0 - (0.35 * cDusk + 0.2 * cMorn + 0.5 * cNight + 0.28 * cDay) * (1.0 - grassH);
-      #endif
+      vGfxSunGlow = vec3(0.0);
       #ifdef USE_COLOR
         vec2 cUV = cR + 0.5;
         vColor.rgb *= mix(mix(aC0, aC1, cUV.x), mix(aC2, aC3, cUV.x), cUV.y); // (the ground's color under it)
         vColor.rgb *= 1.0 + (0.14 * grassGust + 0.14 * cWave) * grassH; // (a wave's sheen running over the field)
         float grassDew = uMist * grassH * grassH * (0.7 + 0.3 * gfxGrassHash(grassRoot.xz * 7.3));
-        vColor.rgb = vColor.rgb * (1.0 + 0.6 * grassDew * (1.0 - 0.5 * cMorn)) + vec3(0.02, 0.04, 0.05) * grassDew; // (less where the sun's own dew glow is: the shadows deep)
+        vColor.rgb = vColor.rgb * (1.0 + 0.6 * grassDew) + vec3(0.02, 0.04, 0.05) * grassDew;
       #endif`, 'GFX_CARPET');
     shader.fragmentShader = patch(shader.fragmentShader, 'normal_fragment_begin', `
       #ifdef DOUBLE_SIDED

@@ -373,7 +373,6 @@ quality.onApply((k) => {
   gfx.U.uNightGrey.value = post.on ? 0 : 0.35; // (the night's grey: the grade's on the post tiers, src/gfx/post.js; the light's without)
   sun.castShadow = shadows; // (which also has every lit material's shader made again, with or without them)
   weather.setParticles(k.particles);
-  dayNight.setParticles(k.particles); // (the motes in the sunlight: src/gfx/motes.js)
 });
 quality.applyTier();
 

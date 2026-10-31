@@ -22,10 +22,10 @@ import { MOON } from './light.js';
 //   - bloom (three's UnrealBloomPass) on what is near white: the sun, the
 //     glints, bright cloud tops; at night and underground its threshold falls,
 //     so the lamps, the windows and the torches glow. Half-res on medium.
-//   - grade: a touch of saturation (less at night, in the dark), a soft
-//     vignette (round each seat's own view), a tint warm by day and cool at
-//     night, leaning toward the sky; warm lights and cool shades (a split
-//     by brightness, most round a low sun) and a touch of contrast in the mids;
+//   - grade: less saturation at night, in the dark; a soft vignette (round
+//     each seat's own view); a light tint, warm by day and cool at night;
+//     warm lights and cool shades (a split by brightness, most round a low
+//     sun) and a touch of contrast in the mids;
 //     written to the screen as it is (the target is in its color space already:
 //     no OutputPass, which would tone map and encode a second time).
 //
@@ -37,17 +37,17 @@ import { MOON } from './light.js';
 
 // The look (uniforms: tweak live through window.__game.post.grade.uniforms)
 export const POST = {
-  bloom: { strength: 0.22, nightStrength: 0.34, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
-  saturation: 1.14,
-  saturationLow: 0.08, // (more round a low sun: a sunset's colors rich, not muddy)
+  bloom: { strength: 0.12, nightStrength: 0.3, radius: 0.35, threshold: 0.92, nightThreshold: 0.72, underThreshold: 0.74 }, // (thresholds: the screen's brightness, 0..1; underground a little higher, so the glows bloom and the room stays dark)
+  saturation: 1.0,
+  saturationLow: 0.0, // (more round a low sun: none, the colors stay as they are)
   contrast: 1.06, // (in the mids, round CONTRAST_PIVOT)
   split: [0.3, 0.9], // (warm lights, cool shades: by day, and round a low sun; none at night or underground)
   nightSaturation: 0.62, // (at night the dark parts go grey-blue, as the eye sees by moonlight; what a lamp lights keeps its color. The low tier: src/gfx/light.js)
-  vignette: 0.2,
+  vignette: 0.1,
   warm: new THREE.Color(1.02, 1.0, 0.97), // (the day's tint)
   cool: new THREE.Color(0.95, 0.98, 1.05), // (the night's)
-  skyTint: 0.08, // (how far the tint leans toward the sky's horizon color)
-  skyTintLow: 0.07, // (and round a low sun, by day: a golden hour's warmth, mostly in the split's warm lights: a whole-picture orange made the greens olive)
+  skyTint: 0.0, // (how far the tint leans toward the sky's horizon color: none, a sky-colored wash over the whole picture muddied it)
+  skyTintLow: 0.0, // (and round a low sun, by day: none either, a whole-picture orange made the greens olive)
   rain: new THREE.Color(0.95, 0.99, 1.06), // (under rain clouds: cooler, and the wet colors a little richer)
   rainSaturation: 0.18,
   mist: new THREE.Color(0.97, 0.99, 1.03), // (the morning's mist: a paler, cooler lean, so morning is not a second sunset)

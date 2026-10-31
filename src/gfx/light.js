@@ -97,12 +97,6 @@ const WRAP_GLSL = /* glsl */ `
 export const LIGHT_UNIFORMS = [...new Set(['uWrap', 'uToon', 'uShadowTint', 'uCloudShadows', 'uCloudAmount', 'uCloudOffset', 'uUnder', 'uNight', 'uNightGrey', 'uWet', 'uRain', 'uTime', 'uSkyHorizon', 'uSkyZenith', 'uCanopyMap', 'uCanopyBox', ...DUSK_UNIFORMS])];
 const CANOPY_SKY = 'vec3(0.24, 0.4, 0.56)'; // (the sky's light under the canopies: dimmer, blue-green, not grey)
 const CANOPY_GAP = 'vec3(1.45, 1.3, 0.92)'; // (and the sun in a gap: a little warm and bright, by the shade round it)
-const DUSK_FILL = '0.55'; // (how much of the sky's light the near field loses at dusk, in the shade)
-const MORNING_FILL = '0.5'; // (and in the misty morning)
-const RAIN_FILL = '0.5'; // (and in the rain, in the shade or not: the overcast's flat light)
-const DAY_FILL = '0.38'; // (and at a clear noon, in the shade most: the near field rich, not washed by the sky's blue)
-const NIGHT_FILL = '0.6'; // (and on a moonlit night, in the moon's shade most: the near field dark and rich, the moon's key and rim reading on it)
-const DAY_RICH = '0.22'; // (how much richer the near field's colors are at a clear noon)
 
 const edit = (chunk, from, to, what) => {
   if (!chunk.includes(from)) throw new Error(`gfx: three's ${what} has changed (light.js)`);
@@ -127,7 +121,7 @@ export function lightChunks() {
     lights_fragment_begin: [
       [
         'IncidentLight directLight;',
-        `IncidentLight directLight;\nfloat gfxSunLit = 1.0; // (how much of the sun reaches here: shadow, cloud, facing)\nfloat gfxCloud = 1.0; // (the cloud shadow here)\nfloat gfxCover = 0.0; // (how far under the trees' canopies, and how much of a gap in them: CANOPY_GLSL)\nfloat gfxGap = 0.0;\n${WET_GLSL}\n${NOON_GLSL}`,
+        `IncidentLight directLight;\nfloat gfxSunLit = 1.0; // (how much of the sun reaches here: shadow, cloud, facing)\nfloat gfxCloud = 1.0; // (the cloud shadow here)\nfloat gfxCover = 0.0; // (how far under the trees' canopies, and how much of a gap in them: CANOPY_GLSL)\nfloat gfxGap = 0.0;\n${WET_GLSL}`,
       ],
       [
         DIR_INFO,
@@ -180,26 +174,6 @@ export function lightChunks() {
           irradiance *= 1.0 - ${CLOUD_SKY} * ( 1.0 - gfxCloud ); // (under a cloud the sky's light is dimmer too)
           irradiance *= mix( vec3( 1.0 ), uShadowTint, ( 1.0 - gfxSunLit ) * ( 1.0 - uUnder ) ); // (cool where the sun is shaded)
           irradiance *= mix( vec3( 1.0 ), ${CANOPY_SKY}, gfxCover * ( 1.0 - 0.5 * gfxGap ) ); // (and under the canopies, less of the sky)
-          #if defined( USE_FOG ) && !defined( FOG_EXP2 )
-            // (at dusk, less of the sky's light near the camera, back in full by the far field: a darker,
-            // richer foreground the long shadows read across, the far one paler: atmos.js)
-            // (more in the shade than in the sun: the shadows deep, the lit grass not dimmed much)
-            // (in the morning less so, and the near shade cooler: clear, cool, the long shadows blue)
-            float gfxNearShade = ( 1.0 - smoothstep( 0.7, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.45 * gfxSunLit );
-            float gfxMorn = gfxMorning() * gfxNearShade;
-            // (in the rain the overcast's flat light: less of it near the camera
-            // whatever the sun, so the wet foreground is dark and rich and the sheen reads on it)
-            float gfxNearRain = gfxRain() * ( 1.0 - smoothstep( 0.6, 2.0, vFogDepth / max( fogNear, 1e-3 ) ) );
-            float gfxNearNight = gfxNight() * ( 1.0 - smoothstep( 0.6, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.4 * gfxSunLit );
-            // (at a clear noon the same: less of the sky's flat fill near the camera, more in the
-            // shade than in the sun, so the near greens are rich and the sun's and clouds' shadows read)
-            float gfxNoon = gfxDay();
-            float gfxNearDay = gfxNoon * ( 1.0 - smoothstep( 0.6, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) ) * ( 1.0 - 0.5 * gfxSunLit );
-            irradiance *= 1.0 - ${DUSK_FILL} * gfxDusk() * gfxNearShade - ${MORNING_FILL} * gfxMorn - ${RAIN_FILL} * gfxNearRain - ${NIGHT_FILL} * gfxNearNight - ${DAY_FILL} * gfxNearDay;
-            irradiance *= mix( vec3( 1.0 ), vec3( 1.0, 1.0, 0.9 ), 0.6 * gfxNoon ); // (and by day the sky's light less blue: the greens hold)
-            irradiance *= mix( vec3( 1.0 ), vec3( 0.9, 0.98, 1.12 ), gfxMorn );
-            irradiance *= mix( vec3( 1.0 ), vec3( 0.96, 1.04, 0.78 ), gfxNearRain ); // (and less blue: the wet greens deep, not teal)
-          #endif
         #endif
         ${INDIRECT_END}`,
       ],
@@ -238,21 +212,6 @@ const WET_GLSL = /* glsl */ `
       gfxMirror = smoothstep( 0.55, 1.0, groundPuddle ) * gfxWetUp;
       material.diffuseColor *= 1.0 - 0.65 * gfxPuddle;
     #endif
-  }
-  #endif
-`;
-
-// At a clear noon the near field's colors a little richer and deeper (gfxDay,
-// src/gfx/atmos.js), back as they were by the far field, which lifts into the haze
-const NOON_GLSL = /* glsl */ `
-  #if defined( USE_FOG ) && !defined( FOG_EXP2 ) && !defined( GFX_WATER )
-  {
-    float gfxRichDay = gfxDay() * ( 1.0 - smoothstep( 0.7, 1.9, vFogDepth / max( fogNear, 1e-3 ) ) );
-    #ifdef GFX_TREE
-      gfxRichDay *= 0.4; // (the crowns' greens are rich already: deeper, not neon)
-    #endif
-    vec3 gfxC = material.diffuseColor;
-    material.diffuseColor = max( mix( vec3( dot( gfxC, vec3( 0.2126, 0.7152, 0.0722 ) ) ), gfxC, 1.0 + ${DAY_RICH} * gfxRichDay ), 0.0 ) * ( 1.0 - 0.1 * gfxRichDay );
   }
   #endif
 `;

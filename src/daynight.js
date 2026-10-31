@@ -9,7 +9,6 @@ import './daynight.css';
 // time, so one game hour is DAY_LENGTH_SECONDS / 24 seconds.
 import { DAY_LENGTH_SECONDS } from '../shared/constants.js';
 import { light as shaderLight, U } from './gfx/uniforms.js';
-import { createMotes } from './gfx/motes.js';
 import { createBirds } from './gfx/birds.js';
 
 export { DAY_LENGTH_SECONDS };
@@ -200,9 +199,6 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
 
   const fireflies = createFireflies(72);
   scene.add(fireflies.points);
-  // ...and by day, pollen and dust drifting in the sunlight (src/gfx/motes.js)
-  const motes = createMotes();
-  scene.add(motes.points);
   // ...and a few birds crossing the sky (src/gfx/birds.js)
   const birds = createBirds();
   scene.add(birds.mesh);
@@ -333,7 +329,6 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       ui.root.classList.toggle('fast', fastForward && !paused);
       const night = apply();
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under)); // (not out in the rain, nor underground)
-      motes.update(elapsed, dt, focus, sunlit(night));
       birds.update(sunlit(night));
     },
     /** A split screen's farmer's own view (src/main.js): the light as far underground as they are (amount, color), the fireflies round them (focus), and no lightning seen under a roof (sheltered). */
@@ -345,7 +340,6 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       rain = sheltered ? 0 : rainOut;
       const night = apply(false);
       fireflies.update(elapsed, focus, night * (1 - cloud) * (1 - under));
-      motes.update(elapsed, 0, focus, sunlit(night));
       birds.update(sunlit(night));
     },
     /** Jump to `hours` after midnight of day 1 (a multiplayer game's shared clock). */
@@ -353,10 +347,6 @@ export function createDayNight({ scene, sun, hemi, startHour = 6 }) {
       day = 1 + Math.floor(hours / 24);
       hour = THREE.MathUtils.euclideanModulo(hours, 24);
       apply();
-    },
-    /** The graphics tier's particle knob (src/gfx/quality.js): how many motes drift by day. */
-    setParticles(n) {
-      motes.setParticles(n);
     },
     hour: () => hour,
     day: () => day,
