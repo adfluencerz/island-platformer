@@ -31,7 +31,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | MSAA (post)   | off  | off           | 4    |
 | particles (rain, snow; motes: 160 at 900) | 300 | 600 | 900 |
 | night's grey  | in the light (0.35) | in the grade | in the grade |
-| character outline | off | off       | on   |
+| character outline (since 46: medium too) | off | on | on |
 | ground detail gain | 1 | 1.35        | 1    |
 
 ## Budgets (final from phase 15: `plaza-noon` and `phone` in `npm run shots`, each at its tier)

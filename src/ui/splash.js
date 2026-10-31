@@ -498,7 +498,7 @@ export class Splash {
     else if ((this.players?.() ?? 1) > 1) text.append(`On your farm, ${this.players()} farmers at this screen. It keeps going while they play.`);
     else text.append('On your farm. Time waits while the menu is open.');
     this.mainBtn.textContent = title ? 'Go to my farm' : 'Resume';
-    this.addBtn.hidden = title || place !== 'home' || !!(visit && !visit.mine); // (our own farm, with its helpers or not; not a friend's)
+    this.addBtn.hidden = title || !(place === 'home' || place === 'farm') || !!(visit && !visit.mine); // (our own farm, with its helpers ('farm') or not; not a friend's)
     this.homeBtn.hidden = title || !(place === 'lobby' || (visit && !visit.mine));
   }
 

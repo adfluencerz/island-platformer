@@ -9,7 +9,8 @@ import { createNpcs } from './npcs.js';
 import { createDialog } from './dialog.js';
 import { renderQuests, renderMap } from './quests.js';
 import { npcHomes } from './npchomes.js';
-import { NPCS, NPC_IDS } from '../shared/npcs.js';
+import { NPCS, NPC_IDS, MISSIONS } from '../shared/npcs.js';
+import { unlockProblem, blueprintCond, blueprintProblem } from '../shared/unlocks.js';
 import { createRequests } from './requests.js';
 import { createChest, createChestModel } from './chest.js';
 import { createMerchant, inReach as atStall, TRADE_SPOT } from './merchant.js';
@@ -36,6 +37,7 @@ import { PresenceLink } from './net/presence.js';
 import { InvitePopups } from './ui/invite.js';
 import { PartyHud } from './ui/party.js';
 import { Splash } from './ui/splash.js';
+import { createNowPlaying } from './ui/nowplaying.js';
 import { Hud } from './ui/hud.js';
 import { Guide } from './ui/guide.js';
 import { TouchControls, isTouch, fitPart } from './ui/touch.js';
@@ -74,7 +76,7 @@ import { arenaMap, buildCrown } from './arenas.js';
 import { spawnPoint } from '../shared/level.js';
 import { wildsFromWire } from '../shared/wilds.js';
 import { CAST_REACH, waterOn } from '../shared/fishing.js';
-import { HOME_HALF, OLD_HALF, farmBlocked, inLake, LAKE, DOCK } from '../shared/farmland.js';
+import { HOME_HALF, OLD_HALF, farmBlocked, offLots, inLake, LAKE, DOCK } from '../shared/farmland.js';
 import { HOME_WILDS } from '../shared/homewilds.js';
 import { Giants, KINDS as GIANT_KINDS, giantMax, gameDay, mostGiantLoot, LOBBY_DAWN } from '../shared/giants.js';
 import { createGiantBars } from './giantbar.js';
@@ -89,6 +91,8 @@ import { createGlider } from './glider.js';
 import { createTrade } from './ui/trade.js';
 import { createDevTools } from './devtools.js';
 import { SKY_CHEST_KINDS, skyChestView, relicBeam, restyleNearest, stairFoot, updateSkyFade } from './skyisles.js';
+
+sound.onSong(createNowPlaying()); // ("Now playing" whenever the song starts)
 
 // ---------- The farmers at this screen ----------
 // One seat for each farmer playing at this screen. The first is the page's
@@ -110,7 +114,7 @@ let me = null; // the seat the code works for now
 // (each seat's own, in place for the seat the code works for: become)
 let camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock;
 let glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade;
-let workbench, arcade, cooking, readyNoted, learned, pettedOn;
+let workbench, arcade, cooking, readyNoted, learned, kept, pettedOn;
 let fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote;
 let airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown;
 let readyCheck, meal;
@@ -161,7 +165,7 @@ function become(seat) {
   me = seat;
   ({ camera, camTarget, camOffset, inventory, skills, player, lastGoodSpot, farmer, playerMesh, hoeGroup, anim, keys, chop, mine, knock } = seat);
   ({ glider, marker, tileCursor, touch, pad, hud, guide, fishLog, book, fishing, bosses, shop, npcs, dialog, chest, trade } = seat);
-  ({ workbench, arcade, cooking, readyNoted, learned, pettedOn } = seat);
+  ({ workbench, arcade, cooking, readyNoted, learned, kept, pettedOn } = seat);
   ({ fitZoom, playerZoom, camZoom, camWide, camGroundY, underground, landedOn, bopReady, jumpPressed, jumpTapped, jumpTappedAt, jumpRising, lookYaw, lookPitch, lookWrote } = seat.vals);
   ({ airTime, stepTimer, airJumps, gliding, walk, chopping, mining, hoverAt, held, cameInBy, building, builtKey, mouseAt, buildShown } = seat.vals);
   ({ readyCheck, meal } = seat.vals);
@@ -447,6 +451,7 @@ const newInventory = (seat) => createInventory(forSeat(seat, {
   onEat: (id) => eat(id, false),
   onDrop: ({ id, count }) => dropFromBackpack(id, count),
   buildProblem: () => (place !== 'home' ? 'You build on a farm: head home first.' : farmVisit?.visitor ? 'You\'re looking round: only the farm\'s helpers build here.' : indoors() ? 'You build outside: head out of the house first.' : ''),
+  locked: (piece) => blueprintProblem(piece, unlockView(), kept), // (its blueprint: shared/unlocks.js)
   building: () => building,
   inChest: (item) => chestStock()[item] ?? 0,
   renderSkills: (el) => skills.render(el),
@@ -1030,7 +1035,7 @@ function clearSpots() {
 // Ask the lobby for what is on a spot. It vanishes at once so it feels
 // instant; TAKEN (into the backpack) or DENY (it comes back) settles it.
 function takeSpot(spot) {
-  if (!spot.item || spot.pending || performance.now() < spot.retryAt) return;
+  if (!spot.item || spot.pending || performance.now() < spot.retryAt || !lobbyLine()) return; // (a farmer at a split screen: not before their own line is there)
   if (!canLoot()) {
     inventory.notify(partyGame ? 'Wait for the loot run to start' : 'The loot run is over');
     spot.retryAt = performance.now() + 1500;
@@ -1050,7 +1055,7 @@ function takeSpot(spot) {
   }
   spot.pending = true;
   showSpot(spot);
-  net?.send({ t: C.TAKE, id: spot.id, ...(vault && { key: true }) }); // (the key is used up once it has opened it: TAKEN)
+  lobbyLine()?.send({ t: C.TAKE, id: spot.id, ...(vault && { key: true }) }); // (the key is used up once it has opened it: TAKEN)
 }
 
 // We opened a chest up on a sky isle: what was in it into the backpack (the
@@ -1081,14 +1086,15 @@ const _treasurePos = new THREE.Vector3();
 function updateSpots(dt, t) {
   for (const spot of spots.values()) {
     const { content, glint, glintY } = spot.view;
-    if (glint.visible) {
+    const turn = me === first; // (once a frame, whoever is at the screen)
+    if (glint.visible && turn) {
       glint.rotation.y += dt * 3;
       glint.position.y = glintY + Math.sin(t * 3 + spot.id) * 0.08;
     }
     if (spot.use !== 'touch') continue;
     // Treasures bob and spin, and are picked up by walking into them
     content.position.y = Math.sin(t * 2 + spot.x) * 0.15;
-    content.rotation.y += dt * 1.5;
+    if (turn) content.rotation.y += dt * 1.5;
     _treasurePos.set(spot.x, spot.y + content.position.y, spot.z);
     if (content.visible && player.position.distanceTo(_treasurePos) < TOUCH_RADIUS) takeSpot(spot);
   }
@@ -1164,9 +1170,9 @@ function updateChopping() {
         chop.pending.add(tree.id);
         chop.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
-        const conn = place === 'lobby' ? net : roomLine();
+        const conn = line();
         if (conn) conn.send({ t: C.CHOP, id: tree.id, x: r(tree.x), z: r(tree.z), size: r(tree.scale) });
-        else chopAlone(tree);
+        else if (place !== 'lobby') chopAlone(tree); // (in a lobby, not before its line is there)
       }
     }
   }
@@ -1280,9 +1286,9 @@ function updateMining() {
         mine.pending.add(rock.id);
         mine.hits = 0;
         const r = (v) => Math.round(v * 100) / 100;
-        const conn = place === 'lobby' ? net : roomLine();
+        const conn = line();
         if (conn) conn.send({ t: C.MINE, id: rock.id, x: r(rock.x), z: r(rock.z), size: r(rock.scale) });
-        else mineAlone(rock);
+        else if (place !== 'lobby') mineAlone(rock);
       }
     }
   }
@@ -1344,12 +1350,15 @@ function giantPrompt(kind, thing) {
 
 // Who a farmer at this screen is in what is said and shared out: the page's
 // id (the lobby's or the farm room's) for the first farmer; for the others at
-// a split screen, the id their own line to a farm's room gave them, else one
-// of their own (never another's, even one who got up: seat.uid)
-const idOf = (seat) => (seat === first ? myId : seat.netId ?? seat.uid);
+// a split screen, the id their own line to the lobby or a farm's room gave
+// them, else one of their own (never another's, even one who got up; below 0,
+// so never one a room gave out, while theirs is on its way: -seat.uid)
+const idOf = (seat) => (seat === first ? myId : seat.netId ?? -seat.uid);
 const seatId = () => idOf(me);
 // The farmer at this screen the room means by `id` (if it is one of them)
 const seatBy = (id) => seats.find((seat) => idOf(seat) === id);
+// Where farmer `id` is: one at this screen, or someone else's drawn (null: not here)
+const posOf = (id) => seatBy(id)?.player.position ?? remotes.positionOf(id);
 
 // Our share of a FELLED or MINED: all of it, if we did it alone
 const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === seatId())?.[1] ?? 0 : m.by === seatId() ? m.count : 0);
@@ -1358,8 +1367,9 @@ const myShare = (m) => (m.shares ? m.shares.find(([who]) => who === seatId())?.[
 function hitGiant(kind, thing) {
   const r = (v) => Math.round(v * 100) / 100;
   const tool = inventory.selectedId();
-  const conn = place === 'lobby' ? net : roomLine();
+  const conn = line();
   if (conn) return conn.send({ t: C.HIT, kind, id: thing.id, x: r(thing.x), z: r(thing.z), size: r(thing.scale), tool });
+  if (place === 'lobby') return;
   // (a farm played alone)
   const hit = farmGiants.hit(kind, thing.id, seatId(), tool, thing.scale);
   if (!hit) return;
@@ -1422,7 +1432,7 @@ function devGiant(kind) {
     if (thing.state === 'up' && d < bestD) [best, bestD] = [thing, d];
   }
   if (!best) return `No ${kind} standing here`;
-  const conn = place === 'lobby' ? net : roomLine();
+  const conn = line();
   if (conn) {
     conn.send({ t: C.DEV_GIANT, kind, id: best.id });
     return `A giant ${kind}, coming up`;
@@ -1498,6 +1508,14 @@ createDevTools({
     saveGame();
     return `Overall level ${skills.overall()}${skills.canDoubleJump() ? ', with the double jump' : ''}`;
   },
+  skillList: () => SKILL_LIST.map(({ id, name }) => [id, name]),
+  level: (id) => skills.level(id),
+  levels(by, id) {
+    skills.shift(by, id);
+    saveGame();
+    if (id) return `${SKILL_LIST.find((s) => s.id === id).name} level ${skills.level(id)} · Overall level ${skills.overall()}`;
+    return `Overall level ${skills.overall()}${skills.canDoubleJump() ? ', with the double jump' : ''}`;
+  },
   clock: (hour) => devLater((((hour - dayNight.hour()) % 24) + 24) % 24 || 24),
   later: devLater,
   places: () => [...NPC_IDS.map((id) => [id, NPCS[id].name]), ['lake', 'The lake'], ['dock', 'The dock']],
@@ -1516,7 +1534,7 @@ createDevTools({
   hearts() {
     for (const id of NPC_IDS) npcs.befriend(id);
     saveGame();
-    return 'Five hearts with all four';
+    return 'Five hearts with them all';
   },
   forget() {
     npcs.reset();
@@ -1632,8 +1650,9 @@ function bopTarget() {
   let bestD = weapon.reach * 0.9; // (the lobby has a slightly older idea of where they are)
   const fx = Math.sin(anim.facing);
   const fz = Math.cos(anim.facing);
-  for (const id of remotes.players.keys()) {
-    const pos = remotes.positionOf(id);
+  const others = [...remotes.players.keys(), ...(place === 'lobby' ? seats.filter((seat) => seat !== me && (seat === first || seat.lobby?.welcomed)).map(idOf) : [])]; // (and the others at this screen)
+  for (const id of others) {
+    const pos = posOf(id);
     if (!pos || resting(pos) || Math.abs(pos.y - player.position.y) > (weapon.high ?? 1.2)) continue;
     const dx = pos.x - player.position.x;
     const dz = pos.z - player.position.z;
@@ -1663,7 +1682,7 @@ function bop() {
     inventory.remove(shoots, 1);
     shootArrow(player.position, anim.facing, target?.pos ?? null, reach);
   }
-  net?.send({ t: C.BOP, weapon: id, yaw: Math.round(anim.facing * 100) / 100 });
+  lobbyLine()?.send({ t: C.BOP, weapon: id, yaw: Math.round(anim.facing * 100) / 100 });
 }
 
 // An arrow flying from a farmer at `from` facing yaw: to `to` (a farmer's
@@ -1681,16 +1700,21 @@ function shootArrow(from, yaw, to, reach) {
 
 // SHOT: someone else's arrow (ours flew as we shot it)
 function shotFired(m) {
-  if (m.by === myId) return;
+  if (seatBy(m.by)) return; // (one of ours: it flew as they shot it)
   const from = remotes.positionOf(m.by);
   if (!from || !Number.isFinite(m.yaw)) return;
   remotes.swing(m.by);
-  shootArrow(from, m.yaw, m.id === myId ? player.position : m.id ? remotes.positionOf(m.id) : null, WEAPONS.bow.reach);
+  shootArrow(from, m.yaw, m.id ? posOf(m.id) : null, WEAPONS.bow.reach);
 }
 
+// BOPPED: someone bopped someone (at this screen: what it means for them)
 function bopped(m) {
-  if (m.by !== myId) remotes.swing(m.by);
-  if (m.id === myId) {
+  if (!seatBy(m.by)) remotes.swing(m.by);
+  for (const seat of [seatBy(m.id), seatBy(m.by)]) if (seat) within(seat, () => boppedHere(m));
+}
+
+function boppedHere(m) {
+  if (m.id === seatId()) {
     stopWalking();
     knock.set(m.dx * m.knock, 0, m.dz * m.knock);
     player.velocity.y = 5;
@@ -1703,7 +1727,7 @@ function bopped(m) {
     if (lost) inventory.remove(item, lost);
     const who = lobbyNames.get(m.by) ?? 'Someone';
     inventory.notify(lost ? `${who} bopped you: you dropped ${lost} ${ITEMS[item].name.toLowerCase()}` : `${who} bopped you`);
-  } else if (m.by === myId) {
+  } else if (m.by === seatId()) {
     sound.play('bop');
     hud.flash('Bop!');
     // (only what they gathered on this visit can be knocked loose, never a rare find or coins)
@@ -1776,9 +1800,9 @@ function updateDrops(dt, t) {
     const near = Math.hypot(drop.x - player.position.x, drop.y - player.position.y, drop.z - player.position.z) < TOUCH_RADIUS + 0.4;
     const theirs = !!drop.from && drop.from === seatId(); // (the farmer it came out of, not yet off it)
     if (theirs && !drop.away) drop.away = !near;
-    if (!near || (theirs && !drop.away) || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor) continue; // (a visitor leaves it be)
+    if (!near || (theirs && !drop.away) || drop.pending || performance.now() < drop.retryAt || !inventory.canAdd(drop.item, drop.count) || farmVisit?.visitor || !line()) continue; // (a visitor leaves it be)
     drop.pending = true;
-    (place === 'lobby' ? net : roomLine())?.send({ t: C.PICKUP, id: drop.id });
+    line()?.send({ t: C.PICKUP, id: drop.id });
   }
 }
 
@@ -2953,6 +2977,8 @@ function buildProblemAt(key) {
     return '';
   }
   const piece = PIECES[building];
+  const blueprint = blueprintProblem(building, unlockView(), kept);
+  if (blueprint) return blueprint;
   if (piece.one && buildings.find(building)) return `The farm has a ${piece.name.toLowerCase()}: take it down to move it`;
   if (buildings.findAll(building).length >= mostPieces(building, farmHelpers())) return `One house, and one more for each helper: invite a friend to build another`;
   // (every tile it would stand on: a house has 20)
@@ -3023,6 +3049,7 @@ function buildAt(key, { quiet = false } = {}) {
     }
   }
   buildings.place(key, building);
+  if (blueprintCond(building)) kept.add(building); // (built once, theirs to build again)
   if (!farmNet) machines.built(key, building, farmHours()); // (a beehive gets going: on a farm with helpers, the room says)
   placeChest();
   if (farmNet) {
@@ -3105,12 +3132,19 @@ function updateBuilding() {
 // farms as it does at home, asks the room, and draws what it says.
 let place = 'title'; // 'title' | 'home' | 'lobby'
 let net = null; // the Connection while in (or on the way to) a lobby
+// ...the page's own. A farmer at a split screen has a line of their own to the same lobby (seat.lobby)
 let farmNet = null; // the Connection to a farm's room (ours with its helpers, or a friend's), on it or on the way
 // ...the page's own. A farmer at a split screen has a line of their own to our farm's room (seat.room)
 // The line to the farm's room for the farmer the code works for now
 function roomLine() {
   return (me === first ? farmNet : me.room) ?? null;
 }
+// ...and to the lobby
+function lobbyLine() {
+  return (me === first ? net : me.lobby) ?? null;
+}
+// The line for what the farmer the code works for now does: the lobby's, or the farm room's
+const line = () => (place === 'lobby' ? lobbyLine() : roomLine());
 let farmVisit = null; // on a farm's room: { id, name, owner, mine, alone, helpers }
 let farmJoining = 0; // (each joinFarm's number: a newer one wins)
 const pendingTills = new Set(); // tiles we tilled that the farm's room hasn't said yes to yet
@@ -3191,7 +3225,7 @@ const newHud = (seat) => new Hud({
     isMenuOpen: () => !splash.hidden,
     onMenuEscape: () => splash.escape(),
     onHome: () => goHome(),
-    onChat: (text) => (place === 'lobby' ? net : roomLine())?.send({ t: C.CHAT, text }),
+    onChat: (text) => line()?.send({ t: C.CHAT, text }),
     isBlocked: () => menuOpen() || !splash.hidden,
     onPrompt: (text) => touch.setReady(!!text),
     onStopBuilding: () => stopBuilding(),
@@ -3246,7 +3280,7 @@ const newFishing = (seat) => createFishing({
   ...forSeat(seat, {
     waterAhead: () => (player.onGround && !menuOpen() && !indoors() ? waterFrom(player.position.x, player.position.z, anim.facing) : null),
     hour: () => dayNight.hour(),
-    lobby: () => (place === 'lobby' ? net : null),
+    lobby: () => (place === 'lobby' ? lobbyLine() : null),
     rodInHand: () => (holding() === 'rod' ? inventory.selectedId() : inContest() && !weaponInHand() ? 'fishing_rod' : null),
     skill: () => skills.level('fishing'),
     landed(item, grams) {
@@ -3366,6 +3400,8 @@ const newBosses = (seat) => ({
       // (their own farm: for a farmer who joined at the screen, not this one)
       farmIsOurs: () => seat === first && place === 'home' && farmOnScreen && (!farmVisit || farmVisit.mine),
       addShiny: (kind) => !!animals.addShiny(kind),
+      onWon: () => npcs.did('boss'),
+      onChest: () => npcs.did('dungeon'),
       save: () => saveGame(),
     }),
   }),
@@ -3398,7 +3434,7 @@ shop = first.shop = newShop(first);
 const npcWorld = createNpcs({ parent: worlds.home.root });
 const newNpcs = (seat) => ({
   ...npcWorld,
-  ...npcWorld.standing({ inventory: seat.inventory, ctx: seated(seat, () => missionCtx()), onMends: () => showMends(), story: seat === first }),
+  ...npcWorld.standing({ inventory: seat.inventory, ctx: seated(seat, () => missionCtx()), onMends: () => showMends(), story: seat === first, day: () => dayNight.day() }),
 });
 // Finn's dock is mended if it is for anyone at the screen
 const showMends = () => npcHomes.dock.mend(seats.some((seat) => seat.npcs?.mended()));
@@ -3432,11 +3468,12 @@ const newDialog = (seat) => createDialog({
 dialog = first.dialog = newDialog(first);
 // A neighbour's shop (src/shop.js): their shelves, those not open to you
 // yet locked, at their prices less a friend's discount
+const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1); // ("After …" -> "after …")
 function openNpcShop(id) {
   const npc = NPCS[id];
   shop.open({
     title: npc.title,
-    shelves: npc.shop.shelves.map(({ title, items }) => ({ title, items, locked: !npcs.shopOpen(id, title), lockText: `do more for ${npc.name}` })),
+    shelves: npc.shop.shelves.map(({ title, items }) => ({ title, items, locked: !npcs.shopOpen(id, title), lockText: lowerFirst(npcs.shelfLock(id, title)) })),
     lines: { hello: npc.lines.shop, bought: npc.lines.bought },
     request: false,
     discount: npcs.discount(id),
@@ -3553,8 +3590,8 @@ function dropFromBackpack(id, count) {
   if (!def || def.trashable === false || !Object.hasOwn(SHOP, id) || def.currency) return no(`${def?.name ?? 'That'} can't be dropped`);
   if (place === 'home' && farmVisit?.visitor) return no('You\'re looking round: keep your things with you');
   if (!player.onGround) return no('Land first, then drop it');
-  if (place === 'lobby' && net && !arenaId) {
-    net.send({ t: C.THROW, item: id, count });
+  if (place === 'lobby' && lobbyLine() && !arenaId) {
+    lobbyLine().send({ t: C.THROW, item: id, count });
     return true;
   }
   if (place === 'home' && farmVisit && farmNet) {
@@ -3631,10 +3668,10 @@ const newTrade = (seat) => createTrade({
     parent: seat.root,
     active: () => me === seat,
     onOpenChange: (open) => (open ? keys.clear() : saveGame()),
-    onOffer: (offer) => net?.send({ t: C.TRADE_OFFER, ...offer }),
-    onReady: (ready, v) => net?.send({ t: C.TRADE_READY, ready, v }),
+    onOffer: (offer) => lobbyLine()?.send({ t: C.TRADE_OFFER, ...offer }),
+    onReady: (ready, v) => lobbyLine()?.send({ t: C.TRADE_READY, ready, v }),
     onCancel: () => {
-      net?.send({ t: C.TRADE_CANCEL });
+      lobbyLine()?.send({ t: C.TRADE_CANCEL });
       trade.close();
     },
     onAnswer: (id) => askTrade(id),
@@ -3643,11 +3680,11 @@ const newTrade = (seat) => createTrade({
 trade = first.trade = newTrade(first);
 
 function askTrade(id) {
-  if (place !== 'lobby' || !net) return;
-  const at = remotes.positionOf(id);
+  if (place !== 'lobby' || !lobbyLine()) return;
+  const at = posOf(id);
   const name = lobbyNames.get(id) ?? 'them';
   if (!at || Math.hypot(at.x - player.position.x, at.z - player.position.z) > TRADE_ASK_REACH) return inventory.notify(`Walk up to ${name} to trade`);
-  net.send({ t: C.TRADE_ASK, id });
+  lobbyLine().send({ t: C.TRADE_ASK, id });
 }
 
 // Done: out of the backpack with what we gave, in with what we got (what
@@ -3702,6 +3739,7 @@ const newWorkbench = (seat) => createWorkbench({
     parent: seat.root,
     active: () => me === seat,
     onOpenChange: (open) => (open ? keys.clear() : saveGame()),
+    onMade: () => npcs.did('make'),
   }),
   upgrades: forSeat(seat, { level: (id) => farmLevels[id], problem: upgradeProblem, upgrade }),
   chest: forSeat(seat, { stock: chestStock, spend: spendFromChest }),
@@ -3765,9 +3803,25 @@ function useLevels(saved) {
   buildings.setBenchLevel(farmLevels.workbench);
 }
 
+// What this farmer has done, as the unlocks are checked against
+// (shared/unlocks.js): their neighbours' requests, their skills, their bosses
+const unlockView = () => ({
+  done: (m) => !!MISSIONS[m] && npcs.state(MISSIONS[m].npc).done.includes(m),
+  skill: (id) => skills.level(id),
+  beaten: (boss) => bosses.record().won[boss] > 0,
+  hearts: (id) => npcs.hearts(id),
+});
+// The pieces in `built` ([[key, piece]], a farm's) that wait for a blueprint
+// are this farmer's to build again
+function keepBuilt(built) {
+  for (const [, piece] of Array.isArray(built) ? built : []) if (blueprintCond(piece)) kept.add(piece);
+}
+
 // Why the farm can't have the next level of id right now ('': it can, what it costs aside)
 function upgradeProblem(id) {
   if (visiting()) return 'Only the farmer can upgrade their farm';
+  const gate = unlockProblem(LEVELS_OF[id][farmLevels[id]]?.needs, unlockView()); // (Bram builds it, once he trusts you with it)
+  if (gate) return gate;
   if (id === 'workbench') return '';
   // a bigger pen: nothing built or farmed where its fence goes out to
   const [now, next] = [penRect(id, farmLevels[id]), penRect(id, farmLevels[id] + 1)];
@@ -3808,6 +3862,9 @@ function upgrade(id) {
 const machines = createMachines({ buildings, root: worlds.home.root });
 const pendingLoads = new Map(); // tiles we loaded a machine on that the farm's room hasn't said yes to yet -> what came out of the backpack for it
 learned = first.learned = new Set(); // the kitchen's recipes read into the recipe book (each seat's own)
+// The pieces that wait for a blueprint (shared/unlocks.js) that this farmer
+// had built before they did: theirs to build again (each seat's own)
+kept = first.kept = new Set();
 const known = (dish) => DISHES[dish]?.learn === 'start' || learned.has(dish);
 const newCooking = (seat) => createCooking({
   inventory: seat.inventory,
@@ -4106,7 +4163,7 @@ function putDown({ x, y, z }) {
   player.velocity.set(0, 0, 0);
   snapCamera();
 }
-const arrival = () => ({ x: world.spawn.x, y: GROUND_STAND_Y, z: world.spawn.z });
+const arrival = (n = 0) => ({ x: world.spawn.x + n * 1.2, y: GROUND_STAND_Y, z: world.spawn.z }); // (n: the farmers arriving together, side by side)
 
 function goHome() {
   if (net) {
@@ -4128,7 +4185,7 @@ function goHome() {
   }
   hud.showHome();
   touch.setPlace('home');
-  if (from !== 'home' || fromFriend) putDown(arrival());
+  if (from !== 'home' || fromFriend) for (const seat of seats) within(seat, () => putDown(arrival(seat.index))); // (the farmers at this screen came back too)
   // A farm with helpers is played with them, on the server, whenever it is there
   // (this farm stays on screen meanwhile: the room's is the same, or newer)
   if (farmSync.shared() && farmSync.ready && !farmNet && !farmJoining) joinFarm(farmSync.id());
@@ -4438,6 +4495,7 @@ function showRoomFarm(m) {
     tillTileAt(...keyXZ(key), bare, life);
   }
   buildings.placeAll(m.built ?? []);
+  if (farmVisit?.mine) keepBuilt(m.built); // (our own farm: what stands on it is ours to build again)
   machines.restore(m.machines, m.hours);
   placeChest();
   showFarmWilds(m);
@@ -4469,7 +4527,7 @@ function sendFarmClock(ff, t) {
 }
 
 function leaveLobbyWorld() {
-  trade.reset();
+  leaveLobbySeats();
   session = null;
   myId = 0;
   partyGame = null;
@@ -4479,12 +4537,18 @@ function leaveLobbyWorld() {
   lobbyRoster = [];
   clearSpots();
   clearDrops();
-  resetChopping();
-  resetMining();
   lobbyGiants = new Giants();
   giantBars.clear();
   remotes.clear();
-  keys.clear();
+  for (const seat of seats) {
+    within(seat, () => {
+      trade.reset();
+      resetChopping();
+      resetMining();
+      knock.set(0, 0, 0);
+      keys.clear();
+    });
+  }
   showCodeInAddress('');
 }
 
@@ -4506,7 +4570,7 @@ const partyHud = new PartyHud({
 const coinPending = new Map(); // coin id -> when we said we picked it up (performance.now())
 const crowns = new Map(); // king of the hill: player id -> the crown over their head, while they hold the hill
 let readyCount = 0; // the last number of the countdown shown
-const inParty = () => !!partyGame?.players.some(([id]) => id === myId);
+const inParty = () => !!partyGame?.players.some(([id]) => id === seatId()); // (the farmer the code works for now)
 const lootRun = () => partyGame?.kind === 'loot_run' && inParty();
 const partyFrozen = () => partyGame?.phase === 'ready' && (!!arenaId || lootRun());
 // Whether the lobby's spots can be emptied now: a loot run's only while it is on
@@ -4518,8 +4582,12 @@ const fishBoard = createFishBoard();
 
 // The farmers drawn: the ones where we are (the lobby's island, or our arena)
 function showRemotes() {
-  remotes.setRoster(lobbyRoster.filter((p) => (p.game ?? 0) === arenaId), myId);
+  remotes.setRoster(lobbyRoster.filter((p) => (p.game ?? 0) === arenaId && !seatBy(p.id)), myId); // (the farmers at this screen are drawn as ours)
 }
+
+// Each farmer at this screen in the lobby (fn as theirs), and a big word for them all
+const forLobbySeats = (fn) => seats.forEach((seat) => (seat === first || seat.lobby) && within(seat, fn));
+const flashAll = (text) => forLobbySeats(() => hud.flash(text));
 
 // The lobby's party game as it is now (null: none). pos: where the lobby has
 // us (a WELCOME's: back in the arena after a reload)
@@ -4529,13 +4597,13 @@ function showParty(game, pos = null) {
   partyHud.show(game, myId);
   // a loot run: everyone off from the stone circle together
   if (lootRun() && game.phase === 'ready' && was === 'gathering') {
-    putDown(spawnPoint(islandFor(session.seed).spawn, myId % 8, 8)); // (where the lobby has us: shared/room.js spawnFor)
+    forLobbySeats(() => lootRun() && putDown(spawnPoint(islandFor(session.seed).spawn, seatId() % 8, 8))); // (where the lobby has each: shared/room.js spawnFor)
     readyCount = 0;
   }
-  if (lootRun() && game.phase === 'playing' && was === 'ready') hud.flash('Go!');
+  if (lootRun() && game.phase === 'playing' && was === 'ready') flashAll('Go!');
+  // (the page's farmer in it: the arena is everyone's at this screen, all of them in the game too)
   const playing = game && GAMES[game.kind] && game.phase !== 'gathering' && inParty();
   if (playing && arenaId !== game.id) {
-    fishing.reset(); // (a line out in the lobby comes in)
     enterWorld('arena', game);
     arenaId = game.id;
     coinPending.clear();
@@ -4543,29 +4611,36 @@ function showParty(game, pos = null) {
     world.dropTiles(0);
     showLobbyThings(false);
     showRemotes();
-    const i = game.players.findIndex(([id]) => id === myId);
-    putDown(pos ?? arenaFor(game.kind, game.seed).start(i, game.players.length));
+    forLobbySeats(() => {
+      fishing.reset(); // (a line out in the lobby comes in)
+      const i = Math.max(0, game.players.findIndex(([id]) => id === seatId()));
+      putDown((me === first && pos) || arenaFor(game.kind, game.seed).start(i, game.players.length));
+      hud.setPrompt('');
+    });
     readyCount = 0;
-    hud.setPrompt('');
   }
   if (playing && game.phase === 'playing' && readyCount !== -1) {
     readyCount = -1;
-    hud.flash('Go!');
+    flashAll('Go!');
   }
   if (playing && game.kind === 'king_of_hill') showCrowns(game.top ?? []);
   if (!playing && arenaId) backFromArena(); // (it was called off, or we are out of it)
 }
 
-// Out of the arena, onto the lobby's island (pos: where; else where farmers arrive)
-function backFromArena(pos = null) {
+// Out of the arena, onto the lobby's island (pos: where each farmer goes, as
+// [id, x, y, z]; else where farmers arrive)
+function backFromArena(pos = []) {
   arenaId = 0;
-  fishing.reset(); // (a line out in a fishing contest comes in)
   coinPending.clear();
   showCrowns([]);
   enterWorld('wild', session.seed, session.wilds);
   showLobbyThings(true);
   showRemotes();
-  putDown(pos ?? arrival());
+  forLobbySeats(() => {
+    fishing.reset(); // (a line out in a fishing contest comes in)
+    const at = pos.find(([id]) => id === seatId());
+    putDown(at ? { x: at[1], y: at[2], z: at[3] } : arrival(me.index));
+  });
 }
 
 // The lobby's spots and drops (in the scene, not the island's world): out of sight in an arena
@@ -4602,17 +4677,20 @@ function showCrowns(ids) {
 // is still up; the hop race: who has made it across)
 function partyScores(m) {
   if (!partyGame) return;
-  const across = partyGame.kind === 'hop_race' && !partyGame.top?.includes(myId) && m.top.includes(myId);
+  const was = partyGame.top ?? [];
   partyGame.top = m.top;
   partyHud.scores(m.scores);
-  if (across) {
-    sound.play('cheer');
-    hud.flash(m.top[0] === myId ? 'First across!' : 'Across!');
-  }
-  if (!arenaId || partyGame.kind !== 'king_of_hill') return;
-  const had = crowns.has(myId);
-  showCrowns(m.top);
-  if (!had && crowns.has(myId)) hud.flash('King of the hill!');
+  const hill = arenaId && partyGame.kind === 'king_of_hill';
+  if (hill) showCrowns(m.top);
+  // (each farmer at this screen: across, or up on the hill, just now)
+  forLobbySeats(() => {
+    const id = seatId();
+    if (was.includes(id) || !m.top.includes(id)) return;
+    if (partyGame.kind === 'hop_race') {
+      sound.play('cheer');
+      hud.flash(m.top[0] === id ? 'First across!' : 'Across!');
+    } else if (hill) hud.flash('King of the hill!');
+  });
 }
 
 // What to say at the bottom in the arena
@@ -4620,9 +4698,9 @@ function arenaPrompt() {
   if (partyGame?.phase !== 'playing') return '';
   if (inContest()) return fishing.prompt();
   const shove = shoving() ? 'E: shove' : 'E: bop';
-  if (partyGame.kind === 'king_of_hill') return crowns.has(myId) ? 'You hold the hill!' : `Up the hill! ${shove}`;
-  if (partyGame.kind === 'last_one') return partyGame.top?.includes(myId) ? `Stay up! ${shove}` : 'Splash! Watching from the islet';
-  if (partyGame.kind === 'hop_race') return partyGame.top?.includes(myId) ? 'You made it across!' : 'Hop across to the flag!';
+  if (partyGame.kind === 'king_of_hill') return crowns.has(seatId()) ? 'You hold the hill!' : `Up the hill! ${shove}`;
+  if (partyGame.kind === 'last_one') return partyGame.top?.includes(seatId()) ? `Stay up! ${shove}` : 'Splash! Watching from the islet';
+  if (partyGame.kind === 'hop_race') return partyGame.top?.includes(seatId()) ? 'You made it across!' : 'Hop across to the flag!';
   return '';
 }
 
@@ -4636,7 +4714,7 @@ function updateArena() {
     world.dropTiles(partyGame.phase === 'playing' ? GAMES.last_one.ms - (partyHud.endsAt - performance.now()) : 0);
     // fell in: wash up on the islet (and out, once the lobby hears)
     if (player.position.y < GROUND_STAND_Y - 1.5) {
-      const i = Math.max(0, partyGame.players.findIndex(([id]) => id === myId));
+      const i = Math.max(0, partyGame.players.findIndex(([id]) => id === seatId()));
       putDown(arena.watch(i, partyGame.players.length));
       if (partyGame.phase === 'playing') hud.flash('Splash!');
     }
@@ -4644,18 +4722,18 @@ function updateArena() {
   // the hop race: fell in, back to the start (on the meadow) for another go
   if (partyGame?.kind === 'hop_race' && player.position.y < GROUND_STAND_Y - 1.5) {
     const arena = arenaFor(partyGame.kind, partyGame.seed);
-    const i = Math.max(0, partyGame.players.findIndex(([id]) => id === myId));
+    const i = Math.max(0, partyGame.players.findIndex(([id]) => id === seatId()));
     putDown(arena.start(i, partyGame.players.length));
     hud.flash('Splash! Back to the start');
   }
   const t = performance.now() / 1000;
   for (const [id, crown] of crowns) {
-    const pos = id === myId ? player.position : remotes.positionOf(id);
+    const pos = posOf(id);
     if (!pos) continue;
     crown.position.set(pos.x, pos.y + 0.95 + Math.sin(t * 3) * 0.04, pos.z);
     crown.rotation.y = t;
   }
-  if (countDown() || partyGame?.phase !== 'playing') return;
+  if (countDown() || partyGame?.phase !== 'playing' || !lobbyLine()) return;
   const now = performance.now();
   world.coins.forEach((coin, id) => {
     const at = coinPending.get(id);
@@ -4667,7 +4745,7 @@ function updateArena() {
     if (!coin.visible || player.position.distanceTo(coin.position) > 0.9) return; // (a race: kept tight)
     coin.visible = false; // (at once, so it feels instant: GAME_COIN settles it)
     coinPending.set(id, now);
-    net?.send({ t: C.GAME_COIN, id });
+    lobbyLine()?.send({ t: C.GAME_COIN, id });
   });
 }
 
@@ -4678,7 +4756,7 @@ function countDown() {
   const left = Math.ceil((partyHud.endsAt - performance.now()) / 1000);
   if (left > 0 && left !== readyCount) {
     readyCount = left;
-    hud.flash(String(left));
+    flashAll(String(left)); // (once for all at this screen: whoever's frame gets to it first)
   }
   return true;
 }
@@ -4691,38 +4769,49 @@ function partyCoin(m) {
   if (arenaId) {
     coinPending.delete(m.id);
     if (world.coins[m.id]) world.coins[m.id].visible = false;
-    if (m.by === myId) hud.flash(`${m.score}`);
+    const by = seatBy(m.by);
+    if (by) within(by, () => hud.flash(`${m.score}`));
   }
 }
 
 // GAME_END: it is over. Our prize into the backpack, back to the lobby from
 // the arena, and (once the results have been up a moment) home.
 function partyOver(m) {
-  const at = m.pos.find(([id]) => id === myId);
-  const played = m.scores.some(([id]) => id === myId);
+  const playedBy = (id) => m.scores.some(([who]) => who === id);
   const got = m.prizes.find(([id]) => id === myId)?.[1] ?? null;
   partyGame = null;
-  if (arenaId) backFromArena(at && { x: at[1], y: at[2], z: at[3] });
-  for (const [item, count] of got ?? []) if (ITEMS[item]) inventory.add(item, count);
+  if (arenaId) backFromArena(m.pos);
+  // each farmer at this screen: their prize into their backpack, and how they did
+  let played = false;
+  forLobbySeats(() => {
+    const id = seatId();
+    for (const [item, count] of m.prizes.find(([who]) => who === id)?.[1] ?? []) if (ITEMS[item]) inventory.add(item, count);
+    if (!playedBy(id)) return;
+    played = true;
+    npcs.did('game'); // (for Finn's request)
+    if ((m.winners ?? [m.winner]).includes(id)) {
+      sound.play('cheer');
+      hud.flash('You won!');
+    } else if (m.records?.some(([who]) => who === id)) {
+      hud.flash('New best!'); // (onto its leaderboard: server/leaderboards.js)
+    }
+  });
   if (played) {
     const named = (item, count) => {
       const name = (ITEMS[item]?.name ?? item).toLowerCase();
       return count > 1 && !name.endsWith('s') ? `${name}s` : name;
     };
     partyHud.results(m, got, named); // (then onLeave: home)
-    if ((m.winners ?? [m.winner]).includes(myId)) {
-      sound.play('cheer');
-      hud.flash('You won!');
-    } else if (m.records?.some(([id]) => id === myId)) {
-      hud.flash('New best!'); // (onto its leaderboard: server/leaderboards.js)
-    }
   } else {
     backToFarm();
   }
 }
 
+// Off to a lobby: the farmers at this screen come too, each with their
+// account's farmer on a line of their own (a guest, or one still saying who
+// they are, gets up first: a lobby is for logged in farmers)
 function joinLobby({ name, code }) {
-  endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (a lobby too)
+  seatsOffOnline();
   net?.leave();
   splash.setStatus('Walking over…');
   const conn = (net = new Connection({ name, color: myColor(), look: myLook(), code, auth: farmSync.auth() }));
@@ -4730,7 +4819,7 @@ function joinLobby({ name, code }) {
   const on = (type, fn) => conn.on(type, (m) => net === conn && fn(m));
 
   on(S.WELCOME, (m) => {
-    endCoop('Off online: everyone else at the screen got up, their farmers saved'); // (one who joined on the way, say)
+    seatsOffOnline(); // (one who joined on the way, say)
     if (place !== 'lobby') lastFarm = farmVisit && !farmVisit.mine ? farmVisit.id : null; // (to go back to after the game)
     if (farmVisit || farmNet) leaveFarm(); // (off a farm with helpers)
     if (place !== 'lobby') {
@@ -4755,11 +4844,11 @@ function joinLobby({ name, code }) {
     putDown(m.pos);
     setSpots(m.spots);
     // the trees that are down right now (the rest stand, even on an island we were on before)
-    resetChopping();
+    for (const seat of seats) within(seat, resetChopping);
     world.standAllTrees(siteMap(m.treeSites, world.trees.length)); // (each where it grew back last)
     for (const id of m.felled ?? []) world.fellTree(id, null, { instant: true });
     // and the rocks that are broken
-    resetMining();
+    for (const seat of seats) within(seat, resetMining);
     world.restoreAllRocks(siteMap(m.rockSites, world.rocks.length));
     for (const id of m.mined ?? []) world.breakRock(id, { instant: true });
     lobbyGiants = new Giants();
@@ -4780,6 +4869,7 @@ function joinLobby({ name, code }) {
     hud.setRoster(m.roster);
     showParty(m.game, m.pos);
     if (m.resumed) hud.chat({ from: 0, text: 'Reconnected: you are back where you were.' });
+    connectLobbySeats(m.code, m.pos);
   });
   on(S.ROSTER, (m) => {
     hud.setRoster(m.list);
@@ -4791,14 +4881,6 @@ function joinLobby({ name, code }) {
   on(S.GAME_COIN, (m) => partyCoin(m));
   on(S.GAME_SCORE, (m) => (m.scores ? partyScores(m) : partyHud.score(m.by, m.score)));
   on(S.BOARD, (m) => fishBoard.show(m.board));
-  on(S.TRADE_ASKED, (m) => trade.asked(m.from, m.name));
-  on(S.TRADE, (m) => trade.show(m, lobbyNames.get(m.with) ?? 'a farmer'));
-  on(S.TRADE_DONE, (m) => tradeDone(m));
-  on(S.TRADE_END, (m) => {
-    if (!trade.isOpen()) return;
-    trade.close();
-    hud.chat({ from: 0, text: (TRADE_ENDS[m.why] ?? TRADE_ENDS.cancelled)(lobbyNames.get(m.by) ?? 'The other farmer', m.by === myId) });
-  });
   on(S.GAME_END, (m) => partyOver(m));
   on(S.SNAP, (m) => remotes.snapshot(m.tick, m.p));
   on(S.SPOT, (m) => {
@@ -4813,31 +4895,25 @@ function joinLobby({ name, code }) {
       Object.assign(spot, { item: null, count: 0, pending: false });
       showSpot(spot);
     }
-    if (m.by === myId && m.items) openedChest(spot, m.items);
-    else if (m.by === myId) {
-      inventory.add(m.item, m.count);
-      if (RARE[m.item]) hud.flash(`${RARE[m.item]}!`);
+    const by = seatBy(m.by); // (one of the farmers at this screen: into their backpack)
+    if (by) within(by, () => npcs.did('loot')); // (a spot or chest picked on the wild islands: for Basil's request)
+    if (by && m.items) within(by, () => openedChest(spot, m.items));
+    else if (by) {
+      within(by, () => {
+        inventory.add(m.item, m.count);
+        if (RARE[m.item]) hud.flash(`${RARE[m.item]}!`);
+      });
     }
-  });
-  on(S.DENY, (m) => {
-    const spot = spots.get(m.id);
-    if (!spot) return;
-    spot.pending = false;
-    spot.retryAt = performance.now() + 500; // (not again every frame while we stand in it)
-    showSpot(spot);
   });
   on(S.FELLED, treeFelled);
   on(S.REGROWN, (m) => wildsWorld().regrowTree(m.id, { n: m.n ?? 0 }));
-  on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
   on(S.MINED, rockMined);
   on(S.RESURFACED, (m) => wildsWorld().regrowRock(m.id, { n: m.n ?? 0 }));
-  on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
   on(S.GIANT, giantNews);
   on(S.BOPPED, (m) => bopped(m));
   on(S.SHOT, shotFired);
-  on(S.BITE, (m) => fishing.bit(m));
-  on(S.CAUGHT, (m) => fishing.caught(m));
   onDrops(on);
+  lobbyPrivate(on);
   on(S.CHAT, (m) => hud.chat(m));
   on('ping', (ms) => hud.setPing(ms));
   on('reconnecting', (n) => hud.setConnStatus(`Connection lost: reconnecting (try ${n})…`));
@@ -4853,9 +4929,87 @@ function joinLobby({ name, code }) {
   });
 }
 
+// What a lobby says to one farmer alone (not to everyone in it): each farmer
+// at a split screen has a line of their own, and these go to them
+function lobbyPrivate(on) {
+  on(S.TRADE_ASKED, (m) => trade.asked(m.from, m.name));
+  on(S.TRADE, (m) => trade.show(m, lobbyNames.get(m.with) ?? 'a farmer'));
+  on(S.TRADE_DONE, (m) => tradeDone(m));
+  on(S.TRADE_END, (m) => {
+    if (!trade.isOpen()) return;
+    trade.close();
+    hud.chat({ from: 0, text: (TRADE_ENDS[m.why] ?? TRADE_ENDS.cancelled)(lobbyNames.get(m.by) ?? 'The other farmer', m.by === seatId()) });
+  });
+  on(S.DENY, (m) => {
+    const spot = spots.get(m.id);
+    if (!spot) return;
+    spot.pending = false;
+    spot.retryAt = performance.now() + 500; // (not again every frame while we stand in it)
+    showSpot(spot);
+  });
+  on(S.CHOP_DENY, (m) => chop.pending.delete(m.id)); // (it still stands: chop on)
+  on(S.MINE_DENY, (m) => mine.pending.delete(m.id)); // (it is still there: mine on)
+  on(S.BITE, (m) => fishing.bit(m));
+  on(S.CAUGHT, (m) => fishing.caught(m));
+  onOwnDrops(on);
+}
+
+// Heading online: the farmers at this screen who can't come get up, saved (a
+// guest, or one still saying who they are); the rest come along (connectLobbySeats)
+function seatsOffOnline() {
+  stopJoin();
+  for (const seat of [...seats]) {
+    if (seat === first || seat.profile?.kind === 'account') continue;
+    dropSeat(seat, seat.profile ? `${seat.profile.name} got up: a lobby is for farmers with an account, so their guest farmer is saved here` : '');
+  }
+}
+
+// The farmers at this screen, into the lobby the page is in (code), each on
+// a line of their own as their account's farmer; till theirs welcomes them,
+// they stand where the page's farmer arrived (pos)
+function connectLobbySeats(code, pos) {
+  for (const seat of seats) {
+    if (seat === first || seat.lobby) continue;
+    within(seat, () => putDown(pos));
+    connectLobbySeat(seat, code);
+  }
+}
+
+function connectLobbySeat(seat, code) {
+  const { profile } = seat;
+  const conn = (seat.lobby = new Connection({ name: profile.name, color: profile.color, look: profile.look, code, auth: `${profile.farm.id}.${profile.farm.token}`, seat: seat.uid }));
+  const on = (type, fn) => conn.on(type, (m) => seat.lobby === conn && within(seat, () => fn(m)));
+  on(S.WELCOME, (m) => {
+    seat.netId = m.id; // (what the lobby calls them: its TAKEN, FELLED and the rest are by this)
+    putDown(m.pos);
+    showRemotes(); // (not drawn as someone else: they are at this screen)
+    for (const p of m.roster) lobbyNames.set(p.id, p.name);
+  });
+  lobbyPrivate(on);
+  on(S.CHAT, (m) => m.from === 0 && hud.chat(m)); // (what the lobby says to them; the farmers' talk is in the page's own)
+  on('closed', ({ reason }) => {
+    if (seat.lobby !== conn) return;
+    seat.lobby = null;
+    seat.netId = undefined;
+    // (turned away, or their line lost: they get up. The lobby gone for everyone,
+    // the page's own line hears it too, a moment apart, and they go home together)
+    setTimeout(() => place === 'lobby' && net && !seat.lobby && seats.includes(seat) && dropSeat(seat, `${seatName(seat)} got up: ${reason}`), 1000);
+  });
+}
+
+// ...and off it (back home, or the lobby gone): they play on at the screen
+function leaveLobbySeats() {
+  for (const seat of seats) {
+    if (!seat.lobby) continue;
+    seat.lobby.leave();
+    seat.lobby = null;
+    seat.netId = undefined;
+  }
+}
+
 // Where we are, for the lobby (or a farm's room): what we do is checked
 // against it, and everyone else draws us there
-function sendState(dt, conn = net) {
+function sendState(dt, conn = lobbyLine()) {
   if (!conn) return;
   conn.stateTimer = (conn.stateTimer ?? 0) + dt; // (each line's own: a farmer at a split screen has one)
   if (conn.stateTimer < TICK_DT) return;
@@ -4925,10 +5079,14 @@ function captureFarm() {
 }
 
 // (a farm from before there were animals gets the ones a new farm comes with)
-function showFarm(farm) {
+function showFarm(saved) {
   resetFarm();
+  // (nothing on a neighbour's lot: one who moved in after it was built on;
+  // what was built there goes back in the chest)
+  const { farm, refund } = offLots(saved);
   farmFinds.restoreDropped(farm?.dropped);
   ownChest = Object.fromEntries(Object.entries(unmake(farm?.chest)).filter(([id, n]) => ITEMS[id] && Number.isInteger(n) && n > 0));
+  for (const [item, n] of Object.entries(refund)) ownChest[item] = (ownChest[item] ?? 0) + n;
   useLevels(farm?.levels);
   if (!farm) return animals.restore(null, farmHours());
   const away = Math.max(0, (Date.now() - farm.savedAt) / 1000);
@@ -4967,7 +5125,7 @@ function currentSave() {
 
 // What a farmer carries wherever they go, for their save: the backpack and the rest (the seat's)
 function character() {
-  return { backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize() };
+  return { backpack: inventory.serialize(), skills: skills.serialize(), fishlog: fishLog.serialize(), found: book.serialize(), bosses: bosses.record(), recipes: [...learned], meal: meal && [meal.dish, Math.round(meal.left)], npcs: npcs.serialize(), blueprints: [...kept] };
 }
 
 // Everyone's at the screen: the farm and the first seat's farmer, and each
@@ -5028,6 +5186,9 @@ function useCharacter(save) {
   bosses.restore(save.bosses); // (the bosses we beat, and what we are still owed for it)
   learned.clear();
   for (const dish of Array.isArray(save.recipes) ? save.recipes : []) if (DISHES[dish]?.cook === 'kitchen') learned.add(dish);
+  kept.clear();
+  for (const piece of Array.isArray(save.blueprints) ? save.blueprints : []) if (blueprintCond(piece)) kept.add(piece);
+  keepBuilt(save.farm?.built); // (a save from before the blueprints: what stands on the farm is the farmer's to build again)
   const [dish, left] = Array.isArray(save.meal) ? save.meal : [];
   meal = DISHES[dish] && Number.isFinite(left) && left > 0 ? { dish, ...boostFrom(dish), left: Math.min(left, boostFrom(dish).left) } : null;
   if (save.v < 2) gift('flax_seeds', 5);
@@ -5091,8 +5252,10 @@ document.addEventListener('visibilitychange', () => document.hidden && leavePage
 // (src/net/players.js). Their backpack, gold, skills and the rest come
 // along, and are saved back to them (saveSeat) as the farm is saved, and
 // when they get up from the screen. The farm is the first seat's: what they
-// grow, build or put in the chest stays on it. Heading online (a lobby, a
-// farm's room) is the first seat's alone: everyone else gets up first.
+// grow, build or put in the chest stays on it. Heading online is the first
+// seat's to do: to a lobby, the farmers with an account come along, each on a
+// line of their own (joinLobby, connectLobbySeats); to a friend's farm, they
+// all get up first.
 const MAX_SEATS = 4;
 const JOIN_WAIT = 30_000; // ms the menu's Add a player waits for a controller
 const JOIN_BUTTONS = [0, 9]; // A, and Start (Menu): its press joins
@@ -5233,6 +5396,7 @@ function makeSeat(seat) {
   seat.workbench = newWorkbench(seat);
   seat.arcade = newArcade(seat);
   seat.learned = new Set();
+  seat.kept = new Set();
   seat.cooking = newCooking(seat);
   seat.tag = el('div', 'seat-tag', seat.root);
   seat.panel = new SeatPanel({
@@ -5380,6 +5544,8 @@ function dropSeat(seat, why = '') {
   if (seat === first || !seats.includes(seat)) return;
   seat.room?.leave(); // (their line to the farm's room: they are not on it any more)
   seat.room = null;
+  seat.lobby?.leave(); // (...or to the lobby)
+  seat.lobby = null;
   const save = seat.profile && { v: SAVE_VERSION, farm: seat.ownFarm, ...within(seat, character) };
   within(seat, () => {
     if (building) stopBuilding();
@@ -5610,7 +5776,6 @@ function updateSeat(dt) {
   if (place === 'lobby' && arenaId) {
     updateArena(dt);
     sendState(dt);
-    remotes.update(dt, t);
   } else if (place === 'lobby') {
     updateChopping();
     updateMining();
@@ -5619,7 +5784,6 @@ function updateSeat(dt) {
     partyHud.update();
     countDown(); // (a loot run's, in the stone circle)
     sendState(dt);
-    remotes.update(dt, t);
   } else {
     npcs.updateSigns(dt); // (what the neighbours have for this farmer, over their heads)
     if (place === 'home') {
@@ -5671,7 +5835,7 @@ function updateWorld(dt) {
     chestModel.update(dt, seats.some((seat) => seat.chestWindow.isOpen()));
   }
 
-  if (farmVisit) remotes.update(dt, t); // (the helpers on the farm: once a frame, whoever is at the screen)
+  if (farmVisit || place === 'lobby') remotes.update(dt, t); // (the helpers on the farm, or the lobby's farmers: once a frame, whoever is at the screen)
   const playing = seats.some((seat) => within(seat, () => !inputBlocked())); // (anyone, not behind a menu)
   farmFinds.update(dt, t, { active: place === 'home' && !farmVisit && farmOnScreen, counting: playing, at: farmersHere().map((seat) => seat.player.position) });
   regrowFarm();
@@ -5704,7 +5868,12 @@ function updateWorld(dt) {
     fastForward,
     focus: player.position,
   });
-  sound.music(dayNight.isNight() ? 'night' : 'day'); // (sound.js: the tune, by the time of day)
+  // the tune, by the time of day; a party game a minute long (coin rush, king
+  // of the hill, last one standing) to Desert Carousel Chase, a minute long
+  // too: from its start as the game starts (sound.js)
+  const chase = arenaId && partyGame?.phase === 'playing' && GAMES[partyGame.kind]?.ms === 60_000;
+  if (chase) sound.music('chase', (60_000 - (partyHud.endsAt - performance.now())) / 1000);
+  else sound.music(dayNight.isNight() ? 'night' : 'day');
   if (farmVisit?.mine) sendFarmClock(fastForward, t);
   // Crops grow on game time, so they pause and fast-forward with the clock
   const gameDt = ((dayNight.day() * 24 + dayNight.hour() - hoursBefore) * DAY_LENGTH_SECONDS) / 24;
@@ -5800,14 +5969,35 @@ function draw() {
   }
 }
 
+// The arm a farmer holds things with (its hand, and the tool in it), and
+// the rest of them shown now: the meshes to hide for a view out of their own eyes
+const FIRST_TOOL_AHEAD = [0.6, 0.25]; // (first person: how far ahead of the eyes the arm is drawn, and how much higher)
+const heldTools = (f) => [f.toolArm];
+function bodyParts(obj, tools, out = []) {
+  if (!obj.visible || obj.isLight || tools.includes(obj)) return out;
+  if (obj.isMesh || obj.isSkinnedMesh) out.push(obj);
+  for (const child of obj.children) bodyParts(child, tools, out);
+  return out;
+}
+
 // One seat's view, into the part of the screen (or of the post chain's target) set for it
 function seatView(seat, split) {
   within(seat, () => {
     lookFrom(split);
-    // (first person: not their own body in their eyes; its night light stays)
-    const body = lookYaw === null ? [] : playerMesh.children.filter((part) => part.visible && !part.isLight);
+    // (first person: not their own body in their eyes, but the arm with the
+    // tool in its hand stays, drawn a little ahead so a swing comes down in
+    // view, not under it, and on the right; not with the rod, its line hangs
+    // from where it is; its night light stays)
+    const body = lookYaw === null ? [] : bodyParts(playerMesh, heldTools(farmer));
     for (const part of body) part.visible = false;
+    const [ahead, up] = lookYaw !== null && !farmer.rod.visible ? FIRST_TOOL_AHEAD : [0, 0];
+    const shift = new THREE.Vector3(Math.sin(lookYaw) * ahead, up, Math.cos(lookYaw) * ahead);
+    const mirror = ahead ? -1 : 1; // (and on the right: the tools are in the farmer's left hand)
+    playerMesh.position.add(shift);
+    playerMesh.scale.x *= mirror;
     renderer.render(scene, camera);
+    playerMesh.scale.x *= mirror;
+    playerMesh.position.sub(shift);
     for (const part of body) part.visible = true;
   });
 }
@@ -5870,7 +6060,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // Dev builds only: a handle for poking at the game from the browser console
 if (import.meta.env.DEV) {
-  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, startJoin, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
+  window.__game = { npcs, dialog, npcHomes, farmFinds, useAction, bosses, farmer, goHome, arrows, step, hold, freeze: (on = true) => (frozen = on), draw, sound, get inGame() { return splash.hidden; }, player, spots, drops, remotes, inventory, shop, chest, animals, buildings, workbench, upgrade, machines, learned, useMachine, cooking, fishLog, joinLobby, get partyGame() { return partyGame; }, get meal() { return meal; }, dayNight, fishing, saveGame, camera, farmSync, get farmLevels() { return farmLevels; }, upgradeProblem, blueprintLock: (piece) => blueprintProblem(piece, unlockView(), kept), get kept() { return kept; }, get place() { return place; }, get net() { return net; }, get farmNet() { return farmNet; }, get farmVisit() { return farmVisit; }, get world() { return world; }, crops, farmTiles, weather, tradeSpot: TRADE_SPOT, seats, addSeat, dropSeat, seatFarmer, newGuest, logInPlayer, startJoin, get session() { return session; }, get myId() { return myId; }, within, layout, snapCamera, warp, stats: gfxStats.stats, post, view: viewMode, lookBy, get look() { return { yaw: lookYaw, pitch: lookPitch }; } };
 }
 
 loadGame();

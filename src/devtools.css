@@ -52,6 +52,9 @@
 .dev-h { font-size: 20px; font-weight: 700; }
 .dev-note { font-size: 16px; line-height: 1.05; opacity: 0.75; margin-bottom: 2px; }
 .dev-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.dev-skills { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; }
+.dev-skills .dev-btn { min-width: 32px; }
+.dev-lv { font-size: 16px; opacity: 0.75; padding-right: 4px; }
 .dev-btn {
   padding: 3px 9px 4px;
   border: 2px solid var(--inv-outline);

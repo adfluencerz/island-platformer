@@ -66,7 +66,7 @@ import { unmake, BOSSES, WEAPONS, SHOP, DROP_OWN_MS, DISHES, WATERED_GROWTH, cro
 import { loadFor, fillsItself, collectFor, contentsBack, machinesFromSave, machinesToSave } from '../shared/machines.js';
 import { BEANSTALK } from '../shared/balance.js';
 import { rainSince } from '../shared/weather.js';
-import { HOME_HALF, farmBlocked, NPC_ROOMS } from '../shared/farmland.js';
+import { HOME_HALF, farmBlocked, offLots, NPC_ROOMS } from '../shared/farmland.js';
 
 const FARM_HALF = HOME_HALF - 2; // tiles reach this far from the middle (the home map's HOME_HALF, less the shore)
 const REACH = 3.4; // the client farms the tile underfoot, or one tapped within 2.2 (and a golden hoe the tiles round it)
@@ -112,7 +112,8 @@ export class FarmRoom extends Place {
     this.farmId = farm.id;
     this.admit = admit;
     this.helpers = helpers;
-    const saved = farm.save?.farm ?? null;
+    // (nothing on a neighbour's lot: one who moved in after it was built on)
+    const { farm: saved = null, refund } = offLots(farm.save?.farm ?? null);
     const now = Date.now();
     // the clock: game hours since the farm began, running on from when it was saved
     const savedHours = Number.isFinite(saved?.hours) ? saved.hours : 6;
@@ -172,6 +173,7 @@ export class FarmRoom extends Place {
     const { savedAt, hours, tilled, crops, built, machines, felled, mined, treeSites, rockSites, giants, chest, dropped, ...animals } = saved ?? {};
     this.animals = animals;
     this.chest = unmake(farm.chest); // (a lamp post or bench made at the workbench, back in wood and stone)
+    for (const [item, n] of Object.entries(refund)) this.chest[item] = (this.chest[item] ?? 0) + n;
     this.ownerName = farm.ownerName ?? ''; // (for the words: "Ann takes things out of the chest")
     this.clockSentAt = now;
     this.soilAt = now;

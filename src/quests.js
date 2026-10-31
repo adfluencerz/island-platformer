@@ -24,17 +24,18 @@ export function renderQuests(root, npcs, ctx) {
     el('span', 'quest-name', head, `${npc.name} · ${npc.title}`);
     el('span', 'quest-hearts', head, heartText(npcs.hearts(id)));
     const done = state.done.length;
-    el('div', 'quest-meta', body, `${npc.trade}, ${npc.where} · shop ${npcs.shopOpen(id) ? 'open' : 'not open yet'} · ${done}/${npc.missions.length} requests done`);
+    const errands = state.errands ? ` · ${state.errands} errand${state.errands > 1 ? 's' : ''} run` : '';
+    el('div', 'quest-meta', body, `${npc.trade}, ${npc.where} · shop ${npcs.shopOpen(id) ? 'open' : 'not open yet'} · ${done}/${npc.missions.length} requests done${errands}`);
     if (!state.met) {
       el('div', 'quest-text', body, `You haven't met ${npc.name} yet. Look ${npc.where} (the Map tab shows where).`);
       continue;
     }
     const st = npcs.status(id, ctx);
     const hub = npcs.hub(id, ctx);
-    if (!st.mission) el('div', 'quest-text done', body, `Everything ${npc.name} asked is done.`);
-    else if (!st.heard) el('div', 'quest-text', body, `${npc.name} has something to ask you: go and see them.`);
+    if (!st.mission) el('div', 'quest-text done', body, `Everything ${npc.name} asked is done, and today's errand. Back tomorrow!`);
+    else if (!st.heard) el('div', 'quest-text', body, st.errand ? `${npc.name} has an errand for you today.` : `${npc.name} has something to ask you: go and see them.`);
     else {
-      el('div', `quest-title${st.ready ? ' ready' : ''}`, body, `${st.mission.title}: ${st.mission.ask}${st.ready ? ' (ready to hand over!)' : ''}`);
+      el('div', `quest-title${st.ready ? ' ready' : ''}`, body, `${st.errand ? 'Errand: ' : ''}${st.mission.title}: ${st.mission.ask}${st.ready ? ' (ready to hand over!)' : ''}`);
       const needs = el('div', 'quest-needs', body);
       for (const n of st.needs) {
         const { text, icon } = needText(n.need);

@@ -38,7 +38,7 @@ export const TIER_NAMES = ['low', 'medium', 'high'];
 // for a phone's small screen with no MSAA)
 export const TIERS = {
   low: { pixelRatio: 0.5, shadowMap: 0, post: 'off', grassDensity: 0.35, grassBlades: 3, grassSpread: 1, carpet: 0, treeDetail: 0, treeSway: false, cloudShadows: false, msaa: 0, particles: 300, outline: false, detailGain: 1 },
-  medium: { pixelRatio: 1.5, shadowMap: 1024, post: 'half', grassDensity: 0.75, grassBlades: 6, grassSpread: 1.2, carpet: 0.6, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 0, particles: 600, outline: false, detailGain: 1.35 },
+  medium: { pixelRatio: 1.5, shadowMap: 1024, post: 'half', grassDensity: 0.75, grassBlades: 6, grassSpread: 1.2, carpet: 0.6, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 0, particles: 600, outline: true, detailGain: 1.35 },
   high: { pixelRatio: 2, shadowMap: 2048, post: 'full', grassDensity: 1.0, grassBlades: 7, grassSpread: 1, carpet: 1, treeDetail: 1, treeSway: true, cloudShadows: true, msaa: 4, particles: 900, outline: true, detailGain: 1 },
 };
 export const MAX_PARTICLES = Math.max(...Object.values(TIERS).map((k) => k.particles));

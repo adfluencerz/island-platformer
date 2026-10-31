@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { createFarmer, damp } from './character.js';
-import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, progress, heartsFor, messagesFor } from '../shared/npcs.js';
+import { NPCS, NPC_IDS, MISSIONS, freshNpcState, currentMission, isOpen, shelfLock, errandFor, progress, heartsFor, messagesFor } from '../shared/npcs.js';
 import { chatTopics, momentsDue, hubOptions, hear as hearNode, rewardFor, cleanState } from '../shared/talk.js';
 import { NPC_HOMES, npcDoor } from '../shared/farmland.js';
-import { FRIENDSHIP } from '../shared/balance.js';
+import { FRIENDSHIP, ERRANDS } from '../shared/balance.js';
 import { npcHomes, roomAt } from './npchomes.js';
 
 // ---------- The neighbours ----------
@@ -38,6 +38,7 @@ const YARD = {
   basil: [[-3.4, 2.4], [3.6, 3.2], [0.2, 4.4], [-3.6, 4.6]],
   finn: [[-2.4, 3.4], [2.2, 3.6], [0, 6.5, 0.3], [0, 9, 0.3]],
   mabel: [[-2.6, 4.6], [1.4, 4.2], [3.4, 3.2], [-0.6, 5]],
+  bram: [[-2.2, 4.4], [1.6, 4.0], [3.4, 3.0], [0.4, 5.0]],
 };
 
 // Where a neighbour is at `hour` (of the farm's clock): 'sleep', 'home'
@@ -282,8 +283,9 @@ export function createNpcs({ parent }) {
 // what their missions are checked against ({ have(item), built(piece) },
 // main.js). onMends(mended): Finn's dock as they see it (the farm shows it
 // mended if it is for anyone at the screen). story: what shows of the
-// neighbours' homes and yards is theirs (the farm's own farmer's).
-function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), story = true }) {
+// neighbours' homes and yards is theirs (the farm's own farmer's). day(): the
+// game day now (a neighbour whose requests are all done has an errand a day).
+function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), story = true, day = () => 0 }) {
   let states = Object.fromEntries(NPC_IDS.map((id) => [id, freshNpcState()]));
   let deeds = {};
 
@@ -318,15 +320,27 @@ function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), st
   };
 
   // What there is to tell (ctx: { have(item), built(piece) } for the
-  // missions): their mission now, asked or not, and how far it has come
+  // missions): their mission now, asked or not, and how far it has come.
+  // Their requests all done: today's errand (`errand`: true), the same way,
+  // or `errandDone`, nothing more today.
   function status(id, ctx) {
     const s = states[id];
     const mission = currentMission(id, s);
-    if (!mission) return { mission: null };
-    const heard = s.heard.includes(mission.id);
-    const needs = progress(mission, s, { have: ctx.have, deeds, built: ctx.built });
-    return { mission, heard, needs, ready: heard && needs.every((n) => n.ok) };
+    const here = { have: ctx.have, deeds, built: ctx.built };
+    if (mission) {
+      const heard = s.heard.includes(mission.id);
+      const needs = progress(mission, s, here);
+      return { mission, heard, needs, ready: heard && needs.every((n) => n.ok) };
+    }
+    const today = day();
+    if (s.errandDay === today) return { mission: null, errandDone: true };
+    const errand = errandFor(id, today);
+    const heard = s.errand?.day === today && s.errand.id === errand.id;
+    const needs = progress(errand, { since: { [errand.id]: heard ? s.errand.since : { ...deeds } } }, here);
+    return { mission: errand, errand: true, heard, needs, ready: heard && needs.every((n) => n.ok) };
   }
+  // What an errand run gives besides its gold: their bonus, every ERRANDS.every-th one
+  const bonusFor = (id) => ((states[id].errands + 1) % ERRANDS.every === 0 ? [NPCS[id].bonus] : []);
 
   // which sign each of them shows you: the most pressing thing they have
   // for you (a request to hand over, then a message to tell, a moment to
@@ -364,6 +378,7 @@ function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), st
     hub: (id, here) => hubOptions({ npc: id, state: states[id], c: view(id), status: status(id, here), messages: messagesFor(id, states, deeds) }),
     topics: (id) => chatTopics(id, states[id], view(id)),
     shopOpen: (id, shelf) => isOpen(id, states[id], shelf),
+    shelfLock: (id, shelf) => shelfLock(id, states[id], shelf),
     // what their shop takes off its prices, for how much they like you (0 to 1)
     discount: (id) => hearts(id) * FRIENDSHIP.discount,
 
@@ -406,6 +421,11 @@ function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), st
     listen(id) {
       const s = states[id];
       const mission = currentMission(id, s);
+      if (!mission) {
+        const st = status(id, ctx());
+        if (st.errand && !st.heard) s.errand = { day: day(), id: st.mission.id, since: { ...deeds } };
+        return st.mission;
+      }
       if (!mission || s.heard.includes(mission.id)) return mission;
       s.heard.push(mission.id);
       s.since[mission.id] = { ...deeds };
@@ -421,7 +441,7 @@ function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), st
       const { mission } = st;
       const choice = mission.gives.choose ? mission.gives.choose[pick] : null;
       if (mission.gives.choose && !choice) return null;
-      const gives = [...(mission.gives.items ?? []), ...(choice?.items ?? [])];
+      const gives = [...(mission.gives.items ?? []), ...(choice?.items ?? []), ...(st.errand ? bonusFor(id) : [])];
       const gold = (mission.gives.gold ?? 0) + (choice?.gold ?? 0);
       if (!fits(gives)) return { full: true };
       for (const { need } of st.needs) {
@@ -436,6 +456,12 @@ function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), st
         }
       }
       const s = states[id];
+      if (st.errand) {
+        Object.assign(s, { errand: null, errandDay: day(), errands: s.errands + 1 });
+        like(id, FRIENDSHIP.errand);
+        give({ gold, items: gives });
+        return { mission, gold, items: gives, choice, errand: true };
+      }
       s.done.push(mission.id);
       delete s.since[mission.id];
       like(id, FRIENDSHIP.mission); // (and what it changes where they live)
@@ -468,7 +494,15 @@ function standing({ inventory, ctx, onMends = (on) => npcHomes.dock.mend(on), st
     finish(id) {
       const s = states[id];
       const mission = currentMission(id, s);
-      if (!mission) return null;
+      if (!mission) {
+        // (their errand today, run)
+        const st = status(id, ctx());
+        if (!st.errand) return null;
+        give({ gold: st.mission.gives.gold, items: bonusFor(id) });
+        Object.assign(s, { met: true, errand: null, errandDay: day(), errands: s.errands + 1 });
+        like(id, FRIENDSHIP.errand);
+        return st.mission;
+      }
       s.met = true;
       if (!s.heard.includes(mission.id)) s.heard.push(mission.id);
       s.done.push(mission.id);
