@@ -68,8 +68,8 @@ const BEACH = {
   BEACH_SAND: 'vec3(0.76, 0.6, 0.3)',
   BEACH_GREEN: 'vec3(0.11, 0.33, 0.045)',
 };
-const MORTAR = 'vec3(0.15, 0.122, 0.088)'; // (the stone's ground: between and round the slabs)
-const SOIL = 'vec3(0.14, 0.095, 0.055)';
+const MORTAR = 'vec3(0.27, 0.25, 0.22)'; // (the stone's ground: between and round the slabs)
+const SOIL = 'vec3(0.25, 0.21, 0.16)';
 
 // how much of a puddle at p (0..1): soft-edged patches of a slow noise, a
 // finer one wobbling their shores, fewer and smaller as the ground dries

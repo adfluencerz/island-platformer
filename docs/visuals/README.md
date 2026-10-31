@@ -21,7 +21,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | pixel ratio cap | 0.5 | 1.5          | 2    |
 | shadow map    | off  | 1024          | 2048 |
 | post          | off  | half-res bloom | full |
-| grass carpet (share of 96 blades a tile, since 33) | off: tufts | 0.6 | 1 |
+| grass carpet (share of 96 blades a tile, since 33) | off: tufts | 0.55 | 1 |
 | grass density (tufts) | 0.35 | 0.75   | 1.0  |
 | grass blades (of 7 a tuft) | 3 | 6     | 7    |
 | grass spread (tuft, carpet blade width) | 1 | 1.2 | 1 |
@@ -29,7 +29,7 @@ Picked in the menu (Graphics: high/medium/low, kept as `tp.gfx`), or `?gfx=low|m
 | tree sway     | off  | on            | on   |
 | cloud shadows | off  | on            | on   |
 | MSAA (post)   | off  | off           | 4    |
-| particles (rain, snow; motes: 160 at 900) | 300 | 600 | 900 |
+| particles (rain, snow) | 300 | 600 | 900 |
 | night's grey  | in the light (0.35) | in the grade | in the grade |
 | character outline (since 46: medium too) | off | on | on |
 | ground detail gain | 1 | 1.35        | 1    |
@@ -80,7 +80,7 @@ notes for next phase: ≤ 5 lines
 ## Tools
 - `window.__game` (dev): `stats()`, `warp('plaza'|'lake'|'house'|'forest'|'dungeon'|{x,z})`,
   `snapCamera()`, `dayNight.setTime(h)`, `step(s)`, `draw()`; the devtools Info tab shows the stats.
-- `?cam=wide|classic`: the camera's angle from above (the menu's Camera button, kept as `tp.cam`; wide by default, classic underground and indoors).
+- `?cam=wide|classic`: the camera's angle from above (the menu's Camera button, kept as `tp.cam`; classic by default and always underground and indoors).
 - `npm run shots [-- --tier low|medium|high] [--check]`: `scripts/shots.mjs`, launcher in `scripts/lib/page.mjs`.
 
 ## Parallel workers (several polish rounds at once)

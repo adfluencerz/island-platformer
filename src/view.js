@@ -9,9 +9,9 @@ import './view.css';
 //   setFirstPerson(on)
 //   toggle()             V in game, and the menu's switch: returns the new setting
 //
-// From above, at which angle: wide (the default: low and further back, the
-// sky and the horizon in view) or classic (steeply down from above, as it
-// was). Kept as tp.cam; ?cam=wide|classic in the address wins (for testing:
+// From above, at which angle: classic (the default: steeply down from above)
+// or wide (low and further back, the sky and the horizon in view). Kept as
+// tp.cam; ?cam=wide|classic in the address wins (for testing:
 // scripts/shots.mjs), and is not kept. Underground and indoors the camera is
 // classic whatever this says (they have ceilings: src/main.js).
 //
@@ -54,9 +54,9 @@ function loadAngle() {
   if (ANGLES.includes(asked)) return asked;
   try {
     const kept = JSON.parse(localStorage.getItem(CAM_STORE))?.angle;
-    return ANGLES.includes(kept) ? kept : 'wide';
+    return ANGLES.includes(kept) ? kept : 'classic';
   } catch {
-    return 'wide';
+    return 'classic';
   }
 }
 
