@@ -13,6 +13,12 @@
 // choices as [id, name]; a color part, its palette. `label` names a color
 // part in the wardrobe (a hat's own word for it: hatColorLabel).
 export const LOOK_PARTS = {
+  body: {
+    styles: [
+      ['male', 'Male'],
+      ['female', 'Female'],
+    ],
+  },
   hat: {
     styles: [
       ['straw', 'Straw hat'],
@@ -102,8 +108,10 @@ export const LOOK_PARTS = {
 
 // The look every farmer had before there was a wardrobe (and has until they
 // pick another): a straw hat with a red band, short brown hair, a plain
-// shirt under denim overalls, and brown boots
+// shirt under denim overalls, and brown boots, on the male body (the female
+// starts with a ponytail: BODY_HAIR)
 export const DEFAULT_LOOK = Object.freeze({
+  body: 'male',
   hat: 'straw',
   hatColor: 0xc0392b,
   hair: 'short',
@@ -121,6 +129,10 @@ export const DEFAULT_LOOK = Object.freeze({
   neck: 'none',
   neckColor: 0xc0392b,
 });
+
+// The hair each body starts with (and swaps for the other's, when the body
+// is changed and the hair is still the one it started with)
+export const BODY_HAIR = { male: 'short', female: 'ponytail' };
 
 const isStyle = (part, v) => LOOK_PARTS[part].styles.some(([id]) => id === v);
 const isColor = (part, v) => LOOK_PARTS[part].colors.includes(v);
@@ -143,13 +155,13 @@ export const sameLook = (a, b) => Object.keys(LOOK_PARTS).every((part) => a?.[pa
 // crown's flowers, the rest the hat itself
 export const hatColorLabel = (hat) => (hat === 'straw' || hat === 'sunhat' ? 'Band' : hat === 'flowers' ? 'Flowers' : 'Color');
 
-// Something new to wear: every part picked at random (rand: 0..1), the skin
-// kept (that is who they are, not what they wear)
+// Something new to wear: every part picked at random (rand: 0..1), the body
+// and the skin kept (that is who they are, not what they wear)
 export function randomLook(rand = Math.random, keep = DEFAULT_LOOK) {
   const pick = (list) => list[Math.floor(rand() * list.length)];
   const out = {};
   for (const [part, def] of Object.entries(LOOK_PARTS)) {
-    out[part] = part === 'skin' ? keep.skin : def.styles ? pick(def.styles)[0] : pick(def.colors);
+    out[part] = part === 'skin' || part === 'body' ? keep[part] ?? DEFAULT_LOOK[part] : def.styles ? pick(def.styles)[0] : pick(def.colors);
   }
   // (mostly clean-shaven, mostly without an apron, and mostly without glasses: they stand out more that way)
   if (rand() < 0.6) out.whiskers = 'none';

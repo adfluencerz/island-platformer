@@ -488,9 +488,10 @@ await test('a look is every part one of its choices: the default\'s, a random on
   const rand = mulberry32(7);
   const hats = new Set();
   for (let i = 0; i < 300; i++) {
-    const look = randomLook(rand, { ...DEFAULT_LOOK, skin: 0x6e4529 });
+    const look = randomLook(rand, { ...DEFAULT_LOOK, skin: 0x6e4529, body: 'female' });
     assert.deepEqual(cleanLook(look), look);
     assert.equal(look.skin, 0x6e4529, 'the skin is kept');
+    assert.equal(look.body, 'female', 'the body is kept');
     hats.add(look.hat);
   }
   assert.equal(hats.size, LOOK_PARTS.hat.styles.length, 'every hat turns up');
