@@ -53,7 +53,7 @@ export const NPCS = {
     trade: 'Animals',
     where: 'west, over the meadow',
     shirt: 0xc0392b,
-    look: { hat: 'straw', hatColor: 0x7a2a1a, hair: 'ponytail', hairColor: 0x7a3f1c, bottomsColor: 0x6b4a2b },
+    look: { body: 'female', hat: 'straw', hatColor: 0x7a2a1a, hair: 'ponytail', hairColor: 0x7a3f1c, bottomsColor: 0x6b4a2b },
     portrait: { hat: '#e2b860', band: '#7a2a1a', hair: '#7a3f1c', shirt: '#c0392b' },
     // [hour she gets up, opens the shop, goes out in the yard, goes to bed]
     hours: [5, 8, 17, 21],
@@ -657,7 +657,7 @@ export const NPCS = {
     trade: 'Recipes',
     where: 'north-east, at the forest\'s edge',
     shirt: 0xe88aa8,
-    look: { hat: 'bandana', hatColor: 0xf4f0e8, hair: 'bun', hairColor: 0xb8662a, bottomsColor: 0x8a5a7a, apron: 'apron', apronColor: 0xfffaf0 },
+    look: { body: 'female', hat: 'bandana', hatColor: 0xf4f0e8, hair: 'bun', hairColor: 0xb8662a, bottomsColor: 0x8a5a7a, apron: 'apron', apronColor: 0xfffaf0 },
     portrait: { scarf: '#f4f0e8', hair: '#b8662a', shirt: '#e88aa8' },
     hours: [5, 7, 17, 22],
     shop: {

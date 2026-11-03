@@ -3,7 +3,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULT_LOOK } from '../shared/looks.js';
 import { hook } from './gfx/shading.js';
 import { patch, define } from './gfx/chunks.js';
-import { knobs, onApply } from './gfx/quality.js';
 import { use } from './gfx/uniforms.js';
 import { detail } from './gfx/detail.js';
 
@@ -24,10 +23,10 @@ import { detail } from './gfx/detail.js';
 const HIP_Y = 0.55; // rig: where the legs pivot, and the torso's origin
 const HEAD_Y = 0.8; // torso: the middle of the head
 const HEAD_R = 0.25;
-const SHOULDER = [0.29, 0.49]; // torso: where the arms pivot (x, y)
+const SHOULDER_Y = 0.49; // torso: where the arms pivot (and the body's shoulder, how far out)
+const LEG_X = 0.13; // where the legs pivot, either side (his; hers a little closer)
 const ARM_LEN = 0.42; // shoulder to the middle of the hand
 const HAND = new THREE.Vector3(0, -ARM_LEN, 0); // (in the arm's pivot, where tools are held)
-const DEPTH = 0.88; // the body is a little flatter front to back than across
 const EYE = { lat: 0.06, lon: 0.37 }; // up from the head's equator, and round from its front (radians)
 
 const HOE_REST_ANGLE = 0.9; // handle tilted forward/up from the arm
@@ -370,6 +369,12 @@ function tile(geo, su, sv) {
 const wrap = (geo, r, length, size) => tile(geo, Math.max(1, Math.round((Math.PI * 2 * r) / size)), length / size);
 
 // ---------- Merging ----------
+// A shape placed (x, y, z), turned (q, or rx, ry, rz) and sized (sx, sy, sz: before it is turned)
+function placed(geo, x = 0, y = 0, z = 0, { q = null, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1 } = {}) {
+  _m.compose(_v.set(x, y, z), q ?? _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz));
+  return geo.applyMatrix4(_m);
+}
+
 // The pieces of one moving part, merged into a mesh per material when built
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -407,72 +412,6 @@ class Parts {
   }
 }
 
-// ---------- The outline ----------
-// On the high and medium tiers (knobs().outline) a farmer has a thin dark
-// edge, like the ink round a painted figure: a hull of their pieces pushed out
-// along the normals and drawn inside out (its back faces only), so it shows
-// just past the silhouette. It is one mesh for the whole farmer, each piece
-// skinned to the part it moves with (the torso with the head, each arm, each
-// leg) with those parts' groups for bones, so it follows the walk and the
-// swings in one draw. The little bits (eyes, cheeks, glasses: noShadow) and
-// the eyes' group are left out. It casts no shadow. Pushed out in the vertex
-// shader, across the view, a little further the further off it is (perUnit,
-// a unit of distance), so it stays about a pixel wide at the low wide camera and as
-// thin as ever close up (the wardrobe, indoors).
-const OUTLINE = { push: 0.016, perUnit: 0.0012, color: 0x2e2018 };
-const hullMat = hook(new THREE.MeshBasicMaterial({ color: OUTLINE.color, side: THREE.BackSide }), 'hull', (shader) => {
-  // (across the view only, not toward or away from it: a thin brim's hull
-  // doesn't thicken into a dark band over the face)
-  shader.vertexShader = patch(shader.vertexShader, 'project_vertex', `
-    vec3 hullN = normalize(normalMatrix * objectNormal);
-    mvPosition.xy += normalize(hullN.xy + vec2(1e-4)) * (${OUTLINE.push.toFixed(4)} + ${OUTLINE.perUnit.toFixed(4)} * max(-mvPosition.z, 0.0));
-    gl_Position = projectionMatrix * mvPosition;`);
-});
-hullMat.userData.noSnow = true;
-let outlineOn = null; // (the tier's, once applied: src/gfx/quality.js)
-onApply((k) => (outlineOn = k.outline));
-const outlined = () => (outlineOn ??= knobs().outline);
-const IDENTITY = new THREE.Matrix4();
-
-// meshes: [[the part's meshes, its bone's index]]; bones: the parts' groups, in
-// that order. In the rig's frame (it goes in the rig).
-function buildHull(meshes, bones) {
-  const pieces = [];
-  for (const [list, bone] of meshes) {
-    for (const mesh of list) {
-      if (mesh.material.userData.noShadow || mesh.material.side !== THREE.FrontSide) continue;
-      const src = mesh.geometry;
-      const pos = src.attributes.position;
-      const nrm = src.attributes.normal;
-      const n = pos.count;
-      const skinIndex = new Uint16Array(n * 4);
-      const skinWeight = new Float32Array(n * 4);
-      for (let i = 0; i < n; i++) {
-        skinIndex[i * 4] = bone;
-        skinWeight[i * 4] = 1;
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', pos.clone());
-      geo.setAttribute('normal', nrm.clone()); // (pushed out along it in the shader: hullMat)
-      geo.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4));
-      geo.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
-      geo.setIndex(src.index ? Array.from(src.index.array) : [...Array(n).keys()]);
-      pieces.push(geo);
-    }
-  }
-  if (!pieces.length) return null;
-  const geo = mergeGeometries(pieces);
-  for (const g of pieces) g.dispose();
-  const hull = new THREE.SkinnedMesh(geo, hullMat);
-  hull.name = 'outline';
-  hull.castShadow = hull.receiveShadow = false;
-  hull.userData.noShadow = true;
-  // (each bone's own frame is the pieces' frame, so nothing to undo: the pose is the groups' as they are)
-  hull.bind(new THREE.Skeleton(bones, bones.map(() => IDENTITY.clone())), IDENTITY);
-  hull.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.85, 0), 1.4); // (round the farmer, in the rig's frame: not re-skinned to cull)
-  return hull;
-}
-
 // ---------- The head ----------
 const HEAD = new THREE.Matrix4().makeTranslation(0, HEAD_Y, 0); // (the torso's frame to the head's)
 // A point on the head (or r out from its middle), lat up from its equator and
@@ -483,34 +422,263 @@ const facing = (lat, lon, axis = Z_OUT) => new THREE.Quaternion().setFromUnitVec
 const spun = (q, angle) => q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(Z_OUT, angle));
 // The head's frame, moved and tipped back: where a hat sits
 const hatFrame = (y, z, tilt) => HEAD.clone().multiply(new THREE.Matrix4().compose(V3(0, y, z), new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), tilt), V3(1, 1, 1)));
+// Where each hat sits on the head: [up, back (z), tipped back by], and how
+// far up its own frame its rim comes down to (cover): the hair over that is
+// under the hat (tuck())
+const HATS = {
+  straw: [0.17, -0.05, -0.4, 0],
+  sunhat: [0.15, -0.04, -0.45, 0],
+  cap: [0.02, 0, -0.3, 0.05],
+  flatcap: [0.095, 0.02, -0.1, 0],
+  souwester: [0.1, -0.03, -0.25, 0],
+  beanie: [0, -0.01, -0.22, 0.04],
+  cowboy: [0.16, -0.04, -0.32, 0],
+  bandana: [0, 0, -0.08, 0.09],
+  flowers: [0.1, -0.02, -0.3, null], // (a ring on the hair: it covers none of it)
+};
+const hatAt = (hat) => hatFrame(...HATS[hat].slice(0, 3));
 
-// ---------- The body ----------
-// The torso's outline, hips (y = 0) to shoulders; the head sits on it
-const TORSO = [[0, -0.09], [0.16, -0.085], [0.24, -0.05], [0.262, 0.03], [0.26, 0.15], [0.252, 0.26], [0.266, 0.37], [0.262, 0.46], [0.236, 0.54], [0.18, 0.605], [0.1, 0.64], [0, 0.65]];
-const torsoLine = new THREE.SplineCurve(TORSO.map(([r, y]) => V2(r, y))).getSpacedPoints(64);
-// the torso's radius at height y
-function torsoR(y) {
-  for (let i = 1; i < torsoLine.length; i++) {
-    const a = torsoLine[i - 1];
-    const b = torsoLine[i];
-    if (y >= a.y && y <= b.y) return a.x + ((b.x - a.x) * (y - a.y)) / Math.max(1e-6, b.y - a.y);
+// ---------- The bodies ----------
+// Two builds (shared/looks.js `body`), the same height, so the collision, the
+// hand that holds the tools and the view from the eyes are the same in both.
+// Each is its torso's outline, hips (y = 0) to the neck ([half width, y]),
+// and how deep it is for its width up it, in front and behind ([y, depth /
+// width]): a chest, the small of a back; at the hips no deeper than the
+// thighs under them (a little more behind), so trousers run down into the
+// legs instead of rounding out over them. Then how far out the arms
+// hang and the legs stand, how thick the neck is; a sleeve's radius at the top and the bottom,
+// a bare forearm's; a trouser leg's and a bare leg's; how big the hands and
+// the shoes are; how much the jaw narrows to the chin; how big the eyes are.
+// Him broad in the shoulders and the arms; her narrow in the shoulders and at
+// the waist, fuller at the hips, slimmer in the arms and the ankles.
+const BODIES = {
+  male: {
+    torso: [[0, -0.07], [0.12, -0.066], [0.205, -0.045], [0.245, 0], [0.255, 0.04], [0.248, 0.12], [0.252, 0.2], [0.268, 0.3], [0.278, 0.38], [0.268, 0.45], [0.235, 0.5], [0.17, 0.54], [0.1, 0.56], [0, 0.565]],
+    front: [[-0.1, 0.52], [0.05, 0.56], [0.18, 0.8], [0.3, 0.82], [0.45, 0.76], [0.56, 0.8]],
+    back: [[-0.1, 0.62], [0.05, 0.66], [0.18, 0.78], [0.3, 0.76], [0.45, 0.72], [0.56, 0.8]],
+    shoulder: 0.285, legX: LEG_X, neck: 0.074, sleeve: [0.09, 0.078], forearm: [0.072, 0.062],
+    leg: [0.135, 0.09], bare: [0.088, 0.064], hand: 1.1, shoe: 1.04, jaw: 0.12, eyes: 1,
+  },
+  female: {
+    torso: [[0, -0.07], [0.11, -0.066], [0.185, -0.045], [0.218, 0], [0.226, 0.04], [0.21, 0.1], [0.175, 0.18], [0.17, 0.25], [0.188, 0.32], [0.198, 0.39], [0.19, 0.45], [0.165, 0.5], [0.125, 0.535], [0.07, 0.553], [0, 0.558]],
+    front: [[-0.1, 0.55], [0.05, 0.58], [0.2, 0.72], [0.27, 0.84], [0.33, 0.97], [0.42, 0.9], [0.5, 0.8], [0.56, 0.85]],
+    back: [[-0.1, 0.68], [0.05, 0.72], [0.2, 0.8], [0.35, 0.78], [0.5, 0.78], [0.56, 0.85]],
+    shoulder: 0.215, legX: 0.12, neck: 0.058, sleeve: [0.07, 0.062], forearm: [0.058, 0.05],
+    leg: [0.122, 0.066], bare: [0.08, 0.052], hand: 0.86, shoe: 0.88, jaw: 0.2, eyes: 1.06,
+  },
+};
+
+// [y, k] keys, k at y (straight between them, flat past the ends)
+function keyed(keys, y) {
+  if (y <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [y1, k1] = keys[i];
+    if (y <= y1) {
+      const [y0, k0] = keys[i - 1];
+      return k0 + ((k1 - k0) * (y - y0)) / (y1 - y0);
+    }
   }
-  return 0;
+  return keys[keys.length - 1][1];
 }
-// how far in front of (side 1) or behind (side -1) the middle the torso's surface is, at x, y
-const torsoZ = (x, y, side) => side * DEPTH * Math.sqrt(Math.max(0, torsoR(y) ** 2 - x * x));
 
-// A strap of the overalls: up from the bib (on side sx), over the shoulder
-// and down the back, crossing the other
-function strapCurve(sx) {
+// A body's shape, worked out once: W(y) its half width at y (from the hips
+// up: what hangs lower, a skirt, an apron, goes by the hips),
+// depth(y, side) how far in front (side 1) or behind (-1) of its middle it is,
+// z(x, y, side) its surface there, at(r) how high up it is r across (by the
+// neck), and fit(geo): a shape made round the torso's axis (a lathe, a band,
+// a ring) made as deep as the body is there, front and back, what stands off
+// the body staying as far off it
+const bodyShapes = new Map();
+function bodyShape(kind) {
+  if (bodyShapes.has(kind)) return bodyShapes.get(kind);
+  const def = BODIES[kind] ?? BODIES.male;
+  const line = new THREE.SplineCurve(def.torso.map(([r, y]) => V2(r, y))).getSpacedPoints(64);
+  const top = def.torso[def.torso.length - 1][1];
+  function W(y) {
+    y = THREE.MathUtils.clamp(y, 0, top); // (below the hips: as wide as they are)
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1];
+      const b = line[i];
+      if (y >= a.y && y <= b.y) return a.x + ((b.x - a.x) * (y - a.y)) / Math.max(1e-6, b.y - a.y);
+    }
+    return 0;
+  }
+  const depth = (y, side) => W(y) * keyed(side > 0 ? def.front : def.back, y);
+  const z = (x, y, side) => side * depth(y, side) * Math.sqrt(Math.max(0, 1 - (x / Math.max(1e-6, W(y))) ** 2));
+  function at(r) {
+    for (let i = line.length - 1; i > 0; i--) if (line[i].x >= r) return line[i].y;
+    return 0;
+  }
+  function fit(geo) {
+    const pos = geo.attributes.position;
+    const nrm = geo.attributes.normal;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const zz = pos.getZ(i);
+      const r = Math.hypot(x, zz);
+      if (r < 1e-5 || Math.abs(zz) < 1e-7) continue;
+      const w = Math.max(1e-4, W(y));
+      const d = depth(y, Math.sign(zz));
+      const k = (r <= w ? (r * d) / w : d + r - w) / r; // (how much deeper or shallower, here)
+      pos.setZ(i, zz * k);
+      if (nrm) _v.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i) / k).normalize(), nrm.setXYZ(i, _v.x, _v.y, _v.z);
+    }
+    return geo;
+  }
+  const shape = { def, W, depth, z, at, fit, top };
+  bodyShapes.set(kind, shape);
+  return shape;
+}
+
+// A strap of the overalls: up from the bib (on side sx, x out), over the
+// shoulder and down the back, crossing the other
+function strapCurve(S, sx, x) {
   const pts = [];
-  for (const y of [0.44, 0.5, 0.56, 0.61]) pts.push(V3(sx * 0.11, y, torsoZ(0.11, y, 1) + 0.012));
-  pts.push(V3(sx * 0.11, 0.655, 0));
-  for (const y of [0.6, 0.52, 0.42, 0.32, 0.24]) {
-    const x = sx * (0.11 - 0.15 * (0.6 - y) / 0.36);
-    pts.push(V3(x, y, torsoZ(x, y, -1) - 0.012));
+  const over = S.at(x) + 0.014; // (over the shoulder there)
+  for (const y of [0.44, 0.48, over - 0.05, over - 0.02]) pts.push(V3(sx * x, y, S.z(x, y, 1) + 0.012));
+  pts.push(V3(sx * x, over, 0));
+  for (const y of [over - 0.04, 0.48, 0.4, 0.32, 0.24]) {
+    const xx = sx * (x - (x + 0.04) * (over - 0.04 - y) / (over - 0.28));
+    pts.push(V3(xx, y, S.z(xx, y, -1) - 0.012));
   }
   return new THREE.CatmullRomCurve3(pts);
+}
+
+// The head: round above its middle, narrowing toward the chin below it (jaw:
+// how much); the beard too, so it keeps to the face
+function jawed(geo, jaw) {
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const down = -pos.getY(i) / HEAD_R;
+    if (down <= 0) continue;
+    const t = down ** 1.5;
+    const kx = 1 - jaw * t;
+    const kz = 1 - jaw * 0.4 * t;
+    pos.setX(i, pos.getX(i) * kx);
+    pos.setZ(i, pos.getZ(i) * kz);
+    if (nrm) _v.set(nrm.getX(i) / kx, nrm.getY(i), nrm.getZ(i) / kz).normalize(), nrm.setXYZ(i, _v.x, _v.y, _v.z);
+  }
+  return geo;
+}
+
+// ---------- Hair ----------
+// Hair is one soft mass over the head, in a few big clumps from the crown
+// down (a crease between each), its edge cut into points where the clumps
+// end (the fringe, by the ears, at the nape), with a lip under the edge so
+// the points have some thickness. Each style is its hairline: how far down
+// it comes round the head (lat, by how far round from the front: |lon|), how
+// deep the points are there, how many clumps go round, and how far the
+// fringe is combed to one side; tousled hair's points are ragged.
+const HAIRLINES = {
+  short: { edge: [[0, 0.5], [0.85, 0.48], [1.15, 0.3], [1.45, 0.24], [1.8, 0.18], [2.2, -0.3], [2.6, -0.58], [3.15, -0.62]], tips: [[0, 0.15], [1, 0.07], [2, 0.08], [3.15, 0.1]], clumps: 14, sweep: 0.4 },
+  tousled: { edge: [[0, 0.5], [0.85, 0.48], [1.15, 0.3], [1.45, 0.24], [1.8, 0.16], [2.2, -0.3], [2.6, -0.58], [3.15, -0.62]], tips: [[0, 0.2], [1, 0.12], [2, 0.14], [3.15, 0.16]], clumps: 13, sweep: 0.55, ragged: true },
+  bob: { edge: [[0, 0.44], [0.72, 0.44], [0.84, 0.05], [0.94, -0.55], [1.3, -0.72], [3.15, -0.74]], tips: [[0, 0.045], [0.8, 0.045], [1, 0.07], [3.15, 0.07]], clumps: 20, sweep: 0 },
+  long: { edge: [[0, 0.46], [0.72, 0.46], [0.84, 0.05], [0.94, -0.7], [1.3, -0.92], [3.15, -0.96]], tips: [[0, 0.05], [0.8, 0.05], [1, 0.08], [3.15, 0.08]], clumps: 18, sweep: 0 },
+  back: { edge: [[0, 0.74], [0.6, 0.7], [1.0, 0.45], [1.45, 0.22], [1.85, 0.15], [2.3, -0.35], [3.15, -0.45]], tips: [[0, 0.015], [1.4, 0.02], [3.15, 0.035]], clumps: 12, sweep: 0 }, // (combed back and tied: ponytail, bun, braids; the forehead clear)
+};
+const hairline = (style) => HAIRLINES[style] ?? HAIRLINES.back;
+
+// The hair's shell for a style, in the head's frame
+function hairShell(style) {
+  const H = hairline(style);
+  const segs = 120;
+  const rows = 16;
+  const R = 0.262; // (out over the head: the clumps a little further, the crown fuller)
+  const IN = 0.244; // (the lip under the edge)
+  const pos = [];
+  const uvs = [];
+  const index = [];
+  const hash = (k) => { const x = Math.sin(k * 12.9898) * 43758.5453; return x - Math.floor(x); };
+  for (let j = 0; j <= rows + 1; j++) {
+    for (let i = 0; i <= segs; i++) {
+      const lon0 = -Math.PI + (i / segs) * Math.PI * 2;
+      const a = Math.abs(lon0);
+      const t = Math.min(j, rows) / rows;
+      const s = Math.abs(Math.sin((H.clumps * lon0) / 2)); // (0 at a crease, 1 down a clump's middle)
+      const ragged = H.ragged ? 0.55 + 0.9 * hash(Math.floor(((lon0 + Math.PI) * H.clumps) / (Math.PI * 2))) : 1;
+      const edge = keyed(H.edge, a) - keyed(H.tips, a) * ragged * s ** 2.5;
+      const lat = Math.PI / 2 - t * (Math.PI / 2 - edge);
+      const lon = lon0 + H.sweep * t * t * Math.max(0, 1 - a / 1.2); // (the fringe combed aside toward its points)
+      const r = j > rows ? IN : R + 0.009 * t * s + 0.006 * Math.sin(Math.PI * t);
+      pos.push(Math.sin(lon) * Math.cos(lat) * r, Math.sin(lat) * r, Math.cos(lon) * Math.cos(lat) * r);
+      uvs.push((i / segs) * 6, 1 - t);
+    }
+  }
+  for (let j = 0; j <= rows; j++) {
+    for (let i = 0; i < segs; i++) {
+      const a = j * (segs + 1) + i;
+      const b = a + segs + 1;
+      index.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  // (one normal either side of the seam at the back, so it doesn't show)
+  const nrm = geo.attributes.normal;
+  for (let j = 0; j <= rows + 1; j++) {
+    const a = j * (segs + 1);
+    const b = a + segs;
+    _v.set(nrm.getX(a) + nrm.getX(b), nrm.getY(a) + nrm.getY(b), nrm.getZ(a) + nrm.getZ(b)).normalize();
+    nrm.setXYZ(a, _v.x, _v.y, _v.z);
+    nrm.setXYZ(b, _v.x, _v.y, _v.z);
+  }
+  return geo;
+}
+
+// A lock: its root at the origin, falling down -y, lying on +z; bent round a
+// middle `bend` behind it (a ponytail's locks)
+function lockGeo(len, w, thick = 0.42, bend = HEAD_R) {
+  const geo = lathe([[0, 0.05], [0.4, 0.03], [0.5, -0.1], [0.46, -0.35], [0.3, -0.65], [0.12, -0.88], [0, -1]], { segs: 8, n: 9, phiStart: Math.PI / 2 });
+  geo.scale(w, len, w * thick);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const r = bend + pos.getZ(i);
+    const a = -pos.getY(i) / bend;
+    pos.setY(i, -r * Math.sin(a));
+    pos.setZ(i, r * Math.cos(a) - bend);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// The turn that takes a lock's -y to `down` and its +z as near `out` as can be
+function basis(down, out) {
+  const y = down.clone().negate();
+  const z = out.clone().sub(y.clone().multiplyScalar(out.dot(y))).normalize();
+  const x = new THREE.Vector3().crossVectors(y, z);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+}
+
+// Where a ponytail is tied: at the back of the head (lower, under a hat's rim)
+const ponytailTie = (hatOn) => (hatOn ? V3(0, -0.08, -0.24) : V3(0, -0.02, -0.255));
+
+// Hair under a hat: what is over the plane its rim comes down to (and a
+// little under it, so none shows through a brim) pressed flat onto it, where
+// the rim and the brim hide it (up top, that is inside the head); geo in the
+// head's frame
+const _n = new THREE.Vector3();
+const _p0 = new THREE.Vector3();
+function tuck(geo, hat) {
+  const spec = HATS[hat];
+  if (!spec || spec[3] === null) return geo;
+  const [y, z, tilt, cover] = spec;
+  _n.set(0, Math.cos(tilt), Math.sin(tilt));
+  _p0.set(0, y, z).addScaledVector(_n, cover - 0.012);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    _v.fromBufferAttribute(pos, i);
+    const over = _v.clone().sub(_p0).dot(_n);
+    if (over > 0) {
+      _v.addScaledVector(_n, -over);
+      pos.setXYZ(i, _v.x, _v.y, _v.z);
+    }
+  }
+  return geo;
 }
 
 // How each top's trim (collar, cuffs) is colored, from the shirt's color
@@ -533,6 +701,7 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
   const own = {
     skin: detail(mat(0xffcc99, { roughness: 0.7 }), 'skin'),
     blush: noShadow(mat(0xff9f8a, { roughness: 0.7 })),
+    iris: noShadow(mat(0x7a4a2a, { roughness: 0.3 })), // (the eyes' color)
     freckle: noShadow(mat(0xb0704a, { roughness: 0.7 })),
     hair: detail(mat(0x5a3a22, { roughness: 0.65 }), 'hair'),
     shirt: mat(0xffffff, { roughness: 0.85, map: clothTex() }),
@@ -575,8 +744,8 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     parent.add(g);
     return { pivot: g };
   };
-  const legs = [-1, 1].map((sx) => pivot(rig, sx * 0.12, HIP_Y));
-  const arms = [-1, 1].map((sx) => pivot(torso, sx * SHOULDER[0], SHOULDER[1]));
+  const legs = [-1, 1].map((sx) => pivot(rig, sx * LEG_X, HIP_Y));
+  const arms = [-1, 1].map((sx) => pivot(torso, sx * BODIES.male.shoulder, SHOULDER_Y)); // (out as far as the body's shoulder: build())
   for (const [i, arm] of arms.entries()) arm.pivot.rotation.z = (i === 0 ? -1 : 1) * 0.12; // slightly out from the body
   const rightArm = arms[1];
 
@@ -625,82 +794,134 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     const G = [new Parts(), new Parts()];
     const onHeadAt = (geo, material, p, o = {}) => T.add(geo, material, p.x, p.y, p.z, { frame: HEAD, ...o });
 
-    // -- The body: the shirt, its collar --
+    // -- The body (theirs: male or female) --
+    const S = bodyShape(L.body);
+    const B = S.def;
+    const W = S.W;
+    for (const [i, arm] of arms.entries()) arm.pivot.position.x = (i === 0 ? -1 : 1) * B.shoulder;
+    for (const [i, leg] of legs.entries()) leg.pivot.position.x = (i === 0 ? -1 : 1) * B.legX;
+    const fit = (geo) => S.fit(geo);
+
+    // -- The shirt, its collar; a neck --
     const top = TOP_TRIM[L.top] ? L.top : 'shirt';
-    T.add(wrap(lathe(TORSO, { segs: 22, n: 20 }), 0.26, 0.85, TOP_TILE[top]), own.shirt, 0, 0, 0, { sz: DEPTH });
+    T.add(fit(wrap(lathe(B.torso, { segs: 24, n: 22 }), 0.26, 0.85, TOP_TILE[top])), own.shirt);
+    T.add(new THREE.CylinderGeometry(B.neck, B.neck * 1.12, 0.22, 14), own.skin, 0, S.top + 0.03, 0);
     if (top === 'sweater') {
-      T.add(ring(0.185, 0.04), own.shirt, 0, 0.585, 0, { sz: DEPTH }); // a rolled neck
+      const r = B.neck + 0.05;
+      T.add(ring(r, 0.042), own.shirt, 0, S.at(r) + 0.012, 0, { sz: 0.92 }); // a rolled neck
     } else {
-      T.add(ring(0.19, 0.022), own.trim, 0, 0.585, 0, { sz: DEPTH }); // the collar
+      const r = B.neck + 0.034;
+      const y = S.at(r);
+      T.add(ring(r, 0.02), own.trim, 0, y, 0, { sz: 0.92 }); // the collar
+      if (top === 'shirt' || top === 'plaid') {
+        // its points, down over the chest; a placket down the front and its buttons (above the waist)
+        for (const sx of [-1, 1]) T.add(ball(0.05, 10, 8), own.trim, sx * 0.042, y - 0.03, S.z(0.042, y - 0.03, 1) + 0.008, { rx: -1.1, rz: sx * 0.55, sx: 0.85, sy: 1.25, sz: 0.25 });
+        const front = new THREE.CatmullRomCurve3([y - 0.05, 0.4, 0.32, 0.24, 0.16].map((yy) => V3(0, yy, S.z(0, yy, 1) + 0.003)));
+        T.add(new THREE.TubeGeometry(front, 16, 0.009, 4), own.trim);
+        for (const yy of [0.44, 0.36, 0.28]) T.add(ball(0.013, 8, 6), own.trim, 0.002, yy, S.z(0, yy, 1) + 0.011, { sz: 0.5 });
+      }
     }
 
     // -- What is worn below: overalls (short or long), trousers or a skirt --
     const bottoms = ['overalls', 'shortalls', 'trousers', 'skirt'].includes(L.bottoms) ? L.bottoms : 'overalls';
     if (bottoms !== 'skirt') {
       // the seat of the trousers, up to the waist
-      T.add(wrap(lathe([[0, -0.1], [0.17, -0.095], [0.25, -0.06], [0.276, 0.02], [0.277, 0.12], [0.272, 0.21]], { n: 14 }), 0.27, 0.36, 0.05), own.bottoms, 0, 0, 0, { sz: DEPTH });
+      T.add(fit(wrap(lathe([[0, -0.08], [W(0) * 0.55, -0.076], [W(0) * 0.86 + 0.012, -0.048], [W(0.02) + 0.016, 0.02], [W(0.12) + 0.02, 0.12], [W(0.21) + 0.018, 0.21]], { n: 14 }), 0.27, 0.36, 0.05)), own.bottoms); // (tucked in at the bottom, into the legs)
     }
     if (bottoms === 'overalls' || bottoms === 'shortalls') {
-      // the bib, its hem, a pocket, the straps and their buttons
-      T.add(tile(new THREE.CylinderGeometry(0.279, 0.277, 0.26, 10, 1, true, -0.48, 0.96), 3, 5), own.bottoms, 0, 0.33, 0, { sz: DEPTH });
-      T.add(new THREE.CylinderGeometry(0.282, 0.282, 0.02, 10, 1, true, -0.49, 0.98), own.bottomsTrim, 0, 0.455, 0, { sz: DEPTH });
-      T.add(tile(new THREE.BoxGeometry(0.12, 0.085, 0.012), 2, 2), own.bottoms, 0, 0.32, 0.25, {});
+      // the bib (straight down to the waist), its hem, a pocket, the straps and their buttons
+      const bib = 0.5; // (radians either side of the front)
+      T.add(fit(tile(lathe([0.2, 0.26, 0.33, 0.4, 0.46].map((y) => [W(y) + 0.02, y]), { segs: 10, n: 8, phiStart: -bib, phiLength: bib * 2 }), 3, 5)), own.bottoms);
+      T.add(fit(lathe([[W(0.443) + 0.022, 0.443], [W(0.465) + 0.026, 0.465]], { segs: 10, n: 2, phiStart: -bib - 0.01, phiLength: bib * 2 + 0.02 })), own.bottomsTrim);
+      T.add(tile(new THREE.BoxGeometry(0.12 * W(0.32) / 0.28, 0.085, 0.012), 2, 2), own.bottoms, 0, 0.33, S.z(0, 0.33, 1) + 0.024);
+      const strapX = (W(0.44) + 0.02) * Math.sin(bib - 0.1);
       for (const sx of [-1, 1]) {
-        T.add(tile(new THREE.TubeGeometry(strapCurve(sx), 20, 0.021, 5), 12, 1), own.bottoms);
-        T.add(ball(0.024, 10, 8), brass, sx * 0.11, 0.44, torsoZ(0.11, 0.44, 1) + 0.022, { sz: 0.6 });
+        T.add(tile(new THREE.TubeGeometry(strapCurve(S, sx, strapX), 24, 0.021, 5), 12, 1), own.bottoms);
+        T.add(ball(0.024, 10, 8), brass, sx * strapX, 0.43, S.z(strapX, 0.43, 1) + 0.03, { sz: 0.6 });
       }
     } else if (bottoms === 'trousers') {
       // a belt with a buckle
-      T.add(lathe([[0.274, 0.165], [0.28, 0.17], [0.28, 0.215], [0.274, 0.22]], { n: 6 }), leather, 0, 0, 0, { sz: DEPTH });
-      T.add(new THREE.BoxGeometry(0.06, 0.05, 0.014), brass, 0, 0.192, 0.248);
+      T.add(fit(lathe([[W(0.165) + 0.02, 0.165], [W(0.17) + 0.026, 0.17], [W(0.215) + 0.026, 0.215], [W(0.22) + 0.02, 0.22]], { n: 6 })), leather);
+      T.add(new THREE.BoxGeometry(0.06, 0.05, 0.014), brass, 0, 0.192, S.z(0, 0.192, 1) + 0.03);
     } else {
       // a skirt flaring out over the knees, with a waistband and a hem
-      T.add(wrap(lathe([[0.36, -0.2], [0.335, -0.1], [0.3, 0.02], [0.278, 0.14], [0.27, 0.22]], { n: 12 }), 0.3, 0.45, 0.05), own.bottoms, 0, 0, 0, { sz: DEPTH });
-      T.add(lathe([[0.272, 0.17], [0.28, 0.175], [0.28, 0.225], [0.272, 0.23]], { n: 6 }), own.bottomsTrim, 0, 0, 0, { sz: DEPTH });
-      T.add(ring(0.358, 0.012, 6, 36), own.bottomsTrim, 0, -0.2, 0, { sz: DEPTH });
+      const hem = W(0) + 0.12;
+      T.add(fit(wrap(lathe([[hem, -0.2], [W(0) + 0.09, -0.1], [W(0.02) + 0.05, 0.02], [W(0.14) + 0.022, 0.14], [W(0.22) + 0.016, 0.22]], { n: 12 }), 0.3, 0.45, 0.05)), own.bottoms);
+      T.add(fit(lathe([[W(0.17) + 0.018, 0.17], [W(0.175) + 0.026, 0.175], [W(0.225) + 0.026, 0.225], [W(0.23) + 0.018, 0.23]], { n: 6 })), own.bottomsTrim);
+      T.add(fit(ring(hem - 0.002, 0.012, 6, 36)), own.bottomsTrim, 0, -0.2, 0);
     }
 
     // -- An apron over the front, from the chest to the knees, tied round the waist --
     if (L.apron === 'apron') {
-      const flare = bottoms === 'skirt' ? 0.38 : 0.335; // (out over a skirt)
-      T.add(tile(new THREE.CylinderGeometry(0.288, flare, 0.72, 12, 1, true, -0.62, 1.24), 4, 9), own.apron, 0, 0.13, 0, { sz: DEPTH });
-      T.add(ring(0.283, 0.014, 6, 32), own.apronTrim, 0, 0.21, 0, { sz: DEPTH }); // its ties
-      T.add(new THREE.CylinderGeometry(0.29, 0.29, 0.02, 12, 1, true, -0.63, 1.26), own.apronTrim, 0, 0.485, 0, { sz: DEPTH }); // its hem at the top
-      const rAt = (y) => 0.288 + ((0.49 - y) / 0.72) * (flare - 0.288); // (its radius at height y)
-      T.add(tile(new THREE.BoxGeometry(0.2, 0.1, 0.012), 3, 2), own.apronTrim, 0, 0.04, DEPTH * rAt(0.04) + 0.008, { rx: -Math.atan((flare - 0.288) / 0.72) }); // a pocket
+      const flare = bottoms === 'skirt' ? 0.15 : 0.07; // (out over a skirt)
+      const off = (y) => 0.03 + Math.max(0, 0.16 - y) / 0.39 * flare; // (how far off the body it hangs at y)
+      const span = 0.62;
+      T.add(fit(tile(lathe([-0.23, -0.1, 0.02, 0.14, 0.3, 0.49].map((y) => [W(y) + off(y), y]), { segs: 12, n: 10, phiStart: -span, phiLength: span * 2 }), 4, 9)), own.apron);
+      T.add(fit(ring(W(0.21) + 0.026, 0.014, 6, 32)), own.apronTrim, 0, 0.21, 0); // its ties
+      T.add(fit(lathe([[W(0.475) + 0.032, 0.475], [W(0.495) + 0.032, 0.495]], { segs: 12, n: 2, phiStart: -span - 0.01, phiLength: span * 2 + 0.02 })), own.apronTrim); // its hem at the top
+      T.add(tile(new THREE.BoxGeometry(0.2, 0.1, 0.012), 3, 2), own.apronTrim, 0, 0.04, S.z(0, 0.04, 1) + off(0.04) + 0.008, { rx: -Math.atan(flare / 0.39) }); // a pocket
+      const cornerX = (W(0.49) + 0.03) * Math.sin(span - 0.08);
       for (const sx of [-1, 1]) {
         // a strap up from each corner, round the back of the neck
-        const up = new THREE.CatmullRomCurve3([[0.15, 0.49], [0.14, 0.55], [0.12, 0.61]].map(([x, y]) => V3(sx * x, y, torsoZ(x, y, 1) + 0.014)).concat(V3(sx * 0.08, 0.66, -0.02)));
-        T.add(new THREE.TubeGeometry(up, 10, 0.016, 5), own.apronTrim);
+        const up = new THREE.CatmullRomCurve3([[cornerX, 0.49], [(cornerX + B.neck) / 2 + 0.02, S.at((cornerX + B.neck) / 2 + 0.02) - 0.005]].map(([x, y]) => V3(sx * x, y, S.z(x, y, 1) + 0.014)).concat(V3(sx * (B.neck + 0.012), S.top + 0.03, 0), V3(sx * (B.neck * 0.5), S.top + 0.04, -B.neck - 0.01)));
+        T.add(new THREE.TubeGeometry(up, 12, 0.016, 5), own.apronTrim);
       }
     }
 
     // -- Round the neck --
     if (L.neck === 'neckerchief') {
-      T.add(ring(0.2, 0.03), own.neck, 0, 0.575, 0, { sz: DEPTH });
-      T.add(new THREE.ConeGeometry(0.11, 0.17, 3), own.neck, 0, 0.47, torsoZ(0, 0.5, 1) + 0.02, { rx: Math.PI - 0.25, sz: 0.25 }); // the point, down the chest
-      T.add(ball(0.026, 10, 8), own.neck, 0.03, 0.555, torsoZ(0.03, 0.555, 1) + 0.03); // the knot
+      const r = B.neck + 0.045;
+      const y = S.at(r);
+      T.add(ring(r, 0.03), own.neck, 0, y, 0, { sz: 0.92 });
+      T.add(new THREE.ConeGeometry(0.11 * r / 0.12, 0.17, 3), own.neck, 0, y - 0.1, S.z(0, y - 0.07, 1) + 0.022, { rx: Math.PI - 0.25, sz: 0.25 }); // the point, down the chest
+      T.add(ball(0.026, 10, 8), own.neck, 0.03, y - 0.02, S.z(0.03, y - 0.02, 1) + 0.03); // the knot
     } else if (L.neck === 'scarf') {
-      T.add(tile(ring(0.2, 0.052, 10, 28), 8, 2), own.neck, 0, 0.58, 0, { sz: DEPTH });
-      for (const [x, len, tilt] of [[0.06, 0.24, 0.12], [0.13, 0.2, 0.3]]) {
+      const r = B.neck + 0.065;
+      const y = S.at(r) + 0.01;
+      T.add(tile(ring(r, 0.052, 10, 28), 8, 2), own.neck, 0, y, 0, { sz: 0.94 });
+      for (const [x, len, tilt] of [[0.05, 0.24, 0.12], [0.11, 0.2, 0.3]]) {
         const tail = tile(new THREE.CapsuleGeometry(0.042, len, 4, 8), 2, 4);
-        T.add(tail, own.neck, x, 0.53 - len / 2, torsoZ(x, 0.45, 1) + 0.03, { rz: tilt, rx: -0.2, sz: 0.4 });
+        T.add(tail, own.neck, x, y - 0.05 - len / 2, S.z(x, y - 0.12, 1) + 0.03, { rz: tilt, rx: -0.2, sz: 0.4 });
       }
     }
 
     // -- The head: skin, ears, nose, cheeks; the eyes, brows and a smile --
-    onHeadAt(ball(HEAD_R, 26, 18), own.skin, V3(0, 0, 0));
+    onHeadAt(jawed(ball(HEAD_R, 28, 20), B.jaw), own.skin, V3(0, 0, 0));
+    const female = L.body === 'female';
     onHeadAt(ball(0.042, 12, 8), own.skin, onHead(-0.06, 0, 0.245), { sx: 1.1, sy: 0.85, sz: 0.9 });
     for (const sx of [-1, 1]) {
       onHeadAt(ball(0.058, 12, 8), own.skin, onHead(0.0, sx * Math.PI / 2, 0.238), { q: facing(0, sx * Math.PI / 2), sx: 0.8, sy: 0.95, sz: 0.5 });
       onHeadAt(ball(0.05, 12, 8), own.blush, onHead(-0.13, sx * 0.62, 0.242), { q: facing(-0.13, sx * 0.62), sy: 0.62, sz: 0.3 });
-      const eye = inEyes(onHead(EYE.lat, sx * EYE.lon, 0.247));
-      E.add(ball(0.043, 14, 10), ink, eye.x, eye.y, eye.z, { q: facing(EYE.lat, sx * EYE.lon), sx: 0.8, sy: 1.18, sz: 0.45 });
-      const glint = inEyes(onHead(EYE.lat + 0.045, sx * EYE.lon - 0.035, 0.262)); // (up and to the same side in both eyes)
-      E.add(ball(0.012, 8, 6), shine, glint.x, glint.y, glint.z);
-      onHeadAt(new THREE.CapsuleGeometry(0.011, 0.05, 3, 6), own.hair, onHead(0.27, sx * EYE.lon, 0.252), { q: spun(facing(0.27, sx * EYE.lon), Math.PI / 2 - sx * 0.14) });
+      // the eye: dark, an iris low in it and a pupil, two glints (up and to
+      // the same side in both eyes, and a small one low on the other), the
+      // lid over it; lashes at the outer corner (hers)
+      const k = B.eyes;
+      const at = (lat, lon, r) => inEyes(onHead(lat, lon, r));
+      const front = facing(EYE.lat, sx * EYE.lon);
+      const eye = at(EYE.lat, sx * EYE.lon, 0.247);
+      E.add(ball(0.043 * k, 14, 10), ink, eye.x, eye.y, eye.z, { q: front, sx: 0.8, sy: 1.18, sz: 0.45 });
+      const iris = at(EYE.lat - 0.025, sx * EYE.lon, 0.26);
+      E.add(ball(0.03 * k, 14, 10), own.iris, iris.x, iris.y, iris.z, { q: front, sx: 0.8, sy: 1.12, sz: 0.3 });
+      const pupil = at(EYE.lat - 0.03, sx * EYE.lon, 0.2655);
+      E.add(ball(0.016 * k, 10, 8), ink, pupil.x, pupil.y, pupil.z, { q: front, sx: 0.85, sy: 1.1, sz: 0.3 });
+      const glint = at(EYE.lat + 0.05, sx * EYE.lon - 0.04, 0.267);
+      E.add(ball(0.0125 * k, 8, 6), shine, glint.x, glint.y, glint.z);
+      const glint2 = at(EYE.lat - 0.075, sx * EYE.lon + 0.035, 0.268);
+      E.add(ball(0.006 * k, 6, 4), shine, glint2.x, glint2.y, glint2.z);
+      const lid = at(EYE.lat, sx * EYE.lon, 0.254);
+      E.add(new THREE.TorusGeometry(0.038 * k, 0.0068, 5, 14, 2.3).rotateZ(Math.PI / 2 - 1.15), ink, lid.x, lid.y, lid.z, { q: front, sx: 0.95, sy: 1.38 });
+      if (female) {
+        for (const [lat, lon, tilt] of [[0.17, 0.11, 0.75], [0.1, 0.165, 1.25]]) {
+          const lash = at(EYE.lat + lat * k, sx * (EYE.lon + lon * k), 0.256);
+          E.add(new THREE.CapsuleGeometry(0.0048, 0.022, 2, 5), ink, lash.x, lash.y, lash.z, { q: spun(facing(EYE.lat + lat, sx * (EYE.lon + lon)), -sx * tilt) });
+        }
+      }
+      // brows: thick and straight (his), thin and arched (hers)
+      if (female) onHeadAt(new THREE.TorusGeometry(0.05, 0.0058, 5, 12, 1.4).rotateZ(Math.PI / 2 - 0.7 + sx * 0.08), own.hair, onHead(0.13, sx * EYE.lon, 0.246), { q: facing(0.13, sx * EYE.lon) });
+      else onHeadAt(new THREE.CapsuleGeometry(0.0155, 0.05, 3, 6), own.hair, onHead(0.3, sx * EYE.lon, 0.251), { q: spun(facing(0.3, sx * EYE.lon), Math.PI / 2 - sx * 0.1), sz: 0.6 });
     }
     onHeadAt(new THREE.TorusGeometry(0.032, 0.0085, 6, 12, Math.PI), ink, onHead(-0.2, 0, 0.247), { q: spun(facing(-0.2, 0), Math.PI) });
+    if (female) onHeadAt(ball(0.02, 10, 8), own.blush, onHead(-0.24, 0, 0.244), { q: facing(-0.24, 0), sx: 1.15, sy: 0.5, sz: 0.35 }); // (a little color on the lip)
 
     // -- On the face: freckles, glasses or shades; a mustache or a beard --
     if (L.face === 'freckles') {
@@ -726,55 +947,45 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
       }
     }
     if (L.whiskers === 'beard') {
-      onHeadAt(new THREE.SphereGeometry(0.262, 24, 8, Math.PI / 2 - 1.65, 3.3, 1.88, 0.95), own.hair, V3(0, 0, 0));
+      onHeadAt(jawed(new THREE.SphereGeometry(0.262, 24, 8, Math.PI / 2 - 1.65, 3.3, 1.88, 0.95), B.jaw), own.hair, V3(0, 0, 0));
       onHeadAt(ball(0.07, 12, 8), own.hair, onHead(-0.9, 0, 0.22), { sx: 1.3, sy: 0.8 });
     }
 
-    // -- Hair --
+    // -- Hair: a smooth layer, the locks over it, and how it is worn; what is
+    // under a hat tucked in under it (tuck()), so none shows through --
     const hatOn = !['none', 'flowers'].includes(L.hat);
     const hair = L.hair;
+    const H = (geo, material, p = V3(0, 0, 0), o = {}) => T.add(tuck(placed(geo, p.x, p.y, p.z, o), L.hat), material, 0, 0, 0, { frame: HEAD });
     if (hair !== 'bald') {
-      onHeadAt(new THREE.SphereGeometry(0.263, 22, 7, 0, Math.PI * 2, 0, 1.02), own.hair, V3(0, 0, 0)); // the crown
-      const down = { short: 1.95, tousled: 1.9, bob: 2.28, long: 2.3, bun: 1.95, ponytail: 1.95, braids: 2.0 }[hair] ?? 1.95; // how far down the back and sides
-      const r = hair === 'bob' ? 0.264 : 0.259;
-      const open = hair === 'bob' || hair === 'long' ? 0.82 : 1.15; // round from the front to where the hair starts (a bob frames the face)
-      onHeadAt(new THREE.SphereGeometry(r, 20, 9, Math.PI / 2 + open, Math.PI * 2 - open * 2, 0.9, down - 0.9), own.hair, V3(0, 0, 0));
-      // across the forehead: tufts, or straight bangs
-      const tufts = hair === 'braids' ? [-0.62, -0.3, 0.3, 0.62] : [-0.5, -0.17, 0.17, 0.5];
-      if (hair === 'bob') {
-        onHeadAt(new THREE.SphereGeometry(0.268, 20, 4, Math.PI / 2 - 0.86, 1.72, 0.6, 0.5), own.hair, V3(0, 0, 0));
-      } else {
-        for (const [i, lon] of tufts.entries()) {
-          const lat = 0.47 - (hair === 'braids' ? 0 : i * 0.018); // (swept a little to one side)
-          onHeadAt(ball(0.068, 12, 8), own.hair, onHead(lat, lon, 0.252), { q: spun(facing(lat, lon), -0.25), sx: 1.25, sy: 0.6, sz: 0.55 });
-        }
-      }
-      if (hair === 'tousled') {
-        // flicks by the ears, and (with no hat over them) tufts sticking up
-        for (const sx of [-1, 1]) onHeadAt(new THREE.ConeGeometry(0.04, 0.1, 6), own.hair, onHead(-0.12, sx * 1.05, 0.25), { q: facing(-0.5, sx * 1.4, Y_UP) });
-        if (!hatOn) {
-          for (const [lat, lon] of [[1.25, 0], [1.05, 0.7], [1.05, -0.7], [0.95, 2.2], [0.95, -2.2], [1.1, Math.PI]]) {
-            onHeadAt(new THREE.ConeGeometry(0.05, 0.12, 6), own.hair, onHead(lat, lon, 0.24), { q: facing(lat, lon, Y_UP) });
-          }
+      H(hairShell(hair), own.hair);
+      if (hair === 'tousled' && !hatOn) {
+        // (with no hat over them) tufts flicking up off the top
+        for (const [lat, lon, len] of [[1.2, 0.25, 0.12], [1.05, 0.95, 0.1], [1.05, -0.7, 0.11], [0.95, 2.1, 0.1], [0.95, -2.3, 0.1], [1.15, Math.PI, 0.11]]) {
+          const out = onHead(lat, lon, 1);
+          const up = out.clone().multiplyScalar(0.75).add(V3(0, 0.66, 0)).normalize();
+          H(lockGeo(len, 0.075, 0.55, 0.12), own.hair, onHead(lat, lon, 0.255), { q: basis(up, V3(0, 1, 0).sub(out).normalize()) });
         }
       } else if (hair === 'long') {
-        // a curtain of hair down the back
-        T.add(lathe([[0.2, -0.53], [0.25, -0.48], [0.272, -0.38], [0.268, -0.22], [0.26, -0.08], [0.255, 0.02]], { segs: 16, n: 10, phiStart: Math.PI - 1.1, phiLength: 2.2 }), own.hair, 0, 0, 0, { frame: HEAD });
+        // a curtain of hair down the back, under the locks
+        H(lathe([[0.2, -0.53], [0.25, -0.48], [0.272, -0.38], [0.268, -0.22], [0.26, -0.08], [0.255, 0.02]], { segs: 16, n: 10, phiStart: Math.PI - 1.1, phiLength: 2.2 }), own.hair);
       } else if (hair === 'ponytail') {
-        // tied at the back, and swinging down behind
-        onHeadAt(ring(0.05, 0.02), ribbonMat, V3(0, -0.02, -0.255), { rx: Math.PI / 2 - 0.4 });
-        onHeadAt(new THREE.CapsuleGeometry(0.06, 0.2, 4, 10), own.hair, V3(0, -0.15, -0.3), { rx: 0.4, sx: 1.1 });
-        onHeadAt(ball(0.045, 10, 8), own.hair, V3(0, -0.27, -0.25));
+        // tied at the back (lower under a hat), and a bunch of locks swinging down behind
+        const tie = ponytailTie(hatOn);
+        H(ring(0.05, 0.02), ribbonMat, tie, { rx: Math.PI / 2 - 0.4 });
+        for (const [dx, dy, len, w, a] of [[0, 0, 0.33, 0.13, 0], [-0.03, 0.01, 0.27, 0.085, -0.3], [0.03, 0.01, 0.28, 0.085, 0.3]]) {
+          const fall = V3(Math.sin(a) * 0.35, -0.88, -0.42).normalize();
+          H(lockGeo(len, w, 0.8, 0.55), own.hair, tie.clone().add(V3(dx, dy, -0.02)), { q: basis(fall, V3(0, 0.3, -1).normalize()) });
+        }
       } else if (hair === 'bun') {
         const high = !hatOn;
-        onHeadAt(ball(0.1, 16, 12), own.hair, high ? V3(0, 0.21, -0.16) : V3(0, -0.04, -0.28));
-        onHeadAt(ring(0.07, 0.018), own.hair, high ? V3(0, 0.15, -0.12) : V3(0, -0.04, -0.235), { rx: high ? -0.7 : -Math.PI / 2 });
+        H(ball(0.1, 16, 12), own.hair, high ? V3(0, 0.21, -0.16) : V3(0, -0.04, -0.28));
+        H(ring(0.07, 0.018), own.hair, high ? V3(0, 0.15, -0.12) : V3(0, -0.04, -0.235), { rx: high ? -0.7 : -Math.PI / 2 });
       } else if (hair === 'braids') {
         for (const sx of [-1, 1]) {
           const path = [[0.21, -0.06, -0.05, 0.05], [0.22, -0.16, 0.06, 0.048], [0.205, -0.25, 0.14, 0.044], [0.19, -0.33, 0.19, 0.04]];
-          for (const [x, y, z, r] of path) onHeadAt(ball(r, 12, 8), own.hair, V3(sx * x, y, z));
-          onHeadAt(ring(0.03, 0.012), ribbonMat, V3(sx * 0.186, -0.38, 0.205), { rx: 0.4 });
-          onHeadAt(ball(0.032, 10, 8), own.hair, V3(sx * 0.183, -0.415, 0.212), { sy: 1.3 });
+          for (const [x, y, z, r] of path) H(ball(r, 12, 8), own.hair, V3(sx * x, y, z));
+          H(ring(0.03, 0.012), ribbonMat, V3(sx * 0.186, -0.38, 0.205), { rx: 0.4 });
+          H(ball(0.032, 10, 8), own.hair, V3(sx * 0.183, -0.415, 0.212), { sy: 1.3 });
         }
       }
     }
@@ -783,115 +994,98 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     buildHat(T, L.hat);
 
     // -- Arms: sleeves, maybe bare forearms, cuffs, hands --
+    const [sTop, sBottom] = B.sleeve;
+    const [fTop, fBottom] = B.forearm;
     for (const [i, sx] of [-1, 1].entries()) {
       const P = A[i];
-      const sleeve = (length, rTop, rBottom) => P.add(wrap(limb(rTop, rBottom, length), rTop, length, TOP_TILE[top]), own.shirt, 0, 0.045);
-      const forearm = (from) => P.add(limb(0.064, 0.056, ARM_LEN - from - 0.02), own.skin, 0, -from);
+      const sleeve = (length, rTop, rBottom) => P.add(wrap(limb(rTop, rBottom, length), rTop, length, TOP_TILE[top]), own.shirt, 0, 0.025); // (its round top the shoulder's)
+      const forearm = (from) => P.add(limb(fTop, fBottom, ARM_LEN - from - 0.02), own.skin, 0, -from);
       if (top === 'tee') {
-        sleeve(0.22, 0.09, 0.086);
-        P.add(ring(0.084, 0.014), own.trim, 0, -0.16);
-        forearm(0.12);
+        sleeve(0.22, sTop + 0.008, sTop + 0.004);
+        P.add(ring(sTop + 0.002, 0.014), own.trim, 0, -0.18);
+        forearm(0.14);
       } else if (top === 'plaid') {
-        sleeve(0.3, 0.082, 0.077);
-        P.add(tile(ring(0.077, 0.026, 8, 20), 6, 1), own.shirt, 0, -0.235); // rolled up
-        forearm(0.22);
+        sleeve(0.3, sTop, sTop - 0.005);
+        P.add(tile(ring(sTop - 0.005, 0.026, 8, 20), 6, 1), own.shirt, 0, -0.255); // rolled up
+        forearm(0.24);
       } else {
-        sleeve(0.405, 0.082, 0.07);
-        if (top === 'sweater') P.add(wrap(limb(0.074, 0.074, 0.08), 0.074, 0.08, 0.05), own.trim, 0, -0.3);
-        else P.add(ring(0.07, 0.016), own.trim, 0, -0.335);
+        sleeve(0.405, sTop, sBottom);
+        if (top === 'sweater') P.add(wrap(limb(sBottom + 0.004, sBottom + 0.004, 0.08), sBottom, 0.08, 0.05), own.trim, 0, -0.3);
+        else P.add(ring(sBottom, 0.016), own.trim, 0, -0.335);
       }
-      P.add(ball(0.068, 14, 10), own.skin, 0, -ARM_LEN, 0, { sx: 0.95, sy: 1.08, sz: 0.85 });
-      P.add(ball(0.03, 8, 6), own.skin, -sx * 0.04, -ARM_LEN + 0.025, 0.035, { sy: 1.2 }); // a thumb
+      // the hand: a mitten (the palm, the fingers together, a little forward
+      // and down), a thumb in front, round the grip of whatever it holds (HAND)
+      const h = B.hand;
+      P.add(ball(0.062 * h, 14, 10), own.skin, 0, -ARM_LEN + 0.012 * h, 0, { sx: 0.95, sz: 0.8 });
+      P.add(ball(0.054 * h, 12, 10), own.skin, 0, -ARM_LEN - 0.036 * h, 0.008 * h, { sx: 0.9, sy: 0.95, sz: 0.72 });
+      P.add(new THREE.CapsuleGeometry(0.021 * h, 0.036 * h, 3, 8), own.skin, -sx * 0.044 * h, -ARM_LEN - 0.004 * h, 0.036 * h, { rx: 0.35, rz: sx * 0.55 }); // a thumb
     }
 
     // -- Legs: trousers or bare, turn-ups, shoes --
     for (const P of G) {
       if (bottoms === 'overalls' || bottoms === 'trousers') {
-        P.add(wrap(limb(0.105, 0.088, 0.46), 0.1, 0.46, 0.05), own.bottoms, 0, 0.04);
-        if (L.shoes !== 'wellies') P.add(ring(0.09, 0.02, 6, 20), own.bottomsTrim, 0, -0.37); // turned up at the bottom (tucked into wellies)
+        P.add(wrap(limb(B.leg[0], B.leg[1], 0.52), 0.1, 0.52, 0.05), own.bottoms, 0, 0.1); // (up into the trousers' seat)
+        if (L.shoes !== 'wellies') P.add(ring(B.leg[1] + 0.002, 0.02, 6, 20), own.bottomsTrim, 0, -0.37); // turned up at the bottom (tucked into wellies)
       } else {
-        P.add(limb(0.08, 0.06, 0.46), own.skin, 0, 0.02);
+        P.add(limb(B.bare[0], B.bare[1], 0.46), own.skin, 0, 0.02);
         if (bottoms === 'shortalls') {
-          P.add(wrap(limb(0.112, 0.106, 0.2), 0.11, 0.2, 0.05), own.bottoms, 0, 0.04);
-          P.add(ring(0.106, 0.02, 6, 20), own.bottomsTrim, 0, -0.145);
+          P.add(wrap(limb(B.leg[0] - 0.006, B.leg[0] - 0.012, 0.2), 0.11, 0.2, 0.05), own.bottoms, 0, 0.04);
+          P.add(ring(B.leg[0] - 0.012, 0.02, 6, 20), own.bottomsTrim, 0, -0.145);
         }
       }
-      buildShoe(P, L.shoes);
+      buildShoe(P, L.shoes, B.shoe);
     }
 
-    const parts = [T.build(torso), A[0].build(arms[0].pivot), A[1].build(arms[1].pivot), G[0].build(legs[0].pivot), G[1].build(legs[1].pivot)];
-    meshes = [...parts.flat(), ...E.build(eyes)];
-    hullParts = parts.map((list, bone) => [list, bone]);
-    dropHull();
-    if (outlined()) makeHull();
-  }
-
-  // ---- The outline (high tier): one skinned hull, made and dropped as the tier changes ----
-  const bones = [torso, arms[0].pivot, arms[1].pivot, legs[0].pivot, legs[1].pivot];
-  let hullParts = [];
-  let hull = null;
-  let hullOn = false;
-  function makeHull() {
-    hullOn = true;
-    hull = buildHull(hullParts, bones);
-    if (hull) rig.add(hull);
-  }
-  function dropHull() {
-    hullOn = false;
-    if (!hull) return;
-    rig.remove(hull);
-    hull.geometry.dispose();
-    hull.skeleton.dispose();
-    hull = null;
+    meshes = [T.build(torso), A[0].build(arms[0].pivot), A[1].build(arms[1].pivot), G[0].build(legs[0].pivot), G[1].build(legs[1].pivot), E.build(eyes)].flat();
   }
 
   // A hat, in the torso's parts
   function buildHat(T, hat) {
     if (hat === 'straw') {
-      const F = hatFrame(0.17, -0.05, -0.4);
+      const F = hatAt('straw');
       T.add(tile(brim(0.17, 0.4, { droop: 0.035 }), 40, 3), strawMat, 0, 0, 0, { frame: F });
       T.add(tile(lathe([[0.205, -0.01], [0.215, 0.06], [0.21, 0.13], [0.185, 0.175], [0.12, 0.19], [0, 0.192]]), 26, 6), strawMat, 0, 0, 0, { frame: F });
       T.add(lathe([[0.214, 0.012], [0.222, 0.018], [0.222, 0.064], [0.214, 0.07]], { n: 6 }), own.hat, 0, 0, 0, { frame: F });
     } else if (hat === 'sunhat') {
-      const F = hatFrame(0.15, -0.04, -0.45);
+      const F = hatAt('sunhat');
       T.add(tile(brim(0.17, 0.5, { droop: 0.06, wave: 5, waveH: 0.022 }), 50, 4), paleStrawMat, 0, 0, 0, { frame: F });
       T.add(tile(lathe([[0.2, -0.01], [0.21, 0.06], [0.18, 0.12], [0.1, 0.145], [0, 0.15]]), 26, 5), paleStrawMat, 0, 0, 0, { frame: F });
       T.add(lathe([[0.206, 0.0], [0.214, 0.006], [0.214, 0.05], [0.206, 0.056]], { n: 6 }), own.hat, 0, 0, 0, { frame: F });
       flower(T, F.clone().multiply(new THREE.Matrix4().compose(V3(0.16, 0.035, 0.14), new THREE.Quaternion().setFromUnitVectors(Z_OUT, V3(0.75, 0.2, 0.62).normalize()), V3(1.2, 1.2, 1.2))), whiteMat);
     } else if (hat === 'cap') {
-      const F = hatFrame(0.02, 0, -0.3);
+      const F = hatAt('cap');
       T.add(new THREE.SphereGeometry(0.268, 24, 10, 0, Math.PI * 2, 0, 1.42), own.hat, 0, 0, 0, { frame: F, sy: 0.95 });
       T.add(ball(0.026, 10, 8), own.hatTrim, 0, 0.258, 0, { frame: F });
       T.add(new THREE.CylinderGeometry(0.21, 0.21, 0.022, 20, 1, false, -Math.PI / 2, Math.PI), own.hat, 0, 0.05, 0.19, { frame: F, rx: -0.2, sz: 0.85 });
     } else if (hat === 'flatcap') {
       // a soft crown pulled forward, its short peak out over the eyes
-      const F = hatFrame(0.095, 0.02, -0.1);
+      const F = hatAt('flatcap');
       T.add(new THREE.SphereGeometry(0.31, 24, 8, 0, Math.PI * 2, 0, Math.PI / 2), own.hat, 0, 0, 0.02, { frame: F, sy: 0.6, sz: 1.08 });
       T.add(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 18, 1, false, -Math.PI / 2, Math.PI), own.hat, 0, 0.0, 0.25, { frame: F, rx: 0.12, sz: 0.55 });
       T.add(ball(0.022, 8, 6), own.hatTrim, 0, 0.17, 0.17, { frame: F }); // its button
     } else if (hat === 'souwester') {
       // a sailor's rain hat: a round crown, the brim long and low at the back
-      const F = hatFrame(0.1, -0.03, -0.25);
+      const F = hatAt('souwester');
       T.add(lathe([[0.268, -0.01], [0.272, 0.06], [0.24, 0.15], [0.14, 0.205], [0, 0.215]]), own.hat, 0, 0, 0, { frame: F });
       T.add(brim(0.26, 0.42, { droop: 0.08, thick: 0.02 }), own.hat, 0, -0.005, -0.06, { frame: F, rx: -0.22, sz: 1.2 });
     } else if (hat === 'beanie') {
-      const F = hatFrame(0, -0.01, -0.22);
+      const F = hatAt('beanie');
       T.add(tile(new THREE.SphereGeometry(0.272, 24, 10, 0, Math.PI * 2, 0, 1.3), 36, 8), own.hat, 0, 0, 0, { frame: F, sy: 1.12 });
       T.add(tile(ring(0.262, 0.042, 8, 32), 36, 2), own.hat, 0, 0.272 * Math.cos(1.3) * 1.12, 0, { frame: F });
       T.add(ball(0.075, 14, 10), own.hatTrim, 0, 0.345, 0, { frame: F });
     } else if (hat === 'cowboy') {
-      const F = hatFrame(0.16, -0.04, -0.32);
+      const F = hatAt('cowboy');
       T.add(brim(0.18, 0.45, { droop: 0.0, curl: 0.13, thick: 0.02 }), own.hat, 0, 0, 0, { frame: F });
       T.add(lathe([[0.2, -0.01], [0.205, 0.08], [0.19, 0.17], [0.15, 0.21], [0.09, 0.2], [0.04, 0.185], [0, 0.19]]), own.hat, 0, 0, 0, { frame: F });
       T.add(lathe([[0.205, 0.012], [0.212, 0.018], [0.212, 0.055], [0.204, 0.06]], { n: 6 }), leather, 0, 0, 0, { frame: F });
     } else if (hat === 'bandana') {
-      const F = hatFrame(0, 0, -0.08);
+      const F = hatAt('bandana');
       T.add(tile(new THREE.SphereGeometry(0.273, 24, 10, 0, Math.PI * 2, 0, 1.18), 10, 3), own.hat, 0, 0, 0, { frame: F });
       T.add(tile(new THREE.SphereGeometry(0.271, 16, 6, Math.PI / 2 + 1.2, Math.PI * 2 - 2.4, 1.1, 0.75), 8, 2), own.hat, 0, 0, 0, { frame: F });
       T.add(ball(0.045, 10, 8), own.hat, 0, -0.03, -0.28, { frame: F });
       for (const sx of [-1, 1]) T.add(new THREE.ConeGeometry(0.05, 0.15, 6), own.hat, sx * 0.045, -0.1, -0.285, { frame: F, rz: sx * 0.45, sz: 0.35 }); // its ends
     } else if (hat === 'flowers') {
-      const F = hatFrame(0.1, -0.02, -0.3);
+      const F = hatAt('flowers');
       T.add(ring(0.24, 0.017, 6, 36), leafMat, 0, 0, 0, { frame: F });
       for (let i = 0; i < 9; i++) {
         const a = (i / 9) * Math.PI * 2;
@@ -911,21 +1105,26 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
     T.add(ball(0.02, 8, 6), yellowMat, 0, 0, 0.008, { frame, sz: 0.6 });
   }
 
-  // A shoe at the bottom of a leg (the leg's pivot is HIP_Y over the ground)
-  function buildShoe(P, shoes) {
+  // A shoe at the bottom of a leg (the leg's pivot is HIP_Y over the ground),
+  // k as big as the body's (across: the length stays, so the feet stand the same)
+  function buildShoe(P, shoes, k) {
     const ground = -HIP_Y;
     if (shoes === 'wellies') {
-      P.add(limb(0.1, 0.096, 0.3), own.shoe, 0, ground + 0.36);
-      P.add(ring(0.1, 0.014, 6, 20), own.shoe, 0, ground + 0.355);
+      P.add(limb(0.1, 0.096, 0.3), own.shoe, 0, ground + 0.36, 0, { sx: k, sz: k });
+      P.add(ring(0.1, 0.014, 6, 20), own.shoe, 0, ground + 0.355, 0, { sx: k, sz: k });
     } else if (shoes === 'sneakers') {
-      P.add(limb(0.072, 0.072, 0.1), whiteMat, 0, ground + 0.16); // a sock
+      P.add(limb(0.072, 0.072, 0.1), whiteMat, 0, ground + 0.16, 0, { sx: k, sz: k }); // a sock
     } else {
-      P.add(limb(0.092, 0.09, 0.15), own.shoe, 0, ground + 0.19); // the boot's shaft
+      P.add(limb(0.092, 0.09, 0.15), own.shoe, 0, ground + 0.19, 0, { sx: k, sz: k }); // the boot's shaft
+      P.add(ring(0.094, 0.012, 6, 20), own.shoe, 0, ground + 0.185, 0, { sx: k, sz: k }); // its rolled top
+      for (const [y, tilt] of [[0.13, 0.55], [0.13, -0.55], [0.09, 0.55], [0.09, -0.55]]) {
+        P.add(new THREE.BoxGeometry(0.05 * k, 0.007, 0.006), whiteMat, 0, ground + y, 0.091 * k + 0.002, { rz: tilt }); // laced up the front
+      }
     }
-    P.add(new THREE.CapsuleGeometry(0.075, 0.14, 4, 10), own.shoe, 0, ground + 0.07, 0.05, { rx: Math.PI / 2, sy: 1, sz: 0.85 });
+    P.add(new THREE.CapsuleGeometry(0.075, 0.14, 4, 10), own.shoe, 0, ground + 0.07, 0.05, { rx: Math.PI / 2, sx: k, sz: 0.85 });
     const soleMaterial = shoes === 'sneakers' ? whiteMat : soleMat;
-    P.add(new THREE.CapsuleGeometry(0.082, 0.15, 4, 10), soleMaterial, 0, ground + 0.022, 0.05, { rx: Math.PI / 2, sz: 0.3 });
-    if (shoes === 'sneakers') P.add(ball(0.06, 10, 8), whiteMat, 0, ground + 0.055, 0.15, { sx: 1.15, sy: 0.7 }); // the toe cap
+    P.add(new THREE.CapsuleGeometry(0.082, 0.15, 4, 10), soleMaterial, 0, ground + 0.022, 0.05, { rx: Math.PI / 2, sx: k, sz: 0.3 });
+    if (shoes === 'sneakers') P.add(ball(0.06, 10, 8), whiteMat, 0, ground + 0.055, 0.15, { sx: 1.15 * k, sy: 0.7 }); // the toe cap
   }
 
   paint();
@@ -1049,7 +1248,6 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
   // moving: walking (or steering in the air) this frame. targetYaw: where it
   // should face while moving. time: seconds, for idle breathing.
   function animate(dt, { moving, onGround, targetYaw, time }) {
-    if (hullOn !== outlined()) outlined() ? makeHull() : dropHull(); // (the tier changed)
 
     // Turn smoothly toward the movement direction, taking the short way around
     if (moving) {
@@ -1204,12 +1402,11 @@ export function createFarmer({ shirt = 0xff5533, height = 1.6, look = DEFAULT_LO
       const was = worn;
       worn = { ...DEFAULT_LOOK, ...next };
       paint();
-      const shapes = ['hat', 'hair', 'face', 'whiskers', 'top', 'bottoms', 'apron', 'shoes', 'neck'];
+      const shapes = ['body', 'hat', 'hair', 'face', 'whiskers', 'top', 'bottoms', 'apron', 'shoes', 'neck'];
       if (shapes.some((part) => worn[part] !== was[part])) build();
     },
     // drop the per-farmer GPU resources (the shared materials and cloth stay)
     dispose() {
-      dropHull();
       root.traverse((obj) => obj.isMesh && obj.geometry.dispose());
       for (const m of [...Object.values(own), ...toolMats]) m.dispose();
       mount?.dispose();

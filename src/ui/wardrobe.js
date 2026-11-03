@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createFarmer } from '../character.js';
-import { LOOK_PARTS, DEFAULT_LOOK, cleanLook, sameLook, hatColorLabel, randomLook } from '../../shared/looks.js';
+import { LOOK_PARTS, DEFAULT_LOOK, BODY_HAIR, cleanLook, sameLook, hatColorLabel, randomLook } from '../../shared/looks.js';
 import { PLAYER_COLORS } from '../../shared/constants.js';
 import { el, button, hexColor } from './dom.js';
 import { U } from '../gfx/uniforms.js';
@@ -19,7 +19,7 @@ import { U } from '../gfx/uniforms.js';
 const TABS = [
   ['Hat', [['hat', 'Style'], ['hatColor', null]]],
   ['Hair', [['hair', 'Style'], ['hairColor', 'Color']]],
-  ['Face', [['skin', 'Skin'], ['face', 'Extras'], ['whiskers', 'Whiskers']]],
+  ['Face', [['body', 'Body'], ['skin', 'Skin'], ['face', 'Extras'], ['whiskers', 'Whiskers']]],
   ['Top', [['top', 'Style'], ['shirt', 'Color'], ['neck', 'Round the neck'], ['neckColor', 'Its color']]],
   ['Bottoms', [['bottoms', 'Style'], ['bottomsColor', 'Color'], ['apron', 'Over the front'], ['apronColor', 'Its color']]],
   ['Shoes', [['shoes', 'Style'], ['shoesColor', 'Color']]],
@@ -51,8 +51,8 @@ export class Wardrobe {
     const row = el('div', 'ui-row', parent);
     button('ui-btn ui-btn-small ui-btn-ghost', row, 'Surprise me', () => this.pick(randomLook(Math.random, this.look), this.color));
     button('ui-btn ui-btn-small ui-btn-ghost', row, 'Classic farmer', () => {
-      const { skin, hair, hairColor } = this.look;
-      this.pick({ ...DEFAULT_LOOK, skin, hair, hairColor }, this.color);
+      const { body, skin, hair, hairColor } = this.look;
+      this.pick({ ...DEFAULT_LOOK, body, skin, hair, hairColor }, this.color);
     });
 
     // Turning them: drag across the stage
@@ -143,7 +143,13 @@ export class Wardrobe {
       const none = { hatColor: 'hat', neckColor: 'neck', apronColor: 'apron' }[part]; // (no color for what isn't worn)
       if (none && this.look[none] === 'none') continue;
       el('div', 'ui-wardrobe-label', box, part === 'hatColor' ? hatColorLabel(this.look.hat) : label);
-      const wear = (value) => (part === 'shirt' ? this.pick(this.look, value) : this.pick({ ...this.look, [part]: value }, this.color));
+      const wear = (value) => {
+        if (part === 'shirt') return this.pick(this.look, value);
+        const next = { ...this.look, [part]: value };
+        // (a new body, the hair still the one the last started with: the new one's)
+        if (part === 'body' && this.look.hair === BODY_HAIR[this.look.body]) next.hair = BODY_HAIR[value] ?? next.hair;
+        this.pick(next, this.color);
+      };
       if (part === 'shirt') {
         this.swatches(box, PLAYER_COLORS, this.color, wear);
         el('div', 'ui-muted ui-small', box, 'Your shirt’s color is your color online too: by your name, in chat and in the player list.');
